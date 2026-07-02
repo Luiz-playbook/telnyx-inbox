@@ -1,0 +1,10 @@
+node_modules/
+.DS_Store
+Thumbs.db
+
+# Local runtime config — contains the Supabase anon key + reply secret.
+# Copy ui/config.example.js -> ui/config.js and fill it in locally.
+ui/config.js
+
+# local design reference, not part of the deliverable
+slsmage.png

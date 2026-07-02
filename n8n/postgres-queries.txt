@@ -1,0 +1,41 @@
+-- ============================================================
+-- INBOUND  (Postgres node right after the Telnyx webhook)
+-- Values inlined from the webhook JSON — nothing else to fill.
+-- ============================================================
+SELECT public.telnyx_ingest_inbound(
+  '{{ $json.body.data.payload.to[0].phone_number }}',
+  '{{ $json.body.data.payload.from.phone_number }}',
+  '{{ ($json.body.data.payload.text || "").replace(/'/g, "''") }}',
+  NULL,
+  '{{ $json.body.data.payload.id }}'
+);
+
+
+-- ============================================================
+-- REPLY node 1: look up who to text (before the Telnyx send)
+-- conversation_id comes from the UI's POST body.
+-- ============================================================
+SELECT telnyx_number, contact_number
+FROM public.telnyx_conversations
+WHERE id = '{{ $json.body.conversation_id }}'::uuid;
+
+
+-- ============================================================
+-- REPLY node 2: record the outbound reply (after the Telnyx send)
+-- Adjust the node refs to wherever these live in your workflow.
+-- ============================================================
+SELECT public.telnyx_record_outbound(
+  '{{ $json.conversation_id }}'::uuid,
+  '{{ $json.from }}',
+  '{{ $json.to }}',
+  '{{ ($json.text || "").replace(/'/g, "''") }}',
+  '{{ $json.data.id }}'
+);
+
+
+-- ============================================================
+-- STATUS (optional): message.finalized delivery status
+-- ============================================================
+UPDATE public.telnyx_messages
+SET status = '{{ $json.body.data.payload.to[0].status }}'
+WHERE telnyx_message_id = '{{ $json.body.data.payload.id }}';

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inbox</title>
+  <style>
+    :root {
+      --blue: #2f6bff; --blue-soft: #e7effe; --blue-bubble: #dce9fd;
+      --bg: #ffffff; --bg-2: #f7f8fa; --bg-3: #eef1f4;
+      --text: #1b2430; --muted: #7c8698; --faint: #a7b0be;
+      --border: #e6e9ee; --in-bubble: #f0f2f5;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--text); background: var(--bg); display: flex; height: 100vh; overflow: hidden;
+    }
+    #banner { position: fixed; top: 0; left: 0; right: 0; z-index: 30; padding: 8px 14px;
+      background: #fde2e2; color: #92211f; font-size: 13px; display: none; }
+
+    /* conversation list */
+    #list { width: 340px; min-width: 340px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    #list .lhead { padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex;
+      align-items: baseline; justify-content: space-between; }
+    #list .lhead h1 { font-size: 19px; margin: 0; font-weight: 700; }
+    #list .lhead .sub { color: var(--muted); font-size: 13px; }
+    #convs { overflow-y: auto; flex: 1; }
+    .conv { display: flex; gap: 11px; padding: 12px 16px; cursor: pointer; border-bottom: 1px solid #f1f3f6; }
+    .conv:hover { background: var(--bg-2); }
+    .conv.active { background: var(--blue-soft); }
+    .avatar { width: 40px; height: 40px; min-width: 40px; border-radius: 50%; display: grid; place-items: center;
+      color: #fff; font-weight: 700; font-size: 14px; }
+    .conv .body { min-width: 0; flex: 1; }
+    .conv .row1 { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .conv .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .conv .time { color: var(--faint); font-size: 12px; white-space: nowrap; }
+    .conv .preview { color: var(--muted); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
+    .conv.unread .name { font-weight: 700; }
+    .conv.unread .preview { color: var(--text); font-weight: 500; }
+    .conv .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--blue); margin-left: auto; }
+
+    /* thread */
+    #thread { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .thead { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 11px; }
+    .thead .title { font-weight: 700; font-size: 16px; }
+    .thead .sub { color: var(--muted); font-size: 12px; }
+    #messages { flex: 1; overflow-y: auto; padding: 22px 26px; display: flex; flex-direction: column; gap: 4px; }
+    .daysep { text-align: center; color: var(--faint); font-size: 12px; margin: 16px 0 10px; }
+    .mrow { display: flex; align-items: flex-end; gap: 8px; margin-top: 6px; max-width: 74%; }
+    .mrow.inbound { align-self: flex-start; }
+    .mrow.outbound { align-self: flex-end; flex-direction: row-reverse; }
+    .mrow .mini { width: 26px; height: 26px; min-width: 26px; border-radius: 50%; display: grid; place-items: center;
+      color: #fff; font-weight: 700; font-size: 11px; margin-bottom: 2px; }
+    .bubble { padding: 9px 13px; border-radius: 16px; font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
+    .inbound .bubble { background: var(--in-bubble); border-bottom-left-radius: 5px; }
+    .outbound .bubble { background: var(--blue-bubble); border-bottom-right-radius: 5px; }
+    .meta { display: block; font-size: 11px; color: var(--faint); margin-top: 4px; }
+    .outbound .meta { text-align: right; }
+    .tick { color: var(--blue); font-weight: 700; margin-left: 4px; }
+    .tick.pending { color: var(--faint); }
+
+    /* composer */
+    #composer { border-top: 1px solid var(--border); padding: 14px 18px 16px; }
+    #composer .box { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+    #composer textarea { width: 100%; border: 0; resize: none; height: 46px; font: inherit; outline: none;
+      background: transparent; color: var(--text); }
+    #composer .barrow { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+    #composer .counter { color: var(--faint); font-size: 12px; }
+    #composer .send { width: 36px; height: 30px; border: 0; border-radius: 8px; background: var(--blue);
+      color: #fff; cursor: pointer; font-size: 15px; }
+    #composer .send:disabled { background: #b9c6e6; cursor: default; }
+
+    /* details */
+    #details { width: 280px; min-width: 280px; border-left: 1px solid var(--border); overflow-y: auto; }
+    #details .dhead { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    #details .dhead h2 { font-size: 16px; margin: 0; font-weight: 700; }
+    #details .card { padding: 20px 18px; text-align: center; border-bottom: 1px solid var(--border); }
+    #details .card .avatar { margin: 0 auto 10px; width: 56px; height: 56px; font-size: 18px; }
+    #details .card .cname { font-weight: 700; font-size: 15px; }
+    #details .sb { padding: 14px 18px; }
+    #details .field { display: flex; align-items: center; gap: 10px; padding: 7px 0; font-size: 13px; }
+    #details .field .k { color: var(--muted); width: 96px; min-width: 96px; }
+    #details .field .v { color: var(--text); }
+
+    .empty { margin: auto; color: var(--muted); padding: 40px; text-align: center; }
+    .hide { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="banner"></div>
+
+  <!-- conversation list -->
+  <aside id="list">
+    <div class="lhead"><h1>Inbox</h1><span class="sub" id="unread-count"></span></div>
+    <div id="convs"><div class="empty">Loading…</div></div>
+  </aside>
+
+  <!-- thread -->
+  <main id="thread"><div class="empty" id="placeholder">Select a conversation</div></main>
+
+  <!-- details -->
+  <aside id="details" class="hide">
+    <div class="dhead"><h2>Details</h2></div>
+    <div id="details-body"></div>
+  </aside>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG;
+    const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const state = { convs: [], activeId: null, messages: [] };
+    const el = (id) => document.getElementById(id);
+    const canSend = () => cfg.REPLY_WEBHOOK_URL && !cfg.REPLY_WEBHOOK_URL.startsWith('<<');
+
+    function banner(msg) { const b = el('banner'); if (!msg) { b.style.display='none'; return; } b.textContent = msg; b.style.display='block'; }
+
+    const AV_COLORS = ['#f2637a','#7b61ff','#22b573','#2f6bff','#f5a623','#00b3c6','#e2568d','#5c6bc0','#26a69a','#ab47bc'];
+    function avatarColor(seed) { let h=0; for (const c of (seed||'')) h=(h*31+c.charCodeAt(0))%997; return AV_COLORS[h%AV_COLORS.length]; }
+    function initials(num) { const d=(num||'').replace(/\D/g,''); return d.slice(-2) || '#'; }
+    function fmtPhone(num) {
+      const d=(num||'').replace(/\D/g,'');
+      if (d.length===11 && d[0]==='1') return `+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`;
+      if (d.length===10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`;
+      return num || '';
+    }
+    function relTime(ts) {
+      const d=new Date(ts), now=new Date(), diff=(now-d)/1000;
+      if (diff<3600) return Math.max(1,Math.floor(diff/60))+'m';
+      if (diff<86400 && d.toDateString()===now.toDateString()) return Math.floor(diff/3600)+'h';
+      if (diff<604800) return Math.floor(diff/86400)+'d';
+      return d.toLocaleDateString([], { month:'short', day:'numeric' });
+    }
+    function clockTime(ts) { return new Date(ts).toLocaleTimeString([], { hour:'numeric', minute:'2-digit' }).toLowerCase(); }
+    function dayLabel(ts) {
+      const d=new Date(ts), now=new Date();
+      if (d.toDateString()===now.toDateString()) return 'Today';
+      const y=new Date(now); y.setDate(now.getDate()-1);
+      if (d.toDateString()===y.toDateString()) return 'Yesterday';
+      return d.toLocaleDateString([], { month:'long', day:'numeric', year:'numeric' });
+    }
+    function esc(s) { return (s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+    // ---- conversation list ----
+    async function loadConversations() {
+      const { data, error } = await sb.from('telnyx_conversations').select('*').order('last_message_at', { ascending:false });
+      if (error) { banner('Load conversations failed: ' + error.message); return; }
+      state.convs = data || [];
+      const unread = state.convs.filter(c=>c.unread).length;
+      el('unread-count').textContent = unread ? `${unread} unread` : '';
+      renderConversations();
+    }
+    function renderConversations() {
+      const box = el('convs');
+      if (!state.convs.length) { box.innerHTML = '<div class="empty">No conversations yet</div>'; return; }
+      box.innerHTML = state.convs.map(c => `
+        <div class="conv ${c.id===state.activeId?'active':''} ${c.unread?'unread':''}" data-id="${c.id}">
+          <div class="avatar" style="background:${avatarColor(c.contact_number)}">${initials(c.contact_number)}</div>
+          <div class="body">
+            <div class="row1">
+              <span class="name">${esc(fmtPhone(c.contact_number))}</span>
+              <span class="time">${relTime(c.last_message_at)}</span>
+            </div>
+            <div class="preview">
+              ${c.last_direction==='outbound' ? '<span style="color:var(--faint)">↩</span>' : ''}
+              <span>${esc(c.last_preview||'')}</span>
+              ${c.unread ? '<span class="dot"></span>' : ''}
+            </div>
+          </div>
+        </div>`).join('');
+      box.querySelectorAll('.conv').forEach(n => n.addEventListener('click', () => openConversation(n.dataset.id)));
+    }
+
+    // ---- thread ----
+    async function openConversation(id) {
+      state.activeId = id; renderConversations();
+      const conv = state.convs.find(c => c.id === id);
+      renderThreadShell(conv); renderDetails(conv);
+      if (conv && conv.unread) sb.from('telnyx_conversations').update({ unread:false }).eq('id', id).then(()=>{});
+      const { data, error } = await sb.from('telnyx_messages').select('*').eq('conversation_id', id).order('created_at', { ascending:true });
+      if (error) { banner('Load messages failed: ' + error.message); return; }
+      state.messages = data || []; renderMessages();
+    }
+    function renderThreadShell(conv) {
+      el('thread').innerHTML = `
+        <div class="thead">
+          <div class="avatar" style="width:38px;height:38px;font-size:13px;background:${conv?avatarColor(conv.contact_number):'#ccc'}">${conv?initials(conv.contact_number):''}</div>
+          <div><div class="title">${conv ? esc(fmtPhone(conv.contact_number)) : ''}</div>
+            <div class="sub">via ${conv ? esc(fmtPhone(conv.telnyx_number)) : ''}</div></div>
+        </div>
+        <div id="messages"></div>
+        <div id="composer">
+          <div class="box">
+            <textarea id="reply" placeholder="Write a message…" ${canSend()?'':'disabled'}></textarea>
+            <div class="barrow">
+              <span class="counter" id="counter">0/160</span>
+              <button class="send" id="send" ${canSend()?'':'disabled'}>➤</button>
+            </div>
+          </div>
+        </div>`;
+      const ta = el('reply'), btn = el('send'), counter = el('counter');
+      btn.addEventListener('click', sendReply);
+      ta.addEventListener('input', () => { counter.textContent = `${ta.value.length}/160`; });
+      ta.addEventListener('keydown', e => { if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); sendReply(); } });
+      ta.focus();
+    }
+    function renderMessages() {
+      const box = el('messages'); if (!box) return;
+      let html = '', lastDay = '';
+      for (const m of state.messages) {
+        const day = new Date(m.created_at).toDateString();
+        if (day !== lastDay) { html += `<div class="daysep">${dayLabel(m.created_at)}</div>`; lastDay = day; }
+        const num = m.direction === 'inbound' ? m.from_number : m.to_number;
+        const tick = m.direction === 'outbound'
+          ? (['delivered','sent','finalized'].includes((m.status||'').toLowerCase())
+              ? '<span class="tick">✓✓</span>' : '<span class="tick pending">✓</span>')
+          : '';
+        html += `<div class="mrow ${m.direction}">
+          <div class="mini" style="background:${m.direction==='outbound'?'var(--blue)':avatarColor(num)}">${m.direction==='outbound'?'•':initials(num)}</div>
+          <div><div class="bubble">${esc(m.body||'')}</div>
+            <span class="meta">${clockTime(m.created_at)}${tick}</span></div>
+        </div>`;
+      }
+      box.innerHTML = html; box.scrollTop = box.scrollHeight;
+    }
+    function renderDetails(conv) {
+      if (!conv) { el('details').classList.add('hide'); return; }
+      el('details').classList.remove('hide');
+      el('details-body').innerHTML = `
+        <div class="card">
+          <div class="avatar" style="background:${avatarColor(conv.contact_number)}">${initials(conv.contact_number)}</div>
+          <div class="cname">${esc(fmtPhone(conv.contact_number))}</div>
+        </div>
+        <div class="sb">
+          <div class="field"><span class="k">Phone</span><span class="v">${esc(fmtPhone(conv.contact_number))}</span></div>
+          <div class="field"><span class="k">Texting from</span><span class="v">${esc(fmtPhone(conv.telnyx_number))}</span></div>
+          <div class="field"><span class="k">Status</span><span class="v">${conv.unread?'Unread':'Open'}</span></div>
+          <div class="field"><span class="k">Last message</span><span class="v">${relTime(conv.last_message_at)} ago</span></div>
+        </div>`;
+    }
+
+    // ---- send ----
+    async function sendReply() {
+      const ta = el('reply'), btn = el('send'); const text = ta.value.trim();
+      if (!text || !state.activeId) return;
+      if (!canSend()) { banner('Reply webhook URL not configured'); return; }
+      btn.disabled = true; ta.disabled = true;
+      const tmp = { id:'tmp-'+Date.now(), direction:'outbound', to_number:'', body:text, status:'sending', created_at:new Date().toISOString() };
+      state.messages.push(tmp); renderMessages();
+      try {
+        const res = await fetch(cfg.REPLY_WEBHOOK_URL, { method:'POST',
+          headers:{ 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET },
+          body: JSON.stringify({ conversation_id: state.activeId, text }) });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        ta.value = ''; el('counter').textContent = '0/160';
+        state.messages = state.messages.filter(m => m.id !== tmp.id); renderMessages();
+      } catch (err) { tmp.status = 'failed'; renderMessages(); banner('Send failed: ' + err.message); }
+      finally { btn.disabled = false; ta.disabled = false; ta.focus(); }
+    }
+
+    // ---- realtime ----
+    function subscribe() {
+      sb.channel('inbox')
+        .on('postgres_changes', { event:'INSERT', schema:'public', table:'telnyx_messages' }, p => {
+          const m = p.new;
+          if (m.conversation_id === state.activeId && !state.messages.some(x => x.id === m.id)) { state.messages.push(m); renderMessages(); }
+        })
+        .on('postgres_changes', { event:'UPDATE', schema:'public', table:'telnyx_messages' }, p => {
+          const i = state.messages.findIndex(x => x.id === p.new.id); if (i>=0) { state.messages[i] = p.new; renderMessages(); }
+        })
+        .on('postgres_changes', { event:'*', schema:'public', table:'telnyx_conversations' }, () => loadConversations())
+        .subscribe();
+    }
+
+    if (!cfg || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.');
+    else { loadConversations().then(() => { if (state.convs[0]) openConversation(state.convs[0].id); }); subscribe(); }
+  </script>
+</body>
+</html>

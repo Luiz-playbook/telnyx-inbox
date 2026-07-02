@@ -1,0 +1,152 @@
+{
+  "name": "[Telnyx] [Inbox] [Receive] Inbound SMS",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telnyx-inbound",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": { "rawBody": true }
+      },
+      "id": "webhook-in",
+      "name": "Telnyx Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "telnyx-inbound"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "pk",
+              "name": "telnyx_public_key",
+              "type": "string",
+              "value": "<<PASTE_TELNYX_PUBLIC_KEY_BASE64>>"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-in",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify the Telnyx Ed25519 signature over `${timestamp}|${rawBody}`, reject\n// stale/invalid webhooks, then normalize the event for downstream nodes.\nconst crypto = require('crypto');\n\nconst pubKeyB64 = $('Config').first().json.telnyx_public_key;\nif (!pubKeyB64 || pubKeyB64.startsWith('<<')) {\n  throw new Error('Config: telnyx_public_key is not set');\n}\n\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst sigB64 = headers['telnyx-signature-ed25519'];\nconst timestamp = headers['telnyx-timestamp'];\nif (!sigB64 || !timestamp) {\n  throw new Error('Missing Telnyx signature headers');\n}\n\n// Raw body bytes exactly as Telnyx sent them (rawBody option on the Webhook node).\nlet rawBody;\nif (item.binary && item.binary.data && item.binary.data.data) {\n  rawBody = Buffer.from(item.binary.data.data, 'base64').toString('utf8');\n} else if (typeof item.json.body === 'string') {\n  rawBody = item.json.body;\n} else {\n  rawBody = JSON.stringify(item.json.body || {});\n}\n\n// Replay protection: reject anything older than 5 minutes.\nconst nowSec = Math.floor($now.toSeconds());\nif (Math.abs(nowSec - parseInt(timestamp, 10)) > 300) {\n  throw new Error('Stale webhook (timestamp outside 5 min window)');\n}\n\n// Ed25519 verify. Wrap the raw 32-byte public key in a DER SPKI header.\nconst rawKey = Buffer.from(pubKeyB64, 'base64');\nconst der = Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), rawKey]);\nconst publicKey = crypto.createPublicKey({ key: der, format: 'der', type: 'spki' });\nconst signed = Buffer.from(`${timestamp}|${rawBody}`, 'utf8');\nconst ok = crypto.verify(null, signed, publicKey, Buffer.from(sigB64, 'base64'));\nif (!ok) {\n  throw new Error('Invalid Telnyx signature — discarding');\n}\n\n// Parse and normalize.\nconst event = JSON.parse(rawBody);\nconst p = (event.data && event.data.payload) || event.payload || {};\nconst eventType = (event.data && event.data.event_type) || event.event_type || '';\n\nconst toArr = Array.isArray(p.to) ? p.to : [];\nconst telnyxNumber = (toArr[0] && toArr[0].phone_number) || p.to || '';\nconst contactNumber = (p.from && p.from.phone_number) || p.from || '';\n\nreturn [{\n  json: {\n    event_type: eventType,\n    telnyx_message_id: p.id || null,\n    telnyx_number: telnyxNumber,\n    contact_number: contactNumber,\n    body: p.text || '',\n    media: (p.media && p.media.length) ? p.media : null,\n    status: (Array.isArray(p.to) && p.to[0] && p.to[0].status) || p.status || null\n  }\n}];"
+      },
+      "id": "verify-in",
+      "name": "Verify + Parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "strict", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.event_type }}",
+              "rightValue": "message.received",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-received",
+      "name": "Is message.received?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/rpc/telnyx_ingest_inbound",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"p_telnyx_number\": $json.telnyx_number, \"p_contact_number\": $json.contact_number, \"p_body\": $json.body, \"p_media\": $json.media, \"p_telnyx_message_id\": $json.telnyx_message_id } }}",
+        "options": {}
+      },
+      "id": "ingest-in",
+      "name": "Store Inbound (RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Playbook n8n Supabase (service role)" }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "strict", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.event_type }}",
+              "rightValue": "message.finalized",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-finalized",
+      "name": "Is message.finalized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/rpc/telnyx_update_status",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"p_telnyx_message_id\": $json.telnyx_message_id, \"p_status\": $json.status } }}",
+        "options": {}
+      },
+      "id": "status-in",
+      "name": "Update Status (RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 420],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Playbook n8n Supabase (service role)" }
+      }
+    }
+  ],
+  "connections": {
+    "Telnyx Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Verify + Parse", "type": "main", "index": 0 }]] },
+    "Verify + Parse": { "main": [[{ "node": "Is message.received?", "type": "main", "index": 0 }]] },
+    "Is message.received?": {
+      "main": [
+        [{ "node": "Store Inbound (RPC)", "type": "main", "index": 0 }],
+        [{ "node": "Is message.finalized?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is message.finalized?": {
+      "main": [
+        [{ "node": "Update Status (RPC)", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  }
+}

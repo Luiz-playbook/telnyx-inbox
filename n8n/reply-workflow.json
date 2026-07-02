@@ -1,0 +1,144 @@
+{
+  "name": "[Telnyx] [Inbox] [Send] Reply",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telnyx-reply",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-reply",
+      "name": "Reply Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "telnyx-reply"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "secret",
+              "name": "reply_secret",
+              "type": "string",
+              "value": "<<CHOOSE_A_LONG_RANDOM_SHARED_SECRET>>"
+            },
+            {
+              "id": "mpid",
+              "name": "messaging_profile_id",
+              "type": "string",
+              "value": ""
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "config-reply",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gatekeeper: only our UI (which knows the shared secret) may trigger a send.\nconst secret = $('Config').first().json.reply_secret;\nif (!secret || secret.startsWith('<<')) {\n  throw new Error('Config: reply_secret is not set');\n}\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst provided = headers['x-inbox-secret'];\nif (!provided || provided !== secret) {\n  throw new Error('401 Unauthorized: bad or missing x-inbox-secret');\n}\n\nconst body = item.json.body || {};\nconst conversationId = body.conversation_id;\nconst text = (body.text || '').trim();\nif (!conversationId) throw new Error('conversation_id is required');\nif (!text) throw new Error('text is required');\n\nreturn [{ json: { conversation_id: conversationId, text } }];"
+      },
+      "id": "validate-reply",
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://snfmggrnyjayuuxafats.supabase.co/rest/v1/telnyx_conversations?id=eq.{{ $json.conversation_id }}&select=telnyx_number,contact_number",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "id": "lookup-reply",
+      "name": "Lookup Conversation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Playbook n8n Supabase (service role)" }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Derive from/to, guard against reply loops, assemble the Telnyx payload.\nconst rows = $input.first().json;\nconst conv = Array.isArray(rows) ? rows[0] : rows;\nif (!conv || !conv.telnyx_number || !conv.contact_number) {\n  throw new Error('Conversation not found');\n}\n\nconst from = conv.telnyx_number;   // our Telnyx number\nconst to = conv.contact_number;    // the person we are replying to\nif (from === to) {\n  throw new Error('Loop guard: refusing to text our own number');\n}\n\nconst text = $('Validate').first().json.text;\nconst conversationId = $('Validate').first().json.conversation_id;\nconst mpid = $('Config').first().json.messaging_profile_id;\n\nconst payload = { from, to, text };\nif (mpid) payload.messaging_profile_id = mpid;\n\nreturn [{ json: { conversation_id: conversationId, from, to, text, telnyx_payload: payload } }];"
+      },
+      "id": "guard-reply",
+      "name": "Guard + Build Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telnyx.com/v2/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telnyxApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.telnyx_payload }}",
+        "options": {}
+      },
+      "id": "send-reply",
+      "name": "Send via Telnyx",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300],
+      "credentials": {
+        "telnyxApi": { "id": "REPLACE_WITH_TELNYX_CREDENTIAL_ID", "name": "Telnyx API" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/rpc/telnyx_record_outbound",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"p_conversation_id\": $('Guard + Build Payload').first().json.conversation_id, \"p_from\": $('Guard + Build Payload').first().json.from, \"p_to\": $('Guard + Build Payload').first().json.to, \"p_body\": $('Guard + Build Payload').first().json.text, \"p_telnyx_message_id\": ($json.data && $json.data.id) ? $json.data.id : null } }}",
+        "options": {}
+      },
+      "id": "record-reply",
+      "name": "Record Outbound (RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Playbook n8n Supabase (service role)" }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"telnyx_message_id\": ($('Send via Telnyx').first().json.data && $('Send via Telnyx').first().json.data.id) || null } }}",
+        "options": {}
+      },
+      "id": "respond-reply",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1760, 300]
+    }
+  ],
+  "connections": {
+    "Reply Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Validate", "type": "main", "index": 0 }]] },
+    "Validate": { "main": [[{ "node": "Lookup Conversation", "type": "main", "index": 0 }]] },
+    "Lookup Conversation": { "main": [[{ "node": "Guard + Build Payload", "type": "main", "index": 0 }]] },
+    "Guard + Build Payload": { "main": [[{ "node": "Send via Telnyx", "type": "main", "index": 0 }]] },
+    "Send via Telnyx": { "main": [[{ "node": "Record Outbound (RPC)", "type": "main", "index": 0 }]] },
+    "Record Outbound (RPC)": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  }
+}
