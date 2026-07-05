@@ -20,6 +20,11 @@
     #banner { position: fixed; top: 0; left: 0; right: 0; z-index: 30; padding: 8px 14px;
       background: #fde2e2; color: #92211f; font-size: 13px; display: none; }
 
+    a { color: inherit; text-decoration: none; }
+    .navtabs { display: flex; gap: 4px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+    .navtabs a { padding: 6px 12px; border-radius: 8px; font-weight: 600; color: var(--muted); }
+    .navtabs a.active { background: var(--blue-soft); color: var(--blue); }
+
     /* conversation list */
     #list { width: 340px; min-width: 340px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
     #list .lhead { padding: 16px 18px; border-bottom: 1px solid var(--border); display: flex;
@@ -94,6 +99,10 @@
 
   <!-- conversation list -->
   <aside id="list">
+    <div class="navtabs">
+      <a href="./index.html" class="active">Inbox</a>
+      <a href="./companies.html">Companies</a>
+    </div>
     <div class="lhead"><h1>Inbox</h1><span class="sub" id="unread-count"></span></div>
     <div id="convs"><div class="empty">Loading…</div></div>
   </aside>

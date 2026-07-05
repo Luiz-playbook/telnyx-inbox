@@ -13,4 +13,7 @@ window.INBOX_CONFIG = {
   SUPABASE_ANON_KEY: "<<YOUR_SUPABASE_ANON_KEY>>",
   REPLY_WEBHOOK_URL: "<<PASTE_N8N_REPLY_PRODUCTION_WEBHOOK_URL>>",
   REPLY_SECRET: "<<SAME_SHARED_SECRET_AS_N8N>>",
+  // n8n workflow that scrapes a company (Firecrawl) and returns a profile.
+  // Wired later; leave as-is until that workflow exists.
+  COMPANY_AI_WEBHOOK_URL: "<<PASTE_N8N_COMPANY_AI_WEBHOOK_URL>>",
 };
