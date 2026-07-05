@@ -8,7 +8,9 @@ const cfg = {
   SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY || '',
   REPLY_WEBHOOK_URL: process.env.REPLY_WEBHOOK_URL || '',
   REPLY_SECRET:      process.env.REPLY_SECRET      || '',
-  COMPANY_AI_WEBHOOK_URL: process.env.COMPANY_AI_WEBHOOK_URL || '',
+  // n8n "company scraper" webhook (not secret). Overridable via env var.
+  COMPANY_AI_WEBHOOK_URL: process.env.COMPANY_AI_WEBHOOK_URL
+    || 'https://playbooksports.app.n8n.cloud/webhook/pbhs-company-scraper-aae1-b5b19bf368c7',
 };
 
 const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);
