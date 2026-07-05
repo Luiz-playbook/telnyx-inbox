@@ -167,20 +167,20 @@
         </div>
         <div class="form">
           <div class="importbar">
-            <div class="lbl">🌐 Auto-fill from a website</div>
+            <div class="lbl">🤖 Generate with AI (from a HubSpot deal)</div>
             <div class="r">
-              <input type="url" id="site-url" placeholder="https://acme.com" />
-              <button id="fc-fetch">🔎 Firecrawl</button>
-              <button class="gen" id="ai-gen">🤖 AI generate</button>
+              <input type="url" id="deal-url" placeholder="HubSpot deal link (https://app.hubspot.com/…/deal/…)" />
+              <button class="gen" id="ai-gen">Generate</button>
             </div>
-            <div class="hint"><b>Firecrawl</b> (in-app) pulls the site’s content into “Raw source” for you to organize. <b>AI generate</b> (n8n) returns a full structured profile.</div>
+            <div class="hint">Sends the deal link to the n8n workflow, which builds a full company profile and returns it here to review &amp; save.</div>
 
-            <div class="lbl" style="margin-top:14px">📄 Or upload a file</div>
+            <div class="lbl" style="margin-top:14px">📄 Or import by hand</div>
             <div class="r">
               <label class="upl">Upload PDF<input type="file" accept="application/pdf" id="file-pdf" hidden></label>
               <label class="upl">Upload .md/.txt<input type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" id="file-md" hidden></label>
               <span class="hint" id="import-status" style="margin:0"></span>
             </div>
+            <div class="hint">Uploads fill “Raw source content” below — or just paste into it — then fill the fields.</div>
           </div>
 
           <div class="section-title">Profile</div>
@@ -217,7 +217,6 @@
       el('add-contact').addEventListener('click', () => { state.draft.contacts.push({name:'',role:'',phone:'',email:''}); renderContacts(); });
       el('file-pdf').addEventListener('change', e => handleUpload(e, 'pdf'));
       el('file-md').addEventListener('change', e => handleUpload(e, 'text'));
-      el('fc-fetch').addEventListener('click', firecrawlFetch);
       el('ai-gen').addEventListener('click', generateWithAI);
       renderContacts();
     }
@@ -265,36 +264,10 @@
       return out;
     }
 
-    // ---- Firecrawl (in-app serverless function) ----
-    async function firecrawlFetch() {
-      const url = (el('site-url').value || '').trim();
-      if (!url) { banner('Enter a website URL first'); return; }
-      const btn = el('fc-fetch'); const orig = btn.innerHTML;
-      btn.disabled = true; btn.innerHTML = '<span class="spinner" style="border-color:#888;border-top-color:transparent"></span> Fetching…';
-      try {
-        const res = await fetch('/api/firecrawl', { method:'POST',
-          headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ url }) });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
-        const meta = data.metadata || {};
-        state.draft.raw_content = (state.draft.raw_content ? state.draft.raw_content + '\n\n' : '') + (data.markdown || '');
-        state.draft.website = state.draft.website || url;
-        state.draft.source = 'manual'; state.draft.source_detail = url;
-        if (!state.draft.name && meta.title) state.draft.name = meta.title;
-        if (!state.draft.description && meta.description) state.draft.description = meta.description;
-        renderEditor();
-        banner('Fetched site content into Raw source — review & organize.', 'ok');
-      } catch (err) {
-        const local = location.protocol === 'file:' ? ' (the /api function only runs on the deployed Vercel site — open the vercel.app URL to use Firecrawl)' : '';
-        banner('Firecrawl failed: ' + err.message + local);
-      } finally { btn.disabled = false; btn.innerHTML = orig; }
-    }
-
-    // ---- AI (n8n webhook) ----
+    // ---- AI (n8n webhook, from a HubSpot deal link) ----
     async function generateWithAI() {
-      const url = (el('site-url').value || '').trim();
-      if (!url) { banner('Enter a company website URL first'); return; }
+      const dealUrl = (el('deal-url').value || '').trim();
+      if (!dealUrl) { banner('Paste a HubSpot deal link first'); return; }
       if (!cfg.COMPANY_AI_WEBHOOK_URL || cfg.COMPANY_AI_WEBHOOK_URL.startsWith('<<')) {
         banner('AI generation isn’t wired yet — the n8n workflow + COMPANY_AI_WEBHOOK_URL are the next step.'); return;
       }
@@ -302,10 +275,10 @@
       try {
         const res = await fetch(cfg.COMPANY_AI_WEBHOOK_URL, { method:'POST',
           headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ url }) });
+          body: JSON.stringify({ hubspot_deal_url: dealUrl }) });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const prof = await res.json();
-        Object.assign(state.draft, prof.company || prof, { source:'ai', source_detail:url });
+        Object.assign(state.draft, prof.company || prof, { source:'ai', source_detail:dealUrl });
         renderEditor();
         banner('AI draft generated — review and save.', 'ok');
       } catch (err) { banner('AI generation failed: ' + err.message); }
