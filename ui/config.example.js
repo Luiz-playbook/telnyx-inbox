@@ -16,4 +16,6 @@ window.INBOX_CONFIG = {
   // n8n workflow that takes a HubSpot deal link and returns a company profile.
   // Wired later; leave as-is until that workflow exists.
   COMPANY_AI_WEBHOOK_URL: "<<PASTE_N8N_COMPANY_AI_WEBHOOK_URL>>",
+  // n8n workflow that receives { messages:[{to,text}] } and sends each via Telnyx.
+  BULK_SEND_WEBHOOK_URL: "<<PASTE_N8N_BULK_SEND_WEBHOOK_URL>>",
 };

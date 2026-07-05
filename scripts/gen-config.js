@@ -11,6 +11,8 @@ const cfg = {
   // n8n "company scraper" webhook (not secret). Overridable via env var.
   COMPANY_AI_WEBHOOK_URL: process.env.COMPANY_AI_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/pbhs-company-scraper-aae1-b5b19bf368c7',
+  // n8n bulk-send webhook — receives { messages:[{to,text}] } and sends via Telnyx.
+  BULK_SEND_WEBHOOK_URL: process.env.BULK_SEND_WEBHOOK_URL || '',
 };
 
 const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);

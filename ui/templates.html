@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Templates</title>
+  <style>
+    :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
+      --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; }
+    * { box-sizing: border-box; }
+    html, body { height:100%; margin:0; }
+    body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      color:var(--text); background:var(--bg); display:flex; height:100vh; overflow:hidden; }
+    a { color:inherit; text-decoration:none; }
+    #banner { position:fixed; top:0; left:0; right:0; z-index:30; padding:8px 14px; font-size:13px; display:none; }
+    #banner.err { background:#fde2e2; color:#92211f; } #banner.ok { background:#dff5e8; color:#1b6b40; }
+    .navtabs { display:flex; gap:4px; padding:12px 14px; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); }
+    .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
+
+    #list { width:300px; min-width:300px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
+    #list .top { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; }
+    #list .top h1 { font-size:19px; margin:0; font-weight:700; }
+    #list .top button { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
+    #rows { overflow-y:auto; flex:1; }
+    .row { padding:12px 16px; border-bottom:1px solid #f1f3f6; cursor:pointer; }
+    .row:hover { background:var(--bg-2); } .row.active { background:var(--blue-soft); }
+    .row .nm { font-weight:600; } .row .meta { color:var(--muted); font-size:12px; margin-top:2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+    #editor { flex:1; overflow-y:auto; }
+    .ehead { padding:16px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;
+      position:sticky; top:0; background:var(--bg); }
+    .ehead h2 { margin:0; font-size:18px; font-weight:700; }
+    .ehead .btns { display:flex; gap:8px; }
+    .ehead button { border:1px solid var(--border); background:var(--bg); border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
+    .ehead button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
+    .ehead button.danger { color:#c0392b; }
+    .form { padding:20px 24px; max-width:760px; }
+    .field { display:flex; flex-direction:column; gap:5px; margin-bottom:16px; }
+    .field label { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .field input, .field textarea { padding:10px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; outline:none; }
+    .field textarea { resize:vertical; min-height:180px; line-height:1.5; }
+    .vars { color:var(--muted); font-size:13px; margin-bottom:16px; }
+    .vars code { background:var(--bg-3); padding:2px 6px; border-radius:6px; cursor:pointer; }
+    .preview { background:var(--bg-2); border:1px solid var(--border); border-radius:10px; padding:14px; white-space:pre-wrap; }
+    .preview .lbl { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
+    .count { color:var(--faint); font-size:12px; margin-top:6px; }
+    .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
+  </style>
+</head>
+<body>
+  <div id="banner"></div>
+  <aside id="list">
+    <div class="navtabs">
+      <a href="./index.html">Inbox</a>
+      <a href="./companies.html">Companies</a>
+      <a href="./templates.html" class="active">Templates</a>
+      <a href="./bulk.html">Bulk Send</a>
+    </div>
+    <div class="top"><h1>Templates</h1><button id="new-btn">＋ New</button></div>
+    <div id="rows"><div class="empty">Loading…</div></div>
+  </aside>
+  <main id="editor"><div class="empty">Select a template, or click ＋ New</div></main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const el = (id) => document.getElementById(id);
+    const state = { items: [], activeId: null, draft: null };
+    const SAMPLE = { name:'Jordan Smith', first_name:'Jordan', phone:'+1 (615) 555-0142' };
+
+    function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',2500); }
+    function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function render(body, vars){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g, (_,k)=> (vars[k] ?? '')); }
+
+    async function load() {
+      const { data, error } = await sb.from('message_templates').select('*').order('updated_at', { ascending:false });
+      if (error) { banner('Load failed: '+error.message); return; }
+      state.items = data || []; renderList();
+    }
+    function renderList() {
+      const box = el('rows');
+      if (!state.items.length) { box.innerHTML = '<div class="empty">No templates yet</div>'; return; }
+      box.innerHTML = state.items.map(t => `
+        <div class="row ${t.id===state.activeId?'active':''}" data-id="${t.id}">
+          <div class="nm">${esc(t.name)}</div>
+          <div class="meta">${esc((t.body||'').slice(0,60) || '—')}</div>
+        </div>`).join('');
+      box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => open(n.dataset.id)));
+    }
+    function newItem(){ state.activeId=null; state.draft={ name:'', body:'' }; renderList(); renderEditor(); }
+    function open(id){ const t=state.items.find(x=>x.id===id); if(!t) return; state.activeId=id; state.draft={name:t.name,body:t.body}; renderList(); renderEditor(); }
+
+    function renderEditor() {
+      if (!state.draft) { el('editor').innerHTML='<div class="empty">Select a template, or click ＋ New</div>'; return; }
+      const isNew = !state.activeId;
+      el('editor').innerHTML = `
+        <div class="ehead">
+          <h2>${isNew?'New template':esc(state.draft.name||'Template')}</h2>
+          <div class="btns">
+            ${isNew?'':'<button class="danger" id="del">Delete</button>'}
+            <button class="primary" id="save">${isNew?'Create':'Save'}</button>
+          </div>
+        </div>
+        <div class="form">
+          <div class="field"><label>Template name</label><input id="f-name" value="${esc(state.draft.name)}" placeholder="e.g. Intro outreach"></div>
+          <div class="vars">Variables: <code data-v="name">{{name}}</code> <code data-v="first_name">{{first_name}}</code> <code data-v="phone">{{phone}}</code> — click to insert. They’re filled per recipient at send time.</div>
+          <div class="field"><label>Message</label><textarea id="f-body" placeholder="Hi {{first_name}}, ...">${esc(state.draft.body)}</textarea></div>
+          <div class="preview"><div class="lbl">Preview (sample recipient)</div><div id="pv"></div><div class="count" id="cnt"></div></div>
+        </div>`;
+      const name=el('f-name'), body=el('f-body');
+      const upd=()=>{ state.draft.name=name.value; state.draft.body=body.value; refreshPreview(); };
+      name.addEventListener('input', upd); body.addEventListener('input', upd);
+      el('editor').querySelectorAll('[data-v]').forEach(c => c.addEventListener('click', () => insertVar(c.dataset.v)));
+      el('save').addEventListener('click', save);
+      if (el('del')) el('del').addEventListener('click', del);
+      refreshPreview();
+    }
+    function insertVar(v){ const ta=el('f-body'); const t='{{'+v+'}}'; const s=ta.selectionStart||ta.value.length;
+      ta.value = ta.value.slice(0,s)+t+ta.value.slice(ta.selectionEnd||s); state.draft.body=ta.value; ta.focus(); refreshPreview(); }
+    function refreshPreview(){ const txt=render(state.draft.body, SAMPLE); el('pv').textContent = txt || '—';
+      const n=txt.length; el('cnt').textContent = `${n} chars · ~${Math.max(1,Math.ceil(n/160))} SMS segment(s)`; }
+
+    async function save() {
+      if (!state.draft.name.trim()) { banner('Name is required'); return; }
+      const payload = { name: state.draft.name.trim(), body: state.draft.body };
+      const btn=el('save'); btn.disabled=true;
+      try {
+        if (state.activeId) { const {error}=await sb.from('message_templates').update(payload).eq('id',state.activeId); if(error) throw error; banner('Saved','ok'); }
+        else { const {data,error}=await sb.from('message_templates').insert(payload).select().single(); if(error) throw error; state.activeId=data.id; banner('Created','ok'); }
+        await load(); if (state.activeId) open(state.activeId);
+      } catch(err){ banner('Save failed: '+err.message); } finally { btn.disabled=false; }
+    }
+    async function del() {
+      if (!state.activeId || !confirm('Delete this template?')) return;
+      const {error}=await sb.from('message_templates').delete().eq('id',state.activeId);
+      if (error) { banner('Delete failed: '+error.message); return; }
+      state.activeId=null; state.draft=null; await load(); renderEditor(); banner('Deleted','ok');
+    }
+
+    el('new-btn').addEventListener('click', newItem);
+    if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.'); else load();
+  </script>
+</body>
+</html>
