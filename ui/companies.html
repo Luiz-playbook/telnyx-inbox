@@ -5,90 +5,68 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Companies</title>
   <style>
-    :root {
-      --blue: #2f6bff; --blue-soft: #e7effe;
-      --bg: #ffffff; --bg-2: #f7f8fa; --bg-3: #eef1f4;
-      --text: #1b2430; --muted: #7c8698; --faint: #a7b0be;
-      --border: #e6e9ee; --green: #22b573; --amber: #f5a623;
-    }
-    * { box-sizing: border-box; }
-    html, body { height: 100%; margin: 0; }
-    body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      color: var(--text); background: var(--bg); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
-    .content { flex: 1; display: flex; min-height: 0; }
-    #banner { position: fixed; top: 0; left: 0; right: 0; z-index: 30; padding: 8px 14px; font-size: 13px; display: none; }
-    #banner.err { background: #fde2e2; color: #92211f; }
-    #banner.ok  { background: #dff5e8; color: #1b6b40; }
+    :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
+      --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; }
+    * { box-sizing:border-box; }
+    html, body { height:100%; margin:0; }
+    body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      color:var(--text); background:var(--bg); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+    .content { flex:1; display:flex; min-height:0; }
+    a { color:var(--blue); text-decoration:none; }
+    #banner { position:fixed; top:0; left:0; right:0; z-index:30; padding:8px 14px; font-size:13px; display:none; }
+    #banner.err { background:#fde2e2; color:#92211f; } #banner.ok { background:#dff5e8; color:#1b6b40; }
+    .navtabs { display:flex; gap:4px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
+    .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); white-space:nowrap; }
+    .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
 
-    a { color: inherit; text-decoration: none; }
-    .navtabs { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
-    .navtabs a { padding: 6px 12px; border-radius: 8px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-    .navtabs a.active { background: var(--blue-soft); color: var(--blue); }
+    #list { width:320px; min-width:320px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
+    #list .top { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; }
+    #list .top h1 { font-size:19px; margin:0; font-weight:700; }
+    #list .top button { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
+    #search { margin:0 16px 10px; }
+    #search input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; outline:none; }
+    #rows { overflow-y:auto; flex:1; }
+    .row { padding:12px 16px; border-bottom:1px solid #f1f3f6; cursor:pointer; }
+    .row:hover { background:var(--bg-2); } .row.active { background:var(--blue-soft); }
+    .row .nm { font-weight:600; }
+    .row .meta { color:var(--muted); font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
-    /* list column */
-    #list { width: 320px; min-width: 320px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-    #list .top { padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; }
-    #list .top h1 { font-size: 19px; margin: 0; font-weight: 700; }
-    #list .top button { background: var(--blue); color: #fff; border: 0; border-radius: 8px; padding: 8px 12px;
-      font-weight: 600; cursor: pointer; }
-    #search { margin: 0 16px 10px; }
-    #search input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px; font: inherit; outline: none; }
-    #rows { overflow-y: auto; flex: 1; }
-    .row { padding: 12px 16px; border-bottom: 1px solid #f1f3f6; cursor: pointer; }
-    .row:hover { background: var(--bg-2); }
-    .row.active { background: var(--blue-soft); }
-    .row .nm { font-weight: 600; display: flex; align-items: center; gap: 8px; }
-    .row .meta { color: var(--muted); font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .badge { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 20px; text-transform: uppercase; letter-spacing: .03em; }
-    .badge.manual { background: #eef1f4; color: #6b7686; }
-    .badge.ai { background: #ece7ff; color: #6a48d7; }
-    .badge.st-draft { background: #fff3d9; color: #9a6b00; }
-    .badge.st-ready { background: #dff5e8; color: #1b6b40; }
-    .badge.st-archived { background: #eef1f4; color: #8b93a3; }
+    #detail { flex:1; overflow-y:auto; }
+    .dhead { padding:18px 24px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); }
+    .dhead h2 { margin:0; font-size:20px; font-weight:700; }
+    .dhead .sub { color:var(--muted); font-size:13px; margin-top:4px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .dbody { padding:18px 24px; max-width:900px; }
+    .card { border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:14px; }
+    .card .ctitle { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:10px; }
+    details.card > summary { cursor:pointer; list-style:none; }
+    details.card > summary::-webkit-details-marker { display:none; }
+    .kvs { display:grid; gap:8px 18px; }
+    .kv { display:grid; grid-template-columns:180px 1fr; gap:12px; align-items:start; }
+    .kv .k { color:var(--muted); font-size:13px; }
+    .kv .v { color:var(--text); }
+    .subcard { border:1px solid var(--border); border-radius:9px; padding:10px 12px; margin-bottom:8px; background:var(--bg-2); }
+    .chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .chip { background:var(--bg-3); border-radius:20px; padding:3px 10px; font-size:12px; }
+    .badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; }
+    .badge.tier { background:#e7effe; color:#2f6bff; text-transform:uppercase; letter-spacing:.03em; }
+    .badge.comp { background:#fdecec; color:#b3341f; }
+    pre { background:var(--bg-2); border:1px solid var(--border); border-radius:9px; padding:12px; overflow-x:auto; font-size:12px; }
+    .muted { color:var(--faint); }
+    .metaline { color:var(--faint); font-size:12px; margin-top:8px; }
 
-    /* editor column */
-    #editor { flex: 1; overflow-y: auto; }
-    .ehead { padding: 16px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; background: var(--bg); z-index: 5; }
-    .ehead h2 { margin: 0; font-size: 18px; font-weight: 700; }
-    .ehead .btns { display: flex; gap: 8px; }
-    .ehead button { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
-    .ehead button.primary { background: var(--blue); color: #fff; border-color: var(--blue); }
-    .ehead button.danger { color: #c0392b; }
-    .form { padding: 20px 24px; max-width: 780px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
-    .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
-    .field.full { grid-column: 1 / -1; }
-    .field label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-    .field input, .field select, .field textarea { padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px;
-      font: inherit; outline: none; background: var(--bg); color: var(--text); }
-    .field textarea { resize: vertical; min-height: 70px; }
-    .field textarea.big { min-height: 150px; }
-    .section-title { font-weight: 700; margin: 22px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); }
-
-    /* AI + import row */
-    .importbar { background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 20px; }
-    .importbar .lbl { font-weight: 700; margin-bottom: 8px; }
-    .importbar .r { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .importbar input[type=url], .importbar input[type=text] { flex: 1; min-width: 200px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 9px; font: inherit; }
-    .importbar button, .importbar label.upl { border: 1px solid var(--border); background: var(--bg); border-radius: 9px; padding: 9px 13px; font-weight: 600; cursor: pointer; }
-    .importbar button.gen { background: #6a48d7; color: #fff; border-color: #6a48d7; }
-    .importbar .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
-
-    /* contacts editor */
-    .contact-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 8px; margin-bottom: 8px; }
-    .contact-row input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
-    .contact-row .rm { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; cursor: pointer; padding: 0 10px; color: #c0392b; }
-    .addc { border: 1px dashed var(--border); background: var(--bg); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-weight: 600; color: var(--muted); }
-
-    .empty { margin: auto; color: var(--muted); padding: 60px; text-align: center; }
-    .hide { display: none !important; }
-    .spinner { display: inline-block; width: 13px; height: 13px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .genwrap { display:flex; align-items:center; justify-content:center; height:100%; padding:40px; }
+    .genbox { border:1px solid var(--border); border-radius:14px; padding:22px; width:460px; max-width:100%; }
+    .genbox .ctitle { font-weight:700; margin-bottom:12px; }
+    .genbox input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; margin-bottom:10px; }
+    .genbox .gen { background:#6a48d7; color:#fff; border:0; border-radius:9px; padding:10px 16px; font-weight:700; cursor:pointer; }
+    .genbox .hint { color:var(--muted); font-size:12px; margin-top:10px; }
+    .spinner { display:inline-block; width:13px; height:13px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
   </style>
 </head>
 <body>
   <div id="banner"></div>
-
   <nav class="navtabs">
     <a href="./index.html">Inbox</a>
     <a href="./companies.html" class="active">Companies</a>
@@ -97,248 +75,130 @@
   </nav>
   <div class="content">
     <aside id="list">
-      <div class="top"><h1>Companies</h1><button id="new-btn">＋ New</button></div>
+      <div class="top"><h1>Companies</h1><button id="new-btn">＋ Generate</button></div>
       <div id="search"><input id="search-input" placeholder="Search companies…" /></div>
       <div id="rows"><div class="empty">Loading…</div></div>
     </aside>
-    <main id="editor"><div class="empty" id="placeholder">Select a company, or click ＋ New</div></main>
+    <main id="detail"><div class="empty">Select a company, or click ＋ Generate</div></main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="./config.js"></script>
   <script>
     const cfg = window.INBOX_CONFIG || {};
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-    if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-
     const el = (id) => document.getElementById(id);
-    const state = { companies: [], activeId: null, draft: null, filter: '', awaitingAi: null };
+    const state = { items: [], activeId: null, filter: '', awaitingAi: null };
+    const TABLE = 'hubspot_company_scrapes';
+    const SECTIONS = ['organization_info','classification','scale_and_volume','contacts','pricing',
+      'revenue','sponsorship','fundraising','martech_stack','pride_and_values','registration_and_domains'];
+    const BIG = ['pages_analyzed','raw_data'];
 
-    function banner(msg, kind) {
-      const b = el('banner'); if (!msg) { b.style.display='none'; return; }
-      b.className = kind || 'err'; b.textContent = msg; b.style.display='block';
-      if (kind === 'ok') setTimeout(() => { b.style.display='none'; }, 2500);
+    function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',3000); }
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function humanize(k){ return k.replace(/_/g,' ').replace(/^\w/, c=>c.toUpperCase()); }
+    function withHttp(u){ return /^https?:\/\//i.test(u) ? u : 'https://'+u; }
+    function isEmpty(v){ return v===null||v===undefined||v===''||(Array.isArray(v)&&!v.length)||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length); }
+
+    function renderValue(v){
+      if (isEmpty(v)) return '<span class="muted">—</span>';
+      if (typeof v==='boolean') return v?'Yes':'No';
+      if (Array.isArray(v)){
+        if (v.every(x=> x===null || typeof x!=='object')) return '<div class="chips">'+v.map(x=>`<span class="chip">${esc(x)}</span>`).join('')+'</div>';
+        return v.map(x=>`<div class="subcard">${renderValue(x)}</div>`).join('');
+      }
+      if (typeof v==='object'){
+        const rows = Object.entries(v).filter(([,val])=>!isEmpty(val))
+          .map(([k,val])=>`<div class="kv"><div class="k">${esc(humanize(k))}</div><div class="v">${renderValue(val)}</div></div>`).join('');
+        return `<div class="kvs">${rows}</div>`;
+      }
+      return esc(v);
     }
-    function esc(s){ return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    const FIELDS = ['name','website','industry','location','size','description','products_services','value_prop','target_audience','tone','raw_content','source','source_detail','status'];
+    function sectionCard(title, val){ return isEmpty(val) ? '' : `<div class="card"><div class="ctitle">${esc(title)}</div>${renderValue(val)}</div>`; }
 
-    // ---- list ----
-    async function loadCompanies() {
-      const { data, error } = await sb.from('companies').select('*').order('created_at', { ascending:false });
-      if (error) { banner('Load failed: ' + error.message); return; }
-      state.companies = data || []; renderList();
+    async function load() {
+      const { data, error } = await sb.from(TABLE).select('*').order('created_at', { ascending:false });
+      if (error) { banner('Load failed: '+error.message); return; }
+      state.items = data || []; renderList();
     }
     function renderList() {
       const box = el('rows');
-      const items = state.companies.filter(c => !state.filter || (c.name||'').toLowerCase().includes(state.filter));
-      if (!items.length) { box.innerHTML = `<div class="empty">${state.companies.length ? 'No matches' : 'No companies yet'}</div>`; return; }
-      box.innerHTML = items.map(c => `
-        <div class="row ${c.id===state.activeId?'active':''}" data-id="${c.id}">
-          <div class="nm">${esc(c.name)} <span class="badge ${c.source}">${c.source}</span></div>
-          <div class="meta">${esc([c.industry, c.location].filter(Boolean).join(' · ') || c.website || '—')}</div>
-        </div>`).join('');
-      box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => openCompany(n.dataset.id)));
+      const items = state.items.filter(c => !state.filter || (c.organization_name||'').toLowerCase().includes(state.filter) || (c.primary_domain||'').toLowerCase().includes(state.filter));
+      if (!items.length) { box.innerHTML = `<div class="empty">${state.items.length?'No matches':'No companies yet'}</div>`; return; }
+      box.innerHTML = items.map(c => {
+        const tier = (c.classification&&c.classification.tier) ? ` · ${esc(c.classification.tier)}` : '';
+        return `<div class="row ${c.id===state.activeId?'active':''}" data-id="${c.id}">
+          <div class="nm">${esc(c.organization_name||'(unnamed)')}</div>
+          <div class="meta">${esc(c.primary_domain||'—')}${tier}</div></div>`;
+      }).join('');
+      box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => open(n.dataset.id)));
     }
 
-    // ---- editor ----
-    function blankDraft() {
-      return { name:'', website:'', industry:'', location:'', size:'', description:'', products_services:'',
-        value_prop:'', target_audience:'', tone:'', contacts:[], raw_content:'', source:'manual', source_detail:'', status:'draft' };
+    function open(id) {
+      const c = state.items.find(x => x.id === id); if (!c) return;
+      state.activeId = id; renderList();
+      const cls = c.classification || {};
+      const tier = cls.tier ? `<span class="badge tier">${esc(cls.tier)}</span>` : '';
+      const comp = cls.competitor_detected ? `<span class="badge comp">competitor: ${esc(cls.competitor_platform||'yes')}</span>` : '';
+      const domain = c.primary_domain ? `<a href="${esc(withHttp(c.primary_domain))}" target="_blank" rel="noopener">${esc(c.primary_domain)}</a>` : '';
+      let html = `<div class="dhead"><h2>${esc(c.organization_name||'—')}</h2><div class="sub">${domain}${tier}${comp}</div></div><div class="dbody">`;
+      SECTIONS.forEach(k => html += sectionCard(humanize(k), c[k]));
+      if (c.txt_file_drive_url) html += `<div class="card"><div class="ctitle">Source file</div><a href="${esc(c.txt_file_drive_url)}" target="_blank" rel="noopener">Open scraped text ↗</a></div>`;
+      BIG.forEach(k => { if (!isEmpty(c[k])) html += `<details class="card"><summary class="ctitle">${esc(humanize(k))} ▸</summary><pre>${esc(JSON.stringify(c[k],null,2))}</pre></details>`; });
+      const meta = [];
+      if (c.source) meta.push('Source: '+c.source);
+      if (c.version) meta.push('Version: '+c.version);
+      if (c.created_at) meta.push('Scraped: '+new Date(c.created_at).toLocaleString());
+      if (c.remarks) meta.push('Remarks: '+c.remarks);
+      if (meta.length) html += `<div class="metaline">${esc(meta.join(' · '))}</div>`;
+      html += '</div>';
+      el('detail').innerHTML = html;
     }
-    function newCompany() { state.activeId = null; state.draft = blankDraft(); renderList(); renderEditor(); }
-    function openCompany(id) {
-      const c = state.companies.find(x => x.id === id); if (!c) return;
-      state.activeId = id; state.draft = JSON.parse(JSON.stringify(c)); if (!Array.isArray(state.draft.contacts)) state.draft.contacts = [];
-      renderList(); renderEditor();
-    }
-    function inputField(key, label, opts={}) {
-      const v = esc(state.draft[key] || '');
-      if (opts.textarea) return `<div class="field full"><label>${label}</label><textarea class="${opts.big?'big':''}" data-k="${key}">${v}</textarea></div>`;
-      if (opts.select) return `<div class="field"><label>${label}</label><select data-k="${key}">${opts.select.map(o=>`<option ${state.draft[key]===o?'selected':''}>${o}</option>`).join('')}</select></div>`;
-      return `<div class="field ${opts.full?'full':''}"><label>${label}</label><input data-k="${key}" value="${v}" placeholder="${opts.ph||''}" /></div>`;
-    }
-    function renderEditor() {
-      if (!state.draft) { el('editor').innerHTML = '<div class="empty">Select a company, or click ＋ New</div>'; return; }
-      const isNew = !state.activeId;
-      el('editor').innerHTML = `
-        <div class="ehead">
-          <h2>${isNew ? 'New company' : esc(state.draft.name || 'Company')}</h2>
-          <div class="btns">
-            ${isNew ? '' : '<button class="danger" id="del">Delete</button>'}
-            <button class="primary" id="save">${isNew ? 'Create' : 'Save'}</button>
-          </div>
-        </div>
-        <div class="form">
-          <div class="importbar">
-            <div class="lbl">🤖 Generate with AI (from a HubSpot deal)</div>
-            <div class="r">
-              <input type="url" id="deal-url" placeholder="HubSpot deal link (https://app.hubspot.com/…/deal/…)" />
-              <button class="gen" id="ai-gen">Generate</button>
-            </div>
-            <div class="hint">Sends the deal link to the n8n workflow, which builds a full company profile and returns it here to review &amp; save.</div>
 
-            <div class="lbl" style="margin-top:14px">📄 Or import by hand</div>
-            <div class="r">
-              <label class="upl">Upload PDF<input type="file" accept="application/pdf" id="file-pdf" hidden></label>
-              <label class="upl">Upload .md/.txt<input type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" id="file-md" hidden></label>
-              <span class="hint" id="import-status" style="margin:0"></span>
-            </div>
-            <div class="hint">Uploads fill “Raw source content” below — or just paste into it — then fill the fields.</div>
-          </div>
-
-          <div class="section-title">Profile</div>
-          <div class="grid">
-            ${inputField('name','Name *')}
-            ${inputField('website','Website', {ph:'https://…'})}
-            ${inputField('industry','Industry')}
-            ${inputField('location','Location')}
-            ${inputField('size','Size', {ph:'e.g. 50–200'})}
-            ${inputField('status','Status', {select:['draft','ready','archived']})}
-          </div>
-          ${inputField('description','Description', {textarea:true})}
-          ${inputField('products_services','Products / Services', {textarea:true})}
-          ${inputField('value_prop','Value proposition', {textarea:true})}
-          <div class="grid">
-            ${inputField('target_audience','Target audience', {full:true})}
-            ${inputField('tone','Outreach tone', {full:true})}
-          </div>
-
-          <div class="section-title">Contacts to message</div>
-          <div id="contacts"></div>
-          <button class="addc" id="add-contact">＋ Add contact</button>
-
-          <div class="section-title">Raw source content</div>
-          ${inputField('raw_content','', {textarea:true, big:true})}
-        </div>`;
-
-      // bind inputs
-      el('editor').querySelectorAll('[data-k]').forEach(inp => {
-        inp.addEventListener('input', () => { state.draft[inp.dataset.k] = inp.value; });
-      });
-      el('save').addEventListener('click', saveCompany);
-      if (el('del')) el('del').addEventListener('click', deleteCompany);
-      el('add-contact').addEventListener('click', () => { state.draft.contacts.push({name:'',role:'',phone:'',email:''}); renderContacts(); });
-      el('file-pdf').addEventListener('change', e => handleUpload(e, 'pdf'));
-      el('file-md').addEventListener('change', e => handleUpload(e, 'text'));
+    // ---- AI generate (HubSpot deal link -> n8n -> writes to this table) ----
+    function showGenerate() {
+      state.activeId = null; renderList();
+      el('detail').innerHTML = `
+        <div class="genwrap"><div class="genbox">
+          <div class="ctitle">🤖 Generate a company from a HubSpot deal</div>
+          <input type="url" id="deal-url" placeholder="HubSpot deal link (https://app.hubspot.com/…/deal/…)">
+          <button class="gen" id="ai-gen">Generate</button>
+          <div class="hint">Sends the deal link to the n8n scraper. The profile appears here automatically when it finishes.</div>
+        </div></div>`;
       el('ai-gen').addEventListener('click', generateWithAI);
-      renderContacts();
+      el('deal-url').focus();
     }
-    function renderContacts() {
-      const box = el('contacts'); if (!box) return;
-      box.innerHTML = state.draft.contacts.map((c,i) => `
-        <div class="contact-row" data-i="${i}">
-          <input placeholder="Name" data-cf="name" value="${esc(c.name)}">
-          <input placeholder="Role" data-cf="role" value="${esc(c.role)}">
-          <input placeholder="Phone" data-cf="phone" value="${esc(c.phone)}">
-          <input placeholder="Email" data-cf="email" value="${esc(c.email)}">
-          <button class="rm" title="Remove">✕</button>
-        </div>`).join('');
-      box.querySelectorAll('.contact-row').forEach(row => {
-        const i = +row.dataset.i;
-        row.querySelectorAll('[data-cf]').forEach(inp => inp.addEventListener('input', () => { state.draft.contacts[i][inp.dataset.cf] = inp.value; }));
-        row.querySelector('.rm').addEventListener('click', () => { state.draft.contacts.splice(i,1); renderContacts(); });
-      });
-    }
-
-    // ---- uploads ----
-    async function handleUpload(e, kind) {
-      const file = e.target.files[0]; if (!file) return;
-      el('import-status').innerHTML = `<span class="spinner" style="border-color:#888;border-top-color:transparent"></span> Reading ${esc(file.name)}…`;
-      try {
-        let text = '';
-        if (kind === 'pdf') text = await pdfToText(await file.arrayBuffer());
-        else text = await file.text();
-        state.draft.raw_content = (state.draft.raw_content ? state.draft.raw_content + '\n\n' : '') + text.trim();
-        state.draft.source_detail = file.name;
-        const ta = el('editor').querySelector('[data-k="raw_content"]'); if (ta) ta.value = state.draft.raw_content;
-        if (!state.draft.name) { state.draft.name = file.name.replace(/\.(pdf|md|markdown|txt)$/i,''); const ni = el('editor').querySelector('[data-k="name"]'); if (ni) ni.value = state.draft.name; }
-        el('import-status').textContent = `Loaded ${file.name} (${text.trim().length.toLocaleString()} chars)`;
-      } catch (err) { el('import-status').textContent = ''; banner('Could not read file: ' + err.message); }
-      e.target.value = '';
-    }
-    async function pdfToText(buf) {
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      let out = '';
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        out += content.items.map(it => it.str).join(' ') + '\n\n';
-      }
-      return out;
-    }
-
-    // ---- AI (n8n webhook, from a HubSpot deal link) ----
     async function generateWithAI() {
       const dealUrl = (el('deal-url').value || '').trim();
       if (!dealUrl) { banner('Paste a HubSpot deal link first'); return; }
-      if (!cfg.COMPANY_AI_WEBHOOK_URL || cfg.COMPANY_AI_WEBHOOK_URL.startsWith('<<')) {
-        banner('AI generation isn’t wired yet — the n8n workflow + COMPANY_AI_WEBHOOK_URL are the next step.'); return;
-      }
+      if (!cfg.COMPANY_AI_WEBHOOK_URL || cfg.COMPANY_AI_WEBHOOK_URL.startsWith('<<')) { banner('AI webhook isn’t configured (COMPANY_AI_WEBHOOK_URL).'); return; }
       const btn = el('ai-gen'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Generating…';
       try {
         const res = await fetch(cfg.COMPANY_AI_WEBHOOK_URL, { method:'POST',
           headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
           body: JSON.stringify({ hubspot_deal_url: dealUrl }) });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        // n8n builds the profile in the background and writes it to Supabase;
-        // we pick it up live via the realtime subscription below.
         state.awaitingAi = Date.now();
-        banner('Generating in the background — the profile will appear here when it’s ready…', 'ok');
-      } catch (err) { banner('AI generation failed: ' + err.message); }
-      finally { btn.disabled = false; btn.innerHTML = 'Generate'; }
+        banner('Generating in the background — the company will appear here when it’s ready…', 'ok');
+      } catch (err) { banner('AI generation failed: ' + err.message); btn.disabled = false; btn.innerHTML = 'Generate'; }
     }
 
-    // ---- save / delete ----
-    async function saveCompany() {
-      if (!state.draft.name.trim()) { banner('Name is required'); return; }
-      const payload = {}; FIELDS.forEach(k => payload[k] = state.draft[k] ?? null);
-      payload.contacts = state.draft.contacts || [];
-      const btn = el('save'); btn.disabled = true;
-      try {
-        if (state.activeId) {
-          const { error } = await sb.from('companies').update(payload).eq('id', state.activeId);
-          if (error) throw error;
-          banner('Saved', 'ok');
-        } else {
-          const { data, error } = await sb.from('companies').insert(payload).select().single();
-          if (error) throw error;
-          state.activeId = data.id;
-          banner('Created', 'ok');
-        }
-        await loadCompanies();
-        if (state.activeId) openCompany(state.activeId);
-      } catch (err) { banner('Save failed: ' + err.message); }
-      finally { btn.disabled = false; }
-    }
-    async function deleteCompany() {
-      if (!state.activeId || !confirm('Delete this company profile?')) return;
-      const { error } = await sb.from('companies').delete().eq('id', state.activeId);
-      if (error) { banner('Delete failed: ' + error.message); return; }
-      state.activeId = null; state.draft = null;
-      await loadCompanies(); renderEditor(); banner('Deleted', 'ok');
-    }
-
-    // ---- realtime: pick up AI-written profiles (and any external changes) ----
     function subscribe() {
-      sb.channel('companies-rt')
-        .on('postgres_changes', { event:'*', schema:'public', table:'companies' }, (p) => {
-          loadCompanies().then(() => {
-            if (state.awaitingAi && p.eventType === 'INSERT' && p.new && p.new.source === 'ai') {
-              state.awaitingAi = null;
-              openCompany(p.new.id);
-              banner('AI profile ready — review & save.', 'ok');
+      sb.channel('scrapes-rt')
+        .on('postgres_changes', { event:'*', schema:'public', table:TABLE }, (p) => {
+          load().then(() => {
+            if (state.awaitingAi && p.eventType === 'INSERT' && p.new && p.new.id) {
+              state.awaitingAi = null; open(p.new.id); banner('New company scraped ✓', 'ok');
             }
           });
         })
         .subscribe();
     }
 
-    // ---- boot ----
-    el('new-btn').addEventListener('click', newCompany);
+    el('new-btn').addEventListener('click', showGenerate);
     el('search-input').addEventListener('input', e => { state.filter = e.target.value.toLowerCase(); renderList(); });
     if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.');
-    else { loadCompanies(); subscribe(); }
+    else { load(); subscribe(); }
   </script>
 </body>
 </html>
