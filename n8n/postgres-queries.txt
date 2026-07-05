@@ -39,3 +39,22 @@ SELECT public.telnyx_record_outbound(
 UPDATE public.telnyx_messages
 SET status = '{{ $json.body.data.payload.to[0].status }}'
 WHERE telnyx_message_id = '{{ $json.body.data.payload.id }}';
+
+
+-- ============================================================
+-- COMPANY PROFILE — AI path writes here (Postgres node, end of
+-- the n8n company-scraper workflow). The Companies UI is listening
+-- via Supabase realtime; source='ai' rows auto-open in the editor.
+-- Map $1..$13 to your AI/HubSpot output. contacts = JSON array of
+-- {name,role,phone,email}. Pass '[]' if none.
+-- ============================================================
+INSERT INTO public.companies
+  (name, website, industry, location, size, description,
+   products_services, value_prop, target_audience, tone,
+   contacts, raw_content, source, source_detail, status)
+VALUES
+  ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12,'ai',$13,'ready')
+RETURNING id;
+-- params: name, website, industry, location, size, description,
+--         products_services, value_prop, target_audience, tone,
+--         contacts(json), raw_content, source_detail(the deal link)

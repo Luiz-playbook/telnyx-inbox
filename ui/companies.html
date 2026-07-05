@@ -109,7 +109,7 @@
     if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
 
     const el = (id) => document.getElementById(id);
-    const state = { companies: [], activeId: null, draft: null, filter: '' };
+    const state = { companies: [], activeId: null, draft: null, filter: '', awaitingAi: null };
 
     function banner(msg, kind) {
       const b = el('banner'); if (!msg) { b.style.display='none'; return; }
@@ -277,10 +277,10 @@
           headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
           body: JSON.stringify({ hubspot_deal_url: dealUrl }) });
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const prof = await res.json();
-        Object.assign(state.draft, prof.company || prof, { source:'ai', source_detail:dealUrl });
-        renderEditor();
-        banner('AI draft generated — review and save.', 'ok');
+        // n8n builds the profile in the background and writes it to Supabase;
+        // we pick it up live via the realtime subscription below.
+        state.awaitingAi = Date.now();
+        banner('Generating in the background — the profile will appear here when it’s ready…', 'ok');
       } catch (err) { banner('AI generation failed: ' + err.message); }
       finally { btn.disabled = false; btn.innerHTML = 'Generate'; }
     }
@@ -315,11 +315,26 @@
       await loadCompanies(); renderEditor(); banner('Deleted', 'ok');
     }
 
+    // ---- realtime: pick up AI-written profiles (and any external changes) ----
+    function subscribe() {
+      sb.channel('companies-rt')
+        .on('postgres_changes', { event:'*', schema:'public', table:'companies' }, (p) => {
+          loadCompanies().then(() => {
+            if (state.awaitingAi && p.eventType === 'INSERT' && p.new && p.new.source === 'ai') {
+              state.awaitingAi = null;
+              openCompany(p.new.id);
+              banner('AI profile ready — review & save.', 'ok');
+            }
+          });
+        })
+        .subscribe();
+    }
+
     // ---- boot ----
     el('new-btn').addEventListener('click', newCompany);
     el('search-input').addEventListener('input', e => { state.filter = e.target.value.toLowerCase(); renderList(); });
     if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.');
-    else loadCompanies();
+    else { loadCompanies(); subscribe(); }
   </script>
 </body>
 </html>
