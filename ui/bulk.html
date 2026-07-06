@@ -55,6 +55,16 @@
     .sendbtn:disabled { background:#a9d9bf; cursor:default; }
     .spinner { display:inline-block; width:13px; height:13px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
     @keyframes spin { to { transform:rotate(360deg); } }
+    .csvbar { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+    .upl { border:1px solid var(--border); background:var(--bg); border-radius:9px; padding:8px 12px; font-weight:600; cursor:pointer; font-size:13px; }
+    .csvpanel { border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:10px; background:var(--bg-2); }
+    .csvgrid { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; }
+    .csvgrid .field { margin:0; }
+    .csvgrid select { padding:8px 10px; border:1px solid var(--border); border-radius:8px; font:inherit; background:var(--bg); }
+    .chk { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+    .csvactions { margin-top:12px; display:flex; gap:8px; }
+    .csvactions .primary { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
+    .csvactions .ghost { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 14px; cursor:pointer; }
     .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
   </style>
 </head>
@@ -80,7 +90,7 @@
     const cfg = window.INBOX_CONFIG || {};
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
     const el = (id) => document.getElementById(id);
-    const state = { lists: [], templates: [], activeId: null, draft: null };
+    const state = { lists: [], templates: [], activeId: null, draft: null, csv: null };
 
     function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',3000); }
     function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -145,7 +155,12 @@
         <div class="form">
           <div class="field"><label>List name</label><input id="f-name" value="${esc(state.draft.name)}" placeholder="e.g. Fall camp leads"></div>
           <div class="field">
-            <label>Recipients — one per line: <span style="text-transform:none">“Name, +16155550142”  or just  “+16155550142”</span></label>
+            <label>Recipients <span style="text-transform:none;font-weight:400;color:var(--muted)">— import a CSV, or type below (one per line: “Name, +16155550142”)</span></label>
+            <div class="csvbar">
+              <label class="upl">⤒ Import CSV<input type="file" accept=".csv,text/csv" id="f-csv" hidden></label>
+              <span class="hint" id="csvhint"></span>
+            </div>
+            <div id="csvpanel" class="csvpanel" style="display:none"></div>
             <textarea id="f-recs" placeholder="Jordan Smith, +16155550142&#10;+16155550178">${esc(recipientsToText(recs))}</textarea>
             <div class="hint" id="reccount"></div>
           </div>
@@ -168,6 +183,7 @@
         </div>`;
       el('f-name').addEventListener('input', e => { state.draft.name = e.target.value; });
       el('f-recs').addEventListener('input', e => { state.draft.recipients = parseRecipients(e.target.value); refreshCounts(); refreshPreview(); });
+      el('f-csv').addEventListener('change', onCsvFile);
       el('tpl').addEventListener('change', refreshPreview);
       el('save').addEventListener('click', save);
       el('send').addEventListener('click', doSend);
@@ -222,6 +238,94 @@
         banner(`Queued ${messages.length} message(s) for sending.`, 'ok');
       } catch(err){ banner('Bulk send failed: '+err.message); }
       finally { btn.disabled=false; btn.innerHTML=orig; refreshCounts(); }
+    }
+
+    // ---- CSV import ----
+    function csvToRows(text) {
+      const rows = []; let row = [], cur = '', q = false;
+      for (let i = 0; i < text.length; i++) { const ch = text[i];
+        if (q) { if (ch === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+        else { if (ch === '"') q = true; else if (ch === ',') { row.push(cur); cur = ''; }
+          else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+          else if (ch === '\r') { /* skip */ } else cur += ch; } }
+      if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+      return rows.filter(r => r.some(c => (c||'').trim() !== ''));
+    }
+    function parseCsv(text, hasHeader) {
+      const arr = csvToRows(text.trim());
+      if (!arr.length) return { columns: [], rows: [] };
+      if (hasHeader) {
+        const cols = arr[0].map((h,i) => (h||'').trim() || ('Column ' + (i+1)));
+        const rows = arr.slice(1).map(r => { const o = {}; cols.forEach((c,i) => o[c] = (r[i] ?? '').trim()); return o; });
+        return { columns: cols, rows };
+      }
+      const width = arr.reduce((m,r) => Math.max(m, r.length), 0);
+      const cols = Array.from({length: width}, (_,i) => 'Column ' + (i+1));
+      const rows = arr.map(r => { const o = {}; cols.forEach((c,i) => o[c] = (r[i] ?? '').trim()); return o; });
+      return { columns: cols, rows };
+    }
+    function detectPhoneCol(p) {
+      const byName = p.columns.find(c => /phone|mobile|cell|\btel\b|number|contact\s*number/i.test(c));
+      if (byName) return byName;
+      let best = p.columns[0], score = -1;
+      p.columns.forEach(c => { let s = 0; p.rows.slice(0,50).forEach(r => { if (isValidPhone(normPhone(r[c]))) s++; }); if (s > score) { score = s; best = c; } });
+      return best;
+    }
+    function detectNameCol(p) { return p.columns.find(c => /name|company|organization|\borg\b|contact/i.test(c)) || ''; }
+
+    async function onCsvFile(e) {
+      const file = e.target.files[0]; if (!file) return;
+      el('csvhint').textContent = 'Reading ' + file.name + '…';
+      try { state.csv = { name: file.name, text: await file.text(), hasHeader: true }; renderCsvPanel(); el('csvhint').textContent = file.name; }
+      catch (err) { banner('Could not read CSV: ' + err.message); }
+      e.target.value = '';
+    }
+    function renderCsvPanel() {
+      const p = parseCsv(state.csv.text, state.csv.hasHeader);
+      state.csv.columns = p.columns; state.csv.rows = p.rows;
+      if (!p.columns.length) { banner('That CSV looks empty'); return; }
+      const phoneGuess = detectPhoneCol(p), nameGuess = detectNameCol(p);
+      const opt = (sel) => p.columns.map(c => `<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
+      const panel = el('csvpanel'); panel.style.display = 'block';
+      panel.innerHTML = `
+        <div class="csvgrid">
+          <div class="field"><label>Phone column</label><select id="csv-phone">${opt(phoneGuess)}</select></div>
+          <div class="field"><label>Name column (optional)</label><select id="csv-name"><option value="">— none —</option>${opt(nameGuess)}</select></div>
+          <label class="chk"><input type="checkbox" id="csv-header" ${state.csv.hasHeader?'checked':''}> First row is a header</label>
+        </div>
+        <div class="hint" id="csv-preview" style="margin-top:10px"></div>
+        <div class="csvactions">
+          <button class="primary" id="csv-import">Import <span id="csv-n">0</span> number(s)</button>
+          <button class="ghost" id="csv-cancel">Cancel</button>
+        </div>`;
+      el('csv-phone').addEventListener('change', updateCsvPreview);
+      el('csv-name').addEventListener('change', updateCsvPreview);
+      el('csv-header').addEventListener('change', () => { state.csv.hasHeader = el('csv-header').checked; renderCsvPanel(); });
+      el('csv-import').addEventListener('click', importCsv);
+      el('csv-cancel').addEventListener('click', () => { el('csvpanel').style.display='none'; el('csvhint').textContent=''; state.csv=null; });
+      updateCsvPreview();
+    }
+    function buildCsvRecipients() {
+      const pc = el('csv-phone').value, nc = el('csv-name').value;
+      return state.csv.rows.map(r => ({ name: nc ? (r[nc]||'').toString().trim() : '', phone: normPhone((r[pc]||'').toString()) }));
+    }
+    function updateCsvPreview() {
+      const recs = buildCsvRecipients();
+      const valid = recs.filter(r => isValidPhone(r.phone)).length;
+      el('csv-n').textContent = valid;
+      const sample = recs.find(r => isValidPhone(r.phone));
+      el('csv-preview').innerHTML = `${state.csv.rows.length} row(s) · <b>${valid} valid phone(s)</b>`
+        + (sample ? ` · e.g. ${esc(sample.name ? sample.name + ' — ' : '')}${esc(sample.phone)}` : ' · no valid phones in that column yet');
+    }
+    function importCsv() {
+      const recs = buildCsvRecipients().filter(r => r.phone);
+      if (!recs.length) { banner('No phone values in that column'); return; }
+      state.draft.recipients = (state.draft.recipients || []).concat(recs);
+      el('f-recs').value = recipientsToText(state.draft.recipients);
+      el('csvpanel').style.display = 'none';
+      el('csvhint').textContent = `Imported ${recs.length} from ${state.csv.name}`;
+      state.csv = null; refreshCounts(); refreshPreview();
+      banner(`Imported ${recs.length} number(s) — review, then Save the list.`, 'ok');
     }
 
     el('new-btn').addEventListener('click', newItem);
