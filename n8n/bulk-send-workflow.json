@@ -1,0 +1,108 @@
+{
+  "name": "[Telnyx] [Bulk] Send",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telnyx-bulk-send",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Bulk Send Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300],
+      "webhookId": "telnyx-bulk-send"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "s",  "name": "reply_secret", "type": "string", "value": "playbook" },
+            { "id": "f",  "name": "telnyx_from",  "type": "string", "value": "+16158050766" }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [430, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reject anyone who doesn't send the shared secret.\nconst secret = $('Config').first().json.reply_secret;\nif (($json.headers['x-inbox-secret'] || '') !== secret) {\n  throw new Error('401 Unauthorized: bad or missing x-inbox-secret');\n}\nreturn $input.all();"
+      },
+      "id": "auth",
+      "name": "Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "body.messages",
+        "options": {}
+      },
+      "id": "split",
+      "name": "Split Messages",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telnyx.com/v2/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "telnyxApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"from\": $('Config').first().json.telnyx_from, \"to\": $json.to, \"text\": $json.text } }}",
+        "options": {
+          "batching": { "batch": { "batchSize": 5, "batchInterval": 1100 } }
+        }
+      },
+      "id": "send",
+      "name": "Send via Telnyx",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1070, 300],
+      "credentials": {
+        "telnyxApi": { "id": "REPLACE_WITH_TELNYX_CREDENTIAL_ID", "name": "Telnyx API" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/rpc/telnyx_send_outbound",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"p_from\": $('Config').first().json.telnyx_from, \"p_to\": $('Split Messages').item.json.to, \"p_body\": $('Split Messages').item.json.text, \"p_telnyx_message_id\": ($json.data && $json.data.id) ? $json.data.id : null } }}",
+        "options": {}
+      },
+      "id": "rec",
+      "name": "Record Outbound (RPC)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1290, 300],
+      "credentials": {
+        "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Playbook n8n Supabase (service role)" }
+      }
+    }
+  ],
+  "connections": {
+    "Bulk Send Webhook": { "main": [[{ "node": "Config", "type": "main", "index": 0 }]] },
+    "Config": { "main": [[{ "node": "Auth", "type": "main", "index": 0 }]] },
+    "Auth": { "main": [[{ "node": "Split Messages", "type": "main", "index": 0 }]] },
+    "Split Messages": { "main": [[{ "node": "Send via Telnyx", "type": "main", "index": 0 }]] },
+    "Send via Telnyx": { "main": [[{ "node": "Record Outbound (RPC)", "type": "main", "index": 0 }]] }
+  }
+}
