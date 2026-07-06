@@ -19,17 +19,19 @@
     .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); white-space:nowrap; }
     .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
 
-    #list { width:320px; min-width:320px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
-    #list .top { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; }
+    #list { width:340px; min-width:340px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
+    #list .top { padding:14px 16px 4px; }
     #list .top h1 { font-size:19px; margin:0; font-weight:700; }
-    #list .top button { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
-    #search { margin:0 16px 10px; }
+    #list .top .cnt { color:var(--muted); font-size:12px; margin-top:2px; }
+    #search { margin:10px 16px; }
     #search input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; outline:none; }
     #rows { overflow-y:auto; flex:1; }
     .row { padding:12px 16px; border-bottom:1px solid #f1f3f6; cursor:pointer; }
     .row:hover { background:var(--bg-2); } .row.active { background:var(--blue-soft); }
-    .row .nm { font-weight:600; }
+    .row .nm { font-weight:600; display:flex; align-items:center; gap:6px; }
     .row .meta { color:var(--muted); font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .loadmore { margin:12px 16px 20px; padding:9px; text-align:center; border:1px solid var(--border); border-radius:9px; cursor:pointer; color:var(--muted); font-weight:600; }
+    .loadmore:hover { background:var(--bg-2); }
 
     #detail { flex:1; overflow-y:auto; }
     .dhead { padding:18px 24px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); }
@@ -41,9 +43,8 @@
     details.card > summary { cursor:pointer; list-style:none; }
     details.card > summary::-webkit-details-marker { display:none; }
     .kvs { display:grid; gap:8px 18px; }
-    .kv { display:grid; grid-template-columns:180px 1fr; gap:12px; align-items:start; }
+    .kv { display:grid; grid-template-columns:190px 1fr; gap:12px; align-items:start; }
     .kv .k { color:var(--muted); font-size:13px; }
-    .kv .v { color:var(--text); }
     .subcard { border:1px solid var(--border); border-radius:9px; padding:10px 12px; margin-bottom:8px; background:var(--bg-2); }
     .chips { display:flex; flex-wrap:wrap; gap:6px; }
     .chip { background:var(--bg-3); border-radius:20px; padding:3px 10px; font-size:12px; }
@@ -53,16 +54,9 @@
     pre { background:var(--bg-2); border:1px solid var(--border); border-radius:9px; padding:12px; overflow-x:auto; font-size:12px; }
     .muted { color:var(--faint); }
     .metaline { color:var(--faint); font-size:12px; margin-top:8px; }
-
-    .genwrap { display:flex; align-items:center; justify-content:center; height:100%; padding:40px; }
-    .genbox { border:1px solid var(--border); border-radius:14px; padding:22px; width:460px; max-width:100%; }
-    .genbox .ctitle { font-weight:700; margin-bottom:12px; }
-    .genbox input { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; margin-bottom:10px; }
-    .genbox .gen { background:#6a48d7; color:#fff; border:0; border-radius:9px; padding:10px 16px; font-weight:700; cursor:pointer; }
-    .genbox .hint { color:var(--muted); font-size:12px; margin-top:10px; }
-    .spinner { display:inline-block; width:13px; height:13px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
-    @keyframes spin { to { transform:rotate(360deg); } }
     .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
+    .spinner { display:inline-block; width:14px; height:14px; border:2px solid #bbb; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -75,11 +69,11 @@
   </nav>
   <div class="content">
     <aside id="list">
-      <div class="top"><h1>Companies</h1><button id="new-btn">＋ Generate</button></div>
-      <div id="search"><input id="search-input" placeholder="Search companies…" /></div>
+      <div class="top"><h1>Companies</h1><div class="cnt" id="count">—</div></div>
+      <div id="search"><input id="search-input" placeholder="Search name or domain…" /></div>
       <div id="rows"><div class="empty">Loading…</div></div>
     </aside>
-    <main id="detail"><div class="empty">Select a company, or click ＋ Generate</div></main>
+    <main id="detail"><div class="empty">Select a company to view its profile</div></main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -88,8 +82,9 @@
     const cfg = window.INBOX_CONFIG || {};
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
     const el = (id) => document.getElementById(id);
-    const state = { items: [], activeId: null, filter: '', awaitingAi: null };
-    const TABLE = 'hubspot_company_scrapes';
+    const TABLE = 'enriched_prospects';
+    const PAGE = 50;
+    const state = { items: [], activeId: null, filter: '', limit: PAGE, total: 0 };
     const SECTIONS = ['organization_info','classification','scale_and_volume','contacts','pricing',
       'revenue','sponsorship','fundraising','martech_stack','pride_and_values','registration_and_domains'];
     const BIG = ['pages_analyzed','raw_data'];
@@ -99,6 +94,7 @@
     function humanize(k){ return k.replace(/_/g,' ').replace(/^\w/, c=>c.toUpperCase()); }
     function withHttp(u){ return /^https?:\/\//i.test(u) ? u : 'https://'+u; }
     function isEmpty(v){ return v===null||v===undefined||v===''||(Array.isArray(v)&&!v.length)||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length); }
+    const debounce = (fn,ms)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
 
     function renderValue(v){
       if (isEmpty(v)) return '<span class="muted">—</span>';
@@ -116,89 +112,65 @@
     }
     function sectionCard(title, val){ return isEmpty(val) ? '' : `<div class="card"><div class="ctitle">${esc(title)}</div>${renderValue(val)}</div>`; }
 
-    async function load() {
-      const { data, error } = await sb.from(TABLE).select('*').order('created_at', { ascending:false });
+    async function loadList() {
+      let q = sb.from(TABLE)
+        .select('id,organization_name,primary_domain,competitor_source_sheet,classification,created_at', { count:'estimated' })
+        .order('organization_name', { ascending:true, nullsFirst:false })
+        .range(0, state.limit-1);
+      const f = state.filter.replace(/[,()*%]/g,'').trim();
+      if (f) q = q.or(`organization_name.ilike.*${f}*,primary_domain.ilike.*${f}*`);
+      else q = q.not('organization_name','is',null).neq('organization_name','');
+      const { data, error, count } = await q;
       if (error) { banner('Load failed: '+error.message); return; }
-      state.items = data || []; renderList();
+      state.items = data || []; state.total = count ?? state.items.length;
+      renderList();
     }
     function renderList() {
+      el('count').textContent = state.filter
+        ? `${state.items.length} shown` + (state.total>state.items.length?` of ~${state.total.toLocaleString()} matches`:'')
+        : `Showing ${state.items.length} of ~${state.total.toLocaleString()}`;
       const box = el('rows');
-      const items = state.items.filter(c => !state.filter || (c.organization_name||'').toLowerCase().includes(state.filter) || (c.primary_domain||'').toLowerCase().includes(state.filter));
-      if (!items.length) { box.innerHTML = `<div class="empty">${state.items.length?'No matches':'No companies yet'}</div>`; return; }
-      box.innerHTML = items.map(c => {
-        const tier = (c.classification&&c.classification.tier) ? ` · ${esc(c.classification.tier)}` : '';
+      if (!state.items.length) { box.innerHTML = '<div class="empty">No companies found</div>'; return; }
+      let html = state.items.map(c => {
+        const cls = c.classification || {};
+        const tier = cls.tier ? ` · ${esc(cls.tier)}` : '';
+        const comp = cls.competitor_detected ? ' 🔺' : '';
         return `<div class="row ${c.id===state.activeId?'active':''}" data-id="${c.id}">
-          <div class="nm">${esc(c.organization_name||'(unnamed)')}</div>
+          <div class="nm">${esc(c.organization_name||'(unnamed)')}${comp}</div>
           <div class="meta">${esc(c.primary_domain||'—')}${tier}</div></div>`;
       }).join('');
+      if (state.items.length >= state.limit) html += `<div class="loadmore" id="more">Load more</div>`;
+      box.innerHTML = html;
       box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => open(n.dataset.id)));
+      if (el('more')) el('more').addEventListener('click', () => { state.limit += PAGE; loadList(); });
     }
 
-    function open(id) {
-      const c = state.items.find(x => x.id === id); if (!c) return;
+    async function open(id) {
       state.activeId = id; renderList();
+      el('detail').innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+      const { data: c, error } = await sb.from(TABLE).select('*').eq('id', id).single();
+      if (error) { el('detail').innerHTML = '<div class="empty">Failed to load: '+esc(error.message)+'</div>'; return; }
       const cls = c.classification || {};
       const tier = cls.tier ? `<span class="badge tier">${esc(cls.tier)}</span>` : '';
-      const comp = cls.competitor_detected ? `<span class="badge comp">competitor: ${esc(cls.competitor_platform||'yes')}</span>` : '';
+      const comp = cls.competitor_detected ? `<span class="badge comp">competitor${cls.competitor_platform?': '+esc(cls.competitor_platform):''}</span>` : '';
+      const src = c.competitor_source_sheet ? `<span class="chip">source: ${esc(c.competitor_source_sheet)}</span>` : '';
       const domain = c.primary_domain ? `<a href="${esc(withHttp(c.primary_domain))}" target="_blank" rel="noopener">${esc(c.primary_domain)}</a>` : '';
-      let html = `<div class="dhead"><h2>${esc(c.organization_name||'—')}</h2><div class="sub">${domain}${tier}${comp}</div></div><div class="dbody">`;
+      let html = `<div class="dhead"><h2>${esc(c.organization_name||'—')}</h2><div class="sub">${domain}${tier}${comp}${src}</div></div><div class="dbody">`;
       SECTIONS.forEach(k => html += sectionCard(humanize(k), c[k]));
       if (c.txt_file_drive_url) html += `<div class="card"><div class="ctitle">Source file</div><a href="${esc(c.txt_file_drive_url)}" target="_blank" rel="noopener">Open scraped text ↗</a></div>`;
       BIG.forEach(k => { if (!isEmpty(c[k])) html += `<details class="card"><summary class="ctitle">${esc(humanize(k))} ▸</summary><pre>${esc(JSON.stringify(c[k],null,2))}</pre></details>`; });
       const meta = [];
-      if (c.source) meta.push('Source: '+c.source);
       if (c.version) meta.push('Version: '+c.version);
-      if (c.created_at) meta.push('Scraped: '+new Date(c.created_at).toLocaleString());
+      if (c.created_at) meta.push('Created: '+new Date(c.created_at).toLocaleString());
       if (c.remarks) meta.push('Remarks: '+c.remarks);
       if (meta.length) html += `<div class="metaline">${esc(meta.join(' · '))}</div>`;
       html += '</div>';
       el('detail').innerHTML = html;
     }
 
-    // ---- AI generate (HubSpot deal link -> n8n -> writes to this table) ----
-    function showGenerate() {
-      state.activeId = null; renderList();
-      el('detail').innerHTML = `
-        <div class="genwrap"><div class="genbox">
-          <div class="ctitle">🤖 Generate a company from a HubSpot deal</div>
-          <input type="url" id="deal-url" placeholder="HubSpot deal link (https://app.hubspot.com/…/deal/…)">
-          <button class="gen" id="ai-gen">Generate</button>
-          <div class="hint">Sends the deal link to the n8n scraper. The profile appears here automatically when it finishes.</div>
-        </div></div>`;
-      el('ai-gen').addEventListener('click', generateWithAI);
-      el('deal-url').focus();
-    }
-    async function generateWithAI() {
-      const dealUrl = (el('deal-url').value || '').trim();
-      if (!dealUrl) { banner('Paste a HubSpot deal link first'); return; }
-      if (!cfg.COMPANY_AI_WEBHOOK_URL || cfg.COMPANY_AI_WEBHOOK_URL.startsWith('<<')) { banner('AI webhook isn’t configured (COMPANY_AI_WEBHOOK_URL).'); return; }
-      const btn = el('ai-gen'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Generating…';
-      try {
-        const res = await fetch(cfg.COMPANY_AI_WEBHOOK_URL, { method:'POST',
-          headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ hubspot_deal_url: dealUrl }) });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        state.awaitingAi = Date.now();
-        banner('Generating in the background — the company will appear here when it’s ready…', 'ok');
-      } catch (err) { banner('AI generation failed: ' + err.message); btn.disabled = false; btn.innerHTML = 'Generate'; }
-    }
-
-    function subscribe() {
-      sb.channel('scrapes-rt')
-        .on('postgres_changes', { event:'*', schema:'public', table:TABLE }, (p) => {
-          load().then(() => {
-            if (state.awaitingAi && p.eventType === 'INSERT' && p.new && p.new.id) {
-              state.awaitingAi = null; open(p.new.id); banner('New company scraped ✓', 'ok');
-            }
-          });
-        })
-        .subscribe();
-    }
-
-    el('new-btn').addEventListener('click', showGenerate);
-    el('search-input').addEventListener('input', e => { state.filter = e.target.value.toLowerCase(); renderList(); });
+    el('search-input').addEventListener('input', debounce(e => { state.filter = e.target.value; state.limit = PAGE; loadList(); }, 300));
     if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.');
-    else { load(); subscribe(); }
+    else loadList();
   </script>
 </body>
 </html>
