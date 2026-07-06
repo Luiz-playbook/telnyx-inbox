@@ -227,14 +227,13 @@
       if (!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) {
         banner('Sending isn’t wired yet — the n8n bulk-send webhook (BULK_SEND_WEBHOOK_URL) is the next step.'); return;
       }
-      const from = cfg.TELNYX_FROM || '+16158050766';
-      const messages = recs.map(r => ({ from, to: r.phone, text: renderTpl(t.body, recToVars(r)) }));
+      const messages = recs.map(r => ({ to: r.phone, text: renderTpl(t.body, recToVars(r)) }));
       if (!confirm(`Send this message to ${messages.length} recipient(s)?`)) return;
       const btn=el('send'); const orig=btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Sending…';
       try {
         const res = await fetch(cfg.BULK_SEND_WEBHOOK_URL, { method:'POST',
           headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ from, list_id: state.activeId, template_id: t.id, messages }) });
+          body: JSON.stringify({ list_id: state.activeId, template_id: t.id, messages }) });
         if (!res.ok) throw new Error('HTTP '+res.status);
         banner(`Queued ${messages.length} message(s) for sending.`, 'ok');
       } catch(err){ banner('Bulk send failed: '+err.message); }
