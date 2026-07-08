@@ -52,9 +52,11 @@
     const params = new URLSearchParams(location.search);
     if (params.get('denied')) { const m=el('msg'); m.className='msg err'; m.textContent = `That account isn't a @${DOMAIN} address. Use your Playbook account.`; }
 
+    // If signed in — or just returned from Google with tokens in the URL — go to the app.
+    sb.auth.onAuthStateChange((_event, session) => { if (session) location.replace('/'); });
     (async () => {
       const { data:{ session } } = await sb.auth.getSession();
-      if (session) location.replace('./index.html');
+      if (session) location.replace('/');
     })();
 
     el('google').addEventListener('click', async () => {
@@ -62,7 +64,7 @@
       const { error } = await sb.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: location.origin + '/',
+          redirectTo: location.origin + '/login',
           queryParams: { hd: DOMAIN, prompt: 'select_account' }
         }
       });
