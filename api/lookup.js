@@ -27,7 +27,9 @@ export default async function handler(req, res) {
     }
     const d = data.data || {};
     const c = d.carrier || {};
-    const type = (c.type || '').toLowerCase(); // mobile | landline | voip
+    const port = d.portability || {};
+    // Telnyx returns line type under portability.line_type; carrier.type is a fallback.
+    const type = (port.line_type || c.type || '').toLowerCase(); // mobile | landline | voip
     res.status(200).json({
       phone_number: d.phone_number || number,
       line_type: type || 'unknown',
