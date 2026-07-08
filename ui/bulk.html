@@ -164,6 +164,11 @@
             <div id="csvpanel" class="csvpanel" style="display:none"></div>
             <textarea id="f-recs" placeholder="Jordan Smith, +16155550142&#10;+16155550178">${esc(recipientsToText(recs))}</textarea>
             <div class="hint" id="reccount"></div>
+            <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+              <button type="button" class="upl" id="classify">🔎 Classify mobile / landline</button>
+              <span class="hint" id="classify-status"></span>
+            </div>
+            <div class="hint" id="classify-summary" style="margin-top:8px"></div>
           </div>
 
           <div class="hint" style="margin-top:2px">These recipients are used by the <a href="./send.html" style="color:var(--blue);font-weight:600">Send</a> tab to run a campaign.</div>
@@ -173,7 +178,8 @@
       el('f-csv').addEventListener('change', onCsvFile);
       el('save').addEventListener('click', save);
       if (el('del')) el('del').addEventListener('click', del);
-      refreshCounts();
+      el('classify').addEventListener('click', classifyRecipients);
+      refreshCounts(); showClassifySummary();
     }
     function refreshCounts() {
       const recs = state.draft.recipients||[];
@@ -284,6 +290,58 @@
       el('csvhint').textContent = `Imported ${recs.length} from ${state.csv.name}`;
       state.csv = null; refreshCounts();
       banner(`Imported ${recs.length} number(s) — review, then Save the list.`, 'ok');
+    }
+
+    // ---- classify line types (mobile vs landline) via /api/lookup ----
+    async function lookupOne(number) {
+      try {
+        const res = await fetch('/api/lookup?number=' + encodeURIComponent(number), { headers: { 'x-inbox-secret': cfg.REPLY_SECRET || '' } });
+        const d = await res.json();
+        if (!res.ok) return { line_type: 'error', textable: false, error: d.error };
+        return d;
+      } catch (e) { return { line_type: 'error', textable: false, error: String(e.message||e) }; }
+    }
+    async function classifyRecipients() {
+      const recs = (state.draft.recipients || []).filter(r => isValidPhone(r.phone));
+      if (!recs.length) { banner('No valid numbers to classify'); return; }
+      if (location.protocol === 'file:') { banner('Classify runs on the deployed site (the /api function isn’t available on a local file).'); return; }
+      const btn = el('classify'), orig = btn.textContent; btn.disabled = true; btn.textContent = 'Classifying…';
+      let done = 0;
+      const setStatus = () => { el('classify-status').innerHTML = `<span class="spinner" style="border-color:#888;border-top-color:transparent"></span> ${done}/${recs.length} checked`; };
+      setStatus();
+      let i = 0;
+      async function worker() {
+        while (true) {
+          const idx = i++; if (idx >= recs.length) return;
+          const r = recs[idx]; const info = await lookupOne(r.phone);
+          r.line_type = info.line_type; r.textable = !!info.textable;
+          done++; setStatus();
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(6, recs.length) }, worker));
+      btn.disabled = false; btn.textContent = orig; el('classify-status').textContent = 'Done';
+      showClassifySummary();
+    }
+    function showClassifySummary() {
+      const box = el('classify-summary'); if (!box) return;
+      const recs = (state.draft && state.draft.recipients) || [];
+      const done = recs.filter(r => r.line_type);
+      if (!done.length) { box.innerHTML = ''; return; }
+      const mob = done.filter(r => r.line_type === 'mobile').length;
+      const land = done.filter(r => r.line_type === 'landline').length;
+      const voip = done.filter(r => r.line_type === 'voip').length;
+      const other = done.length - mob - land - voip;
+      box.innerHTML = `<b style="color:var(--green)">${mob} mobile (textable)</b> · <span style="color:#b3341f">${land} landline</span>`
+        + (voip ? ` · ${voip} voip` : '') + (other ? ` · ${other} other` : '')
+        + (mob < done.length ? ` &nbsp; <a href="#" id="keep-mobile" style="color:var(--blue);font-weight:600">Keep only textable</a>` : '');
+      const km = el('keep-mobile');
+      if (km) km.addEventListener('click', (e) => {
+        e.preventDefault();
+        state.draft.recipients = (state.draft.recipients || []).filter(r => r.line_type === 'mobile');
+        el('f-recs').value = recipientsToText(state.draft.recipients);
+        refreshCounts(); showClassifySummary();
+        banner('Kept only mobile (textable) numbers — Save the list to keep it.', 'ok');
+      });
     }
 
     el('new-btn').addEventListener('click', newItem);
