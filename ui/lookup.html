@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Number Line-Type Checker</title>
+  <style>
+    :root { --blue:#2f6bff; --bg:#f7f8fa; --card:#fff; --bg-3:#eef1f4; --text:#1b2430; --muted:#7c8698;
+      --faint:#a7b0be; --border:#e6e9ee; --green:#1f9d57; --green-bg:#e5f6ec; --red:#b3341f; --red-bg:#fdecec;
+      --amber:#9a6b00; --amber-bg:#fff4d9; }
+    * { box-sizing:border-box; }
+    body { font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      color:var(--text); background:var(--bg); margin:0; }
+    .wrap { max-width:860px; margin:0 auto; padding:32px 20px 80px; }
+    h1 { font-size:24px; margin:0 0 4px; }
+    .lede { color:var(--muted); margin:0 0 24px; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:18px; }
+    .card h2 { font-size:14px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:0 0 14px; }
+    .drop { border:2px dashed var(--border); border-radius:12px; padding:26px; text-align:center; color:var(--muted); cursor:pointer; }
+    .drop:hover { border-color:var(--blue); color:var(--blue); background:#f6f9ff; }
+    .drop b { color:var(--text); }
+    .row { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; }
+    .field { display:flex; flex-direction:column; gap:5px; }
+    .field label { font-size:12px; font-weight:600; color:var(--muted); }
+    select { padding:9px 11px; border:1px solid var(--border); border-radius:9px; font:inherit; background:#fff; }
+    .chk { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+    .btn { background:var(--blue); color:#fff; border:0; border-radius:10px; padding:11px 18px; font-weight:700; cursor:pointer; font-size:15px; }
+    .btn:disabled { background:#b9c6e6; cursor:default; }
+    .btn.ghost { background:#fff; border:1px solid var(--border); color:var(--text); font-weight:600; }
+    .hint { color:var(--muted); font-size:13px; }
+    .bar { height:8px; background:var(--bg-3); border-radius:6px; overflow:hidden; margin:12px 0 6px; }
+    .bar > span { display:block; height:100%; background:var(--blue); width:0; transition:width .2s; }
+
+    .summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+    .pill { padding:6px 12px; border-radius:20px; font-weight:700; font-size:13px; }
+    .pill.g { background:var(--green-bg); color:var(--green); }
+    .pill.r { background:var(--red-bg); color:var(--red); }
+    .pill.a { background:var(--amber-bg); color:var(--amber); }
+    .pill.n { background:var(--bg-3); color:var(--muted); }
+
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:9px 10px; border-bottom:1px solid #f1f3f6; }
+    th { color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--card); }
+    .tag { font-weight:700; padding:2px 9px; border-radius:20px; font-size:12px; white-space:nowrap; }
+    .tag.g { background:var(--green-bg); color:var(--green); }
+    .tag.r { background:var(--red-bg); color:var(--red); }
+    .tag.a { background:var(--amber-bg); color:var(--amber); }
+    .tag.n { background:var(--bg-3); color:var(--muted); }
+    .tablewrap { overflow:auto; max-height:60vh; }
+    #banner { display:none; padding:10px 14px; border-radius:9px; margin-bottom:14px; font-size:13px; }
+    #banner.err { background:var(--red-bg); color:var(--red); }
+    .spinner { display:inline-block; width:14px; height:14px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .hide { display:none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>📱 Number Line-Type Checker</h1>
+    <p class="lede">Upload a spreadsheet of phone numbers to check which are <b>mobile (textable)</b> vs <b>landline</b>, via the Telnyx Number Lookup API. Export the results for the textable-number sheet.</p>
+
+    <div id="banner"></div>
+
+    <div class="card">
+      <h2>1 · Upload a spreadsheet</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="file" accept=".csv,.xlsx,.xls" hidden>
+        <div><b>Click to choose a file</b> — .xlsx, .xls, or .csv</div>
+        <div class="hint" id="fileinfo" style="margin-top:6px"></div>
+      </label>
+    </div>
+
+    <div class="card hide" id="col-card">
+      <h2>2 · Which column has the phone numbers?</h2>
+      <div class="row">
+        <div class="field"><label>Phone column</label><select id="phone-col"></select></div>
+        <label class="chk"><input type="checkbox" id="has-header" checked> First row is a header</label>
+        <button class="btn" id="run">Check <span id="run-n">0</span> numbers</button>
+      </div>
+      <div class="hint" id="col-hint" style="margin-top:8px"></div>
+    </div>
+
+    <div class="card hide" id="progress-card">
+      <h2>Checking…</h2>
+      <div class="bar"><span id="bar"></span></div>
+      <div class="hint" id="progress-text"></div>
+    </div>
+
+    <div class="card hide" id="results-card">
+      <h2>3 · Results</h2>
+      <div class="summary" id="summary"></div>
+      <div style="margin-bottom:12px"><button class="btn ghost" id="export">⤓ Download results (CSV)</button></div>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>#</th><th>Number</th><th>Line type</th><th>Carrier</th><th>Textable?</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const el = (id) => document.getElementById(id);
+    const state = { columns: [], rows: [], hasHeader: true, results: [] };
+
+    function banner(m){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className='err'; b.textContent=m; b.style.display='block'; }
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function normPhone(p){ let d=(p||'').toString().replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
+    function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
+
+    // ---- file parse (xlsx + csv via SheetJS) ----
+    el('drop').addEventListener('click', () => el('file').click());
+    el('file').addEventListener('change', async (e) => {
+      const file = e.target.files[0]; if (!file) return;
+      el('fileinfo').textContent = 'Reading ' + file.name + '…';
+      try {
+        const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        state.raw = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:'' });
+        el('fileinfo').textContent = file.name + ' · ' + Math.max(0, state.raw.length) + ' row(s)';
+        buildColumns();
+      } catch (err) { banner('Could not read file: ' + err.message); }
+    });
+
+    function buildColumns() {
+      const raw = state.raw || [];
+      if (!raw.length) { banner('That sheet looks empty'); return; }
+      state.hasHeader = el('has-header').checked;
+      if (state.hasHeader) {
+        state.columns = raw[0].map((h,i) => (h||'').toString().trim() || ('Column ' + (i+1)));
+        state.rows = raw.slice(1);
+      } else {
+        const w = raw.reduce((m,r)=>Math.max(m,r.length),0);
+        state.columns = Array.from({length:w}, (_,i)=>'Column ' + (i+1));
+        state.rows = raw;
+      }
+      const guess = detectPhoneCol();
+      el('phone-col').innerHTML = state.columns.map((c,i)=>`<option value="${i}" ${i===guess?'selected':''}>${esc(c)}</option>`).join('');
+      el('col-card').classList.remove('hide');
+      updateCount();
+    }
+    function detectPhoneCol() {
+      const byName = state.columns.findIndex(c => /phone|mobile|cell|number|tel/i.test(c));
+      if (byName >= 0) return byName;
+      let best = 0, score = -1;
+      state.columns.forEach((c,i) => { let s=0; state.rows.slice(0,40).forEach(r=>{ if(isValidPhone(normPhone(r[i]))) s++; }); if(s>score){score=s;best=i;} });
+      return best;
+    }
+    function currentNumbers() {
+      const ci = +el('phone-col').value;
+      const seen = new Set(), out = [];
+      state.rows.forEach(r => { const p = normPhone(r[ci]); if (p && !seen.has(p)) { seen.add(p); out.push(p); } });
+      return out;
+    }
+    function updateCount() {
+      const nums = currentNumbers();
+      const valid = nums.filter(isValidPhone).length;
+      el('run-n').textContent = valid;
+      el('col-hint').innerHTML = `${nums.length} unique number(s) · <b>${valid} look valid</b>` + (nums.length>valid?` · ${nums.length-valid} unrecognized (skipped)`:'');
+      el('run').disabled = !valid;
+    }
+    el('phone-col').addEventListener('change', updateCount);
+    el('has-header').addEventListener('change', buildColumns);
+
+    // ---- run lookups (concurrency pool) ----
+    el('run').addEventListener('click', runChecks);
+    async function runChecks() {
+      const nums = currentNumbers().filter(isValidPhone);
+      if (!nums.length) return;
+      el('progress-card').classList.remove('hide');
+      el('results-card').classList.add('hide');
+      el('run').disabled = true;
+      let done = 0;
+      const setProg = () => { const pct = Math.round(done/nums.length*100); el('bar').style.width = pct+'%'; el('progress-text').textContent = `${done} / ${nums.length} checked`; };
+      setProg();
+      const results = new Array(nums.length);
+      let i = 0;
+      async function worker() {
+        while (true) {
+          const idx = i++; if (idx >= nums.length) return;
+          results[idx] = await lookupOne(nums[idx]);
+          done++; setProg();
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(6, nums.length) }, worker));
+      state.results = results;
+      el('progress-card').classList.add('hide');
+      el('run').disabled = false;
+      renderResults();
+    }
+    async function lookupOne(number) {
+      try {
+        const res = await fetch('/api/lookup?number=' + encodeURIComponent(number), { headers: { 'x-inbox-secret': cfg.REPLY_SECRET || '' } });
+        const d = await res.json();
+        if (!res.ok) return { phone_number:number, line_type:'error', carrier:'', textable:false, error:d.error||('HTTP '+res.status) };
+        return d;
+      } catch (e) { return { phone_number:number, line_type:'error', carrier:'', textable:false, error:String(e.message||e) }; }
+    }
+
+    function tagFor(r) {
+      const t = (r.line_type||'').toLowerCase();
+      if (t === 'mobile') return '<span class="tag g">✓ Textable</span>';
+      if (t === 'landline') return '<span class="tag r">Landline</span>';
+      if (t === 'voip') return '<span class="tag a">VoIP · review</span>';
+      if (t === 'error') return '<span class="tag n">Error</span>';
+      return '<span class="tag n">Unknown</span>';
+    }
+    function renderResults() {
+      const r = state.results;
+      const mob = r.filter(x=>x.line_type==='mobile').length;
+      const land = r.filter(x=>x.line_type==='landline').length;
+      const voip = r.filter(x=>x.line_type==='voip').length;
+      const other = r.length - mob - land - voip;
+      el('summary').innerHTML =
+        `<span class="pill g">${mob} textable (mobile)</span>` +
+        `<span class="pill r">${land} landline</span>` +
+        (voip?`<span class="pill a">${voip} VoIP</span>`:'') +
+        (other?`<span class="pill n">${other} other/error</span>`:'');
+      el('rows').innerHTML = r.map((x,i)=>`<tr>
+        <td>${i+1}</td>
+        <td>${esc(x.phone_number)}</td>
+        <td>${esc(x.line_type)}${x.error?` <span class="hint">(${esc(x.error)})</span>`:''}</td>
+        <td>${esc(x.carrier||'')}</td>
+        <td>${tagFor(x)}</td></tr>`).join('');
+      el('results-card').classList.remove('hide');
+    }
+
+    // ---- export ----
+    el('export').addEventListener('click', () => {
+      const head = ['phone_number','line_type','carrier','textable'];
+      const csvRows = [head.join(',')].concat(state.results.map(x =>
+        [x.phone_number, x.line_type, (x.carrier||'').replace(/,/g,' '), x.textable ? 'yes' : 'no'].join(',')));
+      const blob = new Blob([csvRows.join('\n')], { type:'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'line-type-results.csv'; a.click();
+      URL.revokeObjectURL(a.href);
+    });
+  </script>
+</body>
+</html>
