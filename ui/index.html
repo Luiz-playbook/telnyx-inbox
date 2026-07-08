@@ -25,6 +25,9 @@
     .navtabs { display: flex; gap: 4px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
     .navtabs a { padding: 6px 12px; border-radius: 8px; font-weight: 600; color: var(--muted); white-space: nowrap; }
     .navtabs a.active { background: var(--blue-soft); color: var(--blue); }
+    .numswitch { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+    .numswitch select { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--bg); color: var(--text); }
+    .numswitch .numrefresh { border: 1px solid var(--border); background: var(--bg); border-radius: 8px; padding: 5px 8px; cursor: pointer; }
 
     /* conversation list */
     #list { width: 340px; min-width: 340px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
@@ -102,7 +105,9 @@
     <a href="./index.html" class="active">Inbox</a>
     <a href="./companies.html">Companies</a>
     <a href="./templates.html">Templates</a>
-    <a href="./bulk.html">Bulk Send</a>
+    <a href="./bulk.html">Lists</a>
+    <a href="./send.html">Send</a>
+    <span class="numswitch">📱 <select id="num-switch" title="Which number's inbox to view"></select><button id="num-refresh" class="numrefresh" title="Pull latest numbers from Telnyx">🔄</button></span>
   </nav>
   <div class="content">
     <!-- conversation list -->
@@ -126,7 +131,8 @@
   <script>
     const cfg = window.INBOX_CONFIG;
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
-    const state = { convs: [], activeId: null, messages: [] };
+    const state = { convs: [], activeId: null, messages: [], numbers: [] };
+    function activeNumber(){ return localStorage.getItem('active_telnyx_number') || (state.numbers[0] && state.numbers[0].phone_number) || null; }
     const el = (id) => document.getElementById(id);
     const canSend = () => cfg.REPLY_WEBHOOK_URL && !cfg.REPLY_WEBHOOK_URL.startsWith('<<');
 
@@ -159,8 +165,40 @@
     function esc(s) { return (s||'').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 
     // ---- conversation list ----
+    async function loadNumbers() {
+      const { data } = await sb.from('telnyx_numbers').select('*').eq('active', true).order('sort_order');
+      state.numbers = data || [];
+      const sel = el('num-switch'); if (!sel) return;
+      if (!localStorage.getItem('active_telnyx_number') && state.numbers[0]) localStorage.setItem('active_telnyx_number', state.numbers[0].phone_number);
+      const cur = activeNumber();
+      sel.innerHTML = state.numbers.map(n => `<option value="${esc(n.phone_number)}" ${n.phone_number===cur?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(fmtPhone(n.phone_number))}</option>`).join('') || '<option>No numbers</option>';
+      sel.addEventListener('change', () => {
+        localStorage.setItem('active_telnyx_number', sel.value);
+        state.activeId = null;
+        el('thread').innerHTML = '<div class="empty">Select a conversation</div>';
+        el('details').classList.add('hide');
+        loadConversations();
+      });
+      const rbtn = el('num-refresh');
+      if (rbtn) rbtn.addEventListener('click', () => refreshNumbers(rbtn));
+    }
+    async function refreshNumbers(btn) {
+      if (!cfg.SYNC_NUMBERS_WEBHOOK_URL || cfg.SYNC_NUMBERS_WEBHOOK_URL.startsWith('<<')) { banner('Number sync isn’t wired yet.'); return; }
+      btn.disabled = true; btn.textContent = '⏳';
+      try { await fetch(cfg.SYNC_NUMBERS_WEBHOOK_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET||'' }, body:'{}' }); } catch (e) {}
+      setTimeout(async () => {
+        const { data } = await sb.from('telnyx_numbers').select('*').eq('active', true).order('sort_order');
+        state.numbers = data || [];
+        const sel = el('num-switch'), cur = activeNumber();
+        sel.innerHTML = state.numbers.map(n => `<option value="${esc(n.phone_number)}" ${n.phone_number===cur?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(fmtPhone(n.phone_number))}</option>`).join('') || '<option>No numbers</option>';
+        btn.disabled = false; btn.textContent = '🔄';
+      }, 3500);
+    }
     async function loadConversations() {
-      const { data, error } = await sb.from('telnyx_conversations').select('*').order('last_message_at', { ascending:false });
+      const num = activeNumber();
+      let q = sb.from('telnyx_conversations').select('*').order('last_message_at', { ascending:false });
+      if (num) q = q.eq('telnyx_number', num);
+      const { data, error } = await q;
       if (error) { banner('Load conversations failed: ' + error.message); return; }
       state.convs = data || [];
       const unread = state.convs.filter(c=>c.unread).length;
@@ -290,7 +328,7 @@
     }
 
     if (!cfg || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.');
-    else { loadConversations().then(() => { if (state.convs[0]) openConversation(state.convs[0].id); }); subscribe(); }
+    else { loadNumbers().then(loadConversations).then(() => { if (state.convs[0]) openConversation(state.convs[0].id); }); subscribe(); }
   </script>
 </body>
 </html>

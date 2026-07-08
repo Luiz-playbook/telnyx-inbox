@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Send</title>
+  <style>
+    :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
+      --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; --green:#1f9d57; --amber:#9a6b00; }
+    * { box-sizing:border-box; }
+    html, body { height:100%; margin:0; }
+    body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+      color:var(--text); background:var(--bg-2); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+    a { color:inherit; text-decoration:none; }
+    #banner { position:fixed; top:0; left:0; right:0; z-index:30; padding:8px 14px; font-size:13px; display:none; }
+    #banner.err { background:#fde2e2; color:#92211f; } #banner.ok { background:#dff5e8; color:#1b6b40; }
+    .navtabs { display:flex; gap:4px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; background:var(--bg); }
+    .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); white-space:nowrap; }
+    .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
+    .numswitch { margin-left:auto; display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px; }
+    .numswitch select { padding:6px 10px; border:1px solid var(--border); border-radius:8px; font:inherit; background:#fff; color:var(--text); }
+    .numswitch .numrefresh { border:1px solid var(--border); background:#fff; border-radius:8px; padding:5px 8px; cursor:pointer; }
+
+    .scroll { flex:1; overflow-y:auto; }
+    .wrap { max-width:640px; margin:0 auto; padding:28px 20px 60px; }
+    h1 { font-size:24px; margin:0 0 4px; }
+    .lede { color:var(--muted); margin:0 0 24px; }
+
+    .step { background:var(--bg); border:1px solid var(--border); border-radius:14px; padding:18px 20px; margin-bottom:16px; }
+    .step .n { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%;
+      background:var(--blue); color:#fff; font-size:12px; font-weight:700; margin-right:8px; }
+    .step h2 { font-size:15px; margin:0 0 12px; display:flex; align-items:center; }
+    select { width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:10px; font:inherit; background:var(--bg); }
+    .sub { color:var(--muted); font-size:13px; margin-top:8px; }
+
+    .review .row { display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid #f1f3f6; }
+    .review .row:last-child { border-bottom:0; }
+    .review .k { color:var(--muted); }
+    .review .v { font-weight:600; }
+    .review .v.warn { color:var(--amber); }
+    .review .v.bad { color:#b3341f; }
+    .bubble { background:var(--blue-soft); border-radius:14px; border-bottom-right-radius:4px; padding:11px 14px; margin-top:10px; white-space:pre-wrap; }
+    .bubble .to { font-size:12px; color:var(--muted); margin-bottom:6px; }
+
+    .note { display:flex; gap:8px; background:#fff8e6; border:1px solid #f2e2b8; color:#7a5b00; border-radius:10px; padding:11px 13px; font-size:13px; margin-top:14px; }
+
+    .cta { position:sticky; bottom:0; background:linear-gradient(to top, var(--bg-2) 70%, transparent); padding:16px 0 4px; }
+    .sendbtn { width:100%; background:var(--green); color:#fff; border:0; border-radius:12px; padding:15px; font-size:16px; font-weight:700; cursor:pointer; }
+    .sendbtn:disabled { background:#b7d8c4; cursor:default; }
+    .spinner { display:inline-block; width:15px; height:15px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .muted { color:var(--faint); }
+
+    /* confirm modal */
+    .modal-bg { position:fixed; inset:0; background:rgba(20,26,36,.45); display:none; align-items:center; justify-content:center; z-index:40; }
+    .modal { background:var(--bg); border-radius:16px; padding:24px; width:420px; max-width:92vw; }
+    .modal h3 { margin:0 0 8px; font-size:18px; }
+    .modal p { color:var(--muted); margin:0 0 18px; }
+    .modal .actions { display:flex; gap:10px; justify-content:flex-end; }
+    .modal button { padding:10px 18px; border-radius:9px; font-weight:600; cursor:pointer; border:1px solid var(--border); background:var(--bg); }
+    .modal button.go { background:var(--green); color:#fff; border-color:var(--green); }
+  </style>
+</head>
+<body>
+  <div id="banner"></div>
+  <nav class="navtabs">
+    <a href="./index.html">Inbox</a>
+    <a href="./companies.html">Companies</a>
+    <a href="./templates.html">Templates</a>
+    <a href="./bulk.html">Lists</a>
+    <a href="./send.html" class="active">Send</a>
+    <span class="numswitch">📱 Send from: <select id="num-switch" title="Number to send from"></select><button id="num-refresh" class="numrefresh" title="Pull latest numbers from Telnyx">🔄</button></span>
+  </nav>
+
+  <div class="scroll"><div class="wrap">
+    <h1>Send a campaign</h1>
+    <p class="lede">Pick who to text and what to say, review, then send.</p>
+
+    <div class="step">
+      <h2><span class="n">1</span> Recipient list</h2>
+      <select id="list"><option value="">— choose a list —</option></select>
+      <div class="sub" id="list-sub"></div>
+    </div>
+
+    <div class="step">
+      <h2><span class="n">2</span> Message</h2>
+      <select id="tpl"><option value="">— choose a template —</option></select>
+      <div class="sub"><a href="./templates.html">Edit templates ↗</a></div>
+    </div>
+
+    <div class="step" id="review-step" style="display:none">
+      <h2><span class="n">3</span> Review</h2>
+      <div class="review" id="review"></div>
+      <div class="bubble" id="preview" style="display:none"><div class="to" id="preview-to"></div><div id="preview-body"></div></div>
+      <div class="note" id="dlc-note">⚠️ Bulk texts to US numbers need your 10DLC campaign approved, or carriers will block them. Fine for testing to your own number.</div>
+    </div>
+
+    <div class="cta">
+      <button class="sendbtn" id="send" disabled>Choose a list and template</button>
+    </div>
+  </div></div>
+
+  <div class="modal-bg" id="modal-bg">
+    <div class="modal">
+      <h3 id="m-title">Send this campaign?</h3>
+      <p id="m-text"></p>
+      <div class="actions">
+        <button id="m-cancel">Cancel</button>
+        <button class="go" id="m-go">Send now</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const el = (id) => document.getElementById(id);
+    const state = { lists: [], templates: [], numbers: [] };
+    function activeFrom(){ return localStorage.getItem('active_telnyx_number') || (state.numbers[0] && state.numbers[0].phone_number) || '+16158050766'; }
+
+    function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',4000); }
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function renderTpl(body,v){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g,(_,k)=>(v[k]??'')); }
+    function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
+    function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
+    function firstName(n){ return (n||'').trim().split(/\s+/)[0]||''; }
+    function recToVars(r){ return { name:r.name||'', first_name:firstName(r.name), phone:r.phone||'' }; }
+    function fmtPhone(num){ const d=(num||'').replace(/\D/g,''); if(d.length===11&&d[0]==='1')return `+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`; return num||''; }
+
+    async function loadAll() {
+      const [{data:lists,error:e1},{data:tpls,error:e2},{data:nums}] = await Promise.all([
+        sb.from('recipient_lists').select('*').order('name'),
+        sb.from('message_templates').select('*').order('name'),
+        sb.from('telnyx_numbers').select('*').eq('active', true).order('sort_order'),
+      ]);
+      if (e1) return banner('Load lists failed: '+e1.message);
+      if (e2) banner('Load templates failed: '+e2.message);
+      state.lists = lists||[]; state.templates = tpls||[]; state.numbers = nums||[];
+      const nsel = el('num-switch');
+      if (nsel) {
+        if (!localStorage.getItem('active_telnyx_number') && state.numbers[0]) localStorage.setItem('active_telnyx_number', state.numbers[0].phone_number);
+        const cur = activeFrom();
+        nsel.innerHTML = state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===cur?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(fmtPhone(n.phone_number))}</option>`).join('') || '<option>No numbers</option>';
+        nsel.addEventListener('change', ()=>{ localStorage.setItem('active_telnyx_number', nsel.value); refresh(); });
+        const rbtn = el('num-refresh');
+        if (rbtn) rbtn.addEventListener('click', () => refreshNumbers(rbtn));
+      }
+      el('list').innerHTML = '<option value="">— choose a list —</option>' +
+        state.lists.map(l=>`<option value="${l.id}">${esc(l.name)} (${(l.recipients||[]).length})</option>`).join('');
+      el('tpl').innerHTML = '<option value="">— choose a template —</option>' +
+        state.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
+      if (!state.lists.length) el('list-sub').innerHTML = 'No lists yet — <a href="./bulk.html">create one ↗</a>';
+    }
+    async function refreshNumbers(btn) {
+      if (!cfg.SYNC_NUMBERS_WEBHOOK_URL || cfg.SYNC_NUMBERS_WEBHOOK_URL.startsWith('<<')) { banner('Number sync isn’t wired yet.'); return; }
+      btn.disabled = true; btn.textContent = '⏳';
+      try { await fetch(cfg.SYNC_NUMBERS_WEBHOOK_URL, { method:'POST', headers:{ 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET||'' }, body:'{}' }); } catch (e) {}
+      setTimeout(async () => {
+        const { data } = await sb.from('telnyx_numbers').select('*').eq('active', true).order('sort_order');
+        state.numbers = data || [];
+        const nsel = el('num-switch'), cur = activeFrom();
+        nsel.innerHTML = state.numbers.map(n => `<option value="${esc(n.phone_number)}" ${n.phone_number===cur?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(fmtPhone(n.phone_number))}</option>`).join('') || '<option>No numbers</option>';
+        btn.disabled = false; btn.textContent = '🔄'; refresh();
+      }, 3500);
+    }
+
+    function selected() {
+      const list = state.lists.find(l=>l.id===el('list').value);
+      const tpl  = state.templates.find(t=>t.id===el('tpl').value);
+      const recs = list ? (list.recipients||[]).map(r=>({name:r.name||'',phone:normPhone(r.phone)})) : [];
+      const valid = recs.filter(r=>isValidPhone(r.phone));
+      return { list, tpl, recs, valid };
+    }
+    function refresh() {
+      const { list, tpl, recs, valid } = selected();
+      el('list-sub').textContent = list ? `${valid.length} valid recipient(s)` + (recs.length>valid.length?` · ${recs.length-valid.length} invalid skipped`:'') : '';
+      const show = list && tpl;
+      el('review-step').style.display = show ? 'block' : 'none';
+      const btn = el('send');
+      if (!show) { btn.disabled = true; btn.textContent = 'Choose a list and template'; return; }
+
+      const seg = tpl ? Math.max(1, Math.ceil(renderTpl(tpl.body, recToVars(valid[0]||{})).length/160)) : 0;
+      el('review').innerHTML = `
+        <div class="row"><span class="k">List</span><span class="v">${esc(list.name)}</span></div>
+        <div class="row"><span class="k">Recipients</span><span class="v ${valid.length?'':'bad'}">${valid.length} valid${recs.length>valid.length?` <span class="muted">(${recs.length-valid.length} skipped)</span>`:''}</span></div>
+        <div class="row"><span class="k">Template</span><span class="v">${esc(tpl.name)}</span></div>
+        <div class="row"><span class="k">Sending from</span><span class="v">${fmtPhone(activeFrom())}</span></div>
+        <div class="row"><span class="k">Est. length</span><span class="v ${seg>1?'warn':''}">${seg} SMS segment${seg>1?'s':''} each</span></div>`;
+      if (valid[0]) {
+        el('preview').style.display = 'block';
+        el('preview-to').textContent = 'To ' + (valid[0].name ? valid[0].name+' · ' : '') + fmtPhone(valid[0].phone);
+        el('preview-body').textContent = renderTpl(tpl.body, recToVars(valid[0]));
+      } else { el('preview').style.display = 'none'; }
+
+      btn.disabled = !valid.length;
+      btn.textContent = valid.length ? `Send to ${valid.length} recipient(s)` : 'No valid recipients in this list';
+    }
+
+    // send
+    function openModal() {
+      const { list, valid } = selected();
+      el('m-text').innerHTML = `You're about to text <b>${valid.length}</b> ${valid.length===1?'person':'people'} in <b>${esc(list.name)}</b> from ${fmtPhone(activeFrom())}. This can't be undone.`;
+      el('modal-bg').style.display = 'flex';
+    }
+    function closeModal(){ el('modal-bg').style.display = 'none'; }
+    async function doSend() {
+      closeModal();
+      const { list, tpl, valid } = selected();
+      if (!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) { banner('Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).'); return; }
+      const from = activeFrom();
+      const messages = valid.map(r => ({ from, to:r.phone, text: renderTpl(tpl.body, recToVars(r)) }));
+      const btn = el('send'); btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
+      try {
+        const res = await fetch(cfg.BULK_SEND_WEBHOOK_URL, { method:'POST',
+          headers:{ 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET||'' },
+          body: JSON.stringify({ from, list_id:list.id, template_id:tpl.id, messages }) });
+        if (!res.ok) throw new Error('HTTP '+res.status);
+        banner(`Sent to ${messages.length} recipient(s). Check the Inbox for replies.`, 'ok');
+      } catch(err){ banner('Send failed: '+err.message); }
+      finally { refresh(); }
+    }
+
+    el('list').addEventListener('change', refresh);
+    el('tpl').addEventListener('change', refresh);
+    el('send').addEventListener('click', openModal);
+    el('m-cancel').addEventListener('click', closeModal);
+    el('m-go').addEventListener('click', doSend);
+    el('modal-bg').addEventListener('click', e => { if (e.target===el('modal-bg')) closeModal(); });
+    if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.'); else loadAll();
+  </script>
+</body>
+</html>

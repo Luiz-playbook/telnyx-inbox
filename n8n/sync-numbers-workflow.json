@@ -1,0 +1,100 @@
+{
+  "name": "[Telnyx] [Numbers] Sync from profile",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "hours", "hoursInterval": 1 } ] }
+      },
+      "id": "sched",
+      "name": "Every hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 180]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "telnyx-sync-numbers",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "wh",
+      "name": "Refresh Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 360],
+      "webhookId": "telnyx-sync-numbers"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Refresh button must send the shared secret.\nconst SECRET = 'playbook';\nif (($json.headers['x-inbox-secret'] || '') !== SECRET) {\n  throw new Error('401 Unauthorized: bad or missing x-inbox-secret');\n}\nreturn $input.all();"
+      },
+      "id": "auth",
+      "name": "Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 360]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.telnyx.com/v2/phone_numbers?filter[messaging_profile_id]=40019f22-ee12-4a37-a3d8-c4255ed71c03&page[size]=250",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpBearerAuth",
+        "options": {}
+      },
+      "id": "list",
+      "name": "List Telnyx Numbers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 270],
+      "credentials": {
+        "httpBearerAuth": { "id": "XsVobK6mWdzUGA7e", "name": "Telnyx" }
+      }
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "split",
+      "name": "Split Numbers",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [900, 270]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/telnyx_numbers?on_conflict=phone_number",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [ { "name": "Prefer", "value": "resolution=merge-duplicates" } ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"phone_number\": $json.phone_number, \"messaging_profile_id\": \"40019f22-ee12-4a37-a3d8-c4255ed71c03\", \"active\": true } }}",
+        "options": {}
+      },
+      "id": "upsert",
+      "name": "Upsert Number",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 270],
+      "credentials": {
+        "supabaseApi": { "id": "B45ZZ2nGKOeatNYB", "name": "Supabase | John" }
+      }
+    }
+  ],
+  "connections": {
+    "Every hour": { "main": [[{ "node": "List Telnyx Numbers", "type": "main", "index": 0 }]] },
+    "Refresh Webhook": { "main": [[{ "node": "Auth", "type": "main", "index": 0 }]] },
+    "Auth": { "main": [[{ "node": "List Telnyx Numbers", "type": "main", "index": 0 }]] },
+    "List Telnyx Numbers": { "main": [[{ "node": "Split Numbers", "type": "main", "index": 0 }]] },
+    "Split Numbers": { "main": [[{ "node": "Upsert Number", "type": "main", "index": 0 }]] }
+  }
+}

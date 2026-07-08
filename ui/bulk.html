@@ -74,7 +74,8 @@
     <a href="./index.html">Inbox</a>
     <a href="./companies.html">Companies</a>
     <a href="./templates.html">Templates</a>
-    <a href="./bulk.html" class="active">Bulk Send</a>
+    <a href="./bulk.html" class="active">Lists</a>
+    <a href="./send.html">Send</a>
   </nav>
   <div class="content">
     <aside id="list">
@@ -165,41 +166,19 @@
             <div class="hint" id="reccount"></div>
           </div>
 
-          <div class="sendbox">
-            <h3>📣 Bulk send to this list</h3>
-            <div class="sendrow">
-              <div class="field">
-                <label>Template</label>
-                <select id="tpl">
-                  <option value="">— choose a template —</option>
-                  ${state.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}
-                </select>
-              </div>
-            </div>
-            <div class="preview"><div class="lbl">Preview (first valid recipient)</div><div id="pv">—</div></div>
-            <button class="sendbtn" id="send">Send to <span id="sendn">0</span> recipient(s)</button>
-            <div class="hint" style="margin-top:8px">${(!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) ? '⚠️ Sending isn’t wired yet — needs the n8n bulk-send webhook (BULK_SEND_WEBHOOK_URL).' : 'Save the list first, then send.'}</div>
-          </div>
+          <div class="hint" style="margin-top:2px">These recipients are used by the <a href="./send.html" style="color:var(--blue);font-weight:600">Send</a> tab to run a campaign.</div>
         </div>`;
       el('f-name').addEventListener('input', e => { state.draft.name = e.target.value; });
-      el('f-recs').addEventListener('input', e => { state.draft.recipients = parseRecipients(e.target.value); refreshCounts(); refreshPreview(); });
+      el('f-recs').addEventListener('input', e => { state.draft.recipients = parseRecipients(e.target.value); refreshCounts(); });
       el('f-csv').addEventListener('change', onCsvFile);
-      el('tpl').addEventListener('change', refreshPreview);
       el('save').addEventListener('click', save);
-      el('send').addEventListener('click', doSend);
       if (el('del')) el('del').addEventListener('click', del);
-      refreshCounts(); refreshPreview();
+      refreshCounts();
     }
     function refreshCounts() {
       const recs = state.draft.recipients||[];
       const valid = recs.filter(r=>isValidPhone(r.phone)).length, bad = recs.length-valid;
       el('reccount').innerHTML = `${recs.length} line(s) · <b>${valid} valid</b>${bad?` · <span style="color:#b3341f">${bad} need a valid phone</span>`:''}`;
-      el('sendn').textContent = valid;
-    }
-    function refreshPreview() {
-      const t = state.templates.find(x=>x.id===el('tpl').value);
-      const rec = (state.draft.recipients||[]).find(r=>isValidPhone(r.phone));
-      el('pv').textContent = (t && rec) ? renderTpl(t.body, recToVars(rec)) : (t ? '(no valid recipient yet)' : '—');
     }
 
     async function save() {
@@ -217,27 +196,6 @@
       const {error}=await sb.from('recipient_lists').delete().eq('id',state.activeId);
       if (error) { banner('Delete failed: '+error.message); return; }
       state.activeId=null; state.draft=null; await loadAll(); renderEditor(); banner('Deleted','ok');
-    }
-
-    async function doSend() {
-      const t = state.templates.find(x=>x.id===el('tpl').value);
-      if (!t) { banner('Choose a template first'); return; }
-      const recs = (state.draft.recipients||[]).filter(r=>isValidPhone(r.phone));
-      if (!recs.length) { banner('No valid recipients to send to'); return; }
-      if (!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) {
-        banner('Sending isn’t wired yet — the n8n bulk-send webhook (BULK_SEND_WEBHOOK_URL) is the next step.'); return;
-      }
-      const messages = recs.map(r => ({ to: r.phone, text: renderTpl(t.body, recToVars(r)) }));
-      if (!confirm(`Send this message to ${messages.length} recipient(s)?`)) return;
-      const btn=el('send'); const orig=btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Sending…';
-      try {
-        const res = await fetch(cfg.BULK_SEND_WEBHOOK_URL, { method:'POST',
-          headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ list_id: state.activeId, template_id: t.id, messages }) });
-        if (!res.ok) throw new Error('HTTP '+res.status);
-        banner(`Queued ${messages.length} message(s) for sending.`, 'ok');
-      } catch(err){ banner('Bulk send failed: '+err.message); }
-      finally { btn.disabled=false; btn.innerHTML=orig; refreshCounts(); }
     }
 
     // ---- CSV import ----
@@ -324,7 +282,7 @@
       el('f-recs').value = recipientsToText(state.draft.recipients);
       el('csvpanel').style.display = 'none';
       el('csvhint').textContent = `Imported ${recs.length} from ${state.csv.name}`;
-      state.csv = null; refreshCounts(); refreshPreview();
+      state.csv = null; refreshCounts();
       banner(`Imported ${recs.length} number(s) — review, then Save the list.`, 'ok');
     }
 

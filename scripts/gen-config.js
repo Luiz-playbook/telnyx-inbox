@@ -15,6 +15,11 @@ const cfg = {
   // (The 'from' number is set in the n8n send node, not the payload.)
   BULK_SEND_WEBHOOK_URL: process.env.BULK_SEND_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-bulk-send',
+  // n8n workflow that pulls the messaging-profile's numbers into telnyx_numbers.
+  SYNC_NUMBERS_WEBHOOK_URL: process.env.SYNC_NUMBERS_WEBHOOK_URL
+    || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-sync-numbers',
+  // Only Google accounts on this domain may sign in.
+  ALLOWED_EMAIL_DOMAIN: process.env.ALLOWED_EMAIL_DOMAIN || 'callplaybook.com',
 };
 
 const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);
