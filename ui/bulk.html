@@ -167,14 +167,14 @@
             <textarea id="f-recs" placeholder="Jordan Smith, +16155550142&#10;+16155550178">${esc(recipientsToText(recs))}</textarea>
             <div class="hint" id="reccount"></div>
             <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-              <button type="button" class="upl" id="classify">🔎 Classify mobile / landline</button>
+              <button type="button" class="upl" id="classify">Classify mobile / landline</button>
               <span class="hint" id="classify-status"></span>
             </div>
             <div class="hint" id="classify-summary" style="margin-top:8px"></div>
           </div>
 
           <div class="sendbox">
-            <h3>📣 Send to these recipients</h3>
+            <h3>Send to these recipients</h3>
             <div class="sendrow">
               <div class="field"><label>Template</label>
                 <select id="tpl"><option value="">— choose a template —</option>${state.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
@@ -183,7 +183,7 @@
             </div>
             <div class="preview"><div class="lbl">Preview (first valid recipient)</div><div id="pv">—</div></div>
             <button class="sendbtn" id="send">Send to <span id="sendn">0</span> recipient(s)</button>
-            <div class="hint" style="margin-top:8px">${(!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) ? '⚠️ Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).' : 'Tip: save the list first if it’s new.'}</div>
+            <div class="hint" style="margin-top:8px">${(!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) ? 'Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).' : 'Tip: save the list first if it’s new.'}</div>
           </div>
         </div>`;
       el('f-name').addEventListener('input', e => { state.draft.name = e.target.value; });

@@ -135,7 +135,7 @@
       let html = state.items.map(c => {
         const cls = c.classification || {};
         const tier = cls.tier ? ` · ${esc(cls.tier)}` : '';
-        const comp = cls.competitor_detected ? ' 🔺' : '';
+        const comp = cls.competitor_detected ? '' : '';
         return `<div class="row ${c.id===state.activeId?'active':''}" data-id="${c.id}">
           <div class="nm">${esc(c.organization_name||'(unnamed)')}${comp}</div>
           <div class="meta">${esc(c.primary_domain||'—')}${tier}</div></div>`;
