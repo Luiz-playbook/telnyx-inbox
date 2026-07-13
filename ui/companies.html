@@ -1,81 +1,45 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Companies</title>
-  <style>
-    :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
-      --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; }
-    * { box-sizing:border-box; }
-    html, body { height:100%; margin:0; }
-    body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-      color:var(--text); background:var(--bg); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
-    .content { flex:1; display:flex; min-height:0; }
-    a { color:var(--blue); text-decoration:none; }
-    #banner { position:fixed; top:0; left:0; right:0; z-index:30; padding:8px 14px; font-size:13px; display:none; }
-    #banner.err { background:#fde2e2; color:#92211f; } #banner.ok { background:#dff5e8; color:#1b6b40; }
-    .navtabs { display:flex; gap:4px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
-    .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); white-space:nowrap; }
-    .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
-
-    #list { width:340px; min-width:340px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
-    #list .top { padding:14px 16px 4px; }
-    #list .top h1 { font-size:19px; margin:0; font-weight:700; }
-    #list .top .cnt { color:var(--muted); font-size:12px; margin-top:2px; }
-    #search { margin:10px 16px; }
-    #search input { width:100%; padding:9px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; outline:none; }
-    #rows { overflow-y:auto; flex:1; }
-    .row { padding:12px 16px; border-bottom:1px solid #f1f3f6; cursor:pointer; }
-    .row:hover { background:var(--bg-2); } .row.active { background:var(--blue-soft); }
-    .row .nm { font-weight:600; display:flex; align-items:center; gap:6px; }
-    .row .meta { color:var(--muted); font-size:12px; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-    .loadmore { margin:12px 16px 20px; padding:9px; text-align:center; border:1px solid var(--border); border-radius:9px; cursor:pointer; color:var(--muted); font-weight:600; }
-    .loadmore:hover { background:var(--bg-2); }
-
-    #detail { flex:1; overflow-y:auto; }
-    .dhead { padding:18px 24px; border-bottom:1px solid var(--border); position:sticky; top:0; background:var(--bg); }
-    .dhead h2 { margin:0; font-size:20px; font-weight:700; }
-    .dhead .sub { color:var(--muted); font-size:13px; margin-top:4px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .dbody { padding:18px 24px; max-width:900px; }
-    .card { border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:14px; }
-    .card .ctitle { font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin-bottom:10px; }
-    details.card > summary { cursor:pointer; list-style:none; }
-    details.card > summary::-webkit-details-marker { display:none; }
-    .kvs { display:grid; gap:8px 18px; }
-    .kv { display:grid; grid-template-columns:190px 1fr; gap:12px; align-items:start; }
-    .kv .k { color:var(--muted); font-size:13px; }
-    .subcard { border:1px solid var(--border); border-radius:9px; padding:10px 12px; margin-bottom:8px; background:var(--bg-2); }
-    .chips { display:flex; flex-wrap:wrap; gap:6px; }
-    .chip { background:var(--bg-3); border-radius:20px; padding:3px 10px; font-size:12px; }
-    .badge { font-size:11px; font-weight:700; padding:2px 8px; border-radius:20px; }
-    .badge.tier { background:#e7effe; color:#2f6bff; text-transform:uppercase; letter-spacing:.03em; }
-    .badge.comp { background:#fdecec; color:#b3341f; }
-    pre { background:var(--bg-2); border:1px solid var(--border); border-radius:9px; padding:12px; overflow-x:auto; font-size:12px; }
-    .muted { color:var(--faint); }
-    .metaline { color:var(--faint); font-size:12px; margin-top:8px; }
-    .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
-    .spinner { display:inline-block; width:14px; height:14px; border:2px solid #bbb; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="./theme.css" rel="stylesheet" />
+  <style> html,body{height:100%} </style>
 </head>
-<body>
-  <div id="banner"></div>
-  <nav class="navtabs">
-    <a href="./index.html">Inbox</a>
-    <a href="./companies.html" class="active">Companies</a>
-    <a href="./templates.html">Templates</a>
-    <a href="./bulk.html">Recipients</a>
-    <a href="./lookup.html">Checker</a>
-  </nav>
-  <div class="content">
-    <aside id="list">
-      <div class="top"><h1>Companies</h1><div class="cnt" id="count">—</div></div>
-      <div id="search"><input id="search-input" placeholder="Search name or domain…" /></div>
-      <div id="rows"><div class="empty">Loading…</div></div>
-    </aside>
-    <main id="detail"><div class="empty">Select a company to view its profile</div></main>
+<body class="h-full">
+  <div class="flex flex-col h-screen bg-base-200">
+    <header class="shrink-0">
+      <div class="pb-topbar flex items-center gap-4 px-5 h-14">
+        <img src="./assets/pb-logo-navbar.png" alt="Playbook" class="h-7 w-auto" />
+        <span class="text-white/70 text-sm font-semibold hidden sm:inline">Messaging</span>
+      </div>
+      <nav class="pb-tabs px-5">
+        <a href="./index.html">Inbox</a>
+        <a href="./companies.html" class="active">Companies</a>
+        <a href="./templates.html">Templates</a>
+        <a href="./bulk.html">Recipients</a>
+        <a href="./lookup.html">Checker</a>
+      </nav>
+    </header>
+
+    <div class="flex flex-1 min-h-0">
+      <aside class="w-80 shrink-0 border-r border-base-300 bg-base-100 flex flex-col">
+        <div class="px-4 pt-4 pb-1">
+          <h1 class="text-xl font-bold">Companies</h1>
+          <div class="text-xs text-base-content/60" id="count">—</div>
+        </div>
+        <div class="px-4 py-2"><input id="search-input" class="input input-bordered input-sm w-full" placeholder="Search name or domain…"></div>
+        <div id="rows" class="overflow-y-auto flex-1"><div class="p-6 text-center text-base-content/50">Loading…</div></div>
+      </aside>
+      <main class="flex-1 overflow-y-auto" id="detail">
+        <div class="h-full flex items-center justify-center text-base-content/50">Select a company to view its profile</div>
+      </main>
+    </div>
   </div>
+  <div class="toast toast-end" id="toast-wrap"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
@@ -86,92 +50,58 @@
     const TABLE = 'enriched_prospects';
     const PAGE = 50;
     const state = { items: [], activeId: null, filter: '', limit: PAGE, total: 0 };
-    const SECTIONS = ['organization_info','classification','scale_and_volume','contacts','pricing',
-      'revenue','sponsorship','fundraising','martech_stack','pride_and_values','registration_and_domains'];
+    const SECTIONS = ['organization_info','classification','scale_and_volume','contacts','pricing','revenue','sponsorship','fundraising','martech_stack','pride_and_values','registration_and_domains'];
     const BIG = ['pages_analyzed','raw_data'];
 
-    function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',3000); }
+    function toast(m,t='err'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[t]; const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(m)}</span>`; el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function humanize(k){ return k.replace(/_/g,' ').replace(/^\w/, c=>c.toUpperCase()); }
-    function withHttp(u){ return /^https?:\/\//i.test(u) ? u : 'https://'+u; }
+    function humanize(k){ return k.replace(/_/g,' ').replace(/^\w/,c=>c.toUpperCase()); }
+    function withHttp(u){ return /^https?:\/\//i.test(u)?u:'https://'+u; }
     function isEmpty(v){ return v===null||v===undefined||v===''||(Array.isArray(v)&&!v.length)||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length); }
-    const debounce = (fn,ms)=>{ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a),ms); }; };
+    const debounce=(fn,ms)=>{let t;return(...a)=>{clearTimeout(t);t=setTimeout(()=>fn(...a),ms);};};
 
     function renderValue(v){
-      if (isEmpty(v)) return '<span class="muted">—</span>';
-      if (typeof v==='boolean') return v?'Yes':'No';
-      if (Array.isArray(v)){
-        if (v.every(x=> x===null || typeof x!=='object')) return '<div class="chips">'+v.map(x=>`<span class="chip">${esc(x)}</span>`).join('')+'</div>';
-        return v.map(x=>`<div class="subcard">${renderValue(x)}</div>`).join('');
-      }
-      if (typeof v==='object'){
-        const rows = Object.entries(v).filter(([,val])=>!isEmpty(val))
-          .map(([k,val])=>`<div class="kv"><div class="k">${esc(humanize(k))}</div><div class="v">${renderValue(val)}</div></div>`).join('');
-        return `<div class="kvs">${rows}</div>`;
-      }
+      if(isEmpty(v))return '<span class="text-base-content/40">—</span>';
+      if(typeof v==='boolean')return v?'Yes':'No';
+      if(Array.isArray(v)){ if(v.every(x=>x===null||typeof x!=='object'))return '<div class="flex flex-wrap gap-1.5">'+v.map(x=>`<span class="badge badge-ghost">${esc(x)}</span>`).join('')+'</div>';
+        return v.map(x=>`<div class="rounded-lg border border-base-300 bg-base-200 p-2.5 mb-2">${renderValue(x)}</div>`).join(''); }
+      if(typeof v==='object'){ const rows=Object.entries(v).filter(([,val])=>!isEmpty(val)).map(([k,val])=>`<div class="grid grid-cols-[190px_1fr] gap-3 items-start py-1"><div class="text-sm text-base-content/60">${esc(humanize(k))}</div><div>${renderValue(val)}</div></div>`).join(''); return `<div>${rows}</div>`; }
       return esc(v);
     }
-    function sectionCard(title, val){ return isEmpty(val) ? '' : `<div class="card"><div class="ctitle">${esc(title)}</div>${renderValue(val)}</div>`; }
+    function sectionCard(title,val){ return isEmpty(val)?'':`<div class="card bg-base-100 border border-base-300 mb-3"><div class="card-body p-4"><div class="text-xs font-bold uppercase text-base-content/60 mb-2">${esc(title)}</div>${renderValue(val)}</div></div>`; }
 
-    async function loadList() {
-      let q = sb.from(TABLE)
-        .select('id,organization_name,primary_domain,competitor_source_sheet,classification,created_at', { count:'estimated' })
-        .order('organization_name', { ascending:true, nullsFirst:false })
-        .range(0, state.limit-1);
-      const f = state.filter.replace(/[,()*%]/g,'').trim();
-      if (f) q = q.or(`organization_name.ilike.*${f}*,primary_domain.ilike.*${f}*`);
-      else q = q.not('organization_name','is',null).neq('organization_name','');
-      const { data, error, count } = await q;
-      if (error) { banner('Load failed: '+error.message); return; }
-      state.items = data || []; state.total = count ?? state.items.length;
-      renderList();
+    async function loadList(){
+      let q=sb.from(TABLE).select('id,organization_name,primary_domain,competitor_source_sheet,classification,created_at',{count:'estimated'}).order('organization_name',{ascending:true,nullsFirst:false}).range(0,state.limit-1);
+      const f=state.filter.replace(/[,()*%]/g,'').trim();
+      if(f)q=q.or(`organization_name.ilike.*${f}*,primary_domain.ilike.*${f}*`); else q=q.not('organization_name','is',null).neq('organization_name','');
+      const {data,error,count}=await q; if(error){toast('Load failed: '+error.message);return;}
+      state.items=data||[]; state.total=count??state.items.length; renderList();
     }
-    function renderList() {
-      el('count').textContent = state.filter
-        ? `${state.items.length} shown` + (state.total>state.items.length?` of ~${state.total.toLocaleString()} matches`:'')
-        : `Showing ${state.items.length} of ~${state.total.toLocaleString()}`;
-      const box = el('rows');
-      if (!state.items.length) { box.innerHTML = '<div class="empty">No companies found</div>'; return; }
-      let html = state.items.map(c => {
-        const cls = c.classification || {};
-        const tier = cls.tier ? ` · ${esc(cls.tier)}` : '';
-        const comp = cls.competitor_detected ? '' : '';
-        return `<div class="row ${c.id===state.activeId?'active':''}" data-id="${c.id}">
-          <div class="nm">${esc(c.organization_name||'(unnamed)')}${comp}</div>
-          <div class="meta">${esc(c.primary_domain||'—')}${tier}</div></div>`;
-      }).join('');
-      if (state.items.length >= state.limit) html += `<div class="loadmore" id="more">Load more</div>`;
-      box.innerHTML = html;
-      box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => open(n.dataset.id)));
-      if (el('more')) el('more').addEventListener('click', () => { state.limit += PAGE; loadList(); });
+    function renderList(){
+      el('count').textContent=state.filter?`${state.items.length} shown`:`Showing ${state.items.length} of ~${state.total.toLocaleString()}`;
+      const box=el('rows'); if(!state.items.length){box.innerHTML='<div class="p-6 text-center text-base-content/50">No companies found</div>';return;}
+      let html=state.items.map(c=>{ const cls=c.classification||{}; const tier=cls.tier?` · ${esc(cls.tier)}`:''; const comp=cls.competitor_detected?' <span class="badge badge-error badge-xs">comp</span>':'';
+        return `<div class="px-4 py-3 border-b border-base-200 cursor-pointer hover:bg-base-200 ${c.id===state.activeId?'bg-primary/10':''}" data-id="${c.id}"><div class="font-semibold">${esc(c.organization_name||'(unnamed)')}${comp}</div><div class="text-xs text-base-content/60 truncate">${esc(c.primary_domain||'—')}${tier}</div></div>`; }).join('');
+      if(state.items.length>=state.limit)html+=`<div class="m-4 btn btn-sm btn-outline" id="more">Load more</div>`;
+      box.innerHTML=html; box.querySelectorAll('[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id)));
+      if(el('more'))el('more').addEventListener('click',()=>{state.limit+=PAGE;loadList();});
     }
-
-    async function open(id) {
-      state.activeId = id; renderList();
-      el('detail').innerHTML = '<div class="empty"><span class="spinner"></span></div>';
-      const { data: c, error } = await sb.from(TABLE).select('*').eq('id', id).single();
-      if (error) { el('detail').innerHTML = '<div class="empty">Failed to load: '+esc(error.message)+'</div>'; return; }
-      const cls = c.classification || {};
-      const tier = cls.tier ? `<span class="badge tier">${esc(cls.tier)}</span>` : '';
-      const comp = cls.competitor_detected ? `<span class="badge comp">competitor${cls.competitor_platform?': '+esc(cls.competitor_platform):''}</span>` : '';
-      const src = c.competitor_source_sheet ? `<span class="chip">source: ${esc(c.competitor_source_sheet)}</span>` : '';
-      const domain = c.primary_domain ? `<a href="${esc(withHttp(c.primary_domain))}" target="_blank" rel="noopener">${esc(c.primary_domain)}</a>` : '';
-      let html = `<div class="dhead"><h2>${esc(c.organization_name||'—')}</h2><div class="sub">${domain}${tier}${comp}${src}</div></div><div class="dbody">`;
-      SECTIONS.forEach(k => html += sectionCard(humanize(k), c[k]));
-      if (c.txt_file_drive_url) html += `<div class="card"><div class="ctitle">Source file</div><a href="${esc(c.txt_file_drive_url)}" target="_blank" rel="noopener">Open scraped text ↗</a></div>`;
-      BIG.forEach(k => { if (!isEmpty(c[k])) html += `<details class="card"><summary class="ctitle">${esc(humanize(k))} ▸</summary><pre>${esc(JSON.stringify(c[k],null,2))}</pre></details>`; });
-      const meta = [];
-      if (c.version) meta.push('Version: '+c.version);
-      if (c.created_at) meta.push('Created: '+new Date(c.created_at).toLocaleString());
-      if (c.remarks) meta.push('Remarks: '+c.remarks);
-      if (meta.length) html += `<div class="metaline">${esc(meta.join(' · '))}</div>`;
-      html += '</div>';
-      el('detail').innerHTML = html;
+    async function open(id){
+      state.activeId=id; renderList(); el('detail').innerHTML='<div class="h-full flex items-center justify-center"><span class="loading loading-spinner"></span></div>';
+      const {data:c,error}=await sb.from(TABLE).select('*').eq('id',id).single();
+      if(error){el('detail').innerHTML='<div class="p-8 text-center text-base-content/50">Failed to load: '+esc(error.message)+'</div>';return;}
+      const cls=c.classification||{}; const tier=cls.tier?`<span class="badge badge-primary">${esc(cls.tier)}</span>`:''; const comp=cls.competitor_detected?`<span class="badge badge-error">competitor${cls.competitor_platform?': '+esc(cls.competitor_platform):''}</span>`:''; const src=c.competitor_source_sheet?`<span class="badge badge-ghost">source: ${esc(c.competitor_source_sheet)}</span>`:'';
+      const domain=c.primary_domain?`<a class="link link-primary" href="${esc(withHttp(c.primary_domain))}" target="_blank" rel="noopener">${esc(c.primary_domain)}</a>`:'';
+      let html=`<div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4"><h2 class="text-xl font-bold">${esc(c.organization_name||'—')}</h2><div class="flex gap-2 items-center flex-wrap mt-1 text-sm text-base-content/60">${domain}${tier}${comp}${src}</div></div><div class="p-6 max-w-4xl">`;
+      SECTIONS.forEach(k=>html+=sectionCard(humanize(k),c[k]));
+      if(c.txt_file_drive_url)html+=`<div class="card bg-base-100 border border-base-300 mb-3"><div class="card-body p-4"><div class="text-xs font-bold uppercase text-base-content/60 mb-1">Source file</div><a class="link link-primary" href="${esc(c.txt_file_drive_url)}" target="_blank" rel="noopener">Open scraped text</a></div></div>`;
+      BIG.forEach(k=>{ if(!isEmpty(c[k]))html+=`<div class="collapse collapse-arrow bg-base-100 border border-base-300 mb-3"><input type="checkbox"><div class="collapse-title text-xs font-bold uppercase text-base-content/60">${esc(humanize(k))}</div><div class="collapse-content"><pre class="text-xs overflow-x-auto bg-base-200 p-3 rounded">${esc(JSON.stringify(c[k],null,2))}</pre></div></div>`; });
+      const meta=[]; if(c.version)meta.push('Version: '+c.version); if(c.created_at)meta.push('Created: '+new Date(c.created_at).toLocaleString()); if(c.remarks)meta.push('Remarks: '+c.remarks);
+      if(meta.length)html+=`<div class="text-xs text-base-content/40 mt-2">${esc(meta.join(' · '))}</div>`;
+      html+='</div>'; el('detail').innerHTML=html;
     }
-
-    el('search-input').addEventListener('input', debounce(e => { state.filter = e.target.value; state.limit = PAGE; loadList(); }, 300));
-    if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.');
-    else loadList();
+    el('search-input').addEventListener('input', debounce(e=>{state.filter=e.target.value;state.limit=PAGE;loadList();},300));
+    if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in'); else loadList();
   </script>
 </body>
 </html>

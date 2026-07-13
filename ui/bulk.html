@@ -1,89 +1,66 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recipients</title>
-  <style>
-    :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
-      --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; --green:#22b573; }
-    * { box-sizing:border-box; }
-    html, body { height:100%; margin:0; }
-    body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-      color:var(--text); background:var(--bg); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
-    .content { flex:1; display:flex; min-height:0; }
-    a { color:inherit; text-decoration:none; }
-    #banner { position:fixed; top:0; left:0; right:0; z-index:30; padding:8px 14px; font-size:13px; display:none; }
-    #banner.err { background:#fde2e2; color:#92211f; } #banner.ok { background:#dff5e8; color:#1b6b40; }
-    .navtabs { display:flex; gap:4px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
-    .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); white-space:nowrap; }
-    .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
-
-    #list { width:300px; min-width:300px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
-    #list .top { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; }
-    #list .top h1 { font-size:19px; margin:0; font-weight:700; }
-    #list .top button { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
-    #rows { overflow-y:auto; flex:1; }
-    .row { padding:12px 16px; border-bottom:1px solid #f1f3f6; cursor:pointer; }
-    .row:hover { background:var(--bg-2); } .row.active { background:var(--blue-soft); }
-    .row .nm { font-weight:600; } .row .meta { color:var(--muted); font-size:12px; margin-top:2px; }
-
-    #editor { flex:1; overflow-y:auto; }
-    .ehead { padding:16px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; position:sticky; top:0; background:var(--bg); }
-    .ehead h2 { margin:0; font-size:18px; font-weight:700; }
-    .ehead .btns { display:flex; gap:8px; }
-    .ehead button { border:1px solid var(--border); background:var(--bg); border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
-    .ehead button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
-    .ehead button.danger { color:#c0392b; }
-    .form { padding:20px 24px; max-width:820px; }
-    .field { display:flex; flex-direction:column; gap:5px; margin-bottom:16px; }
-    .field label { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-    .field input, .field textarea, .field select { padding:10px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; outline:none; background:var(--bg); }
-    .field textarea { resize:vertical; min-height:150px; line-height:1.5; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; }
-    .hint { color:var(--muted); font-size:12px; }
-    .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-    .chip { background:var(--bg-3); border-radius:20px; padding:3px 10px; font-size:12px; }
-    .chip.bad { background:#fdecec; color:#b3341f; }
-
-    .sendbox { border:1px solid var(--border); border-radius:12px; padding:16px; margin-top:8px; background:var(--bg-2); }
-    .sendbox h3 { margin:0 0 12px; font-size:15px; }
-    .sendrow { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; }
-    .sendrow .field { margin:0; flex:1; min-width:220px; }
-    .preview { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:12px; white-space:pre-wrap; margin-top:12px; }
-    .preview .lbl { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
-    .sendbtn { background:var(--green); color:#fff; border:0; border-radius:9px; padding:11px 18px; font-weight:700; cursor:pointer; margin-top:14px; }
-    .sendbtn:disabled { background:#a9d9bf; cursor:default; }
-    .spinner { display:inline-block; width:13px; height:13px; border:2px solid #fff; border-top-color:transparent; border-radius:50%; animation:spin .7s linear infinite; vertical-align:-2px; }
-    @keyframes spin { to { transform:rotate(360deg); } }
-    .csvbar { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
-    .upl { border:1px solid var(--border); background:var(--bg); border-radius:9px; padding:8px 12px; font-weight:600; cursor:pointer; font-size:13px; }
-    .csvpanel { border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:10px; background:var(--bg-2); }
-    .csvgrid { display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; }
-    .csvgrid .field { margin:0; }
-    .csvgrid select { padding:8px 10px; border:1px solid var(--border); border-radius:8px; font:inherit; background:var(--bg); }
-    .chk { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
-    .csvactions { margin-top:12px; display:flex; gap:8px; }
-    .csvactions .primary { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
-    .csvactions .ghost { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:8px 14px; cursor:pointer; }
-    .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
-  </style>
+  <title>Recipients (Tailwind + DaisyUI demo)</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="./theme.css" rel="stylesheet" />
+  <style> html,body{height:100%} </style>
 </head>
-<body>
-  <div id="banner"></div>
-  <nav class="navtabs">
-    <a href="./index.html">Inbox</a>
-    <a href="./companies.html">Companies</a>
-    <a href="./templates.html">Templates</a>
-    <a href="./bulk.html" class="active">Recipients</a>
-    <a href="./lookup.html">Checker</a>
-  </nav>
-  <div class="content">
-    <aside id="list">
-      <div class="top"><h1>Recipients</h1><button id="new-btn">＋ New</button></div>
-      <div id="rows"><div class="empty">Loading…</div></div>
-    </aside>
-    <main id="editor"><div class="empty">Select a recipient list, or click ＋ New</div></main>
+<body class="h-full">
+  <div class="flex flex-col h-screen bg-base-200">
+
+    <!-- top nav -->
+    <header class="shrink-0">
+      <div class="pb-topbar flex items-center gap-4 px-5 h-14">
+        <img src="./assets/pb-logo-navbar.png" alt="Playbook" class="h-7 w-auto" />
+        <span class="text-white/70 text-sm font-semibold hidden sm:inline">Messaging</span>
+      </div>
+      <nav class="pb-tabs px-5">
+        <a href="./index.html">Inbox</a>
+        <a href="./companies.html">Companies</a>
+        <a href="./templates.html">Templates</a>
+        <a href="./bulk.html" class="active">Recipients</a>
+        <a href="./lookup.html">Checker</a>
+      </nav>
+    </header>
+
+    <div class="flex flex-1 min-h-0">
+      <!-- list column -->
+      <aside class="w-80 shrink-0 border-r border-base-300 bg-base-100 flex flex-col">
+        <div class="p-4 flex items-center justify-between">
+          <h1 class="text-xl font-bold">Recipients</h1>
+          <button class="btn btn-primary btn-sm" id="new-btn">+ New</button>
+        </div>
+        <ul class="menu px-2 overflow-y-auto flex-1" id="rows">
+          <li class="px-2 py-6 text-center text-base-content/50">Loading…</li>
+        </ul>
+      </aside>
+
+      <!-- editor column -->
+      <main class="flex-1 overflow-y-auto" id="editor">
+        <div class="h-full flex items-center justify-center text-base-content/50">Select a recipient list, or click + New</div>
+      </main>
+    </div>
   </div>
+
+  <!-- confirm send modal -->
+  <dialog id="send-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Send this campaign?</h3>
+      <p class="py-3 text-base-content/70" id="send-modal-text"></p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn">Cancel</button></form>
+        <button class="btn btn-success" id="send-go">Send now</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <!-- toast -->
+  <div class="toast toast-end" id="toast-wrap"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
@@ -94,302 +71,187 @@
     const state = { lists: [], templates: [], numbers: [], activeId: null, draft: null, csv: null };
     function activeFrom(){ return localStorage.getItem('active_telnyx_number') || (state.numbers[0] && state.numbers[0].phone_number) || '+16158050766'; }
 
-    function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',3000); }
-    function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function renderTpl(body, v){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g,(_,k)=> (v[k] ?? '')); }
-
-    // parse pasted lines -> [{name, phone}]. Accepts "Name, +1..." or just a number.
-    function parseRecipients(text) {
-      const out = [];
-      (text||'').split(/\r?\n/).forEach(line => {
-        line = line.trim(); if (!line) return;
-        let name = '', phone = line;
-        const comma = line.lastIndexOf(',');
-        if (comma > -1) { name = line.slice(0,comma).trim(); phone = line.slice(comma+1).trim(); }
-        const norm = normPhone(phone);
-        out.push({ name, phone: norm });
-      });
-      return out;
+    function toast(msg, type='info'){
+      const cls = { ok:'alert-success', err:'alert-error', info:'alert-info' }[type] || 'alert-info';
+      const d = document.createElement('div'); d.className = `alert ${cls} shadow`; d.innerHTML = `<span>${esc(msg)}</span>`;
+      el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(), 3000);
     }
-    function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d && d[0]!=='+'){ if(d.length===10) d='+1'+d; else if(d.length===11 && d[0]==='1') d='+'+d; } return d; }
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function renderTpl(body, v){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g,(_,k)=> (v[k] ?? '')); }
+    function parseRecipients(text){ const out=[]; (text||'').split(/\r?\n/).forEach(line=>{ line=line.trim(); if(!line)return; let name='',phone=line; const c=line.lastIndexOf(','); if(c>-1){name=line.slice(0,c).trim();phone=line.slice(c+1).trim();} out.push({name,phone:normPhone(phone)}); }); return out; }
+    function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
     function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
-    function firstName(n){ return (n||'').trim().split(/\s+/)[0] || ''; }
+    function firstName(n){ return (n||'').trim().split(/\s+/)[0]||''; }
     function recToVars(r){ return { name:r.name||'', first_name:firstName(r.name), phone:r.phone||'' }; }
+    function recipientsToText(recs){ return (recs||[]).map(r=> r.name ? `${r.name}, ${r.phone}` : r.phone).join('\n'); }
 
-    async function loadAll() {
-      const [{ data:lists, error:e1 }, { data:tpls, error:e2 }, { data:nums }] = await Promise.all([
+    async function loadAll(){
+      const [{data:lists,error:e1},{data:tpls,error:e2},{data:nums}] = await Promise.all([
         sb.from('recipient_lists').select('*').order('updated_at',{ascending:false}),
         sb.from('message_templates').select('*').order('name',{ascending:true}),
         sb.from('telnyx_numbers').select('*').eq('active',true).order('sort_order'),
       ]);
-      if (e1) { banner('Load lists failed: '+e1.message); return; }
-      if (e2) banner('Load templates failed: '+e2.message);
-      state.lists = lists || []; state.templates = tpls || []; state.numbers = nums || []; renderList();
+      if (e1) { toast('Load failed: '+e1.message,'err'); return; }
+      state.lists=lists||[]; state.templates=tpls||[]; state.numbers=nums||[]; renderList();
     }
-    function renderList() {
-      const box = el('rows');
-      if (!state.lists.length) { box.innerHTML='<div class="empty">No recipient lists yet</div>'; return; }
-      box.innerHTML = state.lists.map(l => `
-        <div class="row ${l.id===state.activeId?'active':''}" data-id="${l.id}">
-          <div class="nm">${esc(l.name)}</div>
-          <div class="meta">${(l.recipients||[]).length} recipient(s)</div>
-        </div>`).join('');
-      box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => open(n.dataset.id)));
+    function renderList(){
+      const box=el('rows');
+      if(!state.lists.length){ box.innerHTML='<li class="px-2 py-6 text-center text-base-content/50">No recipient lists yet</li>'; return; }
+      box.innerHTML = state.lists.map(l=>`
+        <li><a class="${l.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${l.id}">
+          <span class="font-semibold">${esc(l.name)}</span>
+          <span class="text-xs text-base-content/60">${(l.recipients||[]).length} recipient(s)</span>
+        </a></li>`).join('');
+      box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id)));
     }
-    function recipientsToText(recs){ return (recs||[]).map(r => r.name ? `${r.name}, ${r.phone}` : r.phone).join('\n'); }
+    function newItem(){ state.activeId=null; state.draft={name:'',recipients:[]}; renderList(); renderEditor(); }
+    function open(id){ const l=state.lists.find(x=>x.id===id); if(!l)return; state.activeId=id; state.draft={name:l.name,recipients:Array.isArray(l.recipients)?l.recipients:[]}; renderList(); renderEditor(); }
 
-    function newItem(){ state.activeId=null; state.draft={ name:'', recipients:[] }; renderList(); renderEditor(); }
-    function open(id){ const l=state.lists.find(x=>x.id===id); if(!l) return; state.activeId=id;
-      state.draft={ name:l.name, recipients:Array.isArray(l.recipients)?l.recipients:[] }; renderList(); renderEditor(); }
-
-    function renderEditor() {
-      if (!state.draft) { el('editor').innerHTML='<div class="empty">Select a recipient list, or click ＋ New</div>'; return; }
-      const isNew = !state.activeId;
-      const recs = state.draft.recipients || [];
-      const valid = recs.filter(r=>isValidPhone(r.phone)).length, bad = recs.length - valid;
+    function renderEditor(){
+      if(!state.draft){ el('editor').innerHTML='<div class="h-full flex items-center justify-center text-base-content/50">Select a recipient list, or click + New</div>'; return; }
+      const isNew=!state.activeId; const recs=state.draft.recipients||[];
       el('editor').innerHTML = `
-        <div class="ehead">
-          <h2>${isNew?'New recipient list':esc(state.draft.name||'List')}</h2>
-          <div class="btns">
-            ${isNew?'':'<button class="danger" id="del">Delete</button>'}
-            <button class="primary" id="save">${isNew?'Create':'Save'}</button>
+        <div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4 flex items-center justify-between">
+          <h2 class="text-lg font-bold">${isNew?'New recipient list':esc(state.draft.name||'List')}</h2>
+          <div class="flex gap-2">
+            ${isNew?'':'<button class="btn btn-sm btn-outline btn-error" id="del">Delete</button>'}
+            <button class="btn btn-sm btn-primary" id="save">${isNew?'Create':'Save'}</button>
           </div>
         </div>
-        <div class="form">
-          <div class="field"><label>List name</label><input id="f-name" value="${esc(state.draft.name)}" placeholder="e.g. Fall camp leads"></div>
-          <div class="field">
-            <label>Recipients <span style="text-transform:none;font-weight:400;color:var(--muted)">— import a CSV, or type below (one per line: “Name, +16155550142”)</span></label>
-            <div class="csvbar">
-              <label class="upl">⤒ Import CSV<input type="file" accept=".csv,text/csv" id="f-csv" hidden></label>
-              <span class="hint" id="csvhint"></span>
-            </div>
-            <div id="csvpanel" class="csvpanel" style="display:none"></div>
-            <textarea id="f-recs" placeholder="Jordan Smith, +16155550142&#10;+16155550178">${esc(recipientsToText(recs))}</textarea>
-            <div class="hint" id="reccount"></div>
-            <div style="margin-top:12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-              <button type="button" class="upl" id="classify">Classify mobile / landline</button>
-              <span class="hint" id="classify-status"></span>
-            </div>
-            <div class="hint" id="classify-summary" style="margin-top:8px"></div>
+        <div class="p-6 max-w-3xl space-y-5">
+          <div class="form-control">
+            <label class="label"><span class="label-text font-semibold">List name</span></label>
+            <input id="f-name" class="input input-bordered" value="${esc(state.draft.name)}" placeholder="e.g. Fall camp leads">
           </div>
 
-          <div class="sendbox">
-            <h3>Send to these recipients</h3>
-            <div class="sendrow">
-              <div class="field"><label>Template</label>
-                <select id="tpl"><option value="">— choose a template —</option>${state.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
-              <div class="field"><label>Send from</label>
-                <select id="from-num">${state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===activeFrom()?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join('') || '<option value="">No numbers</option>'}</select></div>
+          <div class="card bg-base-100 border border-base-300">
+            <div class="card-body gap-3 p-4">
+              <div class="flex items-center gap-3">
+                <label class="btn btn-sm btn-outline">Import CSV<input type="file" accept=".csv,text/csv" id="f-csv" class="hidden"></label>
+                <span class="text-sm text-base-content/60" id="csvhint"></span>
+              </div>
+              <div id="csvpanel" class="hidden"></div>
+              <div class="form-control">
+                <label class="label"><span class="label-text font-semibold">Recipients</span><span class="label-text-alt" id="reccount"></span></label>
+                <textarea id="f-recs" class="textarea textarea-bordered font-mono text-sm min-h-40" placeholder="Jordan Smith, +16155550142">${esc(recipientsToText(recs))}</textarea>
+              </div>
+              <div class="flex items-center gap-3 flex-wrap">
+                <button class="btn btn-sm btn-outline" id="classify">Classify mobile / landline</button>
+                <span class="text-sm text-base-content/60" id="classify-status"></span>
+              </div>
+              <div class="text-sm" id="classify-summary"></div>
             </div>
-            <div class="preview"><div class="lbl">Preview (first valid recipient)</div><div id="pv">—</div></div>
-            <button class="sendbtn" id="send">Send to <span id="sendn">0</span> recipient(s)</button>
-            <div class="hint" style="margin-top:8px">${(!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) ? 'Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).' : 'Tip: save the list first if it’s new.'}</div>
+          </div>
+
+          <div class="card bg-base-100 border border-base-300">
+            <div class="card-body gap-3 p-4">
+              <h3 class="font-bold">Send to these recipients</h3>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="form-control"><label class="label"><span class="label-text">Template</span></label>
+                  <select id="tpl" class="select select-bordered"><option value="">— choose a template —</option>${state.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+                <div class="form-control"><label class="label"><span class="label-text">Send from</span></label>
+                  <select id="from-num" class="select select-bordered">${state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===activeFrom()?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join('')||'<option value="">No numbers</option>'}</select></div>
+              </div>
+              <div class="rounded-lg bg-base-200 p-3 text-sm whitespace-pre-wrap" id="pv">—</div>
+              <button class="btn btn-success w-full" id="send">Send to <span id="sendn" class="mx-1 font-bold">0</span> recipient(s)</button>
+              <div class="text-xs text-base-content/60">${(!cfg.BULK_SEND_WEBHOOK_URL||cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<'))?'Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).':'Tip: save the list first if it’s new.'}</div>
+            </div>
           </div>
         </div>`;
-      el('f-name').addEventListener('input', e => { state.draft.name = e.target.value; });
-      el('f-recs').addEventListener('input', e => { state.draft.recipients = parseRecipients(e.target.value); refreshCounts(); refreshSend(); });
+      el('f-name').addEventListener('input', e=>{ state.draft.name=e.target.value; });
+      el('f-recs').addEventListener('input', e=>{ state.draft.recipients=parseRecipients(e.target.value); refreshCounts(); refreshSend(); });
       el('f-csv').addEventListener('change', onCsvFile);
       el('save').addEventListener('click', save);
-      if (el('del')) el('del').addEventListener('click', del);
+      if(el('del')) el('del').addEventListener('click', del);
       el('classify').addEventListener('click', classifyRecipients);
       el('tpl').addEventListener('change', refreshSend);
-      el('from-num').addEventListener('change', () => { localStorage.setItem('active_telnyx_number', el('from-num').value); });
-      el('send').addEventListener('click', doSend);
+      el('from-num').addEventListener('change', ()=>localStorage.setItem('active_telnyx_number', el('from-num').value));
+      el('send').addEventListener('click', openSendModal);
       refreshCounts(); showClassifySummary(); refreshSend();
     }
-    function refreshCounts() {
-      const recs = state.draft.recipients||[];
-      const valid = recs.filter(r=>isValidPhone(r.phone)).length, bad = recs.length-valid;
-      el('reccount').innerHTML = `${recs.length} line(s) · <b>${valid} valid</b>${bad?` · <span style="color:#b3341f">${bad} need a valid phone</span>`:''}`;
-    }
+    function refreshCounts(){ const recs=state.draft.recipients||[]; const valid=recs.filter(r=>isValidPhone(r.phone)).length, bad=recs.length-valid;
+      el('reccount').innerHTML=`${recs.length} line(s) · <b>${valid} valid</b>${bad?` · <span class="text-error">${bad} invalid</span>`:''}`; }
 
-    async function save() {
-      if (!state.draft.name.trim()) { banner('List name is required'); return; }
-      const payload = { name: state.draft.name.trim(), recipients: state.draft.recipients||[] };
-      const btn=el('save'); btn.disabled=true;
-      try {
-        if (state.activeId) { const {error}=await sb.from('recipient_lists').update(payload).eq('id',state.activeId); if(error) throw error; banner('Saved','ok'); }
-        else { const {data,error}=await sb.from('recipient_lists').insert(payload).select().single(); if(error) throw error; state.activeId=data.id; banner('Created','ok'); }
-        await loadAll(); if (state.activeId) open(state.activeId);
-      } catch(err){ banner('Save failed: '+err.message); } finally { btn.disabled=false; }
+    async function save(){
+      if(!state.draft.name.trim()){ toast('List name is required','err'); return; }
+      const payload={name:state.draft.name.trim(),recipients:state.draft.recipients||[]}; const btn=el('save'); btn.disabled=true;
+      try{
+        if(state.activeId){ const {error}=await sb.from('recipient_lists').update(payload).eq('id',state.activeId); if(error)throw error; toast('Saved','ok'); }
+        else{ const {data,error}=await sb.from('recipient_lists').insert(payload).select().single(); if(error)throw error; state.activeId=data.id; toast('Created','ok'); }
+        await loadAll(); if(state.activeId) open(state.activeId);
+      }catch(err){ toast('Save failed: '+err.message,'err'); } finally{ btn.disabled=false; }
     }
-    async function del() {
-      if (!state.activeId || !confirm('Delete this list?')) return;
-      const {error}=await sb.from('recipient_lists').delete().eq('id',state.activeId);
-      if (error) { banner('Delete failed: '+error.message); return; }
-      state.activeId=null; state.draft=null; await loadAll(); renderEditor(); banner('Deleted','ok');
-    }
+    async function del(){ if(!state.activeId||!confirm('Delete this list?'))return; const {error}=await sb.from('recipient_lists').delete().eq('id',state.activeId);
+      if(error){ toast('Delete failed: '+error.message,'err'); return; } state.activeId=null; state.draft=null; await loadAll(); renderEditor(); toast('Deleted','ok'); }
 
-    // ---- CSV import ----
-    function csvToRows(text) {
-      const rows = []; let row = [], cur = '', q = false;
-      for (let i = 0; i < text.length; i++) { const ch = text[i];
-        if (q) { if (ch === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
-        else { if (ch === '"') q = true; else if (ch === ',') { row.push(cur); cur = ''; }
-          else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
-          else if (ch === '\r') { /* skip */ } else cur += ch; } }
-      if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
-      return rows.filter(r => r.some(c => (c||'').trim() !== ''));
-    }
-    function parseCsv(text, hasHeader) {
-      const arr = csvToRows(text.trim());
-      if (!arr.length) return { columns: [], rows: [] };
-      if (hasHeader) {
-        const cols = arr[0].map((h,i) => (h||'').trim() || ('Column ' + (i+1)));
-        const rows = arr.slice(1).map(r => { const o = {}; cols.forEach((c,i) => o[c] = (r[i] ?? '').trim()); return o; });
-        return { columns: cols, rows };
-      }
-      const width = arr.reduce((m,r) => Math.max(m, r.length), 0);
-      const cols = Array.from({length: width}, (_,i) => 'Column ' + (i+1));
-      const rows = arr.map(r => { const o = {}; cols.forEach((c,i) => o[c] = (r[i] ?? '').trim()); return o; });
-      return { columns: cols, rows };
-    }
-    function detectPhoneCol(p) {
-      const byName = p.columns.find(c => /phone|mobile|cell|\btel\b|number|contact\s*number/i.test(c));
-      if (byName) return byName;
-      let best = p.columns[0], score = -1;
-      p.columns.forEach(c => { let s = 0; p.rows.slice(0,50).forEach(r => { if (isValidPhone(normPhone(r[c]))) s++; }); if (s > score) { score = s; best = c; } });
-      return best;
-    }
-    function detectNameCol(p) { return p.columns.find(c => /name|company|organization|\borg\b|contact/i.test(c)) || ''; }
-
-    async function onCsvFile(e) {
-      const file = e.target.files[0]; if (!file) return;
-      el('csvhint').textContent = 'Reading ' + file.name + '…';
-      try { state.csv = { name: file.name, text: await file.text(), hasHeader: true }; renderCsvPanel(); el('csvhint').textContent = file.name; }
-      catch (err) { banner('Could not read CSV: ' + err.message); }
-      e.target.value = '';
-    }
-    function renderCsvPanel() {
-      const p = parseCsv(state.csv.text, state.csv.hasHeader);
-      state.csv.columns = p.columns; state.csv.rows = p.rows;
-      if (!p.columns.length) { banner('That CSV looks empty'); return; }
-      const phoneGuess = detectPhoneCol(p), nameGuess = detectNameCol(p);
-      const opt = (sel) => p.columns.map(c => `<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
-      const panel = el('csvpanel'); panel.style.display = 'block';
-      panel.innerHTML = `
-        <div class="csvgrid">
-          <div class="field"><label>Phone column</label><select id="csv-phone">${opt(phoneGuess)}</select></div>
-          <div class="field"><label>Name column (optional)</label><select id="csv-name"><option value="">— none —</option>${opt(nameGuess)}</select></div>
-          <label class="chk"><input type="checkbox" id="csv-header" ${state.csv.hasHeader?'checked':''}> First row is a header</label>
+    // CSV
+    function csvToRows(text){ const rows=[];let row=[],cur='',q=false; for(let i=0;i<text.length;i++){const ch=text[i];
+      if(q){ if(ch==='"'){ if(text[i+1]==='"'){cur+='"';i++;} else q=false; } else cur+=ch; }
+      else{ if(ch==='"')q=true; else if(ch===','){row.push(cur);cur='';} else if(ch==='\n'){row.push(cur);rows.push(row);row=[];cur='';} else if(ch==='\r'){} else cur+=ch; } }
+      if(cur!==''||row.length){row.push(cur);rows.push(row);} return rows.filter(r=>r.some(c=>(c||'').trim()!=='')); }
+    function parseCsv(text,h){ const arr=csvToRows(text.trim()); if(!arr.length)return{columns:[],rows:[]};
+      if(h){ const cols=arr[0].map((c,i)=>(c||'').trim()||('Column '+(i+1))); return{columns:cols,rows:arr.slice(1).map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]??'').trim());return o;})}; }
+      const w=arr.reduce((m,r)=>Math.max(m,r.length),0); const cols=Array.from({length:w},(_,i)=>'Column '+(i+1));
+      return{columns:cols,rows:arr.map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]??'').trim());return o;})}; }
+    function detectPhoneCol(p){ const bn=p.columns.find(c=>/phone|mobile|cell|\btel\b|number/i.test(c)); if(bn)return bn; let best=p.columns[0],s=-1; p.columns.forEach(c=>{let n=0;p.rows.slice(0,50).forEach(r=>{if(isValidPhone(normPhone(r[c])))n++;});if(n>s){s=n;best=c;}}); return best; }
+    function detectNameCol(p){ return p.columns.find(c=>/name|company|organization|contact/i.test(c))||''; }
+    async function onCsvFile(e){ const file=e.target.files[0]; if(!file)return; el('csvhint').textContent='Reading '+file.name+'…';
+      try{ state.csv={name:file.name,text:await file.text(),hasHeader:true}; renderCsvPanel(); el('csvhint').textContent=file.name; }catch(err){ toast('Could not read CSV: '+err.message,'err'); } e.target.value=''; }
+    function renderCsvPanel(){ const p=parseCsv(state.csv.text,state.csv.hasHeader); state.csv.columns=p.columns; state.csv.rows=p.rows;
+      if(!p.columns.length){ toast('That CSV looks empty','err'); return; }
+      const pg=detectPhoneCol(p),ng=detectNameCol(p); const opt=(sel)=>p.columns.map(c=>`<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
+      const panel=el('csvpanel'); panel.className='rounded-lg border border-base-300 bg-base-200 p-4 space-y-3';
+      panel.innerHTML=`
+        <div class="flex flex-wrap gap-3 items-end">
+          <div class="form-control"><label class="label py-0"><span class="label-text text-xs">Phone column</span></label><select id="csv-phone" class="select select-bordered select-sm">${opt(pg)}</select></div>
+          <div class="form-control"><label class="label py-0"><span class="label-text text-xs">Name column (optional)</span></label><select id="csv-name" class="select select-bordered select-sm"><option value="">— none —</option>${opt(ng)}</select></div>
+          <label class="label cursor-pointer gap-2"><input type="checkbox" id="csv-header" class="checkbox checkbox-sm" ${state.csv.hasHeader?'checked':''}><span class="label-text text-sm">First row is a header</span></label>
         </div>
-        <div class="hint" id="csv-preview" style="margin-top:10px"></div>
-        <div class="csvactions">
-          <button class="primary" id="csv-import">Import <span id="csv-n">0</span> number(s)</button>
-          <button class="ghost" id="csv-cancel">Cancel</button>
-        </div>`;
-      el('csv-phone').addEventListener('change', updateCsvPreview);
-      el('csv-name').addEventListener('change', updateCsvPreview);
-      el('csv-header').addEventListener('change', () => { state.csv.hasHeader = el('csv-header').checked; renderCsvPanel(); });
-      el('csv-import').addEventListener('click', importCsv);
-      el('csv-cancel').addEventListener('click', () => { el('csvpanel').style.display='none'; el('csvhint').textContent=''; state.csv=null; });
+        <div class="text-sm text-base-content/70" id="csv-preview"></div>
+        <div class="flex gap-2"><button class="btn btn-sm btn-primary" id="csv-import">Import <span id="csv-n" class="mx-1">0</span></button><button class="btn btn-sm btn-ghost" id="csv-cancel">Cancel</button></div>`;
+      el('csv-phone').addEventListener('change',updateCsvPreview); el('csv-name').addEventListener('change',updateCsvPreview);
+      el('csv-header').addEventListener('change',()=>{state.csv.hasHeader=el('csv-header').checked;renderCsvPanel();});
+      el('csv-import').addEventListener('click',importCsv); el('csv-cancel').addEventListener('click',()=>{el('csvpanel').className='hidden';state.csv=null;el('csvhint').textContent='';});
       updateCsvPreview();
     }
-    function buildCsvRecipients() {
-      const pc = el('csv-phone').value, nc = el('csv-name').value;
-      return state.csv.rows.map(r => ({ name: nc ? (r[nc]||'').toString().trim() : '', phone: normPhone((r[pc]||'').toString()) }));
-    }
-    function updateCsvPreview() {
-      const recs = buildCsvRecipients();
-      const valid = recs.filter(r => isValidPhone(r.phone)).length;
-      el('csv-n').textContent = valid;
-      const sample = recs.find(r => isValidPhone(r.phone));
-      el('csv-preview').innerHTML = `${state.csv.rows.length} row(s) · <b>${valid} valid phone(s)</b>`
-        + (sample ? ` · e.g. ${esc(sample.name ? sample.name + ' — ' : '')}${esc(sample.phone)}` : ' · no valid phones in that column yet');
-    }
-    function importCsv() {
-      const recs = buildCsvRecipients().filter(r => r.phone);
-      if (!recs.length) { banner('No phone values in that column'); return; }
-      state.draft.recipients = (state.draft.recipients || []).concat(recs);
-      el('f-recs').value = recipientsToText(state.draft.recipients);
-      el('csvpanel').style.display = 'none';
-      el('csvhint').textContent = `Imported ${recs.length} from ${state.csv.name}`;
-      state.csv = null; refreshCounts();
-      banner(`Imported ${recs.length} number(s) — review, then Save the list.`, 'ok');
-    }
+    function buildCsvRecipients(){ const pc=el('csv-phone').value,nc=el('csv-name').value; return state.csv.rows.map(r=>({name:nc?(r[nc]||'').toString().trim():'',phone:normPhone((r[pc]||'').toString())})); }
+    function updateCsvPreview(){ const recs=buildCsvRecipients(); const v=recs.filter(r=>isValidPhone(r.phone)).length; el('csv-n').textContent=v;
+      const s=recs.find(r=>isValidPhone(r.phone)); el('csv-preview').innerHTML=`${state.csv.rows.length} row(s) · <b>${v} valid</b>`+(s?` · e.g. ${esc(s.name?s.name+' — ':'')}${esc(s.phone)}`:''); }
+    function importCsv(){ const recs=buildCsvRecipients().filter(r=>r.phone); if(!recs.length){ toast('No phone values in that column','err'); return; }
+      state.draft.recipients=(state.draft.recipients||[]).concat(recs); el('f-recs').value=recipientsToText(state.draft.recipients);
+      el('csvpanel').className='hidden'; el('csvhint').textContent=`Imported ${recs.length} from ${state.csv.name}`; state.csv=null; refreshCounts(); refreshSend(); toast(`Imported ${recs.length} number(s)`,'ok'); }
 
-    // ---- classify line types (mobile vs landline) via /api/lookup ----
-    async function lookupOne(number) {
-      try {
-        const res = await fetch('/api/lookup?number=' + encodeURIComponent(number), { headers: { 'x-inbox-secret': cfg.REPLY_SECRET || '' } });
-        const d = await res.json();
-        if (!res.ok) return { line_type: 'error', textable: false, error: d.error };
-        return d;
-      } catch (e) { return { line_type: 'error', textable: false, error: String(e.message||e) }; }
-    }
-    async function classifyRecipients() {
-      const recs = (state.draft.recipients || []).filter(r => isValidPhone(r.phone));
-      if (!recs.length) { banner('No valid numbers to classify'); return; }
-      if (location.protocol === 'file:') { banner('Classify runs on the deployed site (the /api function isn’t available on a local file).'); return; }
-      const btn = el('classify'), orig = btn.textContent; btn.disabled = true; btn.textContent = 'Classifying…';
-      let done = 0;
-      const setStatus = () => { el('classify-status').innerHTML = `<span class="spinner" style="border-color:#888;border-top-color:transparent"></span> ${done}/${recs.length} checked`; };
-      setStatus();
-      let i = 0;
-      async function worker() {
-        while (true) {
-          const idx = i++; if (idx >= recs.length) return;
-          const r = recs[idx]; const info = await lookupOne(r.phone);
-          r.line_type = info.line_type; r.textable = !!info.textable;
-          done++; setStatus();
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(6, recs.length) }, worker));
-      btn.disabled = false; btn.textContent = orig; el('classify-status').textContent = 'Done';
-      showClassifySummary();
-    }
-    function showClassifySummary() {
-      const box = el('classify-summary'); if (!box) return;
-      const recs = (state.draft && state.draft.recipients) || [];
-      const done = recs.filter(r => r.line_type);
-      if (!done.length) { box.innerHTML = ''; return; }
-      const mob = done.filter(r => r.line_type === 'mobile').length;
-      const land = done.filter(r => r.line_type === 'landline').length;
-      const voip = done.filter(r => r.line_type === 'voip').length;
-      const other = done.length - mob - land - voip;
-      box.innerHTML = `<b style="color:var(--green)">${mob} mobile (textable)</b> · <span style="color:#b3341f">${land} landline</span>`
-        + (voip ? ` · ${voip} voip` : '') + (other ? ` · ${other} other` : '')
-        + (mob < done.length ? ` &nbsp; <a href="#" id="keep-mobile" style="color:var(--blue);font-weight:600">Keep only textable</a>` : '');
-      const km = el('keep-mobile');
-      if (km) km.addEventListener('click', (e) => {
-        e.preventDefault();
-        state.draft.recipients = (state.draft.recipients || []).filter(r => r.line_type === 'mobile');
-        el('f-recs').value = recipientsToText(state.draft.recipients);
-        refreshCounts(); showClassifySummary(); refreshSend();
-        banner('Kept only mobile (textable) numbers — Save the list to keep it.', 'ok');
-      });
-    }
+    // classify
+    async function lookupOne(number){ try{ const res=await fetch('/api/lookup?number='+encodeURIComponent(number),{headers:{'x-inbox-secret':cfg.REPLY_SECRET||''}}); const d=await res.json(); if(!res.ok)return{line_type:'error',textable:false}; return d; }catch(e){ return{line_type:'error',textable:false}; } }
+    async function classifyRecipients(){ const recs=(state.draft.recipients||[]).filter(r=>isValidPhone(r.phone)); if(!recs.length){toast('No valid numbers','err');return;}
+      if(location.protocol==='file:'){ toast('Classify runs on the deployed/served site','err'); return; }
+      const btn=el('classify'),orig=btn.textContent; btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-xs"></span> Classifying…'; let done=0;
+      const st=()=>el('classify-status').textContent=`${done}/${recs.length} checked`; st(); let i=0;
+      async function w(){ while(true){ const idx=i++; if(idx>=recs.length)return; const r=recs[idx]; const info=await lookupOne(r.phone); r.line_type=info.line_type; r.textable=!!info.textable; done++; st(); } }
+      await Promise.all(Array.from({length:Math.min(6,recs.length)},w)); btn.disabled=false; btn.textContent=orig; el('classify-status').textContent='Done'; showClassifySummary(); }
+    function showClassifySummary(){ const box=el('classify-summary'); if(!box)return; const recs=(state.draft&&state.draft.recipients)||[]; const done=recs.filter(r=>r.line_type);
+      if(!done.length){box.innerHTML='';return;} const mob=done.filter(r=>r.line_type==='mobile').length,land=done.filter(r=>r.line_type==='landline').length,voip=done.filter(r=>r.line_type==='voip').length;
+      box.innerHTML=`<span class="badge badge-success gap-1">${mob} textable</span> <span class="badge badge-error">${land} landline</span> ${voip?`<span class="badge badge-warning">${voip} voip</span>`:''} ${mob<done.length?`<a href="#" id="keep-mobile" class="link link-primary ml-1">Keep only textable</a>`:''}`;
+      const km=el('keep-mobile'); if(km)km.addEventListener('click',e=>{e.preventDefault(); state.draft.recipients=(state.draft.recipients||[]).filter(r=>r.line_type==='mobile'); el('f-recs').value=recipientsToText(state.draft.recipients); refreshCounts(); showClassifySummary(); refreshSend(); toast('Kept only textable','ok');}); }
 
-    // ---- send to this list ----
-    function refreshSend() {
-      const t = state.templates.find(x => x.id === el('tpl').value);
-      const recs = (state.draft.recipients || []).filter(r => isValidPhone(r.phone));
-      if (el('sendn')) el('sendn').textContent = recs.length;
-      if (el('pv')) el('pv').textContent = (t && recs[0]) ? renderTpl(t.body, recToVars(recs[0])) : (t ? '(no valid recipient yet)' : '—');
-    }
-    async function doSend() {
-      const t = state.templates.find(x => x.id === el('tpl').value);
-      if (!t) { banner('Choose a template first'); return; }
-      const recs = (state.draft.recipients || []).filter(r => isValidPhone(r.phone));
-      if (!recs.length) { banner('No valid recipients to send to'); return; }
-      if (!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) { banner('Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).'); return; }
-      const from = el('from-num').value || activeFrom();
-      if (!from) { banner('Choose a number to send from'); return; }
-      const messages = recs.map(r => ({ from, to: r.phone, text: renderTpl(t.body, recToVars(r)) }));
-      if (!confirm(`Send this message to ${messages.length} recipient(s) from ${from}?`)) return;
-      const btn = el('send'), orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
-      try {
-        const res = await fetch(cfg.BULK_SEND_WEBHOOK_URL, { method:'POST',
-          headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ from, list_id: state.activeId, template_id: t.id, messages }) });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        banner(`Sent to ${messages.length} recipient(s).`, 'ok');
-      } catch (err) { banner('Send failed: ' + err.message); }
-      finally { btn.disabled = false; btn.innerHTML = orig; }
-    }
+    // send
+    function refreshSend(){ const t=state.templates.find(x=>x.id===el('tpl').value); const recs=(state.draft.recipients||[]).filter(r=>isValidPhone(r.phone));
+      if(el('sendn'))el('sendn').textContent=recs.length; if(el('pv'))el('pv').textContent=(t&&recs[0])?renderTpl(t.body,recToVars(recs[0])):(t?'(no valid recipient yet)':'—'); }
+    function openSendModal(){ const t=state.templates.find(x=>x.id===el('tpl').value); if(!t){toast('Choose a template first','err');return;}
+      const recs=(state.draft.recipients||[]).filter(r=>isValidPhone(r.phone)); if(!recs.length){toast('No valid recipients','err');return;}
+      el('send-modal-text').innerHTML=`You’re about to text <b>${recs.length}</b> ${recs.length===1?'person':'people'} from ${activeFrom()}.`;
+      el('send-modal').showModal(); }
+    el('send-go').addEventListener('click', doSend);
+    async function doSend(){ el('send-modal').close(); const t=state.templates.find(x=>x.id===el('tpl').value); const recs=(state.draft.recipients||[]).filter(r=>isValidPhone(r.phone));
+      if(!cfg.BULK_SEND_WEBHOOK_URL||cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')){ toast('Sending isn’t wired yet','err'); return; }
+      const from=el('from-num').value||activeFrom(); const messages=recs.map(r=>({from,to:r.phone,text:renderTpl(t.body,recToVars(r))}));
+      const btn=el('send'); btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-sm"></span> Sending…';
+      try{ const res=await fetch(cfg.BULK_SEND_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':cfg.REPLY_SECRET||''},body:JSON.stringify({from,list_id:state.activeId,template_id:t.id,messages})});
+        if(!res.ok)throw new Error('HTTP '+res.status); toast(`Sent to ${messages.length} recipient(s)`,'ok'); }
+      catch(err){ toast('Send failed: '+err.message,'err'); } finally{ btn.disabled=false; btn.innerHTML=`Send to <span id="sendn" class="mx-1 font-bold">${recs.length}</span> recipient(s)`; } }
 
     el('new-btn').addEventListener('click', newItem);
-    if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.'); else loadAll();
+    if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else loadAll();
   </script>
 </body>
 </html>

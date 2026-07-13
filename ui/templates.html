@@ -1,71 +1,44 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Templates</title>
-  <style>
-    :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
-      --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; }
-    * { box-sizing: border-box; }
-    html, body { height:100%; margin:0; }
-    body { font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-      color:var(--text); background:var(--bg); display:flex; flex-direction:column; height:100vh; overflow:hidden; }
-    .content { flex:1; display:flex; min-height:0; }
-    a { color:inherit; text-decoration:none; }
-    #banner { position:fixed; top:0; left:0; right:0; z-index:30; padding:8px 14px; font-size:13px; display:none; }
-    #banner.err { background:#fde2e2; color:#92211f; } #banner.ok { background:#dff5e8; color:#1b6b40; }
-    .navtabs { display:flex; gap:4px; padding:10px 14px; border-bottom:1px solid var(--border); flex-shrink:0; }
-    .navtabs a { padding:6px 12px; border-radius:8px; font-weight:600; color:var(--muted); white-space:nowrap; }
-    .navtabs a.active { background:var(--blue-soft); color:var(--blue); }
-
-    #list { width:300px; min-width:300px; border-right:1px solid var(--border); display:flex; flex-direction:column; }
-    #list .top { padding:14px 16px; display:flex; align-items:center; justify-content:space-between; }
-    #list .top h1 { font-size:19px; margin:0; font-weight:700; }
-    #list .top button { background:var(--blue); color:#fff; border:0; border-radius:8px; padding:8px 12px; font-weight:600; cursor:pointer; }
-    #rows { overflow-y:auto; flex:1; }
-    .row { padding:12px 16px; border-bottom:1px solid #f1f3f6; cursor:pointer; }
-    .row:hover { background:var(--bg-2); } .row.active { background:var(--blue-soft); }
-    .row .nm { font-weight:600; } .row .meta { color:var(--muted); font-size:12px; margin-top:2px;
-      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-
-    #editor { flex:1; overflow-y:auto; }
-    .ehead { padding:16px 24px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;
-      position:sticky; top:0; background:var(--bg); }
-    .ehead h2 { margin:0; font-size:18px; font-weight:700; }
-    .ehead .btns { display:flex; gap:8px; }
-    .ehead button { border:1px solid var(--border); background:var(--bg); border-radius:8px; padding:8px 14px; font-weight:600; cursor:pointer; }
-    .ehead button.primary { background:var(--blue); color:#fff; border-color:var(--blue); }
-    .ehead button.danger { color:#c0392b; }
-    .form { padding:20px 24px; max-width:760px; }
-    .field { display:flex; flex-direction:column; gap:5px; margin-bottom:16px; }
-    .field label { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-    .field input, .field textarea { padding:10px 12px; border:1px solid var(--border); border-radius:9px; font:inherit; outline:none; }
-    .field textarea { resize:vertical; min-height:180px; line-height:1.5; }
-    .vars { color:var(--muted); font-size:13px; margin-bottom:16px; }
-    .vars code { background:var(--bg-3); padding:2px 6px; border-radius:6px; cursor:pointer; }
-    .preview { background:var(--bg-2); border:1px solid var(--border); border-radius:10px; padding:14px; white-space:pre-wrap; }
-    .preview .lbl { font-size:12px; font-weight:600; color:var(--muted); text-transform:uppercase; margin-bottom:6px; }
-    .count { color:var(--faint); font-size:12px; margin-top:6px; }
-    .empty { margin:auto; color:var(--muted); padding:60px; text-align:center; }
-  </style>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="./theme.css" rel="stylesheet" />
+  <style> html,body{height:100%} </style>
 </head>
-<body>
-  <div id="banner"></div>
-  <nav class="navtabs">
-    <a href="./index.html">Inbox</a>
-    <a href="./companies.html">Companies</a>
-    <a href="./templates.html" class="active">Templates</a>
-    <a href="./bulk.html">Recipients</a>
-    <a href="./lookup.html">Checker</a>
-  </nav>
-  <div class="content">
-    <aside id="list">
-      <div class="top"><h1>Templates</h1><button id="new-btn">＋ New</button></div>
-      <div id="rows"><div class="empty">Loading…</div></div>
-    </aside>
-    <main id="editor"><div class="empty">Select a template, or click ＋ New</div></main>
+<body class="h-full">
+  <div class="flex flex-col h-screen bg-base-200">
+    <header class="shrink-0">
+      <div class="pb-topbar flex items-center gap-4 px-5 h-14">
+        <img src="./assets/pb-logo-navbar.png" alt="Playbook" class="h-7 w-auto" />
+        <span class="text-white/70 text-sm font-semibold hidden sm:inline">Messaging</span>
+      </div>
+      <nav class="pb-tabs px-5">
+        <a href="./index.html">Inbox</a>
+        <a href="./companies.html">Companies</a>
+        <a href="./templates.html" class="active">Templates</a>
+        <a href="./bulk.html">Recipients</a>
+        <a href="./lookup.html">Checker</a>
+      </nav>
+    </header>
+
+    <div class="flex flex-1 min-h-0">
+      <aside class="w-72 shrink-0 border-r border-base-300 bg-base-100 flex flex-col">
+        <div class="p-4 flex items-center justify-between">
+          <h1 class="text-xl font-bold">Templates</h1>
+          <button class="btn btn-primary btn-sm" id="new-btn">+ New</button>
+        </div>
+        <ul class="menu px-2 overflow-y-auto flex-1" id="rows"><li class="px-2 py-6 text-center text-base-content/50">Loading…</li></ul>
+      </aside>
+      <main class="flex-1 overflow-y-auto" id="editor">
+        <div class="h-full flex items-center justify-center text-base-content/50">Select a template, or click + New</div>
+      </main>
+    </div>
   </div>
+  <div class="toast toast-end" id="toast-wrap"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
@@ -76,77 +49,59 @@
     const state = { items: [], activeId: null, draft: null };
     const SAMPLE = { name:'Jordan Smith', first_name:'Jordan', phone:'+1 (615) 555-0142' };
 
-    function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',2500); }
+    function toast(m,t='info'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[t]; const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(m)}</span>`; el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
     function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-    function render(body, vars){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g, (_,k)=> (vars[k] ?? '')); }
+    function render(body,v){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g,(_,k)=>(v[k]??'')); }
 
-    async function load() {
-      const { data, error } = await sb.from('message_templates').select('*').order('updated_at', { ascending:false });
-      if (error) { banner('Load failed: '+error.message); return; }
-      state.items = data || []; renderList();
-    }
-    function renderList() {
-      const box = el('rows');
-      if (!state.items.length) { box.innerHTML = '<div class="empty">No templates yet</div>'; return; }
-      box.innerHTML = state.items.map(t => `
-        <div class="row ${t.id===state.activeId?'active':''}" data-id="${t.id}">
-          <div class="nm">${esc(t.name)}</div>
-          <div class="meta">${esc((t.body||'').slice(0,60) || '—')}</div>
-        </div>`).join('');
-      box.querySelectorAll('.row').forEach(n => n.addEventListener('click', () => open(n.dataset.id)));
-    }
-    function newItem(){ state.activeId=null; state.draft={ name:'', body:'' }; renderList(); renderEditor(); }
-    function open(id){ const t=state.items.find(x=>x.id===id); if(!t) return; state.activeId=id; state.draft={name:t.name,body:t.body}; renderList(); renderEditor(); }
+    async function load(){ const {data,error}=await sb.from('message_templates').select('*').order('updated_at',{ascending:false});
+      if(error){toast('Load failed: '+error.message,'err');return;} state.items=data||[]; renderList(); }
+    function renderList(){ const box=el('rows'); if(!state.items.length){box.innerHTML='<li class="px-2 py-6 text-center text-base-content/50">No templates yet</li>';return;}
+      box.innerHTML=state.items.map(t=>`<li><a class="${t.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${t.id}"><span class="font-semibold">${esc(t.name)}</span><span class="text-xs text-base-content/60 truncate max-w-full">${esc((t.body||'').slice(0,60)||'—')}</span></a></li>`).join('');
+      box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id))); }
+    function newItem(){ state.activeId=null; state.draft={name:'',body:''}; renderList(); renderEditor(); }
+    function open(id){ const t=state.items.find(x=>x.id===id); if(!t)return; state.activeId=id; state.draft={name:t.name,body:t.body}; renderList(); renderEditor(); }
 
-    function renderEditor() {
-      if (!state.draft) { el('editor').innerHTML='<div class="empty">Select a template, or click ＋ New</div>'; return; }
-      const isNew = !state.activeId;
-      el('editor').innerHTML = `
-        <div class="ehead">
-          <h2>${isNew?'New template':esc(state.draft.name||'Template')}</h2>
-          <div class="btns">
-            ${isNew?'':'<button class="danger" id="del">Delete</button>'}
-            <button class="primary" id="save">${isNew?'Create':'Save'}</button>
-          </div>
+    function renderEditor(){
+      if(!state.draft){ el('editor').innerHTML='<div class="h-full flex items-center justify-center text-base-content/50">Select a template, or click + New</div>'; return; }
+      const isNew=!state.activeId;
+      el('editor').innerHTML=`
+        <div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4 flex items-center justify-between">
+          <h2 class="text-lg font-bold">${isNew?'New template':esc(state.draft.name||'Template')}</h2>
+          <div class="flex gap-2">${isNew?'':'<button class="btn btn-sm btn-outline btn-error" id="del">Delete</button>'}<button class="btn btn-sm btn-primary" id="save">${isNew?'Create':'Save'}</button></div>
         </div>
-        <div class="form">
-          <div class="field"><label>Template name</label><input id="f-name" value="${esc(state.draft.name)}" placeholder="e.g. Intro outreach"></div>
-          <div class="vars">Variables: <code data-v="name">{{name}}</code> <code data-v="first_name">{{first_name}}</code> <code data-v="phone">{{phone}}</code> — click to insert. They’re filled per recipient at send time.</div>
-          <div class="field"><label>Message</label><textarea id="f-body" placeholder="Hi {{first_name}}, ...">${esc(state.draft.body)}</textarea></div>
-          <div class="preview"><div class="lbl">Preview (sample recipient)</div><div id="pv"></div><div class="count" id="cnt"></div></div>
+        <div class="p-6 max-w-3xl space-y-5">
+          <div class="form-control"><label class="label"><span class="label-text font-semibold">Template name</span></label><input id="f-name" class="input input-bordered" value="${esc(state.draft.name)}" placeholder="e.g. Intro outreach"></div>
+          <div class="text-sm text-base-content/70">Variables:
+            <button class="badge badge-ghost" data-v="name">{{name}}</button>
+            <button class="badge badge-ghost" data-v="first_name">{{first_name}}</button>
+            <button class="badge badge-ghost" data-v="phone">{{phone}}</button>
+            <span class="text-base-content/50">— click to insert; filled per recipient at send.</span></div>
+          <div class="form-control"><label class="label"><span class="label-text font-semibold">Message</span></label><textarea id="f-body" class="textarea textarea-bordered min-h-48 leading-relaxed" placeholder="Hi {{first_name}}, ...">${esc(state.draft.body)}</textarea></div>
+          <div class="card bg-base-100 border border-base-300"><div class="card-body p-4">
+            <div class="text-xs font-semibold uppercase text-base-content/60">Preview (sample recipient)</div>
+            <div class="whitespace-pre-wrap" id="pv"></div>
+            <div class="text-xs text-base-content/50" id="cnt"></div>
+          </div></div>
         </div>`;
       const name=el('f-name'), body=el('f-body');
       const upd=()=>{ state.draft.name=name.value; state.draft.body=body.value; refreshPreview(); };
-      name.addEventListener('input', upd); body.addEventListener('input', upd);
-      el('editor').querySelectorAll('[data-v]').forEach(c => c.addEventListener('click', () => insertVar(c.dataset.v)));
-      el('save').addEventListener('click', save);
-      if (el('del')) el('del').addEventListener('click', del);
+      name.addEventListener('input',upd); body.addEventListener('input',upd);
+      el('editor').querySelectorAll('[data-v]').forEach(c=>c.addEventListener('click',()=>insertVar(c.dataset.v)));
+      el('save').addEventListener('click',save); if(el('del'))el('del').addEventListener('click',del);
       refreshPreview();
     }
-    function insertVar(v){ const ta=el('f-body'); const t='{{'+v+'}}'; const s=ta.selectionStart||ta.value.length;
-      ta.value = ta.value.slice(0,s)+t+ta.value.slice(ta.selectionEnd||s); state.draft.body=ta.value; ta.focus(); refreshPreview(); }
-    function refreshPreview(){ const txt=render(state.draft.body, SAMPLE); el('pv').textContent = txt || '—';
-      const n=txt.length; el('cnt').textContent = `${n} chars · ~${Math.max(1,Math.ceil(n/160))} SMS segment(s)`; }
+    function insertVar(v){ const ta=el('f-body'); const t='{{'+v+'}}'; const s=ta.selectionStart||ta.value.length; ta.value=ta.value.slice(0,s)+t+ta.value.slice(ta.selectionEnd||s); state.draft.body=ta.value; ta.focus(); refreshPreview(); }
+    function refreshPreview(){ const txt=render(state.draft.body,SAMPLE); el('pv').textContent=txt||'—'; const n=txt.length; el('cnt').textContent=`${n} chars · ~${Math.max(1,Math.ceil(n/160))} SMS segment(s)`; }
 
-    async function save() {
-      if (!state.draft.name.trim()) { banner('Name is required'); return; }
-      const payload = { name: state.draft.name.trim(), body: state.draft.body };
-      const btn=el('save'); btn.disabled=true;
-      try {
-        if (state.activeId) { const {error}=await sb.from('message_templates').update(payload).eq('id',state.activeId); if(error) throw error; banner('Saved','ok'); }
-        else { const {data,error}=await sb.from('message_templates').insert(payload).select().single(); if(error) throw error; state.activeId=data.id; banner('Created','ok'); }
-        await load(); if (state.activeId) open(state.activeId);
-      } catch(err){ banner('Save failed: '+err.message); } finally { btn.disabled=false; }
-    }
-    async function del() {
-      if (!state.activeId || !confirm('Delete this template?')) return;
-      const {error}=await sb.from('message_templates').delete().eq('id',state.activeId);
-      if (error) { banner('Delete failed: '+error.message); return; }
-      state.activeId=null; state.draft=null; await load(); renderEditor(); banner('Deleted','ok');
-    }
+    async function save(){ if(!state.draft.name.trim()){toast('Name is required','err');return;} const payload={name:state.draft.name.trim(),body:state.draft.body}; const btn=el('save'); btn.disabled=true;
+      try{ if(state.activeId){ const {error}=await sb.from('message_templates').update(payload).eq('id',state.activeId); if(error)throw error; toast('Saved','ok'); }
+        else{ const {data,error}=await sb.from('message_templates').insert(payload).select().single(); if(error)throw error; state.activeId=data.id; toast('Created','ok'); }
+        await load(); if(state.activeId)open(state.activeId); }catch(err){ toast('Save failed: '+err.message,'err'); }finally{ btn.disabled=false; } }
+    async function del(){ if(!state.activeId||!confirm('Delete this template?'))return; const {error}=await sb.from('message_templates').delete().eq('id',state.activeId);
+      if(error){toast('Delete failed: '+error.message,'err');return;} state.activeId=null; state.draft=null; await load(); renderEditor(); toast('Deleted','ok'); }
 
     el('new-btn').addEventListener('click', newItem);
-    if (!cfg.SUPABASE_URL || cfg.SUPABASE_URL.startsWith('<<')) banner('config.js is not filled in.'); else load();
+    if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else load();
   </script>
 </body>
 </html>

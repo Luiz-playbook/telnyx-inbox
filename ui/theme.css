@@ -1,0 +1,41 @@
+/* Playbook brand theme — overrides DaisyUI's light theme with the design-system
+   palette (colors_and_type.css) + Nunito, plus the dark-teal top bar and
+   orange-underline tabs from the Marketing Blaster design. */
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap");
+
+:root, [data-theme="light"] {
+  --p: 0.6356 0.1914 41.37;    /* brand orange #e55608 — primary CTA / active */
+  --pc: 1 0 0;                 /* white on primary */
+  --s: 0.7181 0.0973 195.20;  /* teal #4cb7b7 — accent */
+  --sc: 1 0 0;
+  --a: 0.7181 0.0973 195.20;
+  --ac: 1 0 0;
+  --n: 0.3311 0.0504 224.69;  /* dark teal #133b49 — neutral */
+  --nc: 1 0 0;
+  --b2: 0.9842 0.0034 247.86; /* #f8fafc */
+  --b3: 0.9594 0.0108 256.70; /* #edf2f9 */
+  --bc: 0.3693 0.0344 260.17; /* #354052 text */
+  --su: 0.4901 0.1482 145.77; /* success #067523 */
+  --er: 0.5926 0.2007 22.91;  /* error #dc3741 */
+  --wa: 0.6356 0.1914 41.37;  /* warning uses brand orange */
+  --in: 0.3311 0.0504 224.69;
+  --rounded-btn: 0.5rem;
+  --rounded-box: 0.9rem;
+}
+
+html, body { font-family: "Nunito", -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+
+/* dark-teal brand bar */
+.pb-topbar { background:#133b49; color:#fff; }
+.pb-wordmark { font-weight:800; letter-spacing:.04em; font-size:18px; color:#fff; }
+.pb-wordmark .dot { color:#e55608; }
+
+/* white sub-header tab row, orange underline on active */
+.pb-tabs { background:#fff; border-bottom:1px solid #d8e2ef; display:flex; align-items:center; }
+.pb-tabs a { padding:13px 2px; margin-right:26px; font-weight:700; color:#5e6e82; border-bottom:2px solid transparent; white-space:nowrap; text-decoration:none; }
+.pb-tabs a:hover { color:#354052; }
+.pb-tabs a.active { color:#e55608; border-bottom-color:#e55608; }
+
+/* soften cards + borders to the Falcon-derived look */
+.card { box-shadow: 0 3px 6px rgba(65,68,73,.06) !important; }
+.border-base-300 { border-color:#d8e2ef !important; }
