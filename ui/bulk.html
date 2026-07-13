@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bulk Send</title>
+  <title>Recipients</title>
   <style>
     :root { --blue:#2f6bff; --blue-soft:#e7effe; --bg:#fff; --bg-2:#f7f8fa; --bg-3:#eef1f4;
       --text:#1b2430; --muted:#7c8698; --faint:#a7b0be; --border:#e6e9ee; --green:#22b573; }
@@ -74,16 +74,15 @@
     <a href="./index.html">Inbox</a>
     <a href="./companies.html">Companies</a>
     <a href="./templates.html">Templates</a>
-    <a href="./bulk.html" class="active">Lists</a>
-    <a href="./send.html">Send</a>
+    <a href="./bulk.html" class="active">Recipients</a>
     <a href="./lookup.html">Checker</a>
   </nav>
   <div class="content">
     <aside id="list">
-      <div class="top"><h1>Lists</h1><button id="new-btn">＋ New</button></div>
+      <div class="top"><h1>Recipients</h1><button id="new-btn">＋ New</button></div>
       <div id="rows"><div class="empty">Loading…</div></div>
     </aside>
-    <main id="editor"><div class="empty">Select a list, or click ＋ New</div></main>
+    <main id="editor"><div class="empty">Select a recipient list, or click ＋ New</div></main>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -92,7 +91,8 @@
     const cfg = window.INBOX_CONFIG || {};
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
     const el = (id) => document.getElementById(id);
-    const state = { lists: [], templates: [], activeId: null, draft: null, csv: null };
+    const state = { lists: [], templates: [], numbers: [], activeId: null, draft: null, csv: null };
+    function activeFrom(){ return localStorage.getItem('active_telnyx_number') || (state.numbers[0] && state.numbers[0].phone_number) || '+16158050766'; }
 
     function banner(m,k){ const b=el('banner'); if(!m){b.style.display='none';return;} b.className=k||'err'; b.textContent=m; b.style.display='block'; if(k==='ok') setTimeout(()=>b.style.display='none',3000); }
     function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -117,17 +117,18 @@
     function recToVars(r){ return { name:r.name||'', first_name:firstName(r.name), phone:r.phone||'' }; }
 
     async function loadAll() {
-      const [{ data:lists, error:e1 }, { data:tpls, error:e2 }] = await Promise.all([
+      const [{ data:lists, error:e1 }, { data:tpls, error:e2 }, { data:nums }] = await Promise.all([
         sb.from('recipient_lists').select('*').order('updated_at',{ascending:false}),
         sb.from('message_templates').select('*').order('name',{ascending:true}),
+        sb.from('telnyx_numbers').select('*').eq('active',true).order('sort_order'),
       ]);
       if (e1) { banner('Load lists failed: '+e1.message); return; }
       if (e2) banner('Load templates failed: '+e2.message);
-      state.lists = lists || []; state.templates = tpls || []; renderList();
+      state.lists = lists || []; state.templates = tpls || []; state.numbers = nums || []; renderList();
     }
     function renderList() {
       const box = el('rows');
-      if (!state.lists.length) { box.innerHTML='<div class="empty">No lists yet</div>'; return; }
+      if (!state.lists.length) { box.innerHTML='<div class="empty">No recipient lists yet</div>'; return; }
       box.innerHTML = state.lists.map(l => `
         <div class="row ${l.id===state.activeId?'active':''}" data-id="${l.id}">
           <div class="nm">${esc(l.name)}</div>
@@ -142,13 +143,13 @@
       state.draft={ name:l.name, recipients:Array.isArray(l.recipients)?l.recipients:[] }; renderList(); renderEditor(); }
 
     function renderEditor() {
-      if (!state.draft) { el('editor').innerHTML='<div class="empty">Select a list, or click ＋ New</div>'; return; }
+      if (!state.draft) { el('editor').innerHTML='<div class="empty">Select a recipient list, or click ＋ New</div>'; return; }
       const isNew = !state.activeId;
       const recs = state.draft.recipients || [];
       const valid = recs.filter(r=>isValidPhone(r.phone)).length, bad = recs.length - valid;
       el('editor').innerHTML = `
         <div class="ehead">
-          <h2>${isNew?'New list':esc(state.draft.name||'List')}</h2>
+          <h2>${isNew?'New recipient list':esc(state.draft.name||'List')}</h2>
           <div class="btns">
             ${isNew?'':'<button class="danger" id="del">Delete</button>'}
             <button class="primary" id="save">${isNew?'Create':'Save'}</button>
@@ -172,15 +173,29 @@
             <div class="hint" id="classify-summary" style="margin-top:8px"></div>
           </div>
 
-          <div class="hint" style="margin-top:2px">These recipients are used by the <a href="./send.html" style="color:var(--blue);font-weight:600">Send</a> tab to run a campaign.</div>
+          <div class="sendbox">
+            <h3>📣 Send to these recipients</h3>
+            <div class="sendrow">
+              <div class="field"><label>Template</label>
+                <select id="tpl"><option value="">— choose a template —</option>${state.templates.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select></div>
+              <div class="field"><label>Send from</label>
+                <select id="from-num">${state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===activeFrom()?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join('') || '<option value="">No numbers</option>'}</select></div>
+            </div>
+            <div class="preview"><div class="lbl">Preview (first valid recipient)</div><div id="pv">—</div></div>
+            <button class="sendbtn" id="send">Send to <span id="sendn">0</span> recipient(s)</button>
+            <div class="hint" style="margin-top:8px">${(!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) ? '⚠️ Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).' : 'Tip: save the list first if it’s new.'}</div>
+          </div>
         </div>`;
       el('f-name').addEventListener('input', e => { state.draft.name = e.target.value; });
-      el('f-recs').addEventListener('input', e => { state.draft.recipients = parseRecipients(e.target.value); refreshCounts(); });
+      el('f-recs').addEventListener('input', e => { state.draft.recipients = parseRecipients(e.target.value); refreshCounts(); refreshSend(); });
       el('f-csv').addEventListener('change', onCsvFile);
       el('save').addEventListener('click', save);
       if (el('del')) el('del').addEventListener('click', del);
       el('classify').addEventListener('click', classifyRecipients);
-      refreshCounts(); showClassifySummary();
+      el('tpl').addEventListener('change', refreshSend);
+      el('from-num').addEventListener('change', () => { localStorage.setItem('active_telnyx_number', el('from-num').value); });
+      el('send').addEventListener('click', doSend);
+      refreshCounts(); showClassifySummary(); refreshSend();
     }
     function refreshCounts() {
       const recs = state.draft.recipients||[];
@@ -340,9 +355,37 @@
         e.preventDefault();
         state.draft.recipients = (state.draft.recipients || []).filter(r => r.line_type === 'mobile');
         el('f-recs').value = recipientsToText(state.draft.recipients);
-        refreshCounts(); showClassifySummary();
+        refreshCounts(); showClassifySummary(); refreshSend();
         banner('Kept only mobile (textable) numbers — Save the list to keep it.', 'ok');
       });
+    }
+
+    // ---- send to this list ----
+    function refreshSend() {
+      const t = state.templates.find(x => x.id === el('tpl').value);
+      const recs = (state.draft.recipients || []).filter(r => isValidPhone(r.phone));
+      if (el('sendn')) el('sendn').textContent = recs.length;
+      if (el('pv')) el('pv').textContent = (t && recs[0]) ? renderTpl(t.body, recToVars(recs[0])) : (t ? '(no valid recipient yet)' : '—');
+    }
+    async function doSend() {
+      const t = state.templates.find(x => x.id === el('tpl').value);
+      if (!t) { banner('Choose a template first'); return; }
+      const recs = (state.draft.recipients || []).filter(r => isValidPhone(r.phone));
+      if (!recs.length) { banner('No valid recipients to send to'); return; }
+      if (!cfg.BULK_SEND_WEBHOOK_URL || cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')) { banner('Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL).'); return; }
+      const from = el('from-num').value || activeFrom();
+      if (!from) { banner('Choose a number to send from'); return; }
+      const messages = recs.map(r => ({ from, to: r.phone, text: renderTpl(t.body, recToVars(r)) }));
+      if (!confirm(`Send this message to ${messages.length} recipient(s) from ${from}?`)) return;
+      const btn = el('send'), orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Sending…';
+      try {
+        const res = await fetch(cfg.BULK_SEND_WEBHOOK_URL, { method:'POST',
+          headers: { 'Content-Type':'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
+          body: JSON.stringify({ from, list_id: state.activeId, template_id: t.id, messages }) });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        banner(`Sent to ${messages.length} recipient(s).`, 'ok');
+      } catch (err) { banner('Send failed: ' + err.message); }
+      finally { btn.disabled = false; btn.innerHTML = orig; }
     }
 
     el('new-btn').addEventListener('click', newItem);
