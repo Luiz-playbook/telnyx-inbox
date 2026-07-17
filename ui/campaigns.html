@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Campaigns</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="./theme.css" rel="stylesheet" />
+  <style>
+    html,body{height:100%}
+    /* campaign table chrome — mirrors the PB Internal mockup */
+    .camp-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; }
+    .camp-table td{ padding:14px 16px; vertical-align:middle; border-top:1px solid #edf2f9; }
+    .camp-row:hover{ background:#f8fafc; }
+    .seg{ font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 7px; border-radius:5px; text-transform:uppercase; white-space:nowrap; }
+    .seg-icp{ background:#e3edff; color:#2f6bff; }
+    .seg-scp{ background:#fde7d6; color:#e55608; }
+    .seg-non{ background:#eef1f6; color:#6b7a90; }
+    .tagpill{ display:inline-flex; align-items:center; font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:9999px; text-transform:uppercase; }
+    .tag-vip{ background:#efe6ff; color:#7b61ff; }
+    .tag-food{ background:#e2f5e9; color:#067523; }
+    .tag-sched{ background:#eef1f6; color:#6b7a90; }
+    .sport-pill{ display:inline-flex; align-items:center; font-size:12px; font-weight:700; color:#3f7d7d; }
+    .cat-tab{ font-weight:700; color:#6b7a90; padding:6px 12px; border-radius:8px; cursor:pointer; white-space:nowrap; display:inline-flex; align-items:center; gap:6px; }
+    .cat-tab .n{ font-size:11px; color:#8695a7; font-weight:800; }
+    .cat-tab.active{ color:#e55608; }
+    .cat-tab.active .n{ color:#e55608; }
+    .status-chip{ font-weight:700; font-size:13px; color:#6b7a90; padding:6px 14px; border-radius:9999px; border:1px solid transparent; cursor:pointer; white-space:nowrap; }
+    .status-chip:hover{ background:#eef1f6; }
+    .status-chip.active{ color:#e55608; border-color:#e55608; background:#fff; }
+    .mini-select{ font-size:12px; }
+  </style>
+</head>
+<body class="h-full">
+  <div class="flex flex-col h-screen bg-base-200">
+    <header class="shrink-0">
+      <div class="pb-topbar flex items-center gap-4 px-5 h-14">
+        <img src="./assets/pb-logo-navbar.png" alt="Playbook" class="h-7 w-auto" />
+        <span class="text-white/70 text-sm font-semibold hidden sm:inline">Messaging</span>
+      </div>
+      <nav class="pb-tabs px-5">
+        <a href="./index.html">Inbox</a>
+        <a href="./companies.html">Companies</a>
+        <a href="./events.html">Events</a>
+        <a href="./campaigns.html" class="active">Campaigns</a>
+        <a href="./templates.html">Templates</a>
+        <a href="./bulk.html">Recipients</a>
+        <a href="./lookup.html">Checker</a>
+      </nav>
+    </header>
+
+    <main class="flex-1 overflow-y-auto">
+      <div class="px-6 py-5">
+        <!-- title row -->
+        <div class="flex items-center justify-between flex-wrap gap-3">
+          <div class="flex items-center gap-3">
+            <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">INTERNAL</span>
+            <h1 class="text-2xl font-extrabold text-[#133b49]">PB Internal</h1>
+          </div>
+          <button class="btn btn-primary btn-sm gap-2" id="create-campaign">
+            <span class="text-lg leading-none">+</span> Create campaign
+          </button>
+        </div>
+
+        <!-- category tabs + sync -->
+        <div class="flex items-center justify-between flex-wrap gap-3 mt-5">
+          <div class="flex items-center gap-1 bg-base-100 border border-base-300 rounded-lg p-1" id="cat-tabs"></div>
+          <button class="btn btn-primary btn-sm gap-2" id="sync-btn">
+            <span id="sync-ico">&#8635;</span> Sync ticket data &amp; update
+          </button>
+        </div>
+
+        <!-- status filter row -->
+        <div class="flex items-center justify-between flex-wrap gap-3 mt-4">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-bold uppercase tracking-wide text-base-content/40 mr-1">Status</span>
+            <div class="flex items-center gap-1" id="status-chips"></div>
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
+              <input id="search" type="text" class="grow w-40" placeholder="Search events" />
+            </label>
+            <button class="btn btn-sm btn-ghost border border-base-300 bg-base-100 gap-2" id="split-btn" title="Group rows by sport">
+              <span class="opacity-60">|||</span> Split by sport
+            </button>
+            <div class="dropdown dropdown-end">
+              <button tabindex="0" class="btn btn-sm btn-ghost border border-base-300 bg-base-100 gap-2">
+                <span class="opacity-60">&#9783;</span> Columns
+              </button>
+              <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-20 w-52 p-2 shadow border border-base-300" id="col-menu"></ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- table -->
+        <div class="mt-4 bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="camp-table w-full min-w-[1000px]">
+              <thead>
+                <tr class="border-b border-base-300 bg-base-100">
+                  <th class="w-10"><input type="checkbox" class="checkbox checkbox-xs" id="check-all" /></th>
+                  <th data-col="event">Event</th>
+                  <th data-col="market">Market combo</th>
+                  <th data-col="sport">Sport(s)</th>
+                  <th data-col="tags">Tags</th>
+                  <th data-col="emails"># Emails</th>
+                  <th data-col="sms"># SMS</th>
+                  <th data-col="suite">Last suite</th>
+                </tr>
+              </thead>
+              <tbody id="rows">
+                <tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading…</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div class="toast toast-end" id="toast-wrap"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const el = (id) => document.getElementById(id);
+
+    const state = {
+      events: [], filter: '', category: 'All', status: 'All',
+      splitBySport: false, selected: new Set(),
+      cols: { event:true, market:true, sport:true, tags:true, emails:true, sms:true, suite:true },
+    };
+
+    const SENDERS = ['Cakemail', 'Mailmeteor · Josh', 'Telnyx blaster · Josh', 'iPhone · Josh'];
+    const CATEGORIES = ['Tix', 'Events', 'TA AI', 'All', 'Learning'];
+    const STATUSES = ['All', 'Scheduled - not confirmed', 'Confirmed', 'Sent'];
+
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function toast(msg, type='info'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[type]||'alert-info';
+      const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(msg)}</span>`;
+      el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
+
+    // deterministic small hash so derived/demo fields are stable per event
+    function hash(str){ let h=0; for(const c of (str||'')) h=(h*31 + c.charCodeAt(0))>>>0; return h; }
+
+    /* ---- team -> market (city) + sport lookup ---------------------------- */
+    const TEAM = {
+      // MLB
+      yankees:['New York','Baseball'], mets:['New York','Baseball'], brewers:['Milwaukee','Baseball'],
+      dodgers:['Los Angeles','Baseball'], padres:['San Diego','Baseball'], cubs:['Chicago','Baseball'],
+      'white sox':['Chicago','Baseball'], cardinals:['St. Louis','Baseball'], astros:['Houston','Baseball'],
+      braves:['Atlanta','Baseball'], angels:['Los Angeles','Baseball'], 'anaheim angels':['Los Angeles','Baseball'],
+      reds:['Cincinnati','Baseball'], 'cincy reds':['Cincinnati','Baseball'], guardians:['Cleveland','Baseball'],
+      tigers:['Detroit','Baseball'], 'detroit tigers':['Detroit','Baseball'], diamondbacks:['Phoenix','Baseball'],
+      'kc royals':['Kansas City','Baseball'], royals:['Kansas City','Baseball'], marlins:['Miami','Baseball'],
+      'miami marlins':['Miami','Baseball'], mariners:['Seattle','Baseball'], nationals:['Washington','Baseball'],
+      orioles:['Baltimore','Baseball'], phillies:['Philadelphia','Baseball'], pirates:['Pittsburgh','Baseball'],
+      rangers:['Texas','Baseball'], rays:['Tampa Bay','Baseball'], 'blue jays':['Toronto','Baseball'],
+      rockies:['Denver','Baseball'], giants:['San Francisco','Baseball'], athletics:['Oakland','Baseball'],
+      'red sox':['Boston','Baseball'], twins:['Minnesota','Baseball'],
+      // NBA
+      '76ers':['Philadelphia','Basketball'], bulls:['Chicago','Basketball'], 'chicago bulls':['Chicago','Basketball'],
+      celtics:['Boston','Basketball'], clippers:['Los Angeles','Basketball'], lakers:['Los Angeles','Basketball'],
+      grizzlies:['Memphis','Basketball'], hawks:['Atlanta','Basketball'], heat:['Miami','Basketball'],
+      hornets:['Charlotte','Basketball'], jazz:['Utah','Basketball'], knicks:['New York','Basketball'],
+      'ny knicks':['New York','Basketball'], magic:['Orlando','Basketball'], nets:['Brooklyn','Basketball'],
+      nuggets:['Denver','Basketball'], pacers:['Indiana','Basketball'], pelicans:['New Orleans','Basketball'],
+      pistons:['Detroit','Basketball'], raptors:['Toronto','Basketball'], blazers:['Portland','Basketball'],
+      // NHL
+      blackhawks:['Chicago','Hockey'], 'chicago blackhawks':['Chicago','Hockey'], blues:['St. Louis','Hockey'],
+      canucks:['Vancouver','Hockey'], capitals:['Washington','Hockey'], flames:['Calgary','Hockey'],
+      flyers:['Philadelphia','Hockey'], hurricanes:['Carolina','Hockey'], islanders:['New York','Hockey'],
+      'la kings':['Los Angeles','Hockey'], 'minn wild':['Minnesota','Hockey'], 'nj devils':['New Jersey','Hockey'],
+      'ny rangers':['New York','Hockey'], penguins:['Pittsburgh','Hockey'], 'ny rangers (group)':['New York','Hockey'],
+    };
+    function normTeam(name){ return (name||'').toLowerCase().replace(/\s*\(group\)\s*/,'').replace(/\s*@.*/,'').trim(); }
+    // exact match, else longest known nickname that the name ends with (e.g. "tampa bay rays" -> "rays")
+    function teamEntry(name){
+      const key = normTeam(name);
+      if(TEAM[key]) return TEAM[key];
+      let best=null;
+      for(const k in TEAM){ if((key===k)||key.endsWith(' '+k)){ if(!best||k.length>best.length) best=k; } }
+      return best?TEAM[best]:null;
+    }
+    function marketOf(e){
+      const t=teamEntry(e.team_name); if(t) return t[0];
+      if(/^univ|university|college|state\b/i.test(e.team_name||'')) return (e.team_name||'').replace(/^university of\s*/i,'');
+      return '—';
+    }
+    function sportOf(e){
+      const t=teamEntry(e.team_name); if(t) return t[1];
+      if(/^univ|university|college/i.test(e.team_name||'')) return 'College';
+      return 'Multi';
+    }
+    // segment / tags are demo-derived (no source column yet) but stable per event
+    function segOf(e){ return ['ICP','SCP','Non ICP-SCP'][hash(e.id) % 3]; }
+    function tagsOf(e){ const h=hash(e.id); const t=['Scheduled']; if(h%2===0) t.unshift('VIP'); if(h%3===0) t.push('FOOD'); return t; }
+    function emailsOf(e){ return e.tab_total_people || e.unique_orgs_count*40 || (120 + hash(e.id)%2400); }
+    function smsOf(e){ return Math.round(emailsOf(e) * 0.68); }
+    function senderFor(e,kind){ return SENDERS[(hash(e.id+kind)) % SENDERS.length]; }
+
+    /* ---- campaign status (client-side until a real column exists) -------- */
+    function statusKey(id){ return 'campaign_status_'+id; }
+    function statusOf(e){ return localStorage.getItem(statusKey(e.id)) || 'Scheduled - not confirmed'; }
+    function setStatus(e, s){ if(s==='Scheduled - not confirmed') localStorage.removeItem(statusKey(e.id)); else localStorage.setItem(statusKey(e.id), s); }
+
+    /* ---- formatting ------------------------------------------------------ */
+    function eventTitle(e){ return e.opponent ? `${e.team_name} at ${e.opponent}` : (e.team_name||'Untitled event'); }
+    function shortDate(d){ if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate(); }
+    function priceOf(e){ const p=(e.price_per_person!=null)?e.price_per_person:null; return p!=null?`$${p}/ticket`:''; }
+    function suiteDate(e){ const d=e.updated_at||e.created_at; if(!d) return '—'; return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+
+    /* ---- data ------------------------------------------------------------ */
+    async function loadAll(){
+      const {data,error} = await sb.from('icp_events').select('*');
+      if(error){ toast('Load failed: '+error.message,'err'); el('rows').innerHTML='<tr><td colspan="8" class="text-center text-error py-10">'+esc(error.message)+'</td></tr>'; return; }
+      const evs=(data||[]).slice().sort((a,b)=> (a.event_date>b.event_date?-1:1));
+      state.events=evs; render();
+    }
+
+    /* ---- top tabs / chips / columns menu --------------------------------- */
+    function catCount(cat){ if(cat==='All'||cat==='Events') return state.events.length; return 0; }
+    function renderCatTabs(){
+      el('cat-tabs').innerHTML = CATEGORIES.map(c=>`
+        <span class="cat-tab ${c===state.category?'active':''}" data-cat="${esc(c)}">${esc(c)} <span class="n">${catCount(c)}</span></span>`).join('');
+      el('cat-tabs').querySelectorAll('[data-cat]').forEach(n=>n.addEventListener('click',()=>{ state.category=n.dataset.cat; render(); }));
+    }
+    function renderStatusChips(){
+      el('status-chips').innerHTML = STATUSES.map(s=>`
+        <span class="status-chip ${s===state.status?'active':''}" data-status="${esc(s)}">${esc(s)}</span>`).join('');
+      el('status-chips').querySelectorAll('[data-status]').forEach(n=>n.addEventListener('click',()=>{ state.status=n.dataset.status; render(); }));
+    }
+    function renderColMenu(){
+      const labels={event:'Event',market:'Market combo',sport:'Sport(s)',tags:'Tags',emails:'# Emails',sms:'# SMS',suite:'Last suite'};
+      el('col-menu').innerHTML = Object.keys(labels).map(k=>`
+        <li><label class="flex items-center gap-2 cursor-pointer ${k==='event'?'opacity-50':''}">
+          <input type="checkbox" class="checkbox checkbox-xs" data-col-toggle="${k}" ${state.cols[k]?'checked':''} ${k==='event'?'disabled':''}/>
+          <span>${labels[k]}</span></label></li>`).join('');
+      el('col-menu').querySelectorAll('[data-col-toggle]').forEach(n=>n.addEventListener('change',()=>{ state.cols[n.dataset.colToggle]=n.checked; render(); }));
+    }
+    function applyColVisibility(){
+      document.querySelectorAll('.camp-table [data-col]').forEach(th=>{ th.style.display = state.cols[th.dataset.col]?'':'none'; });
+    }
+
+    /* ---- rows ------------------------------------------------------------ */
+    function visibleEvents(){
+      const f=state.filter.trim().toLowerCase();
+      let items=state.events;
+      if(state.category!=='All' && state.category!=='Events') items=[];
+      items=items.filter(e=>{
+        if(state.status!=='All' && statusOf(e)!==state.status) return false;
+        if(f && !(eventTitle(e).toLowerCase().includes(f) || marketOf(e).toLowerCase().includes(f))) return false;
+        return true;
+      });
+      return items;
+    }
+    function segClass(seg){ return seg==='ICP'?'seg-icp':seg==='SCP'?'seg-scp':'seg-non'; }
+    function tagClass(t){ return t==='VIP'?'tag-vip':t==='FOOD'?'tag-food':'tag-sched'; }
+
+    function rowHtml(e){
+      const c=state.cols, sel=state.selected.has(e.id);
+      const st=statusOf(e); const confirmed = st==='Confirmed'||st==='Sent';
+      const seg=segOf(e), tags=tagsOf(e);
+      const confirmBtn = confirmed
+        ? `<span class="badge badge-success badge-sm gap-1 font-semibold">&#10003; ${st==='Sent'?'Sent':'Confirmed'}</span>`
+        : `<button class="btn btn-xs btn-outline btn-info rounded-full px-3" data-confirm="${esc(e.id)}">Confirm</button>`;
+      const senderSel = (kind)=>`<select class="select select-bordered select-xs mini-select w-40" data-sender="${esc(e.id)}" data-kind="${kind}">
+          ${SENDERS.map(s=>`<option ${s===senderFor(e,kind)?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
+      return `<tr class="camp-row" data-row="${esc(e.id)}">
+        <td><input type="checkbox" class="checkbox checkbox-xs" data-select="${esc(e.id)}" ${sel?'checked':''}/></td>
+        ${c.event?`<td>
+          <div class="flex items-center gap-2">
+            <div class="min-w-0">
+              <div class="font-bold text-[#133b49] truncate">${esc(eventTitle(e))}</div>
+              <div class="text-xs text-base-content/50 mt-0.5">${esc(shortDate(e.event_date))}${priceOf(e)?` · <span class="text-primary font-semibold">${esc(priceOf(e))}</span>`:''}</div>
+            </div>
+            ${confirmBtn}
+          </div></td>`:''}
+        ${c.market?`<td><div class="flex items-center gap-2"><span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(marketOf(e))}</span><span class="seg ${segClass(seg)}">${esc(seg)}</span></div></td>`:''}
+        ${c.sport?`<td><span class="sport-pill">${esc(sportOf(e))}</span></td>`:''}
+        ${c.tags?`<td><div class="flex flex-wrap gap-1">${tags.map(t=>`<span class="tagpill ${tagClass(t)}">${esc(t)}</span>`).join('')}</div></td>`:''}
+        ${c.emails?`<td><div class="flex items-center gap-2"><span class="font-bold text-[#133b49]">${emailsOf(e).toLocaleString()}</span>${senderSel('email')}</div></td>`:''}
+        ${c.sms?`<td><div class="flex items-center gap-2"><span class="font-bold text-[#133b49]">${smsOf(e).toLocaleString()}</span>${senderSel('sms')}</div></td>`:''}
+        ${c.suite?`<td class="text-sm text-base-content/60 whitespace-nowrap">${esc(suiteDate(e))}</td>`:''}
+      </tr>`;
+    }
+
+    function render(){
+      renderCatTabs(); renderStatusChips();
+      const items=visibleEvents();
+      const box=el('rows');
+      if(!items.length){ box.innerHTML=`<tr><td colspan="8" class="text-center text-base-content/50 py-10">No campaigns match this view</td></tr>`; applyColVisibility(); return; }
+      const colspan = Object.values(state.cols).filter(Boolean).length + 1;
+      if(state.splitBySport){
+        const groups={}; items.forEach(e=>{ const s=sportOf(e); (groups[s]=groups[s]||[]).push(e); });
+        box.innerHTML = Object.keys(groups).sort().map(s=>`
+          <tr class="bg-base-200/60"><td colspan="${colspan}" class="!py-2 text-xs font-extrabold uppercase tracking-wide text-base-content/50">${esc(s)} · ${groups[s].length}</td></tr>
+          ${groups[s].map(rowHtml).join('')}`).join('');
+      } else {
+        box.innerHTML = items.map(rowHtml).join('');
+      }
+      wireRows(); applyColVisibility();
+    }
+
+    function wireRows(){
+      document.querySelectorAll('[data-confirm]').forEach(n=>n.addEventListener('click',()=>{
+        const e=state.events.find(x=>x.id===n.dataset.confirm); if(!e) return;
+        setStatus(e,'Confirmed'); toast(`Confirmed “${eventTitle(e)}”`,'ok'); render();
+      }));
+      document.querySelectorAll('[data-select]').forEach(n=>n.addEventListener('change',()=>{
+        if(n.checked) state.selected.add(n.dataset.select); else state.selected.delete(n.dataset.select);
+      }));
+      document.querySelectorAll('[data-sender]').forEach(n=>n.addEventListener('change',()=>{
+        localStorage.setItem(`sender_${n.dataset.kind}_${n.dataset.sender}`, n.value);
+      }));
+    }
+
+    /* ---- controls -------------------------------------------------------- */
+    el('search').addEventListener('input', e=>{ state.filter=e.target.value; render(); });
+    el('split-btn').addEventListener('click', ()=>{ state.splitBySport=!state.splitBySport; el('split-btn').classList.toggle('btn-active', state.splitBySport); render(); });
+    el('check-all').addEventListener('change', e=>{ visibleEvents().forEach(ev=>{ if(e.target.checked) state.selected.add(ev.id); else state.selected.delete(ev.id); }); render(); });
+    el('create-campaign').addEventListener('click', ()=> toast('Campaign creation flow is coming next','info'));
+    el('sync-btn').addEventListener('click', async ()=>{
+      const b=el('sync-btn'); b.disabled=true; b.querySelector('#sync-ico').innerHTML='<span class="loading loading-spinner loading-xs"></span>';
+      await loadAll(); b.disabled=false; b.querySelector('#sync-ico').innerHTML='&#8635;'; toast('Ticket data refreshed','ok');
+    });
+
+    renderColMenu();
+    if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else loadAll();
+  </script>
+</body>
+</html>

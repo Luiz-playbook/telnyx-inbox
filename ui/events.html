@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Events</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="./theme.css" rel="stylesheet" />
+  <style> html,body{height:100%} </style>
+</head>
+<body class="h-full">
+  <div class="flex flex-col h-screen bg-base-200">
+    <header class="shrink-0">
+      <div class="pb-topbar flex items-center gap-4 px-5 h-14">
+        <img src="./assets/pb-logo-navbar.png" alt="Playbook" class="h-7 w-auto" />
+        <span class="text-white/70 text-sm font-semibold hidden sm:inline">Messaging</span>
+      </div>
+      <nav class="pb-tabs px-5">
+        <a href="./index.html">Inbox</a>
+        <a href="./companies.html">Companies</a>
+        <a href="./events.html" class="active">Events</a>
+        <a href="./campaigns.html">Campaigns</a>
+        <a href="./templates.html">Templates</a>
+        <a href="./bulk.html">Recipients</a>
+        <a href="./lookup.html">Checker</a>
+      </nav>
+    </header>
+
+    <div class="flex flex-1 min-h-0">
+      <!-- events list column -->
+      <aside class="w-80 shrink-0 border-r border-base-300 bg-base-100 flex flex-col">
+        <div class="p-4 flex items-center justify-between">
+          <h1 class="text-xl font-bold">Events</h1>
+          <label class="input input-bordered input-sm flex items-center gap-2 w-40">
+            <input id="search" type="text" class="grow" placeholder="Search" />
+          </label>
+        </div>
+        <ul class="menu px-2 overflow-y-auto flex-1" id="rows">
+          <li class="px-2 py-6 text-center text-base-content/50">Loading…</li>
+        </ul>
+      </aside>
+
+      <!-- detail column -->
+      <main class="flex-1 overflow-y-auto" id="detail">
+        <div class="h-full flex items-center justify-center text-base-content/50">Select an event</div>
+      </main>
+    </div>
+  </div>
+
+  <!-- confirm send modal -->
+  <dialog id="send-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="font-bold text-lg">Send this blast?</h3>
+      <p class="py-3 text-base-content/70" id="send-modal-text"></p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn">Cancel</button></form>
+        <button class="btn btn-success" id="send-go">Send now</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <div class="toast toast-end" id="toast-wrap"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const el = (id) => document.getElementById(id);
+    const state = { events: [], templates: [], lists: [], numbers: [], config: {}, activeId: null, filter: '' };
+    const SAMPLE = { name:'Jordan Smith', first_name:'Jordan', phone:'+1 (615) 555-0142' };
+
+    function toast(msg, type='info'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[type]||'alert-info';
+      const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(msg)}</span>`;
+      el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function renderTpl(body, v){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g,(_,k)=>(v[k]??'')); }
+    function firstName(n){ return (n||'').trim().split(/\s+/)[0]||''; }
+    function recToVars(r){ return { name:r.name||'', first_name:firstName(r.name), phone:r.phone||'' }; }
+    function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
+    function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
+    function activeFrom(){ return localStorage.getItem('active_telnyx_number') || (state.numbers[0] && state.numbers[0].phone_number) || '+16158050766'; }
+
+    function eventTitle(e){ return e.opponent ? `${e.team_name} vs ${e.opponent}` : (e.team_name||'Untitled event'); }
+    function fmtDate(d){ if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'}); }
+    function fmtTime(t){ if(!t) return ''; const [h,m]=t.split(':'); const dt=new Date(); dt.setHours(+h,+m||0,0); return dt.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); }
+    function isUpcoming(e){ return (e.event_date||'') >= new Date().toISOString().slice(0,10); }
+    function statusBadge(s){ const k=(s||'').toLowerCase(); const cls = k.includes('book')?'badge-success' : (k.includes('hold')||k.includes('pend'))?'badge-warning' : (k.includes('cancel')?'badge-error':'badge-ghost'); return s?`<span class="badge ${cls} badge-sm">${esc(s)}</span>`:''; }
+
+    async function loadAll(){
+      const [{data:events,error:e1},{data:tpls},{data:lists},{data:nums},{data:conf}] = await Promise.all([
+        sb.from('icp_events').select('*'),
+        sb.from('message_templates').select('*').order('name',{ascending:true}),
+        sb.from('recipient_lists').select('*').order('updated_at',{ascending:false}),
+        sb.from('telnyx_numbers').select('*').eq('active',true).order('sort_order'),
+        sb.from('event_sms_config').select('*'),
+      ]);
+      if(e1){ toast('Load failed: '+e1.message,'err'); return; }
+      // upcoming first (soonest → latest), then past (most recent → oldest)
+      const evs=(events||[]).slice();
+      evs.sort((a,b)=>{ const au=isUpcoming(a),bu=isUpcoming(b);
+        if(au!==bu) return au?-1:1;
+        return au ? (a.event_date<b.event_date?-1:1) : (a.event_date>b.event_date?-1:1); });
+      state.events=evs; state.templates=tpls||[]; state.lists=lists||[]; state.numbers=nums||[];
+      state.config={}; (conf||[]).forEach(c=>state.config[c.event_id]=c.template_id);
+      renderList();
+    }
+
+    function renderList(){
+      const box=el('rows'); const f=state.filter.trim().toLowerCase();
+      const items=state.events.filter(e=>!f || eventTitle(e).toLowerCase().includes(f) || (e.booking_status||'').toLowerCase().includes(f));
+      if(!items.length){ box.innerHTML='<li class="px-2 py-6 text-center text-base-content/50">No events</li>'; return; }
+      let html=''; let section='';
+      items.forEach(e=>{ const sec=isUpcoming(e)?'Upcoming':'Past';
+        if(sec!==section){ section=sec; html+=`<li class="menu-title px-2 pt-3">${sec}</li>`; }
+        const hasTpl=!!state.config[e.id];
+        html+=`<li><a class="${e.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${esc(e.id)}">
+          <span class="font-semibold flex items-center gap-2">${esc(eventTitle(e))}${hasTpl?'<span class="badge badge-primary badge-xs">tpl</span>':''}</span>
+          <span class="text-xs text-base-content/60">${esc(fmtDate(e.event_date))}${e.event_time?' · '+esc(fmtTime(e.event_time)):''}</span>
+        </a></li>`; });
+      box.innerHTML=html;
+      box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id)));
+    }
+
+    function open(id){ state.activeId=id; renderList(); renderDetail(); }
+
+    function detailRow(label, value){ if(value===null||value===undefined||value==='') return ''; return `<div><dt class="text-xs uppercase text-base-content/50">${esc(label)}</dt><dd class="font-medium">${value}</dd></div>`; }
+
+    function renderDetail(){
+      const e=state.events.find(x=>x.id===state.activeId);
+      if(!e){ el('detail').innerHTML='<div class="h-full flex items-center justify-center text-base-content/50">Select an event</div>'; return; }
+      const chosen=state.config[e.id]||'';
+      const filled = (e.filled_pct!=null)?`${Math.round(e.filled_pct)}%`:'';
+      el('detail').innerHTML=`
+        <div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4">
+          <div class="flex items-center gap-3 flex-wrap">
+            <h2 class="text-lg font-bold">${esc(eventTitle(e))}</h2>
+            ${statusBadge(e.booking_status)}
+          </div>
+          <div class="text-sm text-base-content/60 mt-1">${esc(fmtDate(e.event_date))}${e.event_time?' · '+esc(fmtTime(e.event_time)):''}</div>
+        </div>
+        <div class="p-6 max-w-3xl space-y-5">
+          <div class="card bg-base-100 border border-base-300"><div class="card-body p-4">
+            <dl class="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              ${detailRow('Team', esc(e.team_name))}
+              ${detailRow('Opponent', esc(e.opponent))}
+              ${detailRow('Suite spots', e.total_spots_suite)}
+              ${detailRow('Spots (+20%)', e.total_spots_with_20)}
+              ${detailRow('Tickets to BD', e.tickets_sent_to_bd)}
+              ${detailRow('Filled', filled)}
+              ${detailRow('Unique orgs', e.unique_orgs_count)}
+              ${detailRow('Price / person', e.price_per_person!=null?'$'+e.price_per_person:'')}
+              ${detailRow('Total price', e.total_price!=null?'$'+e.total_price:'')}
+              ${detailRow('Setup', esc(e.setup_type))}
+              ${detailRow('BDA reps', esc(e.bda_reps))}
+              ${detailRow('Traveling reps', esc(e.traveling_reps))}
+              ${e.booking_url?detailRow('Booking', `<a href="${esc(e.booking_url)}" target="_blank" class="link link-primary">Open</a>`):''}
+            </dl>
+          </div></div>
+
+          <div class="card bg-base-100 border border-base-300"><div class="card-body gap-3 p-4">
+            <div class="flex items-center justify-between">
+              <h3 class="font-bold">SMS blast for this event</h3>
+              <span class="text-xs text-base-content/50" id="tpl-saved"></span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="form-control"><label class="label"><span class="label-text">Template</span></label>
+                <select id="tpl" class="select select-bordered">
+                  <option value="">— choose a template —</option>
+                  ${state.templates.map(t=>`<option value="${esc(t.id)}" ${t.id===chosen?'selected':''}>${esc(t.name)}</option>`).join('')}
+                </select></div>
+              <div class="form-control"><label class="label"><span class="label-text">Recipients</span></label>
+                <select id="list" class="select select-bordered">
+                  <option value="">— choose a list —</option>
+                  ${state.lists.map(l=>`<option value="${esc(l.id)}">${esc(l.name)} (${(l.recipients||[]).length})</option>`).join('')}
+                </select></div>
+              <div class="form-control sm:col-span-2"><label class="label"><span class="label-text">Send from</span></label>
+                <select id="from-num" class="select select-bordered">
+                  ${state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===activeFrom()?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join('')||'<option value="">No numbers</option>'}
+                </select></div>
+            </div>
+            <div class="rounded-lg bg-base-200 p-3 text-sm whitespace-pre-wrap" id="pv">—</div>
+            <button class="btn btn-success w-full" id="send">Send blast to <span id="sendn" class="mx-1 font-bold">0</span> recipient(s)</button>
+            <div class="text-xs text-base-content/60">${(!cfg.BULK_SEND_WEBHOOK_URL||cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<'))?'Sending isn’t wired yet (BULK_SEND_WEBHOOK_URL). Template choice still saves.':'Template choice saves automatically. AI-driven template selection is coming later.'}</div>
+          </div></div>
+        </div>`;
+      el('tpl').addEventListener('change', onTemplateChange);
+      el('list').addEventListener('change', refreshSend);
+      el('from-num').addEventListener('change', ()=>localStorage.setItem('active_telnyx_number', el('from-num').value));
+      el('send').addEventListener('click', openSendModal);
+      refreshSend();
+    }
+
+    function selectedTemplate(){ return state.templates.find(t=>t.id===el('tpl').value); }
+    function selectedListRecipients(){ const l=state.lists.find(x=>x.id===el('list').value); const recs=(l&&Array.isArray(l.recipients))?l.recipients:[]; return recs.filter(r=>isValidPhone(r.phone)); }
+
+    function refreshSend(){ const t=selectedTemplate(); const recs=selectedListRecipients();
+      if(el('sendn')) el('sendn').textContent=recs.length;
+      if(el('pv')) el('pv').textContent = (t&&recs[0]) ? renderTpl(t.body,recToVars(recs[0])) : (t?renderTpl(t.body,SAMPLE):'—'); }
+
+    async function onTemplateChange(){
+      const e=state.events.find(x=>x.id===state.activeId); if(!e) return;
+      const tid=el('tpl').value||null; state.config[e.id]=tid;
+      el('tpl-saved').textContent='Saving…';
+      const {error}=await sb.from('event_sms_config').upsert({event_id:e.id, template_id:tid, updated_at:new Date().toISOString()},{onConflict:'event_id'});
+      if(error){ el('tpl-saved').textContent=''; toast('Could not save: '+error.message,'err'); }
+      else { el('tpl-saved').textContent='Saved'; setTimeout(()=>{ if(el('tpl-saved'))el('tpl-saved').textContent=''; },1500); renderList(); }
+      refreshSend();
+    }
+
+    function openSendModal(){ const e=state.events.find(x=>x.id===state.activeId); const t=selectedTemplate();
+      if(!t){ toast('Choose a template first','err'); return; }
+      const recs=selectedListRecipients(); if(!recs.length){ toast('Choose a recipient list with valid numbers','err'); return; }
+      el('send-modal-text').innerHTML=`You’re about to text <b>${recs.length}</b> ${recs.length===1?'person':'people'} for <b>${esc(eventTitle(e))}</b> from ${esc(el('from-num').value||activeFrom())}.`;
+      el('send-modal').showModal(); }
+
+    el('send-go').addEventListener('click', doSend);
+    async function doSend(){ el('send-modal').close();
+      const e=state.events.find(x=>x.id===state.activeId); const t=selectedTemplate(); const recs=selectedListRecipients();
+      if(!cfg.BULK_SEND_WEBHOOK_URL||cfg.BULK_SEND_WEBHOOK_URL.startsWith('<<')){ toast('Sending isn’t wired yet','err'); return; }
+      const from=el('from-num').value||activeFrom();
+      const messages=recs.map(r=>({from,to:r.phone,text:renderTpl(t.body,recToVars(r))}));
+      const btn=el('send'); btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-sm"></span> Sending…';
+      try{ const res=await fetch(cfg.BULK_SEND_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':cfg.REPLY_SECRET||''},
+          body:JSON.stringify({from,event_id:e.id,list_id:el('list').value,template_id:t.id,messages})});
+        if(!res.ok) throw new Error('HTTP '+res.status); toast(`Sent to ${messages.length} recipient(s)`,'ok'); }
+      catch(err){ toast('Send failed: '+err.message,'err'); }
+      finally{ btn.disabled=false; btn.innerHTML=`Send blast to <span id="sendn" class="mx-1 font-bold">${recs.length}</span> recipient(s)`; } }
+
+    el('search').addEventListener('input', e=>{ state.filter=e.target.value; renderList(); });
+    if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else loadAll();
+  </script>
+</body>
+</html>
