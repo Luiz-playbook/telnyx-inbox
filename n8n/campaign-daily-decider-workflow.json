@@ -1,0 +1,120 @@
+{
+  "name": "[Campaigns] Daily AI Decider",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": { "interval": [ { "field": "cronExpression", "expression": "0 14 * * *" } ] }
+      },
+      "id": "sched-daily",
+      "name": "Every day 14:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [352, 0],
+      "notes": "9am US-Eastern. Adjust the cron once real send-window rules are confirmed in CAMPAIGN_SEND_RULES.md."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://snfmggrnyjayuuxafats.supabase.co/rest/v1/icp_events?select=id,team_name,opponent,event_date,filled_pct&event_date=gte.{{ $now.toFormat('yyyy-LL-dd') }}&order=event_date.asc",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "id": "get-events",
+      "name": "Get Upcoming Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, 0],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Supabase | John" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/blast_templates?select=list_name,name,open_rate,clickthru_rate,sent_emails,scheduled_for",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {}
+      },
+      "id": "get-templates",
+      "name": "Get Template Library",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [768, 0],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Supabase | John" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assemble the Anthropic request from the two prior fetches.\nconst today = $now.toFormat('yyyy-LL-dd');\nconst events = $('Get Upcoming Events').all().map(i => i.json);\nconst templates = $('Get Template Library').all().map(i => i.json);\n\nconst system = [\n'You are the daily campaign send decider for a ticket-sales team. Each day you decide, per upcoming event, whether it deserves an email/SMS blast and which historical template to reuse. Follow these rules exactly:',\n'',\n'ELIGIBILITY (send only if ALL true): event_date is in the future; the event is NOT already full (filled_pct is null or < 90); a template in the library plausibly matches the event\\'s market (bridge team_name -> city/metro -> the template list_name, which is a metro/region like \"Cleveland\", \"Yankees New York City\", \"Georgia\", \"Washington DC & DMV\"). If no template matches the market, decision = skip with reason \"no list\".',\n'PRIORITISATION: lower filled_pct = higher urgency (0% is most urgent); null fill = medium.',\n'TEMPLATE CHOICE: among templates matching the market, pick the best historical performer (highest open_rate, tie-break clickthru_rate; ignore rows with 0 sent_emails). Return its exact name.',\n'SUPPRESSION: never recommend sending on or after the event_date.',\n'',\n'Return one decision per event. channel is \"email\" for now (SMS lists not ready). template_name is the chosen template name, or null when skipping. Keep reason to one short sentence.'\n].join('\\n');\n\nconst user = 'TODAY: ' + today + '\\n\\nUPCOMING EVENTS:\\n' + JSON.stringify(events) + '\\n\\nTEMPLATE LIBRARY (historical blasts, list_name = market):\\n' + JSON.stringify(templates);\n\nconst schema = {\n  type: 'object',\n  properties: {\n    decisions: {\n      type: 'array',\n      items: {\n        type: 'object',\n        properties: {\n          event_id: { type: 'string' },\n          team: { type: 'string' },\n          decision: { type: 'string', enum: ['send', 'skip'] },\n          channel: { type: 'string', enum: ['email', 'sms', 'none'] },\n          template_name: { type: ['string', 'null'] },\n          reason: { type: 'string' }\n        },\n        required: ['event_id', 'team', 'decision', 'channel', 'template_name', 'reason'],\n        additionalProperties: false\n      }\n    }\n  },\n  required: ['decisions'],\n  additionalProperties: false\n};\n\nconst body = {\n  model: 'claude-opus-4-8',\n  max_tokens: 8000,\n  thinking: { type: 'adaptive' },\n  system,\n  messages: [{ role: 'user', content: user }],\n  output_config: { format: { type: 'json_schema', schema } }\n};\n\nreturn [{ json: { body, run_date: today, event_count: events.length } }];"
+      },
+      "id": "build-request",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [976, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "anthropic-version", "value": "2023-06-01" },
+          { "name": "content-type", "value": "application/json" }
+        ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      },
+      "id": "ai-decider",
+      "name": "AI Decider (Claude Opus 4.8)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1184, 0],
+      "credentials": { "httpHeaderAuth": { "id": "REPLACE_WITH_ANTHROPIC_CREDENTIAL_ID", "name": "Anthropic x-api-key" } },
+      "notes": "Uses a Generic Header Auth credential: Name = x-api-key, Value = your Anthropic API key. Model claude-opus-4-8 with adaptive thinking + structured JSON output."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the structured JSON out of the Claude response into one item per decision.\nconst res = $json;\nlet text = '';\nfor (const b of (res.content || [])) { if (b.type === 'text' && b.text) { text = b.text; break; } }\nif (!text) { throw new Error('No text block in Claude response: ' + JSON.stringify(res).slice(0, 500)); }\nconst parsed = JSON.parse(text);\nconst runDate = $('Build AI Request').first().json.run_date;\nreturn (parsed.decisions || []).map(d => ({ json: { ...d, run_date: runDate } }));"
+      },
+      "id": "parse-decisions",
+      "name": "Parse Decisions",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1392, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/campaign_send_log",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [ { "name": "Prefer", "value": "return=minimal" } ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ event_id: $json.event_id, run_date: $json.run_date, decision: $json.decision, channel: $json.channel, template_name: $json.template_name, reason: $json.reason }) }}",
+        "options": {}
+      },
+      "id": "log-decision",
+      "name": "Log Decision",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 0],
+      "credentials": { "supabaseApi": { "id": "REPLACE_WITH_SUPABASE_CREDENTIAL_ID", "name": "Supabase | John" } },
+      "notes": "Writes every decision (send + skip) to campaign_send_log. The actual send branch (off decision == 'send') hooks in here once per-market recipient lists exist — POST the chosen template + list to the gmail-bulk-send / telnyx-bulk-send webhook, then PATCH sent_at."
+    }
+  ],
+  "connections": {
+    "Every day 14:00 UTC": { "main": [[{ "node": "Get Upcoming Events", "type": "main", "index": 0 }]] },
+    "Get Upcoming Events": { "main": [[{ "node": "Get Template Library", "type": "main", "index": 0 }]] },
+    "Get Template Library": { "main": [[{ "node": "Build AI Request", "type": "main", "index": 0 }]] },
+    "Build AI Request": { "main": [[{ "node": "AI Decider (Claude Opus 4.8)", "type": "main", "index": 0 }]] },
+    "AI Decider (Claude Opus 4.8)": { "main": [[{ "node": "Parse Decisions", "type": "main", "index": 0 }]] },
+    "Parse Decisions": { "main": [[{ "node": "Log Decision", "type": "main", "index": 0 }]] }
+  }
+}

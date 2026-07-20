@@ -15,6 +15,9 @@ const cfg = {
   // (The 'from' number is set in the n8n send node, not the payload.)
   BULK_SEND_WEBHOOK_URL: process.env.BULK_SEND_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-bulk-send',
+  // n8n Gmail bulk-send webhook — receives { messages:[{to,subject,html}] }, Switch-by-from.
+  EMAIL_SEND_WEBHOOK_URL: process.env.EMAIL_SEND_WEBHOOK_URL
+    || 'https://playbooksports.app.n8n.cloud/webhook/gmail-bulk-send',
   // n8n workflow that pulls the messaging-profile's numbers into telnyx_numbers.
   SYNC_NUMBERS_WEBHOOK_URL: process.env.SYNC_NUMBERS_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-sync-numbers',

@@ -84,11 +84,11 @@
     function renderList(){
       const box=el('rows');
       if(!state.lists.length){ box.innerHTML='<li class="px-2 py-6 text-center text-base-content/50">No recipient lists yet</li>'; return; }
-      box.innerHTML = state.lists.map(l=>`
-        <li><a class="${l.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${l.id}">
+      box.innerHTML = state.lists.map(l=>{ const recs=l.recipients||[]; const vp=recs.filter(r=>isValidPhone(r.phone)).length, ve=recs.filter(r=>isValidEmail(r.email)).length;
+        return `<li><a class="${l.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${l.id}">
           <span class="font-semibold">${esc(l.name)}</span>
-          <span class="text-xs text-base-content/60">${(l.recipients||[]).length} recipient(s)</span>
-        </a></li>`).join('');
+          <span class="text-xs text-base-content/60">${recs.length} recipient(s) · ${vp} phone · ${ve} email</span>
+        </a></li>`; }).join('');
       box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id)));
     }
     function newItem(){ state.activeId=null; state.draft={name:'',recipients:[]}; renderList(); renderEditor(); }
@@ -164,33 +164,43 @@
       if(h){ const cols=arr[0].map((c,i)=>(c||'').trim()||('Column '+(i+1))); return{columns:cols,rows:arr.slice(1).map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]??'').trim());return o;})}; }
       const w=arr.reduce((m,r)=>Math.max(m,r.length),0); const cols=Array.from({length:w},(_,i)=>'Column '+(i+1));
       return{columns:cols,rows:arr.map(r=>{const o={};cols.forEach((c,i)=>o[c]=(r[i]??'').trim());return o;})}; }
-    function detectPhoneCol(p){ const bn=p.columns.find(c=>/phone|mobile|cell|\btel\b|number/i.test(c)); if(bn)return bn; let best=p.columns[0],s=-1; p.columns.forEach(c=>{let n=0;p.rows.slice(0,50).forEach(r=>{if(isValidPhone(normPhone(r[c])))n++;});if(n>s){s=n;best=c;}}); return best; }
+    // returns '' when no column actually contains valid phones (e.g. an email-only CSV)
+    function detectPhoneCol(p){ const named=p.columns.find(c=>/phone|mobile|cell|\btel\b|number/i.test(c));
+      if(named){ let n=0; p.rows.slice(0,50).forEach(r=>{if(isValidPhone(normPhone(r[named])))n++;}); if(n>0)return named; }
+      let best='',s=0; p.columns.forEach(c=>{let n=0;p.rows.slice(0,50).forEach(r=>{if(isValidPhone(normPhone(r[c])))n++;});if(n>s){s=n;best=c;}}); return best; }
+    function detectEmailCol(p){ const named=p.columns.find(c=>/e-?mail/i.test(c));
+      if(named){ let n=0; p.rows.slice(0,50).forEach(r=>{if(isValidEmail((r[named]||'').toString().trim()))n++;}); if(n>0)return named; }
+      let best='',s=0; p.columns.forEach(c=>{let n=0;p.rows.slice(0,50).forEach(r=>{if(isValidEmail((r[c]||'').toString().trim()))n++;});if(n>s){s=n;best=c;}}); return best; }
     function detectNameCol(p){ return p.columns.find(c=>/name|company|organization|contact/i.test(c))||''; }
     async function onCsvFile(e){ const file=e.target.files[0]; if(!file)return; el('csvhint').textContent='Reading '+file.name+'…';
       try{ state.csv={name:file.name,text:await file.text(),hasHeader:true}; renderCsvPanel(); el('csvhint').textContent=file.name; }catch(err){ toast('Could not read CSV: '+err.message,'err'); } e.target.value=''; }
     function renderCsvPanel(){ const p=parseCsv(state.csv.text,state.csv.hasHeader); state.csv.columns=p.columns; state.csv.rows=p.rows;
       if(!p.columns.length){ toast('That CSV looks empty','err'); return; }
-      const pg=detectPhoneCol(p),ng=detectNameCol(p); const opt=(sel)=>p.columns.map(c=>`<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
+      const pg=detectPhoneCol(p),eg=detectEmailCol(p),ng=detectNameCol(p); const opt=(sel)=>p.columns.map(c=>`<option value="${esc(c)}" ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
       const panel=el('csvpanel'); panel.className='rounded-lg border border-base-300 bg-base-200 p-4 space-y-3';
       panel.innerHTML=`
         <div class="flex flex-wrap gap-3 items-end">
-          <div class="form-control"><label class="label py-0"><span class="label-text text-xs">Phone column</span></label><select id="csv-phone" class="select select-bordered select-sm">${opt(pg)}</select></div>
+          <div class="form-control"><label class="label py-0"><span class="label-text text-xs">Phone column (optional)</span></label><select id="csv-phone" class="select select-bordered select-sm"><option value="">— none —</option>${opt(pg)}</select></div>
+          <div class="form-control"><label class="label py-0"><span class="label-text text-xs">Email column (optional)</span></label><select id="csv-email" class="select select-bordered select-sm"><option value="">— none —</option>${opt(eg)}</select></div>
           <div class="form-control"><label class="label py-0"><span class="label-text text-xs">Name column (optional)</span></label><select id="csv-name" class="select select-bordered select-sm"><option value="">— none —</option>${opt(ng)}</select></div>
           <label class="label cursor-pointer gap-2"><input type="checkbox" id="csv-header" class="checkbox checkbox-sm" ${state.csv.hasHeader?'checked':''}><span class="label-text text-sm">First row is a header</span></label>
         </div>
         <div class="text-sm text-base-content/70" id="csv-preview"></div>
         <div class="flex gap-2"><button class="btn btn-sm btn-primary" id="csv-import">Import <span id="csv-n" class="mx-1">0</span></button><button class="btn btn-sm btn-ghost" id="csv-cancel">Cancel</button></div>`;
-      el('csv-phone').addEventListener('change',updateCsvPreview); el('csv-name').addEventListener('change',updateCsvPreview);
+      el('csv-phone').addEventListener('change',updateCsvPreview); el('csv-email').addEventListener('change',updateCsvPreview); el('csv-name').addEventListener('change',updateCsvPreview);
       el('csv-header').addEventListener('change',()=>{state.csv.hasHeader=el('csv-header').checked;renderCsvPanel();});
       el('csv-import').addEventListener('click',importCsv); el('csv-cancel').addEventListener('click',()=>{el('csvpanel').className='hidden';state.csv=null;el('csvhint').textContent='';});
       updateCsvPreview();
     }
-    function buildCsvRecipients(){ const pc=el('csv-phone').value,nc=el('csv-name').value; return state.csv.rows.map(r=>({name:nc?(r[nc]||'').toString().trim():'',phone:normPhone((r[pc]||'').toString())})); }
-    function updateCsvPreview(){ const recs=buildCsvRecipients(); const v=recs.filter(r=>isValidPhone(r.phone)).length; el('csv-n').textContent=v;
-      const s=recs.find(r=>isValidPhone(r.phone)); el('csv-preview').innerHTML=`${state.csv.rows.length} row(s) · <b>${v} valid</b>`+(s?` · e.g. ${esc(s.name?s.name+' — ':'')}${esc(s.phone)}`:''); }
-    function importCsv(){ const recs=buildCsvRecipients().filter(r=>r.phone); if(!recs.length){ toast('No phone values in that column','err'); return; }
+    function buildCsvRecipients(){ const pc=el('csv-phone').value,ec=el('csv-email').value,nc=el('csv-name').value;
+      return state.csv.rows.map(r=>({ name:nc?(r[nc]||'').toString().trim():'', phone:pc?normPhone((r[pc]||'').toString()):'', email:ec?(r[ec]||'').toString().trim().toLowerCase():'' })); }
+    function updateCsvPreview(){ const recs=buildCsvRecipients(); const vp=recs.filter(r=>isValidPhone(r.phone)).length, ve=recs.filter(r=>isValidEmail(r.email)).length;
+      el('csv-n').textContent=recs.filter(r=>isValidPhone(r.phone)||isValidEmail(r.email)).length;
+      const s=recs.find(r=>isValidPhone(r.phone)||isValidEmail(r.email));
+      el('csv-preview').innerHTML=`${state.csv.rows.length} row(s) · <b>${vp} phone</b> · <b>${ve} email</b>`+(s?` · e.g. ${esc([s.name,s.phone,s.email].filter(Boolean).join(' — '))}`:''); }
+    function importCsv(){ const recs=buildCsvRecipients().filter(r=>isValidPhone(r.phone)||isValidEmail(r.email)); if(!recs.length){ toast('No valid phone or email values in the chosen columns','err'); return; }
       state.draft.recipients=(state.draft.recipients||[]).concat(recs); el('f-recs').value=recipientsToText(state.draft.recipients);
-      el('csvpanel').className='hidden'; el('csvhint').textContent=`Imported ${recs.length} from ${state.csv.name}`; state.csv=null; refreshCounts(); toast(`Imported ${recs.length} number(s)`,'ok'); }
+      el('csvpanel').className='hidden'; el('csvhint').textContent=`Imported ${recs.length} from ${state.csv.name}`; state.csv=null; refreshCounts(); toast(`Imported ${recs.length} recipient(s)`,'ok'); }
 
     // classify
     async function lookupOne(number){ try{ const res=await fetch('/api/lookup?number='+encodeURIComponent(number),{headers:{'x-inbox-secret':cfg.REPLY_SECRET||''}}); const d=await res.json(); if(!res.ok)return{line_type:'error',textable:false}; return d; }catch(e){ return{line_type:'error',textable:false}; } }

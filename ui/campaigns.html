@@ -10,7 +10,7 @@
   <style>
     html,body{height:100%}
     /* campaign table chrome — mirrors the PB Internal mockup */
-    .camp-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; }
+    .camp-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; background:#fff; }
     .camp-table td{ padding:14px 16px; vertical-align:middle; border-top:1px solid #edf2f9; }
     .camp-row:hover{ background:#f8fafc; }
     .seg{ font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 7px; border-radius:5px; text-transform:uppercase; white-space:nowrap; }
@@ -49,29 +49,20 @@
       </nav>
     </header>
 
-    <main class="flex-1 overflow-y-auto">
-      <div class="px-6 py-5">
+    <main class="flex-1 min-h-0 overflow-hidden">
+      <div class="px-6 py-5 flex flex-col h-full min-h-0">
         <!-- title row -->
-        <div class="flex items-center justify-between flex-wrap gap-3">
-          <div class="flex items-center gap-3">
-            <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">INTERNAL</span>
-            <h1 class="text-2xl font-extrabold text-[#133b49]">PB Internal</h1>
-          </div>
-          <button class="btn btn-primary btn-sm gap-2" id="create-campaign">
-            <span class="text-lg leading-none">+</span> Create campaign
-          </button>
+        <div class="flex items-center gap-3 flex-wrap">
+          <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">INTERNAL</span>
+          <h1 class="text-2xl font-extrabold text-[#133b49]">PB Internal</h1>
+          <span class="text-sm text-base-content/50">Campaigns are auto-populated from ticket events.</span>
         </div>
 
-        <!-- category tabs + sync -->
-        <div class="flex items-center justify-between flex-wrap gap-3 mt-5">
-          <div class="flex items-center gap-1 bg-base-100 border border-base-300 rounded-lg p-1" id="cat-tabs"></div>
-          <div class="flex items-center gap-2">
-            <label class="text-xs font-bold uppercase tracking-wide text-base-content/40">Send from</label>
-            <select id="send-from" class="select select-bordered select-sm bg-base-100"></select>
-            <button class="btn btn-primary btn-sm gap-2" id="sync-btn">
-              <span id="sync-ico">&#8635;</span> Sync ticket data &amp; update
-            </button>
-          </div>
+        <!-- sync -->
+        <div class="flex items-center justify-end flex-wrap gap-3 mt-5">
+          <button class="btn btn-primary btn-sm gap-2" id="sync-btn">
+            <span id="sync-ico">&#8635;</span> Sync ticket data &amp; update
+          </button>
         </div>
 
         <!-- status filter row -->
@@ -97,10 +88,10 @@
         </div>
 
         <!-- table -->
-        <div class="mt-4 bg-base-100 border border-base-300 rounded-xl overflow-hidden">
-          <div class="overflow-x-auto">
-            <table class="camp-table w-full min-w-[1000px]">
-              <thead>
+        <div class="mt-4 bg-base-100 border border-base-300 rounded-xl overflow-hidden flex-1 min-h-0">
+          <div class="overflow-auto h-full">
+            <table class="camp-table w-full min-w-[1200px]">
+              <thead class="sticky top-0 z-10">
                 <tr class="border-b border-base-300 bg-base-100">
                   <th class="w-10"><input type="checkbox" class="checkbox checkbox-xs" id="check-all" /></th>
                   <th data-col="event">Event</th>
@@ -109,8 +100,8 @@
                   <th data-col="rec">Recommendation</th>
                   <th data-col="template">Best template</th>
                   <th data-col="tags">Tags</th>
-                  <th data-col="emails"># Emails</th>
-                  <th data-col="sms"># SMS</th>
+                  <th data-col="emails">Send from</th>
+                  <th data-col="sms">Text from</th>
                   <th data-col="suite">Last suite</th>
                 </tr>
               </thead>
@@ -134,16 +125,18 @@
     const el = (id) => document.getElementById(id);
 
     const state = {
-      events: [], blasts: [], filter: '', category: 'All', status: 'All',
+      events: [], blasts: [], numbers: [], filter: '', status: 'All',
       splitBySport: false, selected: new Set(),
       cols: { event:true, market:true, sport:true, rec:true, template:true, tags:true, emails:true, sms:true, suite:true },
     };
 
-    const SENDERS = ['Cakemail', 'Mailmeteor · Josh', 'Telnyx blaster · Josh', 'iPhone · Josh'];
     // Gmail accounts that can send (must match the Switch branches in the n8n Gmail workflow).
     const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
-    function activeSender(){ return localStorage.getItem('campaign_send_from') || EMAIL_SENDERS[0]; }
-    const CATEGORIES = ['Tix', 'Events', 'TA AI', 'All', 'Learning'];
+    // Per-campaign sending identities (persisted per event) — the "from" for that campaign's blast.
+    function emailFromOf(e){ return localStorage.getItem('campaign_email_from_'+e.id) || EMAIL_SENDERS[0]; }
+    function setEmailFrom(e,v){ localStorage.setItem('campaign_email_from_'+e.id, v); }
+    function smsFromOf(e){ return localStorage.getItem('campaign_sms_from_'+e.id) || (state.numbers[0] && state.numbers[0].phone_number) || ''; }
+    function setSmsFrom(e,v){ localStorage.setItem('campaign_sms_from_'+e.id, v); }
     const STATUSES = ['All', 'Scheduled - not confirmed', 'Confirmed', 'Sent'];
 
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -206,9 +199,6 @@
     // segment / tags are demo-derived (no source column yet) but stable per event
     function segOf(e){ return ['ICP','SCP','Non ICP-SCP'][hash(e.id) % 3]; }
     function tagsOf(e){ const h=hash(e.id); const t=['Scheduled']; if(h%2===0) t.unshift('VIP'); if(h%3===0) t.push('FOOD'); return t; }
-    function emailsOf(e){ return e.tab_total_people || e.unique_orgs_count*40 || (120 + hash(e.id)%2400); }
-    function smsOf(e){ return Math.round(emailsOf(e) * 0.68); }
-    function senderFor(e,kind){ return SENDERS[(hash(e.id+kind)) % SENDERS.length]; }
 
     /* ---- blast-template intelligence (real historical performance) -------
        Bridges an event (keyed by team_name -> market city) to blast_templates
@@ -284,31 +274,28 @@
 
     /* ---- data ------------------------------------------------------------ */
     async function loadAll(){
-      const [{data,error}, blastRes] = await Promise.all([
+      const [{data,error}, blastRes, numRes] = await Promise.all([
         sb.from('icp_events').select('*'),
         sb.from('blast_templates').select('list_name,name,sent_emails,open_rate,click_rate,clickthru_rate,scheduled_for'),
+        sb.from('telnyx_numbers').select('phone_number,label,active,sort_order').order('sort_order',{ascending:true}),
       ]);
       if(error){ toast('Load failed: '+error.message,'err'); el('rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-10">'+esc(error.message)+'</td></tr>'; return; }
       if(blastRes.error){ toast('Templates unavailable: '+blastRes.error.message,'err'); }
+      if(numRes.error){ toast('Numbers unavailable: '+numRes.error.message,'err'); }
       state.blasts = blastRes.data || [];
+      state.numbers = numRes.data || [];
       const evs=(data||[]).slice().sort((a,b)=> (a.event_date>b.event_date?-1:1));
       state.events=evs; render();
     }
 
-    /* ---- top tabs / chips / columns menu --------------------------------- */
-    function catCount(cat){ if(cat==='All'||cat==='Events') return state.events.length; return 0; }
-    function renderCatTabs(){
-      el('cat-tabs').innerHTML = CATEGORIES.map(c=>`
-        <span class="cat-tab ${c===state.category?'active':''}" data-cat="${esc(c)}">${esc(c)} <span class="n">${catCount(c)}</span></span>`).join('');
-      el('cat-tabs').querySelectorAll('[data-cat]').forEach(n=>n.addEventListener('click',()=>{ state.category=n.dataset.cat; render(); }));
-    }
+    /* ---- status chips / columns menu ------------------------------------- */
     function renderStatusChips(){
       el('status-chips').innerHTML = STATUSES.map(s=>`
         <span class="status-chip ${s===state.status?'active':''}" data-status="${esc(s)}">${esc(s)}</span>`).join('');
       el('status-chips').querySelectorAll('[data-status]').forEach(n=>n.addEventListener('click',()=>{ state.status=n.dataset.status; render(); }));
     }
     function renderColMenu(){
-      const labels={event:'Event',market:'Market combo',sport:'Sport(s)',rec:'Recommendation',template:'Best template',tags:'Tags',emails:'# Emails',sms:'# SMS',suite:'Last suite'};
+      const labels={event:'Event',market:'Market combo',sport:'Sport(s)',rec:'Recommendation',template:'Best template',tags:'Tags',emails:'Send from',sms:'Text from',suite:'Last suite'};
       el('col-menu').innerHTML = Object.keys(labels).map(k=>`
         <li><label class="flex items-center gap-2 cursor-pointer ${k==='event'?'opacity-50':''}">
           <input type="checkbox" class="checkbox checkbox-xs" data-col-toggle="${k}" ${state.cols[k]?'checked':''} ${k==='event'?'disabled':''}/>
@@ -323,7 +310,6 @@
     function visibleEvents(){
       const f=state.filter.trim().toLowerCase();
       let items=state.events;
-      if(state.category!=='All' && state.category!=='Events') items=[];
       items=items.filter(e=>{
         if(state.status!=='All' && statusOf(e)!==state.status) return false;
         if(f && !(eventTitle(e).toLowerCase().includes(f) || marketOf(e).toLowerCase().includes(f))) return false;
@@ -342,8 +328,6 @@
       const confirmBtn = confirmed
         ? `<span class="badge badge-success badge-sm gap-1 font-semibold">&#10003; ${st==='Sent'?'Sent':'Confirmed'}</span>`
         : `<button class="btn btn-xs btn-outline btn-info rounded-full px-3" data-confirm="${esc(e.id)}">Confirm</button>`;
-      const senderSel = (kind)=>`<select class="select select-bordered select-xs mini-select w-40" data-sender="${esc(e.id)}" data-kind="${kind}">
-          ${SENDERS.map(s=>`<option ${s===senderFor(e,kind)?'selected':''}>${esc(s)}</option>`).join('')}</select>`;
       return `<tr class="camp-row" data-row="${esc(e.id)}">
         <td><input type="checkbox" class="checkbox checkbox-xs" data-select="${esc(e.id)}" ${sel?'checked':''}/></td>
         ${c.event?`<td>
@@ -359,14 +343,14 @@
         ${c.rec?`<td><span class="badge badge-sm font-semibold whitespace-nowrap ${recBadgeClass(rec.tier)}" title="${esc(rec.reason)}">${esc(rec.label)}</span><div class="text-xs text-base-content/50 mt-0.5 whitespace-nowrap">${esc(rec.reason)}</div></td>`:''}
         ${c.template?`<td>${bt?`<div class="min-w-0"><div class="font-semibold text-[#133b49] truncate max-w-[220px]" title="${esc(bt.top.name)}">${esc(bt.top.name)}</div><div class="text-xs text-base-content/50 whitespace-nowrap">${Number(bt.top.open_rate).toFixed(1)}% open · ${bt.count} past${sw?` · best ${esc(sw)}`:''}</div></div>`:'<span class="text-base-content/40">—</span>'}</td>`:''}
         ${c.tags?`<td><div class="flex flex-wrap gap-1">${tags.map(t=>`<span class="tagpill ${tagClass(t)}">${esc(t)}</span>`).join('')}</div></td>`:''}
-        ${c.emails?`<td><div class="flex items-center gap-2"><span class="font-bold text-[#133b49]">${emailsOf(e).toLocaleString()}</span>${senderSel('email')}</div></td>`:''}
-        ${c.sms?`<td><div class="flex items-center gap-2"><span class="font-bold text-[#133b49]">${smsOf(e).toLocaleString()}</span>${senderSel('sms')}</div></td>`:''}
+        ${c.emails?`<td><select class="select select-bordered select-xs mini-select w-52" data-email-from="${esc(e.id)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(e)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>`:''}
+        ${c.sms?`<td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(e.id)}">${state.numbers.length?state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(e)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>`:''}
         ${c.suite?`<td class="text-sm text-base-content/60 whitespace-nowrap">${esc(suiteDate(e))}</td>`:''}
       </tr>`;
     }
 
     function render(){
-      renderCatTabs(); renderStatusChips();
+      renderStatusChips();
       const items=visibleEvents();
       const box=el('rows');
       if(!items.length){ box.innerHTML=`<tr><td colspan="10" class="text-center text-base-content/50 py-10">No campaigns match this view</td></tr>`; applyColVisibility(); return; }
@@ -390,8 +374,11 @@
       document.querySelectorAll('[data-select]').forEach(n=>n.addEventListener('change',()=>{
         if(n.checked) state.selected.add(n.dataset.select); else state.selected.delete(n.dataset.select);
       }));
-      document.querySelectorAll('[data-sender]').forEach(n=>n.addEventListener('change',()=>{
-        localStorage.setItem(`sender_${n.dataset.kind}_${n.dataset.sender}`, n.value);
+      document.querySelectorAll('[data-email-from]').forEach(n=>n.addEventListener('change',()=>{
+        const e=state.events.find(x=>x.id===n.dataset.emailFrom); if(e) setEmailFrom(e, n.value);
+      }));
+      document.querySelectorAll('[data-sms-from]').forEach(n=>n.addEventListener('change',()=>{
+        const e=state.events.find(x=>x.id===n.dataset.smsFrom); if(e) setSmsFrom(e, n.value);
       }));
     }
 
@@ -399,14 +386,10 @@
     el('search').addEventListener('input', e=>{ state.filter=e.target.value; render(); });
     el('split-btn').addEventListener('click', ()=>{ state.splitBySport=!state.splitBySport; el('split-btn').classList.toggle('btn-active', state.splitBySport); render(); });
     el('check-all').addEventListener('change', e=>{ visibleEvents().forEach(ev=>{ if(e.target.checked) state.selected.add(ev.id); else state.selected.delete(ev.id); }); render(); });
-    el('create-campaign').addEventListener('click', ()=> toast('Campaign creation flow is coming next','info'));
     el('sync-btn').addEventListener('click', async ()=>{
       const b=el('sync-btn'); b.disabled=true; b.querySelector('#sync-ico').innerHTML='<span class="loading loading-spinner loading-xs"></span>';
       await loadAll(); b.disabled=false; b.querySelector('#sync-ico').innerHTML='&#8635;'; toast('Ticket data refreshed','ok');
     });
-
-    el('send-from').innerHTML = EMAIL_SENDERS.map(a=>`<option ${a===activeSender()?'selected':''}>${esc(a)}</option>`).join('');
-    el('send-from').addEventListener('change', ()=>localStorage.setItem('campaign_send_from', el('send-from').value));
 
     renderColMenu();
     if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else loadAll();
