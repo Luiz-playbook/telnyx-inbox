@@ -1,0 +1,144 @@
+{
+  "name": "[Gmail] [Bulk] Send",
+  "settings": { "executionOrder": "v1" },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gmail-bulk-send",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "wh-email-bulk",
+      "name": "Bulk Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [352, 0],
+      "webhookId": "gmail-bulk-send"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Only callers with the shared secret may trigger a bulk send.\n// Keep this identical to the SMS bulk-send workflow's secret.\nconst SECRET = 'playbook';\nif (($json.headers['x-inbox-secret'] || '') !== SECRET) {\n  throw new Error('401 Unauthorized: bad or missing x-inbox-secret');\n}\nreturn $input.all();"
+      },
+      "id": "auth-email-bulk",
+      "name": "Auth",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.from }}",
+                    "rightValue": "josh@callplaybook.com",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "josh@callplaybook.com"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.body.from }}",
+                    "rightValue": "jericho@callplaybook.com",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "jericho@callplaybook.com"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra" }
+      },
+      "id": "switch-from",
+      "name": "Route by From",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [768, 0],
+      "notes": "Add one rule per sending account (rightValue = the from address). The last 'fallback' output catches any unknown from — wire it to an error/notify node so a bad from address never silently drops mail."
+    },
+
+    {
+      "parameters": { "fieldToSplitOut": "body.messages", "options": {} },
+      "id": "split-josh",
+      "name": "Split — josh",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1008, -128]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "gmail-josh",
+      "name": "Send — josh@callplaybook.com",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1232, -128],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_JOSH_GMAIL_CREDENTIAL_ID", "name": "Gmail | josh@callplaybook.com" }
+      }
+    },
+
+    {
+      "parameters": { "fieldToSplitOut": "body.messages", "options": {} },
+      "id": "split-jericho",
+      "name": "Split — jericho",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [1008, 128]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "gmail-jericho",
+      "name": "Send — jericho@callplaybook.com",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1232, 128],
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_WITH_JERICHO_GMAIL_CREDENTIAL_ID", "name": "Gmail | jericho@callplaybook.com" }
+      }
+    }
+  ],
+  "connections": {
+    "Bulk Email Webhook": { "main": [[{ "node": "Auth", "type": "main", "index": 0 }]] },
+    "Auth": { "main": [[{ "node": "Route by From", "type": "main", "index": 0 }]] },
+    "Route by From": {
+      "main": [
+        [{ "node": "Split — josh", "type": "main", "index": 0 }],
+        [{ "node": "Split — jericho", "type": "main", "index": 0 }]
+      ]
+    },
+    "Split — josh": { "main": [[{ "node": "Send — josh@callplaybook.com", "type": "main", "index": 0 }]] },
+    "Split — jericho": { "main": [[{ "node": "Send — jericho@callplaybook.com", "type": "main", "index": 0 }]] }
+  }
+}

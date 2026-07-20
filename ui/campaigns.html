@@ -42,7 +42,6 @@
       <nav class="pb-tabs px-5">
         <a href="./index.html">Inbox</a>
         <a href="./companies.html">Companies</a>
-        <a href="./events.html">Events</a>
         <a href="./campaigns.html" class="active">Campaigns</a>
         <a href="./templates.html">Templates</a>
         <a href="./bulk.html">Recipients</a>
@@ -66,9 +65,13 @@
         <!-- category tabs + sync -->
         <div class="flex items-center justify-between flex-wrap gap-3 mt-5">
           <div class="flex items-center gap-1 bg-base-100 border border-base-300 rounded-lg p-1" id="cat-tabs"></div>
-          <button class="btn btn-primary btn-sm gap-2" id="sync-btn">
-            <span id="sync-ico">&#8635;</span> Sync ticket data &amp; update
-          </button>
+          <div class="flex items-center gap-2">
+            <label class="text-xs font-bold uppercase tracking-wide text-base-content/40">Send from</label>
+            <select id="send-from" class="select select-bordered select-sm bg-base-100"></select>
+            <button class="btn btn-primary btn-sm gap-2" id="sync-btn">
+              <span id="sync-ico">&#8635;</span> Sync ticket data &amp; update
+            </button>
+          </div>
         </div>
 
         <!-- status filter row -->
@@ -103,6 +106,8 @@
                   <th data-col="event">Event</th>
                   <th data-col="market">Market combo</th>
                   <th data-col="sport">Sport(s)</th>
+                  <th data-col="rec">Recommendation</th>
+                  <th data-col="template">Best template</th>
                   <th data-col="tags">Tags</th>
                   <th data-col="emails"># Emails</th>
                   <th data-col="sms"># SMS</th>
@@ -110,7 +115,7 @@
                 </tr>
               </thead>
               <tbody id="rows">
-                <tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading…</td></tr>
+                <tr><td colspan="10" class="text-center text-base-content/50 py-10">Loading…</td></tr>
               </tbody>
             </table>
           </div>
@@ -129,12 +134,15 @@
     const el = (id) => document.getElementById(id);
 
     const state = {
-      events: [], filter: '', category: 'All', status: 'All',
+      events: [], blasts: [], filter: '', category: 'All', status: 'All',
       splitBySport: false, selected: new Set(),
-      cols: { event:true, market:true, sport:true, tags:true, emails:true, sms:true, suite:true },
+      cols: { event:true, market:true, sport:true, rec:true, template:true, tags:true, emails:true, sms:true, suite:true },
     };
 
     const SENDERS = ['Cakemail', 'Mailmeteor · Josh', 'Telnyx blaster · Josh', 'iPhone · Josh'];
+    // Gmail accounts that can send (must match the Switch branches in the n8n Gmail workflow).
+    const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
+    function activeSender(){ return localStorage.getItem('campaign_send_from') || EMAIL_SENDERS[0]; }
     const CATEGORIES = ['Tix', 'Events', 'TA AI', 'All', 'Learning'];
     const STATUSES = ['All', 'Scheduled - not confirmed', 'Confirmed', 'Sent'];
 
@@ -202,6 +210,67 @@
     function smsOf(e){ return Math.round(emailsOf(e) * 0.68); }
     function senderFor(e,kind){ return SENDERS[(hash(e.id+kind)) % SENDERS.length]; }
 
+    /* ---- blast-template intelligence (real historical performance) -------
+       Bridges an event (keyed by team_name -> market city) to blast_templates
+       (keyed by list_name = metro/region), then scores by past open/click. */
+    const REGION = {
+      'new york':['new york','yankees','mets','tri state','tri-state'], brooklyn:['brooklyn','new york','tri state'],
+      'new jersey':['new jersey','tri state','tri-state'],
+      cleveland:['cleveland','ohio'], cincinnati:['cincinnati','cincinatti','ohio'],
+      boston:['boston','red sox','massachusetts','new england'], denver:['denver','colorado'],
+      'los angeles':['los angeles','anaheim','angels'], atlanta:['atlanta','georgia'], phoenix:['phoenix','arizona'],
+      minnesota:['minnesota','minneapolis'], texas:['texas','dallas','arlington','san antonio'], houston:['houston'],
+      baltimore:['baltimore','maryland'], 'san francisco':['san francisco','santa clara','bay area'],
+      washington:['washington dc','washington d','dmv'], detroit:['detroit','michigan'],
+      charlotte:['charlotte','north carolina'], carolina:['carolina','charlotte','north carolina'],
+      milwaukee:['milwaukee','wisconsin'], philadelphia:['philadelphia','pennsylvania'],
+      pittsburgh:['pittsburgh','pennsylvania'], 'st. louis':['st. louis','st louis','missouri'],
+      'kansas city':['kansas city'], 'tampa bay':['tampa'], toronto:['toronto'], seattle:['seattle','washington state'],
+      miami:['miami','florida'], orlando:['orlando','florida'], 'san diego':['san diego'],
+      oakland:['oakland','athletics'], chicago:['chicago','illinois'], utah:['utah','salt lake'],
+      indiana:['indiana','indianapolis'], memphis:['memphis','tennessee'], 'new orleans':['new orleans','louisiana'],
+      portland:['portland','oregon'], vancouver:['vancouver'], calgary:['calgary'],
+    };
+    function blastAliases(e){
+      const city = marketOf(e).toLowerCase();
+      const set = new Set(REGION[city] || (city && city!=='—' ? [city] : []));
+      const nick = normTeam(e.team_name); if(nick) set.add(nick);
+      return [...set].filter(a=>a && a.length>=3);
+    }
+    // templates whose list_name shares a location/team token with the event
+    function matchTemplates(e){
+      const aliases = blastAliases(e); if(!aliases.length) return [];
+      return state.blasts.filter(b=>{
+        const ln=(b.list_name||'').toLowerCase(); if(!ln) return false;
+        return aliases.some(a=> ln.includes(a) || a.includes(ln));
+      });
+    }
+    // best past blast for this event: highest open rate, then click-through (real sends only)
+    function bestTemplate(e){
+      const m=matchTemplates(e); if(!m.length) return null;
+      const ranked=m.filter(b=>(b.sent_emails||0)>0)
+        .sort((a,b)=> (Number(b.open_rate)-Number(a.open_rate)) || (Number(b.clickthru_rate||0)-Number(a.clickthru_rate||0)));
+      return { top: ranked[0]||m[0], count: m.length };
+    }
+    function sendWindow(b){ if(!b||!b.scheduled_for) return ''; const d=new Date(b.scheduled_for);
+      return d.toLocaleDateString(undefined,{weekday:'short'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric'}); }
+    // blast / skip decision from real demand signal (filled_pct) + audience availability
+    function recommendation(e, bt){
+      const today=new Date().toISOString().slice(0,10);
+      if(e.event_date && e.event_date < today) return {verdict:'skip', tier:'past', label:'Past', reason:'Event has passed'};
+      if(!bt) return {verdict:'nolist', tier:'nolist', label:'No list', reason:'No matching email list yet'};
+      const fill = e.filled_pct==null ? null : Number(e.filled_pct);
+      if(fill!=null && fill>=90) return {verdict:'skip', tier:'full', label:'Skip', reason:`Suite ${fill}% filled`};
+      if(fill==null)   return {verdict:'blast', tier:'rec',  label:'Blast',        reason:'Fill unknown — build demand'};
+      if(fill<=25)     return {verdict:'blast', tier:'high', label:'Blast · High', reason:`Only ${fill}% filled`};
+      if(fill<=75)     return {verdict:'blast', tier:'med',  label:'Blast · Med',  reason:`${fill}% filled`};
+      return               {verdict:'blast', tier:'low',  label:'Blast · Low',  reason:`${fill}% filled`};
+    }
+    function recBadgeClass(tier){ return {
+      high:'badge-error', med:'badge-warning', rec:'badge-info', low:'badge-ghost',
+      full:'badge-ghost opacity-60', past:'badge-ghost opacity-50', nolist:'badge-outline',
+    }[tier]||'badge-ghost'; }
+
     /* ---- campaign status (client-side until a real column exists) -------- */
     function statusKey(id){ return 'campaign_status_'+id; }
     function statusOf(e){ return localStorage.getItem(statusKey(e.id)) || 'Scheduled - not confirmed'; }
@@ -215,8 +284,13 @@
 
     /* ---- data ------------------------------------------------------------ */
     async function loadAll(){
-      const {data,error} = await sb.from('icp_events').select('*');
-      if(error){ toast('Load failed: '+error.message,'err'); el('rows').innerHTML='<tr><td colspan="8" class="text-center text-error py-10">'+esc(error.message)+'</td></tr>'; return; }
+      const [{data,error}, blastRes] = await Promise.all([
+        sb.from('icp_events').select('*'),
+        sb.from('blast_templates').select('list_name,name,sent_emails,open_rate,click_rate,clickthru_rate,scheduled_for'),
+      ]);
+      if(error){ toast('Load failed: '+error.message,'err'); el('rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-10">'+esc(error.message)+'</td></tr>'; return; }
+      if(blastRes.error){ toast('Templates unavailable: '+blastRes.error.message,'err'); }
+      state.blasts = blastRes.data || [];
       const evs=(data||[]).slice().sort((a,b)=> (a.event_date>b.event_date?-1:1));
       state.events=evs; render();
     }
@@ -234,7 +308,7 @@
       el('status-chips').querySelectorAll('[data-status]').forEach(n=>n.addEventListener('click',()=>{ state.status=n.dataset.status; render(); }));
     }
     function renderColMenu(){
-      const labels={event:'Event',market:'Market combo',sport:'Sport(s)',tags:'Tags',emails:'# Emails',sms:'# SMS',suite:'Last suite'};
+      const labels={event:'Event',market:'Market combo',sport:'Sport(s)',rec:'Recommendation',template:'Best template',tags:'Tags',emails:'# Emails',sms:'# SMS',suite:'Last suite'};
       el('col-menu').innerHTML = Object.keys(labels).map(k=>`
         <li><label class="flex items-center gap-2 cursor-pointer ${k==='event'?'opacity-50':''}">
           <input type="checkbox" class="checkbox checkbox-xs" data-col-toggle="${k}" ${state.cols[k]?'checked':''} ${k==='event'?'disabled':''}/>
@@ -264,6 +338,7 @@
       const c=state.cols, sel=state.selected.has(e.id);
       const st=statusOf(e); const confirmed = st==='Confirmed'||st==='Sent';
       const seg=segOf(e), tags=tagsOf(e);
+      const bt=bestTemplate(e), rec=recommendation(e,bt), sw=bt?sendWindow(bt.top):'';
       const confirmBtn = confirmed
         ? `<span class="badge badge-success badge-sm gap-1 font-semibold">&#10003; ${st==='Sent'?'Sent':'Confirmed'}</span>`
         : `<button class="btn btn-xs btn-outline btn-info rounded-full px-3" data-confirm="${esc(e.id)}">Confirm</button>`;
@@ -281,6 +356,8 @@
           </div></td>`:''}
         ${c.market?`<td><div class="flex items-center gap-2"><span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(marketOf(e))}</span><span class="seg ${segClass(seg)}">${esc(seg)}</span></div></td>`:''}
         ${c.sport?`<td><span class="sport-pill">${esc(sportOf(e))}</span></td>`:''}
+        ${c.rec?`<td><span class="badge badge-sm font-semibold whitespace-nowrap ${recBadgeClass(rec.tier)}" title="${esc(rec.reason)}">${esc(rec.label)}</span><div class="text-xs text-base-content/50 mt-0.5 whitespace-nowrap">${esc(rec.reason)}</div></td>`:''}
+        ${c.template?`<td>${bt?`<div class="min-w-0"><div class="font-semibold text-[#133b49] truncate max-w-[220px]" title="${esc(bt.top.name)}">${esc(bt.top.name)}</div><div class="text-xs text-base-content/50 whitespace-nowrap">${Number(bt.top.open_rate).toFixed(1)}% open · ${bt.count} past${sw?` · best ${esc(sw)}`:''}</div></div>`:'<span class="text-base-content/40">—</span>'}</td>`:''}
         ${c.tags?`<td><div class="flex flex-wrap gap-1">${tags.map(t=>`<span class="tagpill ${tagClass(t)}">${esc(t)}</span>`).join('')}</div></td>`:''}
         ${c.emails?`<td><div class="flex items-center gap-2"><span class="font-bold text-[#133b49]">${emailsOf(e).toLocaleString()}</span>${senderSel('email')}</div></td>`:''}
         ${c.sms?`<td><div class="flex items-center gap-2"><span class="font-bold text-[#133b49]">${smsOf(e).toLocaleString()}</span>${senderSel('sms')}</div></td>`:''}
@@ -292,7 +369,7 @@
       renderCatTabs(); renderStatusChips();
       const items=visibleEvents();
       const box=el('rows');
-      if(!items.length){ box.innerHTML=`<tr><td colspan="8" class="text-center text-base-content/50 py-10">No campaigns match this view</td></tr>`; applyColVisibility(); return; }
+      if(!items.length){ box.innerHTML=`<tr><td colspan="10" class="text-center text-base-content/50 py-10">No campaigns match this view</td></tr>`; applyColVisibility(); return; }
       const colspan = Object.values(state.cols).filter(Boolean).length + 1;
       if(state.splitBySport){
         const groups={}; items.forEach(e=>{ const s=sportOf(e); (groups[s]=groups[s]||[]).push(e); });
@@ -327,6 +404,9 @@
       const b=el('sync-btn'); b.disabled=true; b.querySelector('#sync-ico').innerHTML='<span class="loading loading-spinner loading-xs"></span>';
       await loadAll(); b.disabled=false; b.querySelector('#sync-ico').innerHTML='&#8635;'; toast('Ticket data refreshed','ok');
     });
+
+    el('send-from').innerHTML = EMAIL_SENDERS.map(a=>`<option ${a===activeSender()?'selected':''}>${esc(a)}</option>`).join('');
+    el('send-from').addEventListener('change', ()=>localStorage.setItem('campaign_send_from', el('send-from').value));
 
     renderColMenu();
     if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else loadAll();

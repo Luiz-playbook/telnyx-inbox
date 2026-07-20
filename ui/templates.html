@@ -19,7 +19,6 @@
       <nav class="pb-tabs px-5">
         <a href="./index.html">Inbox</a>
         <a href="./companies.html">Companies</a>
-        <a href="./events.html">Events</a>
         <a href="./campaigns.html">Campaigns</a>
         <a href="./templates.html" class="active">Templates</a>
         <a href="./bulk.html">Recipients</a>
@@ -49,7 +48,7 @@
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
     const el = (id) => document.getElementById(id);
     const state = { items: [], activeId: null, draft: null };
-    const SAMPLE = { name:'Jordan Smith', first_name:'Jordan', phone:'+1 (615) 555-0142' };
+    const SAMPLE = { name:'Jordan Smith', first_name:'Jordan', phone:'+1 (615) 555-0142', email:'jordan@example.com' };
 
     function toast(m,t='info'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[t]; const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(m)}</span>`; el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
     function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -58,44 +57,64 @@
     async function load(){ const {data,error}=await sb.from('message_templates').select('*').order('updated_at',{ascending:false});
       if(error){toast('Load failed: '+error.message,'err');return;} state.items=data||[]; renderList(); }
     function renderList(){ const box=el('rows'); if(!state.items.length){box.innerHTML='<li class="px-2 py-6 text-center text-base-content/50">No templates yet</li>';return;}
-      box.innerHTML=state.items.map(t=>`<li><a class="${t.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${t.id}"><span class="font-semibold">${esc(t.name)}</span><span class="text-xs text-base-content/60 truncate max-w-full">${esc((t.body||'').slice(0,60)||'—')}</span></a></li>`).join('');
+      box.innerHTML=state.items.map(t=>{ const ch=(t.channel||'sms'); return `<li><a class="${t.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${t.id}"><span class="font-semibold flex items-center gap-2">${esc(t.name)} <span class="badge badge-xs ${ch==='email'?'badge-info':'badge-ghost'}">${ch==='email'?'Email':'SMS'}</span></span><span class="text-xs text-base-content/60 truncate max-w-full">${esc((t.body||'').slice(0,60)||'—')}</span></a></li>`;}).join('');
       box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id))); }
-    function newItem(){ state.activeId=null; state.draft={name:'',body:''}; renderList(); renderEditor(); }
-    function open(id){ const t=state.items.find(x=>x.id===id); if(!t)return; state.activeId=id; state.draft={name:t.name,body:t.body}; renderList(); renderEditor(); }
+    function newItem(){ state.activeId=null; state.draft={name:'',body:'',subject:'',channel:'sms'}; renderList(); renderEditor(); }
+    function open(id){ const t=state.items.find(x=>x.id===id); if(!t)return; state.activeId=id; state.draft={name:t.name,body:t.body,subject:t.subject||'',channel:t.channel||'sms'}; renderList(); renderEditor(); }
 
     function renderEditor(){
       if(!state.draft){ el('editor').innerHTML='<div class="h-full flex items-center justify-center text-base-content/50">Select a template, or click + New</div>'; return; }
-      const isNew=!state.activeId;
+      const isNew=!state.activeId; const isEmail=state.draft.channel==='email';
       el('editor').innerHTML=`
         <div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4 flex items-center justify-between">
           <h2 class="text-lg font-bold">${isNew?'New template':esc(state.draft.name||'Template')}</h2>
           <div class="flex gap-2">${isNew?'':'<button class="btn btn-sm btn-outline btn-error" id="del">Delete</button>'}<button class="btn btn-sm btn-primary" id="save">${isNew?'Create':'Save'}</button></div>
         </div>
         <div class="p-6 max-w-3xl space-y-5">
-          <div class="form-control"><label class="label"><span class="label-text font-semibold">Template name</span></label><input id="f-name" class="input input-bordered" value="${esc(state.draft.name)}" placeholder="e.g. Intro outreach"></div>
+          <div class="flex gap-4 items-end flex-wrap">
+            <div class="form-control flex-1 min-w-48"><label class="label"><span class="label-text font-semibold">Template name</span></label><input id="f-name" class="input input-bordered" value="${esc(state.draft.name)}" placeholder="e.g. Intro outreach"></div>
+            <div class="form-control"><label class="label"><span class="label-text font-semibold">Channel</span></label>
+              <div class="join">
+                <button type="button" class="btn btn-sm join-item ${isEmail?'':'btn-active btn-primary'}" data-ch="sms">SMS</button>
+                <button type="button" class="btn btn-sm join-item ${isEmail?'btn-active btn-primary':''}" data-ch="email">Email</button>
+              </div></div>
+          </div>
+          ${isEmail?`<div class="form-control"><label class="label"><span class="label-text font-semibold">Subject</span></label><input id="f-subject" class="input input-bordered" value="${esc(state.draft.subject)}" placeholder="e.g. Suite tickets for {{first_name}}"></div>`:''}
           <div class="text-sm text-base-content/70">Variables:
             <button class="badge badge-ghost" data-v="name">{{name}}</button>
             <button class="badge badge-ghost" data-v="first_name">{{first_name}}</button>
             <button class="badge badge-ghost" data-v="phone">{{phone}}</button>
+            <button class="badge badge-ghost" data-v="email">{{email}}</button>
             <span class="text-base-content/50">— click to insert; filled per recipient at send.</span></div>
-          <div class="form-control"><label class="label"><span class="label-text font-semibold">Message</span></label><textarea id="f-body" class="textarea textarea-bordered min-h-48 leading-relaxed" placeholder="Hi {{first_name}}, ...">${esc(state.draft.body)}</textarea></div>
+          <div class="form-control"><label class="label"><span class="label-text font-semibold">${isEmail?'Email body (HTML allowed)':'Message'}</span></label><textarea id="f-body" class="textarea textarea-bordered min-h-48 leading-relaxed ${isEmail?'font-mono text-sm':''}" placeholder="${isEmail?'<p>Hi {{first_name}}, ...</p>':'Hi {{first_name}}, ...'}">${esc(state.draft.body)}</textarea></div>
           <div class="card bg-base-100 border border-base-300"><div class="card-body p-4">
             <div class="text-xs font-semibold uppercase text-base-content/60">Preview (sample recipient)</div>
-            <div class="whitespace-pre-wrap" id="pv"></div>
-            <div class="text-xs text-base-content/50" id="cnt"></div>
+            ${isEmail?'<div class="text-sm"><span class="text-base-content/50">Subject:</span> <span id="pv-subject" class="font-semibold"></span></div><div class="border border-base-300 rounded p-3 bg-white text-sm" id="pv"></div>':'<div class="whitespace-pre-wrap" id="pv"></div><div class="text-xs text-base-content/50" id="cnt"></div>'}
           </div></div>
         </div>`;
       const name=el('f-name'), body=el('f-body');
-      const upd=()=>{ state.draft.name=name.value; state.draft.body=body.value; refreshPreview(); };
+      const upd=()=>{ state.draft.name=name.value; state.draft.body=body.value; if(el('f-subject'))state.draft.subject=el('f-subject').value; refreshPreview(); };
       name.addEventListener('input',upd); body.addEventListener('input',upd);
+      if(el('f-subject')) el('f-subject').addEventListener('input',upd);
+      el('editor').querySelectorAll('[data-ch]').forEach(b=>b.addEventListener('click',()=>{ state.draft.channel=b.dataset.ch; renderEditor(); }));
       el('editor').querySelectorAll('[data-v]').forEach(c=>c.addEventListener('click',()=>insertVar(c.dataset.v)));
       el('save').addEventListener('click',save); if(el('del'))el('del').addEventListener('click',del);
       refreshPreview();
     }
     function insertVar(v){ const ta=el('f-body'); const t='{{'+v+'}}'; const s=ta.selectionStart||ta.value.length; ta.value=ta.value.slice(0,s)+t+ta.value.slice(ta.selectionEnd||s); state.draft.body=ta.value; ta.focus(); refreshPreview(); }
-    function refreshPreview(){ const txt=render(state.draft.body,SAMPLE); el('pv').textContent=txt||'—'; const n=txt.length; el('cnt').textContent=`${n} chars · ~${Math.max(1,Math.ceil(n/160))} SMS segment(s)`; }
+    function refreshPreview(){
+      if(state.draft.channel==='email'){
+        if(el('pv-subject')) el('pv-subject').textContent=render(state.draft.subject,SAMPLE)||'(no subject)';
+        if(el('pv')) el('pv').innerHTML=render(state.draft.body,SAMPLE)||'—';
+        return;
+      }
+      const txt=render(state.draft.body,SAMPLE); if(el('pv'))el('pv').textContent=txt||'—'; const n=txt.length; if(el('cnt'))el('cnt').textContent=`${n} chars · ~${Math.max(1,Math.ceil(n/160))} SMS segment(s)`;
+    }
 
-    async function save(){ if(!state.draft.name.trim()){toast('Name is required','err');return;} const payload={name:state.draft.name.trim(),body:state.draft.body}; const btn=el('save'); btn.disabled=true;
+    async function save(){ if(!state.draft.name.trim()){toast('Name is required','err');return;}
+      const ch=state.draft.channel||'sms';
+      if(ch==='email' && !(state.draft.subject||'').trim()){ toast('Email templates need a subject','err'); return; }
+      const payload={name:state.draft.name.trim(),body:state.draft.body,channel:ch,subject:ch==='email'?(state.draft.subject||'').trim():null}; const btn=el('save'); btn.disabled=true;
       try{ if(state.activeId){ const {error}=await sb.from('message_templates').update(payload).eq('id',state.activeId); if(error)throw error; toast('Saved','ok'); }
         else{ const {data,error}=await sb.from('message_templates').insert(payload).select().single(); if(error)throw error; state.activeId=data.id; toast('Created','ok'); }
         await load(); if(state.activeId)open(state.activeId); }catch(err){ toast('Save failed: '+err.message,'err'); }finally{ btn.disabled=false; } }

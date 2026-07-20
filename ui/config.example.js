@@ -18,4 +18,6 @@ window.INBOX_CONFIG = {
   COMPANY_AI_WEBHOOK_URL: "<<PASTE_N8N_COMPANY_AI_WEBHOOK_URL>>",
   // n8n workflow that receives { messages:[{to,text}] } and sends each via Telnyx.
   BULK_SEND_WEBHOOK_URL: "<<PASTE_N8N_BULK_SEND_WEBHOOK_URL>>",
+  // n8n workflow that receives { messages:[{to,subject,html}] } and sends each via Gmail.
+  EMAIL_SEND_WEBHOOK_URL: "<<PASTE_N8N_GMAIL_BULK_SEND_WEBHOOK_URL>>",
 };
