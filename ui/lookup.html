@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Number Line-Type Checker</title>
+  <!-- auth gate: hide the app until an allowed Google account is confirmed (anti-flash) -->
+  <style>html.pb-gated body{visibility:hidden}html.pb-gated #pb-auth-gate{visibility:visible}</style>
+  <script>document.documentElement.classList.add('pb-gated')</script>
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="./theme.css" rel="stylesheet" />
@@ -69,7 +72,9 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="./config.js"></script>
+  <script src="./auth-gate.js"></script>
   <script>
     const cfg = window.INBOX_CONFIG || {};
     const el = (id) => document.getElementById(id);
