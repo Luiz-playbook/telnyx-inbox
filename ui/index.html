@@ -57,6 +57,13 @@
     .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
     .tpl-src{ border:1px solid #d8e2ef; border-radius:8px; padding:3px 11px; font-size:12px; font-weight:700; color:#5e6e82; background:#fff; cursor:pointer; }
     .tpl-src.sel{ background:#133b49; color:#fff; border-color:#133b49; }
+    /* Campaign Agent rail is drag-resizable from lg up; width lives in --agent-w (persisted). */
+    @media (min-width:1024px){
+      #agent-rail{ width:var(--agent-w,340px); flex:0 0 var(--agent-w,340px); }
+    }
+    #agent-resize{ position:relative; }
+    #agent-resize::before{ content:""; position:absolute; inset:0 -3px; }
+    body.agent-resizing{ cursor:col-resize; user-select:none; }
   </style>
 </head>
 <body class="h-full">
@@ -99,7 +106,7 @@
         <!-- LEFT: campaign agent — white rail, shown on every tab. From lg up it owns the full
              column height and scrolls on its own, so scrolling the content can never pull a
              blank strip in underneath it. -->
-        <aside class="lg:w-[340px] lg:shrink-0 lg:h-full lg:overflow-y-auto bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
+        <aside id="agent-rail" class="lg:shrink-0 lg:h-full lg:overflow-y-auto bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
           <div class="agent-label flex items-center gap-1"><span class="text-[#e55608]">&#10022;</span> Campaign Agent</div>
 
           <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
@@ -122,6 +129,9 @@
             <button id="agent-send" class="btn btn-circle btn-primary text-lg">&#8594;</button>
           </div>
         </aside>
+
+        <!-- drag handle: resize the Campaign Agent rail (lg+ only) -->
+        <div id="agent-resize" class="hidden lg:block lg:shrink-0 lg:w-1.5 lg:h-full cursor-col-resize bg-base-300 hover:bg-[#e55608] transition-colors" title="Drag to resize the Campaign Agent"></div>
 
         <!-- RIGHT: status (shared) + per-tab views — the only scroller on lg -->
         <div class="flex-1 min-w-0 lg:h-full lg:overflow-y-auto px-6 py-5">
@@ -956,6 +966,38 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       loadMarkets();
     }
     loadSenders();
+
+    // ===== Campaign Agent rail: drag-to-resize (lg+), width persisted =====
+    (function(){
+      const rail=document.getElementById('agent-rail'), grip=document.getElementById('agent-resize');
+      if(!rail||!grip) return;
+      const MIN=240, saved=parseInt(localStorage.getItem('blaster_agent_w')||'',10);
+      if(saved>=MIN) rail.style.setProperty('--agent-w', saved+'px');
+      const maxW=()=>Math.max(MIN, window.innerWidth-360);
+      let startX=0, startW=0;
+      function move(e){
+        const w=Math.min(maxW(), Math.max(MIN, startW + (e.clientX - startX)));
+        rail.style.setProperty('--agent-w', w+'px');
+      }
+      function up(e){
+        document.body.classList.remove('agent-resizing');
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        const w=parseInt(getComputedStyle(rail).getPropertyValue('--agent-w'),10);
+        if(w>=MIN) localStorage.setItem('blaster_agent_w', String(w));
+      }
+      grip.addEventListener('pointerdown', function(e){
+        if(window.matchMedia('(max-width:1023px)').matches) return; // stacked on mobile — no resize
+        e.preventDefault();
+        startX=e.clientX; startW=rail.getBoundingClientRect().width;
+        document.body.classList.add('agent-resizing');
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+      });
+      grip.addEventListener('dblclick', function(){ // reset to default
+        rail.style.setProperty('--agent-w','340px'); localStorage.removeItem('blaster_agent_w');
+      });
+    })();
 
     // ===== Campaign Agent chat (Tier A — talks to the /api/chat serverless endpoint) =====
     const agentHistory = [];
