@@ -7,9 +7,13 @@
 // goes near gen-config.js.
 //
 // Env vars (Vercel > Settings > Environment Variables):
-//   ANTHROPIC_API_KEY  (sk-ant-...)  -> Claude    | set either one
-//   OPENAI_API_KEY     (sk-proj-...) -> OpenAI    | (Anthropic wins if both are set)
-//   DRAFT_MODEL        optional model override
+//   OPENAI_API_KEY     (sk-proj-...) -> OpenAI. The house default: api/chat.js and
+//                                       api/decide.js both run on it, so this endpoint
+//                                       prefers it too rather than silently splitting
+//                                       providers across the app.
+//   ANTHROPIC_API_KEY  (sk-ant-...)  -> Claude. Used only when OPENAI_API_KEY is unset.
+//   OPENAI_MODEL       optional, defaults to gpt-4o (same var api/chat.js uses)
+//   DRAFT_MODEL        optional, overrides OPENAI_MODEL for this endpoint only
 //   REPLY_SECRET       optional shared secret; must match ui/config.js
 //
 // Prompts are documented in docs/AI_DRAFT_AGENT.md — edit them there and here together.
@@ -110,10 +114,10 @@ export default async function handler(req, res) {
   const secret = process.env.REPLY_SECRET;
   if (secret && req.headers['x-inbox-secret'] !== secret) { res.status(401).json({ error: 'unauthorized' }); return; }
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  if (!anthropicKey && !openaiKey) {
-    res.status(500).json({ error: 'No model key on the server — set ANTHROPIC_API_KEY or OPENAI_API_KEY in the Vercel project.' });
+  const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!openaiKey && !anthropicKey) {
+    res.status(500).json({ error: 'OPENAI_API_KEY is not set on the server' });
     return;
   }
 
@@ -126,9 +130,10 @@ export default async function handler(req, res) {
   const user = userPrompt(draft, String(instruction).trim());
 
   try {
-    const out = anthropicKey
-      ? await callAnthropic(anthropicKey, process.env.DRAFT_MODEL || 'claude-opus-4-8', SYSTEM_PROMPT, user)
-      : await callOpenAI(openaiKey, process.env.DRAFT_MODEL || 'gpt-4o', SYSTEM_PROMPT, user);
+    const model = (process.env.DRAFT_MODEL || '').trim();
+    const out = openaiKey
+      ? await callOpenAI(openaiKey, model || (process.env.OPENAI_MODEL || 'gpt-4o').trim(), SYSTEM_PROMPT, user)
+      : await callAnthropic(anthropicKey, model || 'claude-opus-4-8', SYSTEM_PROMPT, user);
 
     let parsed;
     try { parsed = JSON.parse(out.text); }
