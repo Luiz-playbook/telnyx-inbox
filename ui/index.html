@@ -47,6 +47,16 @@
     .tpl-body{ background:#f8fafc; border:1px solid #e5ebf1; border-radius:10px; padding:16px 18px; margin:0;
                font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.75;
                color:#2f4858; white-space:pre-wrap; overflow-wrap:anywhere; }
+    .tpl-edit{ width:100%; min-height:340px; background:#fff; border:1px solid #e8935a; border-radius:10px; padding:16px 18px;
+               font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.75;
+               color:#2f4858; resize:vertical; box-shadow:0 0 0 1px #e8935a inset; }
+    .tpl-badge{ display:inline-flex; align-items:center; border-radius:9999px; padding:1px 7px; font-size:10px; font-weight:800;
+                letter-spacing:.04em; text-transform:uppercase; border:1px solid transparent; }
+    .tb-email{ background:#eaf0fe; color:#2f6bff; border-color:#d3def8; }
+    .tb-sms{ background:#eaf5ee; color:#067523; border-color:#cfe9d8; }
+    .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
+    .tpl-src{ border:1px solid #d8e2ef; border-radius:8px; padding:3px 11px; font-size:12px; font-weight:700; color:#5e6e82; background:#fff; cursor:pointer; }
+    .tpl-src.sel{ background:#133b49; color:#fff; border-color:#133b49; }
   </style>
 </head>
 <body class="h-full">
@@ -84,11 +94,12 @@
     </header>
 
     <!-- body -->
-    <main class="flex-1 overflow-y-auto">
-      <div class="px-6 py-5 grid grid-cols-1 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] gap-6">
+    <main class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
 
-        <!-- LEFT: campaign agent -->
-        <section class="space-y-3">
+        <!-- LEFT: campaign agent — white rail, shown on every tab. From lg up it owns the full
+             column height and scrolls on its own, so scrolling the content can never pull a
+             blank strip in underneath it. -->
+        <aside class="lg:w-[340px] lg:shrink-0 lg:h-full lg:overflow-y-auto bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
           <div class="agent-label flex items-center gap-1"><span class="text-[#e55608]">&#10022;</span> Campaign Agent</div>
 
           <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, or tell me what to adjust — nothing goes out until you confirm in Compose.</div>
@@ -112,9 +123,10 @@
             <input class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
             <button class="btn btn-circle btn-primary text-lg">&#8594;</button>
           </div>
-        </section>
+        </aside>
 
-        <!-- RIGHT: status (shared) + per-tab views -->
+        <!-- RIGHT: status (shared) + per-tab views — the only scroller on lg -->
+        <div class="flex-1 min-w-0 lg:h-full lg:overflow-y-auto px-6 py-5">
         <section class="space-y-5">
 
           <!-- data sources (shown on every tab) -->
@@ -172,9 +184,10 @@
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="form-control"><label class="label"><span class="label-text">Market</span></label><select id="market-select" class="select select-bordered"><option value="">Loading markets…</option></select></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Game / Event</span></label><input class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Game date</span></label><input type="date" class="input input-bordered"></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input type="number" step="0.01" class="input input-bordered" value="20"></div>
+                    <div class="form-control"><label class="label"><span class="label-text" id="ctx-label">Game / Event</span></label><input id="ctx-input" class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
+                    <div class="form-control" id="field-gamedate"><label class="label"><span class="label-text">Game date</span></label><input type="date" class="input input-bordered"></div>
+                    <div class="form-control" id="field-cost"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input type="number" step="0.01" class="input input-bordered" value="20"></div>
+                    <div class="form-control hidden" id="field-sport"><label class="label"><span class="label-text">Sport</span></label><select id="sport-select" class="select select-bordered"><option>Volleyball</option><option>Basketball</option><option>Soccer</option><option>Baseball</option><option>Softball</option><option>Football</option><option>Hockey</option><option>Lacrosse</option><option>Wrestling</option><option>Other</option></select></div>
                     <div class="form-control"><label class="label"><span class="label-text">Assigned BDA</span></label><input class="input input-bordered" value="unassigned"></div>
                     <div class="form-control"><label class="label"><span class="label-text">Last suite</span></label><input class="input input-bordered" value="unknown"></div>
                     <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input class="input input-bordered" value="unknown"></div>
@@ -257,7 +270,7 @@ Best,
 Josh Marcus
 CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="form-control"><label class="label"><span class="label-text">SMS</span></label>
-                    <textarea class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
+                    <textarea id="preview-sms" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
                 </div>
                 <label class="flex items-center gap-2 cursor-pointer w-max"><input type="checkbox" class="checkbox checkbox-sm" id="reviewed"><span class="text-sm">I've reviewed this copy and audience</span></label>
                 <div><button class="btn btn-sm" id="add-plan" disabled>Add to Send Plan</button></div>
@@ -273,9 +286,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <span class="text-sm font-semibold text-base-content/50">(4 ready now, 0 scheduled ahead, 0 blocked/draft)</span></h2>
                 <div><button class="btn btn-sm btn-outline border-base-300">Copy Send Plan (confirmed &amp; ready-now)</button></div>
                 <div class="overflow-x-auto border border-base-300 rounded-lg">
-                  <table class="q-table w-full min-w-[720px]">
+                  <table class="q-table w-full min-w-[640px]">
                     <thead><tr class="bg-base-100 border-b border-base-300">
-                      <th>Confirmed</th><th>Status</th><th>Scheduled send</th><th>VIP</th><th>Market</th><th>Est. cost</th>
+                      <th>Confirmed</th><th>Status</th><th>Channels</th><th>Market</th><th>Recipients</th>
                     </tr></thead>
                     <tbody id="queue-rows"></tbody>
                   </table>
@@ -295,8 +308,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <div class="grid grid-cols-1 md:grid-cols-[minmax(0,290px)_minmax(0,1fr)] gap-4">
                   <!-- rail: search + grouped list -->
                   <div class="border border-base-300 rounded-lg flex flex-col overflow-hidden">
-                    <div class="p-2 border-b border-base-300">
+                    <div class="p-2 border-b border-base-300 space-y-2">
                       <input id="tpl-search" class="input input-bordered input-sm w-full" placeholder="Search name or body…" autocomplete="off" />
+                      <div class="flex gap-1.5" id="tpl-sources">
+                        <button type="button" class="tpl-src sel" data-src="all">All</button>
+                        <button type="button" class="tpl-src" data-src="cole">Cole&rsquo;s</button>
+                        <button type="button" class="tpl-src" data-src="blast">Historical</button>
+                      </div>
                     </div>
                     <div id="tpl-list" class="p-1 overflow-y-auto max-h-[560px]"></div>
                   </div>
@@ -304,7 +322,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div id="tpl-detail" class="min-w-0"></div>
                 </div>
 
-                <p class="text-xs text-base-content/50 leading-relaxed">Live from <code>blast_templates</code> — the historical ticket blasts imported from the gsheet. Search matches both the template name and its body text. &ldquo;Copy&rdquo; puts the raw text on your clipboard; &ldquo;Use in Compose&rdquo; drops it into the Compose tab&rsquo;s editable Email preview.</p>
+                <p class="text-xs text-base-content/50 leading-relaxed">Teammate AI and Event Waitlist are separate plays, each with their own sport picker (Teammate AI: Volleyball, Basketball, Baseball, Hockey — Event Waitlist adds Football). Event Waitlist&rsquo;s real copy still lives in a HubSpot sequence — the text above is an editable placeholder, not authored outreach copy.</p>
               </div>
             </div>
           </div>
@@ -327,6 +345,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
+    function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
+    function isValidEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||''); }
+    function nl2br(s){ return esc(s).replace(/\n/g,'<br>'); }
 
     // Market dropdown — real US states that have phone or email contacts (Supabase RPCs over company_intel/contact_intel).
     async function loadMarkets(){
@@ -374,28 +396,83 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
     }
 
-    // Static placeholder queue — real data gets wired in later.
-    const QUEUE = [
-      { send:'2026-07-20', vip:'61.4%', market:'Cleveland',  cost:'$0.012/email' },
-      { send:'2026-07-20', vip:'53.1%', market:'Yankees NYC', cost:'$0.011/email' },
-      { send:'2026-07-20', vip:'43.7%', market:'Georgia',    cost:'$0.013/email' },
-      { send:'2026-07-20', vip:'42.0%', market:'Houston',    cost:'$0.010/email' },
-    ];
-    document.getElementById('queue-rows').innerHTML = QUEUE.map(r => `
-      <tr>
-        <td><button class="btn btn-xs btn-outline rounded-md px-3">Confirm</button></td>
-        <td><span class="eligible">ELIGIBLE — ready now</span></td>
-        <td class="text-base-content/70">${r.send}</td>
-        <td class="font-semibold text-[#133b49]">${r.vip}</td>
-        <td class="text-base-content/70">${r.market}</td>
-        <td class="text-base-content/70">${r.cost}</td>
-      </tr>`).join('');
+    // ===== Send plan (Queue) — real campaigns added from Compose, Confirm fires the send workflows =====
+    let SEND_PLAN = [], planSeq = 1;
+    function channelOn(ch){ const b=document.querySelector('#channels .chan[data-chan="'+ch+'"]'); return b ? b.classList.contains('sel') : false; }
+    function renderQueue(){
+      const tb=document.getElementById('queue-rows'); if(!tb) return;
+      if(!SEND_PLAN.length){ tb.innerHTML='<tr><td colspan="5" class="text-center text-base-content/50 py-8">No campaigns queued yet — build one in Compose &amp; Send and click “Add to Send Plan”.</td></tr>'; return; }
+      tb.innerHTML = SEND_PLAN.map(it=>{
+        const chans=[ it.sms?'<span class="badge badge-sm badge-ghost">SMS</span>':'', it.email?'<span class="badge badge-sm badge-info">Email</span>':'' ].filter(Boolean).join(' ') || '<span class="text-base-content/40">—</span>';
+        const status = it.status==='sent' ? '<span class="badge badge-success gap-1">&#10003; Sent</span>'
+          : it.status==='sending' ? '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…'
+          : '<span class="eligible">ELIGIBLE — ready now</span>';
+        const action = it.status==='sent' ? '<span class="text-success text-xs font-semibold">Sent</span>'
+          : `<button class="btn btn-xs btn-outline rounded-md px-3" data-confirm="${esc(it.id)}" ${it.status==='sending'?'disabled':''}>Confirm</button>`;
+        return `<tr>
+          <td>${action}</td>
+          <td>${status}</td>
+          <td>${chans}</td>
+          <td class="text-base-content/70">${esc(it.marketName||it.marketCode||'—')}</td>
+          <td class="text-base-content/70">${esc(it.recipients||'—')}</td>
+        </tr>`;
+      }).join('');
+      tb.querySelectorAll('[data-confirm]').forEach(b=>b.addEventListener('click',()=>confirmSend(b.dataset.confirm)));
+    }
+    async function confirmSend(id){
+      const it=SEND_PLAN.find(x=>x.id===id); if(!it || it.status==='sent') return;
+      if(!it.email && !it.sms){ alert('No channels are selected for this campaign (turn on Email and/or SMS in Compose).'); return; }
+      if(!it.marketCode){ alert('This campaign has no market selected — pick a Market in Compose first.'); return; }
+      if(!sb){ alert('config.js is not filled in.'); return; }
+      // pull recipients only for the channels that are on
+      let phones=[], emails=[];
+      if(it.sms){ const {data}=await sb.rpc('market_phones',{p_code:it.marketCode}); phones=[...new Set((data||[]).map(r=>normPhone(r.phone)).filter(isValidPhone))]; }
+      if(it.email){ const {data}=await sb.rpc('market_emails',{p_code:it.marketCode}); emails=[...new Set((data||[]).map(r=>(r.email||'').trim().toLowerCase()).filter(isValidEmail))]; }
+      const lines=[]; if(it.sms) lines.push(`• SMS → ${phones.length} number(s) from ${it.smsFrom||'?'}`); if(it.email) lines.push(`• Email → ${emails.length} address(es) from ${it.emailFrom||'?'}`);
+      if(!confirm(`Send “${it.marketName}” now?\n\n${lines.join('\n')}\n\nThis actually sends.`)) return;
+      it.status='sending'; renderQueue();
+      const secret=cfg.REPLY_SECRET||'', results=[];
+      try{
+        if(it.sms && phones.length){
+          if(!cfg.BULK_SEND_WEBHOOK_URL || String(cfg.BULK_SEND_WEBHOOK_URL).startsWith('<<')) results.push('SMS webhook not configured');
+          else{ const messages=phones.map(to=>({from:it.smsFrom,to,text:it.smsBody}));
+            const r=await fetch(cfg.BULK_SEND_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':secret},body:JSON.stringify({from:it.smsFrom,messages})});
+            results.push(r.ok?`SMS: ${messages.length} queued`:`SMS failed (HTTP ${r.status})`); }
+        }
+        if(it.email && emails.length){
+          if(!cfg.EMAIL_SEND_WEBHOOK_URL || String(cfg.EMAIL_SEND_WEBHOOK_URL).startsWith('<<')) results.push('Email webhook not configured');
+          else{ const html=nl2br(it.emailBody); const messages=emails.map(to=>({from:it.emailFrom,to,subject:it.emailSubject,html}));
+            const r=await fetch(cfg.EMAIL_SEND_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':secret},body:JSON.stringify({from:it.emailFrom,messages})});
+            results.push(r.ok?`Email: ${messages.length} queued`:`Email failed (HTTP ${r.status})`); }
+        }
+        it.status='sent'; it.recipients=[ it.sms?phones.length+' SMS':'', it.email?emails.length+' email':'' ].filter(Boolean).join(' · ');
+        alert('Send started:\n\n'+results.join('\n'));
+      }catch(err){ it.status='ready'; alert('Send failed: '+err.message); }
+      renderQueue();
+    }
+    renderQueue();
 
-    // Play picker selection (Compose tab).
+    // Play picker — selecting a play also reshapes the Market & Game fields.
+    const PLAY_FORM = {
+      ticket:   { ctxLabel:'Game / Event',      ctxPlaceholder:'e.g. Home Opener',           sport:false },
+      suite:    { ctxLabel:'Game / Event',      ctxPlaceholder:'e.g. Home Opener',           sport:false },
+      teammate: { ctxLabel:'Hook / feature',    ctxPlaceholder:'New early-access features',   sport:true  },
+      waitlist: { ctxLabel:'Waitlist / reason', ctxPlaceholder:'Fall registration waitlist',  sport:true  },
+    };
+    function applyPlayForm(play){
+      const f = PLAY_FORM[play] || PLAY_FORM.suite;
+      const lbl=document.getElementById('ctx-label'), inp=document.getElementById('ctx-input');
+      if(lbl) lbl.textContent = f.ctxLabel;
+      if(inp){ inp.placeholder = f.ctxPlaceholder; inp.value=''; }
+      document.getElementById('field-gamedate')?.classList.toggle('hidden', f.sport);
+      document.getElementById('field-cost')?.classList.toggle('hidden', f.sport);
+      document.getElementById('field-sport')?.classList.toggle('hidden', !f.sport);
+    }
     document.querySelectorAll('#plays .play-card').forEach(c => c.addEventListener('click', () => {
       document.querySelectorAll('#plays .play-card').forEach(x => x.classList.remove('sel'));
       c.classList.add('sel');
       document.getElementById('play-summary').textContent = c.dataset.desc || '';
+      applyPlayForm(c.dataset.play);
     }));
 
     // Channels firing — toggle each channel pill; a deselected channel disables its sender dropdown.
@@ -408,14 +485,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     document.querySelectorAll('#channels .chan').forEach(c => c.addEventListener('click', () => { c.classList.toggle('sel'); syncChannelSenders(); }));
     syncChannelSenders();
 
-    // Review gate — "Add to Send Plan" enables only once reviewed.
+    // Review gate — "Add to Send Plan" enables only once reviewed, then jumps to the Queue tab.
     const reviewed = document.getElementById('reviewed'), addPlan = document.getElementById('add-plan');
     if (reviewed) reviewed.addEventListener('change', () => { addPlan.disabled = !reviewed.checked; addPlan.classList.toggle('btn-primary', reviewed.checked); });
+    if (addPlan) addPlan.addEventListener('click', () => {
+      if (addPlan.disabled) return;
+      const msel=document.getElementById('market-select'), opt=msel?msel.selectedOptions[0]:null;
+      const ctx=document.getElementById('ctx-input'), efrom=document.getElementById('email-sender'), sfrom=document.getElementById('sms-sender');
+      const marketName = opt ? opt.getAttribute('data-name') : '';
+      const ctxVal = ctx ? ctx.value.trim() : '';
+      SEND_PLAN.unshift({
+        id: 'p'+(planSeq++),
+        marketCode: msel ? msel.value : '',
+        marketName,
+        email: channelOn('email'), sms: channelOn('sms'),
+        emailFrom: efrom ? efrom.value : '', smsFrom: sfrom ? sfrom.value : '',
+        emailSubject: (ctxVal ? ctxVal + (marketName?' — '+marketName:'') : ('Playbook — ' + (marketName || 'Marketing Blast'))),
+        emailBody: document.getElementById('preview-email') ? document.getElementById('preview-email').value : '',
+        smsBody: document.getElementById('preview-sms') ? document.getElementById('preview-sms').value : '',
+        status: 'ready', recipients: ''
+      });
+      renderQueue();
+      showTab('queue');
+    });
 
-    // Templates tab — the 140 historical blasts in `blast_templates` (anon-readable).
-    // Bodies are short plain text (~700 chars), so one fetch holds the whole set and
-    // search filters in memory. Master-detail: the rail lists, the pane shows one.
-    const tpl = { rows:[], filter:'', selId:null, loaded:false };
+    // ===== Templates tab =====
+    // Two sources, one normalized shape { key, source, name, play, channel, sender, body }:
+    //   cole  — Cole's per-play/per-channel copy in `message_templates` (anon full CRUD, so
+    //           it is editable here and the edit persists for everyone).
+    //   blast — the 140 historical blasts in `blast_templates`. Anon SELECT only, and it is
+    //           an archive of what was actually sent, so it is deliberately READ-ONLY.
+    const tpl = { cole:[], blast:[], filter:'', src:'all', selKey:null, loaded:false, editing:false, saving:false };
 
     function tplDate(s){
       if(!s) return null;
@@ -425,18 +525,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     function tplDay(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'; }
     function tplMonth(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : 'No date'; }
 
-    function tplMatches(r, q){
-      if(!q) return true;
-      return (r.name||'').toLowerCase().includes(q) || (r.email_template||'').toLowerCase().includes(q);
+    function tplVisible(){
+      const all = tpl.src === 'blast' ? tpl.blast : tpl.src === 'cole' ? tpl.cole : tpl.cole.concat(tpl.blast);
+      const q = tpl.filter.trim().toLowerCase();
+      if(!q) return all;
+      return all.filter(it =>
+        (it.name||'').toLowerCase().includes(q) ||
+        (it.play||'').toLowerCase().includes(q) ||
+        (it.body||'').toLowerCase().includes(q));
     }
 
     function renderTplList(){
       const box = document.getElementById('tpl-list'); if(!box) return;
-      const q = tpl.filter.trim().toLowerCase();
-      const hits = tpl.rows.filter(r => tplMatches(r, q));
+      const hits = tplVisible();
+      const total = (tpl.src === 'blast' ? tpl.blast : tpl.src === 'cole' ? tpl.cole : tpl.cole.concat(tpl.blast)).length;
 
-      document.getElementById('tpl-count').textContent =
-        q ? `(${hits.length} of ${tpl.rows.length} match “${tpl.filter.trim()}”)` : `(${tpl.rows.length} historical blasts)`;
+      document.getElementById('tpl-count').textContent = tpl.filter.trim()
+        ? `(${hits.length} of ${total} match “${tpl.filter.trim()}”)`
+        : `(${tpl.cole.length} of Cole’s · ${tpl.blast.length} historical)`;
 
       if(!hits.length){
         box.innerHTML = '<div class="p-4 text-sm text-base-content/50">No templates match that search.</div>';
@@ -444,46 +550,93 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return;
       }
       // Keep a selection that's still visible, otherwise fall to the first hit.
-      if(!hits.some(r => r.id === tpl.selId)) tpl.selId = hits[0].id;
+      if(!hits.some(it => it.key === tpl.selKey)){ tpl.selKey = hits[0].key; tpl.editing = false; }
 
       let html = '', group = null;
-      for(const r of hits){
-        const g = tplMonth(r.created_on);
+      for(const it of hits){
+        const g = it.source === 'cole' ? `Cole’s copy — ${it.play}` : tplMonth(it.created_on);
         if(g !== group){ group = g; html += `<div class="tpl-group">${esc(g)}</div>`; }
-        html += `<button type="button" class="tpl-row${r.id===tpl.selId?' sel':''}" data-id="${r.id}">
-          <div class="t-name">${esc(r.name || 'Untitled template')}</div>
-          <div class="t-date">${esc(tplDay(r.created_on))}</div>
+        const badges = [
+          `<span class="tpl-badge ${it.channel === 'sms' ? 'tb-sms' : 'tb-email'}">${it.channel === 'sms' ? 'SMS' : 'Email'}</span>`,
+          it.placeholder ? '<span class="tpl-badge tb-ph">Placeholder</span>' : '',
+        ].filter(Boolean).join(' ');
+        const sub = it.source === 'cole' ? (it.variant || it.play) : tplDay(it.created_on);
+        html += `<button type="button" class="tpl-row${it.key===tpl.selKey?' sel':''}" data-key="${esc(it.key)}">
+          <div class="t-name">${esc(it.name)}</div>
+          <div class="t-date flex items-center gap-1.5 flex-wrap">${badges}<span>${esc(sub)}</span></div>
         </button>`;
       }
       box.innerHTML = html;
       renderTplDetail();
     }
 
+    function tplFind(key){ return tpl.cole.concat(tpl.blast).find(x => x.key === key); }
+
     function renderTplDetail(){
       const pane = document.getElementById('tpl-detail'); if(!pane) return;
-      const r = tpl.rows.find(x => x.id === tpl.selId);
-      if(!r){ pane.innerHTML = ''; return; }
+      const it = tplFind(tpl.selKey);
+      if(!it){ pane.innerHTML = ''; return; }
+      const editable = it.source === 'cole';           // historical blasts are an archive — read-only
+      const meta = editable
+        ? `${esc(it.play)} · ${it.channel === 'sms' ? 'SMS' : 'Email'} · from ${esc(it.sender || '—')}`
+        : `${esc(tplDay(it.created_on))} · Email · historical blast (read-only)`;
+
+      const actions = (tpl.editing && editable)
+        ? `<button class="btn btn-xs btn-primary" id="tpl-save"${tpl.saving?' disabled':''}>${tpl.saving?'Saving…':'Save'}</button>
+           <button class="btn btn-xs btn-ghost" id="tpl-cancel"${tpl.saving?' disabled':''}>Cancel</button>`
+        : `<button class="btn btn-xs btn-outline border-base-300" id="tpl-copy">Copy</button>
+           ${editable ? '<button class="btn btn-xs btn-outline border-base-300" id="tpl-edit">Edit</button>' : ''}
+           <button class="btn btn-xs btn-primary" id="tpl-use">Use in Compose</button>`;
+
       pane.innerHTML = `
         <div class="flex items-start justify-between gap-3 mb-2">
           <div class="min-w-0">
-            <div class="font-extrabold text-[#133b49] text-[15px] leading-tight">${esc(r.name || 'Untitled template')}</div>
-            <div class="text-xs text-base-content/50 mt-0.5">${esc(tplDay(r.created_on))} · ${(r.email_template||'').length} characters</div>
+            <div class="font-extrabold text-[#133b49] text-[15px] leading-tight">${esc(it.name)}</div>
+            <div class="text-xs text-base-content/50 mt-0.5">${meta} · ${(it.body||'').length} characters</div>
+            ${it.subject ? `<div class="text-xs text-base-content/50 mt-0.5">Subject: ${esc(it.subject)}</div>` : ''}
           </div>
-          <div class="flex gap-2 shrink-0">
-            <button class="btn btn-xs btn-outline border-base-300" id="tpl-copy">Copy</button>
-            <button class="btn btn-xs btn-primary" id="tpl-use">Use in Compose</button>
-          </div>
+          <div class="flex gap-2 shrink-0">${actions}</div>
         </div>
-        <pre class="tpl-body">${esc(r.email_template || '')}</pre>`;
+        ${(tpl.editing && editable)
+          ? `<textarea class="tpl-edit" id="tpl-editor">${esc(it.body||'')}</textarea>
+             <div class="text-xs text-base-content/50 mt-1.5">Saves to <code>message_templates</code> in Supabase — everyone sees the change.</div>
+             <div class="text-xs text-error mt-1 hidden" id="tpl-err"></div>`
+          : `<pre class="tpl-body">${esc(it.body||'')}</pre>`}`;
 
+      if(tpl.editing && editable){
+        const ed = document.getElementById('tpl-editor');
+        ed.focus();
+        document.getElementById('tpl-save').addEventListener('click', async () => {
+          const val = ed.value;
+          if(val === it.body){ tpl.editing = false; renderTplDetail(); return; }   // nothing changed
+          tpl.saving = true; renderTplDetail();
+          const { error } = await sb.from('message_templates').update({ body: val }).eq('id', it.id);
+          tpl.saving = false;
+          if(error){
+            tpl.editing = true; renderTplDetail();
+            const box = document.getElementById('tpl-err');
+            if(box){ box.textContent = 'Save failed: ' + error.message; box.classList.remove('hidden'); }
+            const ed2 = document.getElementById('tpl-editor'); if(ed2) ed2.value = val;
+            return;
+          }
+          it.body = val;                                   // keep the in-memory copy in step
+          tpl.editing = false; renderTplList();
+        });
+        document.getElementById('tpl-cancel').addEventListener('click', () => { tpl.editing = false; renderTplDetail(); });
+        return;
+      }
+
+      const edit = document.getElementById('tpl-edit');
+      if(edit) edit.addEventListener('click', () => { tpl.editing = true; renderTplDetail(); });
       document.getElementById('tpl-copy').addEventListener('click', async e => {
-        try{ await navigator.clipboard.writeText(r.email_template || ''); e.target.textContent='Copied'; }
+        try{ await navigator.clipboard.writeText(it.body||''); e.target.textContent='Copied'; }
         catch{ e.target.textContent='Copy failed'; }
         setTimeout(()=>{ e.target.textContent='Copy'; }, 1400);
       });
       document.getElementById('tpl-use').addEventListener('click', () => {
-        const ta = document.getElementById('preview-email');
-        if(ta) ta.value = r.email_template || '';
+        // route by channel — SMS copy belongs in the SMS preview, not the email one
+        const ta = document.getElementById(it.channel === 'sms' ? 'preview-sms' : 'preview-email');
+        if(ta) ta.value = it.body || '';
         showTab('compose');
       });
     }
@@ -493,25 +646,46 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const box = document.getElementById('tpl-list'); if(!box) return;
       if(!sb){ box.innerHTML = '<div class="p-4 text-sm text-base-content/50">config.js not filled in</div>'; return; }
       box.innerHTML = '<div class="p-4 text-sm text-base-content/50">Loading…</div>';
-      const { data, error } = await sb.from('blast_templates')
-        .select('id,name,email_template,created_on')
-        .order('created_on', { ascending:false, nullsFirst:false });
-      if(error){
-        box.innerHTML = `<div class="p-4 text-sm text-error">Failed to load: ${esc(error.message)}</div>`;
-        document.getElementById('tpl-count').textContent = '(failed to load)';
-        return;
-      }
-      tpl.rows = data || [];
+
+      const [coleRes, blastRes] = await Promise.all([
+        sb.from('message_templates')
+          .select('id,slug,name,play,variant,channel,sender,is_placeholder,subject,body,sort_order')
+          .order('sort_order', { ascending:true, nullsFirst:false }),
+        sb.from('blast_templates')
+          .select('id,name,email_template,created_on')
+          .order('created_on', { ascending:false, nullsFirst:false }),
+      ]);
+
+      tpl.cole = (coleRes.data || []).map(r => ({
+        key: 'cole:' + r.id, id: r.id, source:'cole', name: r.name || 'Untitled template',
+        play: r.play || 'Other', variant: r.variant || '', channel: r.channel === 'sms' ? 'sms' : 'email',
+        sender: r.sender || '', placeholder: !!r.is_placeholder, subject: r.subject || '', body: r.body || '',
+      }));
+      tpl.blast = (blastRes.data || []).map(r => ({
+        key: 'blast:' + r.id, id: r.id, source:'blast', name: r.name || 'Untitled template',
+        channel:'email', play:'Historical', sender:'', body: r.email_template || '', created_on: r.created_on,
+      }));
       tpl.loaded = true;
       renderTplList();
+
+      const errs = [coleRes.error && 'message_templates: ' + coleRes.error.message,
+                    blastRes.error && 'blast_templates: ' + blastRes.error.message].filter(Boolean);
+      if(errs.length) document.getElementById('tpl-count').textContent = '(' + errs.join(' · ') + ')';
     }
 
     const tplSearch = document.getElementById('tpl-search');
-    if(tplSearch) tplSearch.addEventListener('input', e => { tpl.filter = e.target.value; renderTplList(); });
+    if(tplSearch) tplSearch.addEventListener('input', e => { tpl.filter = e.target.value; tpl.editing = false; renderTplList(); });
     const tplList = document.getElementById('tpl-list');
     if(tplList) tplList.addEventListener('click', e => {
       const btn = e.target.closest('.tpl-row'); if(!btn) return;
-      tpl.selId = Number(btn.dataset.id); renderTplList();
+      tpl.selKey = btn.dataset.key; tpl.editing = false; renderTplList();
+    });
+    const tplSources = document.getElementById('tpl-sources');
+    if(tplSources) tplSources.addEventListener('click', e => {
+      const btn = e.target.closest('.tpl-src'); if(!btn) return;
+      tpl.src = btn.dataset.src; tpl.editing = false;
+      tplSources.querySelectorAll('.tpl-src').forEach(b => b.classList.toggle('sel', b === btn));
+      renderTplList();
     });
 
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
