@@ -54,7 +54,7 @@ export default async function handler(req, res) {
   if (cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     res.status(401).json({ error: 'unauthorized' }); return;
   }
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
   if (!anthropicKey) { res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set on the server' }); return; }
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }

@@ -20,7 +20,7 @@ const SYSTEM = [
 ].join('\n');
 
 export default async function handler(req, res) {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
   if (!anthropicKey) { res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set on the server' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
 
