@@ -327,6 +327,50 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
           </div>
 
+          <!-- ===== MARKET HISTORY / AI DECIDER ===== -->
+          <div data-view id="view-history" class="hidden space-y-5">
+
+            <!-- AI decider over upcoming events -->
+            <div class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4 gap-3">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <h2 class="font-extrabold text-[#133b49]">AI Decider &mdash; upcoming events
+                    <span class="text-sm font-semibold text-base-content/50" id="dec-summary"></span></h2>
+                  <div class="flex items-center gap-2">
+                    <span id="dec-note" class="text-xs text-base-content/50"></span>
+                    <button id="dec-run" class="btn btn-primary btn-sm">Run &amp; log with AI reasons</button>
+                  </div>
+                </div>
+                <p class="text-sm text-base-content/60">Every upcoming event is matched to its market&rsquo;s historical blast performance. The send/skip call and the best template are computed from the data (metrics-first); &ldquo;Run&rdquo; adds an AI-written rationale and logs each decision to <code>campaign_send_log</code>.</p>
+                <div class="overflow-x-auto">
+                  <table class="table table-sm">
+                    <thead><tr class="text-[#133b49]">
+                      <th>Event</th><th>Date</th><th>Fill</th><th>Market</th><th>Decision</th><th>Best template</th><th>Open / CTR</th><th>Why</th>
+                    </tr></thead>
+                    <tbody id="dec-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-6">Loading&hellip;</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- learned market performance -->
+            <div class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4 gap-3">
+                <h2 class="font-extrabold text-[#133b49]">Market performance
+                  <span class="text-sm font-semibold text-base-content/50">&mdash; learned from historical blast_templates</span></h2>
+                <div class="overflow-x-auto">
+                  <table class="table table-sm">
+                    <thead><tr class="text-[#133b49]">
+                      <th>Market</th><th>Blasts</th><th>Sent</th><th>Open %</th><th>CTR %</th><th>Best template</th><th>Best day</th>
+                    </tr></thead>
+                    <tbody id="perf-rows"><tr><td colspan="7" class="text-center text-base-content/50 py-6">Loading&hellip;</td></tr></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
           <!-- ===== placeholder for tabs not built yet ===== -->
           <div data-view id="view-soon" class="hidden">
             <div class="card bg-base-100 border border-base-300"><div class="card-body p-8 text-center text-base-content/50">
@@ -935,12 +979,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     });
 
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', templates:'view-templates' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', templates:'view-templates', history:'view-history' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
       document.getElementById(VIEW[tab] || 'view-soon').classList.remove('hidden');
       if(tab === 'templates') loadTemplates();
+      if(tab === 'history') loadHistory();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showTab(a.dataset.tab); }));
     showTab('compose');
@@ -952,6 +997,73 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       loadMarkets();
     }
     loadSenders();
+
+    // ===== Market History / AI Decider tab =====
+    const DEC_DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    function decReason(r){
+      if(r.reason_code === 'no_history') return `No prior blast in ${r.market_label||'this market'} to learn from — skipping.`;
+      if(r.reason_code === 'nearly_full') return `Already ~${Math.round(r.filled_pct)}% full — no blast needed.`;
+      const bits=[]; if(r.open_rate_w!=null) bits.push(r.open_rate_w+'% open'); if(r.ctr_w!=null) bits.push(r.ctr_w+'% CTR');
+      const perf = bits.length ? ` (${bits.join(' / ')} over ${r.n_blasts||0} prior blast${r.n_blasts===1?'':'s'})` : '';
+      const when = r.best_dow!=null ? `, best on ${DEC_DOW[r.best_dow]}` : '';
+      return `Send "${r.best_template||'top template'}" to ${r.market_label}${perf}${when}.`;
+    }
+    function decBadge(d){ return d==='send'
+      ? '<span class="badge badge-success badge-sm text-white">SEND</span>'
+      : '<span class="badge badge-ghost badge-sm">SKIP</span>'; }
+    function tRow(cols, msg){ return `<tr><td colspan="${cols}" class="text-center text-base-content/50 py-6">${esc(msg)}</td></tr>`; }
+
+    function renderDecisions(rows, err){
+      const tb=document.getElementById('dec-rows'); if(!tb) return;
+      if(err){ tb.innerHTML=tRow(8,'Failed to load: '+err.message); return; }
+      if(!rows.length){ tb.innerHTML=tRow(8,'No upcoming events.'); document.getElementById('dec-summary').textContent=''; return; }
+      tb.innerHTML = rows.map(r=>`<tr>
+        <td class="font-semibold text-[#133b49]">${esc(r.team||'—')}${r.opponent?` <span class="text-base-content/40 font-normal">vs ${esc(r.opponent)}</span>`:''}</td>
+        <td class="whitespace-nowrap">${r.event_date||'—'}</td>
+        <td>${r.filled_pct!=null?Math.round(r.filled_pct)+'%':'—'}</td>
+        <td>${esc(r.market_label||'—')}${r.matched?'':' <span class="text-base-content/40">(no data)</span>'}</td>
+        <td>${decBadge(r.decision)}</td>
+        <td class="text-base-content/70">${esc(r.decision==='send'?(r.best_template||'—'):'—')}</td>
+        <td class="whitespace-nowrap">${r.open_rate_w!=null?`${r.open_rate_w} / <span class="text-[#e55608] font-semibold">${r.ctr_w}</span>`:'—'}</td>
+        <td class="text-xs text-base-content/60 min-w-[220px] max-w-[320px]">${esc(r._reason||decReason(r))}</td></tr>`).join('');
+      const send=rows.filter(r=>r.decision==='send').length;
+      document.getElementById('dec-summary').textContent = `(${send} send · ${rows.length-send} skip)`;
+    }
+
+    async function loadHistory(){
+      if(!sb) return;
+      const pr=document.getElementById('perf-rows');
+      const [perf, rec] = await Promise.all([ sb.rpc('rpc_market_performance'), sb.rpc('rpc_event_recommendations') ]);
+      if(pr){
+        if(perf.error){ pr.innerHTML=tRow(7,'Failed to load: '+perf.error.message); }
+        else if(!(perf.data||[]).length){ pr.innerHTML=tRow(7,'No historical blasts found.'); }
+        else pr.innerHTML = perf.data.map(p=>`<tr>
+          <td class="font-semibold text-[#133b49]">${esc(p.market_label)}</td>
+          <td>${p.n_blasts}</td>
+          <td class="whitespace-nowrap">${(p.total_sent||0).toLocaleString()}</td>
+          <td>${p.open_rate_w ?? '—'}</td>
+          <td class="font-semibold text-[#e55608]">${p.ctr_w ?? '—'}</td>
+          <td class="text-base-content/70">${esc(p.best_template||'—')}</td>
+          <td>${p.best_dow!=null?DEC_DOW[p.best_dow]:'—'}</td></tr>`).join('');
+      }
+      renderDecisions(rec.error?[]:(rec.data||[]), rec.error);
+    }
+
+    document.getElementById('dec-run')?.addEventListener('click', async ()=>{
+      const btn=document.getElementById('dec-run'), note=document.getElementById('dec-note');
+      btn.disabled=true; const label=btn.textContent; btn.textContent='Running…'; note.textContent='';
+      try{
+        const r=await fetch('/api/decide', { method:'POST',
+          headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') }, body:'{}' });
+        const d=await r.json();
+        if(!r.ok) throw new Error(d.error || ('HTTP '+r.status));
+        const map={}; (d.decisions||[]).forEach(x=>{ if(x.event_id) map[x.event_id]=x.reason; });
+        const rec=await sb.rpc('rpc_event_recommendations');
+        renderDecisions((rec.data||[]).map(r=>({...r,_reason:map[r.event_id]})), rec.error);
+        note.textContent = `Logged ${d.logged ?? 0} · ${d.ai_reasons ?? 0} AI reasons · ${d.to_send} to send`;
+      }catch(e){ note.textContent = 'Failed: '+e.message; }
+      btn.disabled=false; btn.textContent=label;
+    });
 
     // ===== Campaign Agent rail: drag-to-resize (lg+), width persisted =====
     (function(){

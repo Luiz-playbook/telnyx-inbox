@@ -1,112 +1,132 @@
-// Serverless Cron (Vercel): the daily AI campaign decider, in-code (no n8n).
-// Runs on the schedule in vercel.json → for each upcoming event, OpenAI decides
-// send/skip + which template, and each decision is written to campaign_send_log.
+// Daily AI campaign decider (metrics-first).
 //
-// Env vars (Vercel > Settings > Environment Variables):
-//   OPENAI_API_KEY      – required
-//   OPENAI_MODEL        – optional, defaults to gpt-4o
-//   SUPABASE_URL        – already set (used by the frontend build)
-//   SUPABASE_ANON_KEY   – already set; reads are anon-policy'd, writes go through
-//                         the log_campaign_decisions() SECURITY DEFINER RPC
-//   CRON_SECRET         – optional; if set, only requests with
-//                         `Authorization: Bearer <CRON_SECRET>` run (Vercel cron sends it)
+// The send/skip/template/timing decision is DETERMINISTIC — computed in SQL from
+// historical blast_templates performance (rpc_event_recommendations). The LLM does
+// NOT decide; it only writes the human-readable rationale for each decision. Every
+// decision (send + skip) is logged to campaign_send_log via log_campaign_decisions.
 //
-// Decides + logs only. Actual sending is not wired here yet (needs per-market lists).
+// Runs two ways:
+//   • Vercel Cron (daily, per vercel.json) — sends Authorization: Bearer CRON_SECRET
+//   • On-demand from the UI — sends x-inbox-secret: <REPLY_SECRET>
+//
+// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL, SUPABASE_ANON_KEY,
+//      optional CRON_SECRET, REPLY_SECRET.
+// Query/body flag `dry` (?dry=1 or {"dry":true}) computes reasons but skips logging.
 
 export const config = { maxDuration: 60 };
 
 const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
 
 const SYSTEM = [
-  'You are the daily campaign send decider for a ticket-sales team. Each day you decide, per upcoming event, whether it deserves an email/SMS blast and which historical template to reuse. Follow these rules exactly:',
-  '',
-  'ELIGIBILITY (send only if ALL true): event_date is in the future; the event is NOT already full (filled_pct is null or < 90); a template in the library plausibly matches the event\'s market (bridge team_name -> city/metro -> the template list_name, a metro/region like "Cleveland", "Yankees New York City", "Georgia", "Washington DC & DMV"). If no template matches the market, decision = skip with reason "no list".',
-  'PRIORITISATION: lower filled_pct = higher urgency (0% is most urgent); null fill = medium.',
-  'TEMPLATE CHOICE: among templates matching the market, pick the best historical performer (highest open_rate, tie-break clickthru_rate; ignore rows with 0 sent_emails). Return its exact name.',
-  'SUPPRESSION: never recommend sending on or after the event_date.',
-  '',
-  'Return one decision per event. channel is "email" for now (SMS lists not ready). template_name is the chosen template name, or null when skipping. Keep reason to one short sentence.',
+  'You write one-sentence rationales for a ticket-marketing send decider. The decision (send or skip) and the chosen email template are ALREADY made from historical performance data — do not second-guess or change them. For each event you are given the market, whether a blast has run there before, the historical open rate and click-through rate, the best-performing template, the best send weekday, the event fill %, and a reason code. Write a crisp, specific one-sentence justification a sales lead would trust. Cite the concrete numbers you were given (e.g. "18% open / 8% CTR across prior Boston blasts"). Never invent numbers. reason codes: ok = good to send; nearly_full = skip, already ~full; no_history = skip, no comparable market blast to learn from.',
 ].join('\n');
 
 const SCHEMA = {
   type: 'object',
   properties: {
-    decisions: {
+    reasons: {
       type: 'array',
       items: {
         type: 'object',
-        properties: {
-          event_id: { type: 'string' },
-          team: { type: 'string' },
-          decision: { type: 'string', enum: ['send', 'skip'] },
-          channel: { type: 'string', enum: ['email', 'sms', 'none'] },
-          template_name: { type: ['string', 'null'] },
-          reason: { type: 'string' },
-        },
-        required: ['event_id', 'team', 'decision', 'channel', 'template_name', 'reason'],
+        properties: { event_id: { type: 'string' }, reason: { type: 'string' } },
+        required: ['event_id', 'reason'],
         additionalProperties: false,
       },
     },
   },
-  required: ['decisions'],
+  required: ['reasons'],
   additionalProperties: false,
 };
 
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+function fallbackReason(r) {
+  if (r.reason_code === 'no_history') return `No prior blast in ${r.market_label || 'this market'} to learn from — skipping.`;
+  if (r.reason_code === 'nearly_full') return `Already ~${Math.round(r.filled_pct)}% full — no blast needed.`;
+  const bits = [];
+  if (r.open_rate_w != null) bits.push(`${r.open_rate_w}% open`);
+  if (r.ctr_w != null) bits.push(`${r.ctr_w}% CTR`);
+  const perf = bits.length ? ` (${bits.join(' / ')} over ${r.n_blasts || 0} prior blast${r.n_blasts === 1 ? '' : 's'})` : '';
+  const when = (r.best_dow != null) ? `, best on ${DOW[r.best_dow]}` : '';
+  return `Send "${r.best_template || 'top template'}" to ${r.market_label}${perf}${when}.`;
+}
+
 export default async function handler(req, res) {
+  // auth: cron bearer OR UI inbox-secret
   const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
-    res.status(401).json({ error: 'unauthorized' }); return;
-  }
+  const replySecret = process.env.REPLY_SECRET;
+  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
+  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
+  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+
   const key = (process.env.OPENAI_API_KEY || '').trim();
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!key) { res.status(500).json({ error: 'OPENAI_API_KEY is not set on the server' }); return; }
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
 
+  const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
   const today = new Date().toISOString().slice(0, 10);
-  const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}` };
+  const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   try {
-    // 1. pull upcoming events + the template library
-    const [evR, tplR] = await Promise.all([
-      fetch(`${supaUrl}/rest/v1/icp_events?select=id,team_name,opponent,event_date,filled_pct&event_date=gte.${today}&order=event_date.asc`, { headers: sh }),
-      fetch(`${supaUrl}/rest/v1/blast_templates?select=list_name,name,open_rate,clickthru_rate,sent_emails,scheduled_for`, { headers: sh }),
-    ]);
-    const events = await evR.json(), templates = await tplR.json();
-    if (!Array.isArray(events)) { res.status(502).json({ error: 'events fetch failed', detail: events }); return; }
+    // 1. deterministic recommendations straight from the performance model
+    const recRes = await fetch(`${supaUrl}/rest/v1/rpc/rpc_event_recommendations`, { method: 'POST', headers: sh, body: '{}' });
+    const recs = await recRes.json();
+    if (!recRes.ok || !Array.isArray(recs)) { res.status(502).json({ error: 'recommendations fetch failed', detail: recs }); return; }
 
-    // 2. ask OpenAI to decide (structured JSON output)
-    const user = `TODAY: ${today}\n\nUPCOMING EVENTS:\n${JSON.stringify(events)}\n\nTEMPLATE LIBRARY (historical blasts, list_name = market):\n${JSON.stringify(templates)}`;
-    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 4000,
-        messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }],
-        response_format: { type: 'json_schema', json_schema: { name: 'campaign_decisions', strict: true, schema: SCHEMA } },
-      }),
-    });
-    const ai = await aiRes.json();
-    if (!aiRes.ok) {
-      const e = (ai && ai.error) || {};
-      res.status(502).json({ error: 'OpenAI error: ' + (e.message || `HTTP ${aiRes.status}`), type: e.type || e.code || null });
-      return;
+    // 2. LLM writes a one-line rationale per event (grounded in the numbers). Optional.
+    let reasonMap = {};
+    if (key && recs.length) {
+      const payload = recs.map(r => ({
+        event_id: r.event_id, team: r.team, opponent: r.opponent, market: r.market_label,
+        matched: r.matched, decision: r.decision, reason_code: r.reason_code,
+        filled_pct: r.filled_pct, open_rate: r.open_rate_w, ctr: r.ctr_w, n_blasts: r.n_blasts,
+        best_template: r.best_template, best_weekday: r.best_dow != null ? DOW[r.best_dow] : null,
+      }));
+      try {
+        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+          body: JSON.stringify({
+            model: MODEL, max_tokens: 3000,
+            messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: 'Events:\n' + JSON.stringify(payload) }],
+            response_format: { type: 'json_schema', json_schema: { name: 'reasons', strict: true, schema: SCHEMA } },
+          }),
+        });
+        const ai = await aiRes.json();
+        if (aiRes.ok) {
+          const txt = ai.choices?.[0]?.message?.content || '{}';
+          (JSON.parse(txt).reasons || []).forEach(x => { if (x.event_id) reasonMap[x.event_id] = x.reason; });
+        }
+      } catch { /* fall back to templated reasons below */ }
     }
-    const text = (ai.choices && ai.choices[0] && ai.choices[0].message && ai.choices[0].message.content) || '';
-    let parsed; try { parsed = JSON.parse(text); } catch { res.status(502).json({ error: 'could not parse decisions', text }); return; }
-    const decisions = (parsed.decisions || []).map(d => ({ ...d, run_date: today }));
 
-    // 3. log every decision (send + skip) via the SECURITY DEFINER RPC
-    const logR = await fetch(`${supaUrl}/rest/v1/rpc/log_campaign_decisions`, {
-      method: 'POST', headers: { ...sh, 'content-type': 'application/json' },
-      body: JSON.stringify({ p_decisions: decisions }),
-    });
-    const logged = await logR.json().catch(() => null);
+    // 3. assemble decisions (LLM reason if present, else a templated one)
+    const decisions = recs.map(r => ({
+      event_id: r.event_id, team: r.team,
+      decision: r.decision, channel: r.channel,
+      template_name: r.decision === 'send' ? (r.best_template || null) : null,
+      reason: reasonMap[r.event_id] || fallbackReason(r),
+      market: r.market_label, market_key: r.market_key,
+      open_rate: r.open_rate_w, ctr: r.ctr_w, best_dow: r.best_dow,
+      run_date: today,
+    }));
+
+    // 4. log every decision (unless dry run)
+    let logged = null;
+    if (!dry) {
+      const logR = await fetch(`${supaUrl}/rest/v1/rpc/log_campaign_decisions`, {
+        method: 'POST', headers: sh, body: JSON.stringify({ p_decisions: decisions }),
+      });
+      logged = await logR.json().catch(() => null);
+    }
 
     res.status(200).json({
-      ok: true, run_date: today,
-      evaluated: events.length, decided: decisions.length,
-      to_send: decisions.filter(d => d.decision === 'send').length, logged,
+      ok: true, run_date: today, dry,
+      evaluated: recs.length,
+      to_send: decisions.filter(d => d.decision === 'send').length,
+      skipped: decisions.filter(d => d.decision === 'skip').length,
+      ai_reasons: Object.keys(reasonMap).length,
+      logged, decisions,
     });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
