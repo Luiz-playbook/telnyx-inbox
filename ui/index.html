@@ -237,7 +237,7 @@
                 <h2 class="font-extrabold text-[#133b49]">Preview <span class="text-sm font-semibold text-base-content/50">— editable, this is exactly what would send</span></h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div class="form-control"><label class="label"><span class="label-text">Email</span></label>
-                    <textarea class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
+                    <textarea id="preview-email" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
 
 My name is Josh Marcus, CEO/Co-Founder of Playbook. We provide tools designed to automate the day-to-day processes of running programs, registration, scheduling, payments, reporting, communication workflows, and other backend processes that typically create unnecessary admin overhead for staff.
 We've also started rolling out new sponsorship and rev share opportunities and we thought of your organization right away.
@@ -247,7 +247,7 @@ Best,
 Josh Marcus
 CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="form-control"><label class="label"><span class="label-text">SMS</span></label>
-                    <textarea class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
+                    <textarea id="preview-sms" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
                 </div>
                 <label class="flex items-center gap-2 cursor-pointer w-max"><input type="checkbox" class="checkbox checkbox-sm" id="reviewed"><span class="text-sm">I've reviewed this copy and audience</span></label>
                 <div><button class="btn btn-sm" id="add-plan" disabled>Add to Send Plan</button></div>
@@ -263,9 +263,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <span class="text-sm font-semibold text-base-content/50">(4 ready now, 0 scheduled ahead, 0 blocked/draft)</span></h2>
                 <div><button class="btn btn-sm btn-outline border-base-300">Copy Send Plan (confirmed &amp; ready-now)</button></div>
                 <div class="overflow-x-auto border border-base-300 rounded-lg">
-                  <table class="q-table w-full min-w-[720px]">
+                  <table class="q-table w-full min-w-[640px]">
                     <thead><tr class="bg-base-100 border-b border-base-300">
-                      <th>Confirmed</th><th>Status</th><th>Scheduled send</th><th>VIP</th><th>Market</th><th>Est. cost</th>
+                      <th>Confirmed</th><th>Status</th><th>Channels</th><th>Market</th><th>Recipients</th>
                     </tr></thead>
                     <tbody id="queue-rows"></tbody>
                   </table>
@@ -293,6 +293,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
+    function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
+    function isValidEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||''); }
+    function nl2br(s){ return esc(s).replace(/\n/g,'<br>'); }
 
     // Market dropdown — real US states that have phone or email contacts (Supabase RPCs over company_intel/contact_intel).
     async function loadMarkets(){
@@ -340,22 +344,61 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
     }
 
-    // Static placeholder queue — real data gets wired in later.
-    const QUEUE = [
-      { send:'2026-07-20', vip:'61.4%', market:'Cleveland',  cost:'$0.012/email' },
-      { send:'2026-07-20', vip:'53.1%', market:'Yankees NYC', cost:'$0.011/email' },
-      { send:'2026-07-20', vip:'43.7%', market:'Georgia',    cost:'$0.013/email' },
-      { send:'2026-07-20', vip:'42.0%', market:'Houston',    cost:'$0.010/email' },
-    ];
-    document.getElementById('queue-rows').innerHTML = QUEUE.map(r => `
-      <tr>
-        <td><button class="btn btn-xs btn-outline rounded-md px-3">Confirm</button></td>
-        <td><span class="eligible">ELIGIBLE — ready now</span></td>
-        <td class="text-base-content/70">${r.send}</td>
-        <td class="font-semibold text-[#133b49]">${r.vip}</td>
-        <td class="text-base-content/70">${r.market}</td>
-        <td class="text-base-content/70">${r.cost}</td>
-      </tr>`).join('');
+    // ===== Send plan (Queue) — real campaigns added from Compose, Confirm fires the send workflows =====
+    let SEND_PLAN = [], planSeq = 1;
+    function channelOn(ch){ const b=document.querySelector('#channels .chan[data-chan="'+ch+'"]'); return b ? b.classList.contains('sel') : false; }
+    function renderQueue(){
+      const tb=document.getElementById('queue-rows'); if(!tb) return;
+      if(!SEND_PLAN.length){ tb.innerHTML='<tr><td colspan="5" class="text-center text-base-content/50 py-8">No campaigns queued yet — build one in Compose &amp; Send and click “Add to Send Plan”.</td></tr>'; return; }
+      tb.innerHTML = SEND_PLAN.map(it=>{
+        const chans=[ it.sms?'<span class="badge badge-sm badge-ghost">SMS</span>':'', it.email?'<span class="badge badge-sm badge-info">Email</span>':'' ].filter(Boolean).join(' ') || '<span class="text-base-content/40">—</span>';
+        const status = it.status==='sent' ? '<span class="badge badge-success gap-1">&#10003; Sent</span>'
+          : it.status==='sending' ? '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…'
+          : '<span class="eligible">ELIGIBLE — ready now</span>';
+        const action = it.status==='sent' ? '<span class="text-success text-xs font-semibold">Sent</span>'
+          : `<button class="btn btn-xs btn-outline rounded-md px-3" data-confirm="${esc(it.id)}" ${it.status==='sending'?'disabled':''}>Confirm</button>`;
+        return `<tr>
+          <td>${action}</td>
+          <td>${status}</td>
+          <td>${chans}</td>
+          <td class="text-base-content/70">${esc(it.marketName||it.marketCode||'—')}</td>
+          <td class="text-base-content/70">${esc(it.recipients||'—')}</td>
+        </tr>`;
+      }).join('');
+      tb.querySelectorAll('[data-confirm]').forEach(b=>b.addEventListener('click',()=>confirmSend(b.dataset.confirm)));
+    }
+    async function confirmSend(id){
+      const it=SEND_PLAN.find(x=>x.id===id); if(!it || it.status==='sent') return;
+      if(!it.email && !it.sms){ alert('No channels are selected for this campaign (turn on Email and/or SMS in Compose).'); return; }
+      if(!it.marketCode){ alert('This campaign has no market selected — pick a Market in Compose first.'); return; }
+      if(!sb){ alert('config.js is not filled in.'); return; }
+      // pull recipients only for the channels that are on
+      let phones=[], emails=[];
+      if(it.sms){ const {data}=await sb.rpc('market_phones',{p_code:it.marketCode}); phones=[...new Set((data||[]).map(r=>normPhone(r.phone)).filter(isValidPhone))]; }
+      if(it.email){ const {data}=await sb.rpc('market_emails',{p_code:it.marketCode}); emails=[...new Set((data||[]).map(r=>(r.email||'').trim().toLowerCase()).filter(isValidEmail))]; }
+      const lines=[]; if(it.sms) lines.push(`• SMS → ${phones.length} number(s) from ${it.smsFrom||'?'}`); if(it.email) lines.push(`• Email → ${emails.length} address(es) from ${it.emailFrom||'?'}`);
+      if(!confirm(`Send “${it.marketName}” now?\n\n${lines.join('\n')}\n\nThis actually sends.`)) return;
+      it.status='sending'; renderQueue();
+      const secret=cfg.REPLY_SECRET||'', results=[];
+      try{
+        if(it.sms && phones.length){
+          if(!cfg.BULK_SEND_WEBHOOK_URL || String(cfg.BULK_SEND_WEBHOOK_URL).startsWith('<<')) results.push('SMS webhook not configured');
+          else{ const messages=phones.map(to=>({from:it.smsFrom,to,text:it.smsBody}));
+            const r=await fetch(cfg.BULK_SEND_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':secret},body:JSON.stringify({from:it.smsFrom,messages})});
+            results.push(r.ok?`SMS: ${messages.length} queued`:`SMS failed (HTTP ${r.status})`); }
+        }
+        if(it.email && emails.length){
+          if(!cfg.EMAIL_SEND_WEBHOOK_URL || String(cfg.EMAIL_SEND_WEBHOOK_URL).startsWith('<<')) results.push('Email webhook not configured');
+          else{ const html=nl2br(it.emailBody); const messages=emails.map(to=>({from:it.emailFrom,to,subject:it.emailSubject,html}));
+            const r=await fetch(cfg.EMAIL_SEND_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':secret},body:JSON.stringify({from:it.emailFrom,messages})});
+            results.push(r.ok?`Email: ${messages.length} queued`:`Email failed (HTTP ${r.status})`); }
+        }
+        it.status='sent'; it.recipients=[ it.sms?phones.length+' SMS':'', it.email?emails.length+' email':'' ].filter(Boolean).join(' · ');
+        alert('Send started:\n\n'+results.join('\n'));
+      }catch(err){ it.status='ready'; alert('Send failed: '+err.message); }
+      renderQueue();
+    }
+    renderQueue();
 
     // Play picker — selecting a play also reshapes the Market & Game fields.
     const PLAY_FORM = {
@@ -393,7 +436,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Review gate — "Add to Send Plan" enables only once reviewed, then jumps to the Queue tab.
     const reviewed = document.getElementById('reviewed'), addPlan = document.getElementById('add-plan');
     if (reviewed) reviewed.addEventListener('change', () => { addPlan.disabled = !reviewed.checked; addPlan.classList.toggle('btn-primary', reviewed.checked); });
-    if (addPlan) addPlan.addEventListener('click', () => { if (!addPlan.disabled) showTab('queue'); });
+    if (addPlan) addPlan.addEventListener('click', () => {
+      if (addPlan.disabled) return;
+      const msel=document.getElementById('market-select'), opt=msel?msel.selectedOptions[0]:null;
+      const ctx=document.getElementById('ctx-input'), efrom=document.getElementById('email-sender'), sfrom=document.getElementById('sms-sender');
+      const marketName = opt ? opt.getAttribute('data-name') : '';
+      const ctxVal = ctx ? ctx.value.trim() : '';
+      SEND_PLAN.unshift({
+        id: 'p'+(planSeq++),
+        marketCode: msel ? msel.value : '',
+        marketName,
+        email: channelOn('email'), sms: channelOn('sms'),
+        emailFrom: efrom ? efrom.value : '', smsFrom: sfrom ? sfrom.value : '',
+        emailSubject: (ctxVal ? ctxVal + (marketName?' — '+marketName:'') : ('Playbook — ' + (marketName || 'Marketing Blast'))),
+        emailBody: document.getElementById('preview-email') ? document.getElementById('preview-email').value : '',
+        smsBody: document.getElementById('preview-sms') ? document.getElementById('preview-sms').value : '',
+        status: 'ready', recipients: ''
+      });
+      renderQueue();
+      showTab('queue');
+    });
 
     // Tab switching — Compose and Queue are built; others show the placeholder.
     const VIEW = { compose:'view-compose', queue:'view-queue' };
