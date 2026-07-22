@@ -6,6 +6,11 @@ Thumbs.db
 # Copy ui/config.example.js -> ui/config.js and fill it in locally.
 ui/config.js
 
+# Local env files feeding scripts/gen-config.js (and `vercel dev`).
+.env
+.env.*
+!.env.example
+
 # local design reference, not part of the deliverable
 slsmage.png
 

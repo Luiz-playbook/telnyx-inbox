@@ -36,6 +36,17 @@
     .q-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; }
     .q-table td{ padding:12px 16px; vertical-align:middle; border-top:1px solid #edf2f9; white-space:nowrap; }
     .eligible{ color:#067523; font-weight:700; }
+    /* templates — searchable rail + detail pane */
+    .tpl-group{ font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#8695a7; padding:12px 12px 5px; }
+    .tpl-row{ display:block; width:100%; text-align:left; background:transparent; border:1px solid transparent; border-radius:8px; padding:9px 12px; cursor:pointer; }
+    .tpl-row:hover{ background:#f5f8fb; }
+    .tpl-row.sel{ background:#fdeee4; border-color:#e8935a; }
+    .tpl-row .t-name{ font-weight:700; font-size:13.5px; color:#133b49; line-height:1.35; }
+    .tpl-row.sel .t-name{ color:#c94d07; }
+    .tpl-row .t-date{ font-size:11.5px; color:#8695a7; margin-top:2px; }
+    .tpl-body{ background:#f8fafc; border:1px solid #e5ebf1; border-radius:10px; padding:16px 18px; margin:0;
+               font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:13px; line-height:1.75;
+               color:#2f4858; white-space:pre-wrap; overflow-wrap:anywhere; }
   </style>
 </head>
 <body class="h-full">
@@ -236,7 +247,7 @@
                 <h2 class="font-extrabold text-[#133b49]">Preview <span class="text-sm font-semibold text-base-content/50">— editable, this is exactly what would send</span></h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div class="form-control"><label class="label"><span class="label-text">Email</span></label>
-                    <textarea class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
+                    <textarea id="preview-email" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
 
 My name is Josh Marcus, CEO/Co-Founder of Playbook. We provide tools designed to automate the day-to-day processes of running programs, registration, scheduling, payments, reporting, communication workflows, and other backend processes that typically create unnecessary admin overhead for staff.
 We've also started rolling out new sponsorship and rev share opportunities and we thought of your organization right away.
@@ -270,6 +281,30 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   </table>
                 </div>
                 <p class="text-xs text-base-content/50 leading-relaxed">Exhaustive by design: every offer you add shows up here — ranked and ready now, scheduled for a specific future date once cooldown clears, or flagged impossible if the game will pass before cooldown clears. Only rows you've confirmed appear in the Send Plan. Use the Market History tab's &ldquo;Queue this market&rdquo; button to pull any of the 65 real markets in here without typing the name.</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===== TEMPLATES ===== -->
+          <div data-view id="view-templates" class="hidden">
+            <div class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4 gap-3">
+                <h2 class="font-extrabold text-[#133b49]">Message Templates
+                  <span class="text-sm font-semibold text-base-content/50" id="tpl-count">(loading…)</span></h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-[minmax(0,290px)_minmax(0,1fr)] gap-4">
+                  <!-- rail: search + grouped list -->
+                  <div class="border border-base-300 rounded-lg flex flex-col overflow-hidden">
+                    <div class="p-2 border-b border-base-300">
+                      <input id="tpl-search" class="input input-bordered input-sm w-full" placeholder="Search name or body…" autocomplete="off" />
+                    </div>
+                    <div id="tpl-list" class="p-1 overflow-y-auto max-h-[560px]"></div>
+                  </div>
+                  <!-- detail: the selected template, full text -->
+                  <div id="tpl-detail" class="min-w-0"></div>
+                </div>
+
+                <p class="text-xs text-base-content/50 leading-relaxed">Live from <code>blast_templates</code> — the historical ticket blasts imported from the gsheet. Search matches both the template name and its body text. &ldquo;Copy&rdquo; puts the raw text on your clipboard; &ldquo;Use in Compose&rdquo; drops it into the Compose tab&rsquo;s editable Email preview.</p>
               </div>
             </div>
           </div>
@@ -377,12 +412,115 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const reviewed = document.getElementById('reviewed'), addPlan = document.getElementById('add-plan');
     if (reviewed) reviewed.addEventListener('change', () => { addPlan.disabled = !reviewed.checked; addPlan.classList.toggle('btn-primary', reviewed.checked); });
 
-    // Tab switching — Compose and Queue are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue' };
+    // Templates tab — the 140 historical blasts in `blast_templates` (anon-readable).
+    // Bodies are short plain text (~700 chars), so one fetch holds the whole set and
+    // search filters in memory. Master-detail: the rail lists, the pane shows one.
+    const tpl = { rows:[], filter:'', selId:null, loaded:false };
+
+    function tplDate(s){
+      if(!s) return null;
+      const d = new Date(String(s).replace(' ', 'T'));
+      return isNaN(d) ? null : d;
+    }
+    function tplDay(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'; }
+    function tplMonth(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : 'No date'; }
+
+    function tplMatches(r, q){
+      if(!q) return true;
+      return (r.name||'').toLowerCase().includes(q) || (r.email_template||'').toLowerCase().includes(q);
+    }
+
+    function renderTplList(){
+      const box = document.getElementById('tpl-list'); if(!box) return;
+      const q = tpl.filter.trim().toLowerCase();
+      const hits = tpl.rows.filter(r => tplMatches(r, q));
+
+      document.getElementById('tpl-count').textContent =
+        q ? `(${hits.length} of ${tpl.rows.length} match “${tpl.filter.trim()}”)` : `(${tpl.rows.length} historical blasts)`;
+
+      if(!hits.length){
+        box.innerHTML = '<div class="p-4 text-sm text-base-content/50">No templates match that search.</div>';
+        document.getElementById('tpl-detail').innerHTML = '';
+        return;
+      }
+      // Keep a selection that's still visible, otherwise fall to the first hit.
+      if(!hits.some(r => r.id === tpl.selId)) tpl.selId = hits[0].id;
+
+      let html = '', group = null;
+      for(const r of hits){
+        const g = tplMonth(r.created_on);
+        if(g !== group){ group = g; html += `<div class="tpl-group">${esc(g)}</div>`; }
+        html += `<button type="button" class="tpl-row${r.id===tpl.selId?' sel':''}" data-id="${r.id}">
+          <div class="t-name">${esc(r.name || 'Untitled template')}</div>
+          <div class="t-date">${esc(tplDay(r.created_on))}</div>
+        </button>`;
+      }
+      box.innerHTML = html;
+      renderTplDetail();
+    }
+
+    function renderTplDetail(){
+      const pane = document.getElementById('tpl-detail'); if(!pane) return;
+      const r = tpl.rows.find(x => x.id === tpl.selId);
+      if(!r){ pane.innerHTML = ''; return; }
+      pane.innerHTML = `
+        <div class="flex items-start justify-between gap-3 mb-2">
+          <div class="min-w-0">
+            <div class="font-extrabold text-[#133b49] text-[15px] leading-tight">${esc(r.name || 'Untitled template')}</div>
+            <div class="text-xs text-base-content/50 mt-0.5">${esc(tplDay(r.created_on))} · ${(r.email_template||'').length} characters</div>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <button class="btn btn-xs btn-outline border-base-300" id="tpl-copy">Copy</button>
+            <button class="btn btn-xs btn-primary" id="tpl-use">Use in Compose</button>
+          </div>
+        </div>
+        <pre class="tpl-body">${esc(r.email_template || '')}</pre>`;
+
+      document.getElementById('tpl-copy').addEventListener('click', async e => {
+        try{ await navigator.clipboard.writeText(r.email_template || ''); e.target.textContent='Copied'; }
+        catch{ e.target.textContent='Copy failed'; }
+        setTimeout(()=>{ e.target.textContent='Copy'; }, 1400);
+      });
+      document.getElementById('tpl-use').addEventListener('click', () => {
+        const ta = document.getElementById('preview-email');
+        if(ta) ta.value = r.email_template || '';
+        showTab('compose');
+      });
+    }
+
+    async function loadTemplates(){
+      if(tpl.loaded) return;
+      const box = document.getElementById('tpl-list'); if(!box) return;
+      if(!sb){ box.innerHTML = '<div class="p-4 text-sm text-base-content/50">config.js not filled in</div>'; return; }
+      box.innerHTML = '<div class="p-4 text-sm text-base-content/50">Loading…</div>';
+      const { data, error } = await sb.from('blast_templates')
+        .select('id,name,email_template,created_on')
+        .order('created_on', { ascending:false, nullsFirst:false });
+      if(error){
+        box.innerHTML = `<div class="p-4 text-sm text-error">Failed to load: ${esc(error.message)}</div>`;
+        document.getElementById('tpl-count').textContent = '(failed to load)';
+        return;
+      }
+      tpl.rows = data || [];
+      tpl.loaded = true;
+      renderTplList();
+    }
+
+    const tplSearch = document.getElementById('tpl-search');
+    if(tplSearch) tplSearch.addEventListener('input', e => { tpl.filter = e.target.value; renderTplList(); });
+    const tplList = document.getElementById('tpl-list');
+    if(tplList) tplList.addEventListener('click', e => {
+      const btn = e.target.closest('.tpl-row'); if(!btn) return;
+      tpl.selId = Number(btn.dataset.id); renderTplList();
+    });
+
+    // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
+    const VIEW = { compose:'view-compose', queue:'view-queue', templates:'view-templates' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
       document.getElementById(VIEW[tab] || 'view-soon').classList.remove('hidden');
+      if(tab === 'templates') loadTemplates();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showTab(a.dataset.tab); }));
     showTab('compose');
