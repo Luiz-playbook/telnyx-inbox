@@ -45,7 +45,11 @@ export default async function handler(req, res) {
     const data = await r.json();
     if (!r.ok) {
       const e = (data && data.error) || {};
-      res.status(502).json({ error: 'Anthropic error: ' + (e.message || `HTTP ${r.status}`), type: e.type || null });
+      // masked hint so we can tell a wrong/truncated key from an env/deploy issue
+      const hint = anthropicKey
+        ? `${anthropicKey.slice(0, 8)}…${anthropicKey.slice(-4)} (len ${anthropicKey.length}, sk-ant:${anthropicKey.startsWith('sk-ant-')})`
+        : 'EMPTY';
+      res.status(502).json({ error: 'Anthropic error: ' + (e.message || `HTTP ${r.status}`) + ' | key seen: ' + hint, type: e.type || null });
       return;
     }
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
