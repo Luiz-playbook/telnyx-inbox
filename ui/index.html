@@ -209,9 +209,9 @@
                   </div>
                   <p class="text-xs text-base-content/40">RCS, Push, and In-app aren't connected yet — Email and SMS are the only real channels today.</p>
                   <div class="form-control"><label class="label"><span class="label-text font-semibold">Email sender <span class="font-normal text-base-content/50">(autofilled per play, switch if needed)</span></span></label>
-                    <select class="select select-bordered"><option>Josh Marcus</option><option>John (john@callplaybook.com)</option><option>Rion (rion@callplaybook.com)</option></select></div>
+                    <select id="email-sender" class="select select-bordered"><option>Loading…</option></select></div>
                   <div class="form-control"><label class="label"><span class="label-text font-semibold">SMS sender <span class="font-normal text-base-content/50">(autofilled per play, switch if needed)</span></span></label>
-                    <select class="select select-bordered"><option>Josh Marcus</option><option>Telnyx · +16158050766</option></select></div>
+                    <select id="sms-sender" class="select select-bordered"><option>Loading…</option></select></div>
                 </div>
               </div>
             </div>
@@ -321,6 +321,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       ml.innerHTML = er.error ? ('Failed: '+esc(er.error.message)) : (emails.length ? emails.map(r=>esc(r.email)).join('<br>') : '<span class="text-base-content/40">No email addresses</span>');
     }
 
+    // Audience & Channels senders — same sources as the Campaigns tab.
+    // Email = the Gmail accounts wired in the n8n Switch; SMS = telnyx_numbers.
+    const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
+    function senderName(email){ const p=(email.split('@')[0]||'').replace(/[._-]/g,' '); return p.replace(/\b\w/g,c=>c.toUpperCase()); }
+    async function loadSenders(){
+      const es=document.getElementById('email-sender');
+      if(es){
+        es.innerHTML = EMAIL_SENDERS.map(a=>`<option value="${esc(a)}">${esc(senderName(a))} · ${esc(a)}</option>`).join('');
+        const saved=localStorage.getItem('blaster_email_from'); if(saved && EMAIL_SENDERS.includes(saved)) es.value=saved;
+        es.addEventListener('change', ()=>localStorage.setItem('blaster_email_from', es.value));
+      }
+      const ss=document.getElementById('sms-sender');
+      if(ss){
+        if(!sb){ ss.innerHTML='<option value="">config.js not filled in</option>'; return; }
+        const { data, error } = await sb.from('telnyx_numbers').select('phone_number,label,active,sort_order').order('sort_order',{ascending:true});
+        if(error){ ss.innerHTML='<option value="">Failed to load numbers</option>'; return; }
+        const nums=data||[];
+        ss.innerHTML = nums.length ? nums.map(n=>`<option value="${esc(n.phone_number)}">${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join('') : '<option value="">No numbers</option>';
+        const saved=localStorage.getItem('blaster_sms_from'); if(saved) ss.value=saved;
+        ss.addEventListener('change', ()=>localStorage.setItem('blaster_sms_from', ss.value));
+      }
+    }
+
     // Static placeholder queue — real data gets wired in later.
     const QUEUE = [
       { send:'2026-07-20', vip:'61.4%', market:'Cleveland',  cost:'$0.012/email' },
@@ -368,6 +391,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       marketSel.addEventListener('change', e => { const o=e.target.selectedOptions[0]; loadMarketContacts(e.target.value, o ? o.getAttribute('data-name') : ''); });
       loadMarkets();
     }
+    loadSenders();
   </script>
 </body>
 </html>
