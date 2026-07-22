@@ -390,9 +390,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     document.querySelectorAll('#channels .chan').forEach(c => c.addEventListener('click', () => { c.classList.toggle('sel'); syncChannelSenders(); }));
     syncChannelSenders();
 
-    // Review gate — "Add to Send Plan" enables only once reviewed.
+    // Review gate — "Add to Send Plan" enables only once reviewed, then jumps to the Queue tab.
     const reviewed = document.getElementById('reviewed'), addPlan = document.getElementById('add-plan');
     if (reviewed) reviewed.addEventListener('change', () => { addPlan.disabled = !reviewed.checked; addPlan.classList.toggle('btn-primary', reviewed.checked); });
+    if (addPlan) addPlan.addEventListener('click', () => { if (!addPlan.disabled) showTab('queue'); });
 
     // Tab switching — Compose and Queue are built; others show the placeholder.
     const VIEW = { compose:'view-compose', queue:'view-queue' };
