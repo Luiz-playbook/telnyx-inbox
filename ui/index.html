@@ -102,9 +102,9 @@
         <aside class="lg:w-[340px] lg:shrink-0 lg:h-full lg:overflow-y-auto bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
           <div class="agent-label flex items-center gap-1"><span class="text-[#e55608]">&#10022;</span> Campaign Agent</div>
 
-          <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, or tell me what to adjust — nothing goes out until you confirm in Compose.</div>
+          <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
 
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap gap-2" id="agent-chips">
             <button class="agent-chip">What's ready today?</button>
             <button class="agent-chip">Suppressed markets?</button>
             <button class="agent-chip">Load Cleveland</button>
@@ -115,13 +115,11 @@
             <button class="agent-chip">Open the queue</button>
           </div>
 
-          <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
-          <div class="agent-bubble agent-bubble--me">Draft a suite invite</div>
-          <div class="agent-bubble">Switched the Compose play to Suite Invite — fill in the market and event details.</div>
+          <div id="agent-log" class="space-y-2"></div>
 
           <div class="flex items-center gap-2 pt-1">
-            <input class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
-            <button class="btn btn-circle btn-primary text-lg">&#8594;</button>
+            <input id="agent-input" class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
+            <button id="agent-send" class="btn btn-circle btn-primary text-lg">&#8594;</button>
           </div>
         </aside>
 
@@ -706,6 +704,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       loadMarkets();
     }
     loadSenders();
+
+    // ===== Campaign Agent chat (Tier A — talks to the /api/chat serverless endpoint) =====
+    const agentHistory = [];
+    function agentAppend(who, html){
+      const log=document.getElementById('agent-log'); if(!log) return null;
+      const d=document.createElement('div');
+      d.className = who==='me' ? 'agent-bubble agent-bubble--me' : 'agent-bubble';
+      d.innerHTML = html;
+      log.appendChild(d); d.scrollIntoView({block:'nearest'});
+      return d;
+    }
+    async function sendAgent(text){
+      text=(text||'').trim(); if(!text) return;
+      const input=document.getElementById('agent-input'); if(input) input.value='';
+      agentAppend('me', esc(text).replace(/\n/g,'<br>'));
+      agentHistory.push({ role:'user', content:text });
+      const bot = agentAppend('bot', '<span class="loading loading-dots loading-sm"></span>');
+      try{
+        const r = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ messages: agentHistory }) });
+        const data = await r.json().catch(()=>({}));
+        if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
+        if(bot) bot.innerHTML = esc(data.text||'(no reply)').replace(/\n/g,'<br>');
+        agentHistory.push({ role:'assistant', content:data.text||'' });
+      }catch(e){ if(bot) bot.textContent = 'Failed to reach the agent: '+e.message; }
+    }
+    (function wireAgent(){
+      const input=document.getElementById('agent-input'), send=document.getElementById('agent-send');
+      if(send) send.addEventListener('click', ()=>sendAgent(input.value));
+      if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendAgent(input.value); } });
+      document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
+    })();
   </script>
 </body>
 </html>
