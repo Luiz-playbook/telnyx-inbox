@@ -250,7 +250,7 @@
                   <button class="agent-chip">Reference the suite event</button>
                 </div>
                 <div class="text-xs text-base-content/50 leading-relaxed" id="draft-status">
-                  Hit <strong>Save Draft</strong> in Market &amp; Game first — that snapshots the play, the Market &amp; Game fields, and Audience &amp; Channels, so the agent rewrites against the values you can actually see. Apply then sends that snapshot plus your instruction and replaces the previews below.
+                  Apply reads the form as it stands right now — the play, the Market &amp; Game fields, and Audience &amp; Channels — so there is nothing to save first. It sends that plus your instruction and replaces the previews below. The pill in Audience &amp; Channels shows what the next Apply would send.
                 </div>
               </div>
             </div>
@@ -525,7 +525,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Channels exactly as they read on screen; Apply sends that snapshot (never the
     // live DOM) plus the instruction to /api/draft, which holds the model key
     // server-side. The browser never sees an LLM key.
-    let blastDraft = null;
+    const DRAFT_KEY = 'blaster_compose_draft';
+    let lastAppliedDraft = null;   // what the most recent Apply actually sent
 
     function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
     function selectedPlay(){
@@ -637,24 +638,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const saveDraftBtn = document.getElementById('save-draft');
     const applyDraftBtn = document.getElementById('apply-draft');
 
-    // Field-by-field drift detection. A saved draft goes stale the moment any input it
-    // captured changes, otherwise Apply would silently rewrite against values the
-    // operator can no longer see on screen.
-    const DRIFT_LABELS = {
-      play:'Play', marketName:'Market', context:'Game / Event', sport:'Sport', gameDate:'Game date',
-      costPerBundle:'Cost per bundle', assignedBda:'Assigned BDA', lastSuite:'Last suite',
-      nextSuite:'Next suite', notes:'Notes', email:'Email channel', sms:'SMS channel',
-      emailFrom:'Email sender', smsFrom:'SMS sender', emailBody:'Email copy', smsBody:'SMS copy',
-    };
-    function draftDrift(){
-      if(!blastDraft) return [];
-      const now = snapshotDraft();
-      return Object.keys(DRIFT_LABELS).filter(k => String(blastDraft[k] ?? '') !== String(now[k] ?? ''))
-                   .map(k => DRIFT_LABELS[k]);
-    }
-    // One save, one indicator. "Save Draft" lives in Market & Game (where the fields
-    // are); the AI card has no save of its own — it just reports whether the draft it
-    // would send is current, via the same pill the Audience card already showed.
+    // Apply captures the form live at click time, so there is no saved-vs-current gap
+    // to police — the snapshot cannot be stale by construction. The pill is a passive
+    // readout of what the next Apply would send, not a save state.
     function setPill(text, tone){
       const pill = document.getElementById('draft-pill'); if(!pill) return;
       const styles = {
@@ -667,43 +653,53 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     }
 
     function refreshDraftState(){
-      if(!blastDraft){
-        if(applyDraftBtn){ applyDraftBtn.disabled = true; applyDraftBtn.title = 'Save the draft first'; }
-        if(saveDraftBtn) saveDraftBtn.classList.remove('btn-warning');
-        setPill('DRAFT — not saved yet', 'none');
-        return;
-      }
-      const drift = draftDrift();
+      const d = snapshotDraft();
+      const ready = (d.email || d.sms) && !!d.marketCode;
       if(applyDraftBtn){
-        applyDraftBtn.disabled = drift.length > 0;
-        applyDraftBtn.title = drift.length ? 'Draft is out of date — hit Save Draft again' : '';
+        applyDraftBtn.disabled = false;                       // never gated on a save
+        applyDraftBtn.title = ready ? '' : 'Pick a market and at least one channel';
       }
-      if(drift.length){
-        if(saveDraftBtn) saveDraftBtn.classList.add('btn-warning');
-        setPill('DRAFT — unsaved changes (' + drift.length + ')', 'warn');
-        setDraftStatus('<strong>Draft is out of date.</strong> Changed since you saved: ' +
-          esc(drift.join(', ')) + '. Hit <strong>Save Draft</strong> in Market &amp; Game so the agent rewrites against what you see now.', 'warn');
-      }else{
-        if(saveDraftBtn) saveDraftBtn.classList.remove('btn-warning');
-        setPill('DRAFT SAVED — ' + draftSummary(blastDraft), 'ok');
-      }
+      setPill(ready ? 'WILL REWRITE — ' + draftSummary(d)
+                    : 'DRAFT — ' + (!d.marketCode ? 'no market selected' : 'no channels firing'),
+              ready ? 'ok' : 'none');
+      // Autosave so a refresh doesn't lose the compose state (SEND_PLAN is in-memory).
+      try{ localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); }catch{}
     }
 
+    // "Save Draft" no longer gates the rewrite. It persists the compose state
+    // explicitly — the same thing autosave does on every keystroke, but with
+    // confirmation, so the button still does what its label says.
     if(saveDraftBtn) saveDraftBtn.addEventListener('click', () => {
-      blastDraft = snapshotDraft();
+      const d = snapshotDraft();
+      try{ localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); }catch{}
       refreshDraftState();
-      setDraftStatus('Draft saved — <strong>' + esc(draftSummary(blastDraft)) + '</strong>. Apply will rewrite the previews against exactly this.', 'ok');
+      setDraftStatus('Saved to this browser — <strong>' + esc(draftSummary(d)) +
+        '</strong>. Apply always uses the current form, so you never have to save first.', 'ok');
     });
 
-    // Anything that feeds the snapshot re-checks drift. Capture phase so the play
-    // cards' own click handler ordering doesn't matter.
+    // Restore a previous session's compose state before wiring the live listeners.
+    function restoreDraft(){
+      let d; try{ d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); }catch{ return; }
+      if(!d) return;
+      const set = (id, v) => { const el = document.getElementById(id); if(el && v != null && v !== '') el.value = v; };
+      set('ctx-input', d.context); set('game-date', d.gameDate); set('cost-bundle', d.costPerBundle);
+      set('assigned-bda', d.assignedBda); set('last-suite', d.lastSuite); set('next-suite', d.nextSuite);
+      set('blast-notes', d.notes); set('sport-select', d.sport);
+      set('preview-email', d.emailBody); set('preview-sms', d.smsBody);
+      if(d.emailBody) lastLoadedCopy.email = d.emailBody;
+      if(d.smsBody) lastLoadedCopy.sms = d.smsBody;
+    }
+
     const composeView = document.getElementById('view-compose');
     if(composeView){
+      restoreDraft();
       composeView.addEventListener('input', refreshDraftState);
       composeView.addEventListener('change', refreshDraftState);
+      // Play cards and channel pills toggle their own class first, so read after.
       composeView.addEventListener('click', e => {
         if(e.target.closest('.play-card') || e.target.closest('#channels .chan')) setTimeout(refreshDraftState, 0);
       });
+      refreshDraftState();
     }
 
     // Chips fill the instruction box rather than firing immediately — the operator
@@ -716,17 +712,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     });
 
     if(applyDraftBtn) applyDraftBtn.addEventListener('click', async () => {
-      if(!blastDraft){ setDraftStatus('Save the draft first.', 'error'); return; }
       const instruction = val('blast-instruction');
       if(!instruction){ setDraftStatus('Type what makes this blast different, then Apply.', 'error'); return; }
 
+      // Capture the form as it stands right now — this is the whole reason there is no
+      // save step: the snapshot is taken at the moment of use, so it cannot be stale.
+      const draft = snapshotDraft();
+      lastAppliedDraft = draft;
+      if(!draft.email && !draft.sms){ setDraftStatus('No channels are firing — turn on Email and/or SMS first.', 'error'); return; }
+
       applyDraftBtn.disabled = true; applyDraftBtn.textContent = 'Rewriting…';
-      setDraftStatus('Sending the saved draft to the campaign agent…');
+      setDraftStatus('Rewriting <strong>' + esc(draftSummary(draft)) + '</strong>…');
       try{
         const res = await fetch('/api/draft', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
-          body: JSON.stringify({ draft: blastDraft, instruction }),
+          body: JSON.stringify({ draft, instruction }),
         });
         const data = await res.json().catch(() => null);
         if(!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
@@ -734,20 +735,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // A static dev server with --single rewrites unknown paths to index.html and
         // answers 200 with HTML. Without this the apply would silently "succeed" and
         // change nothing, so require the channels we asked for to come back as strings.
-        const missing = (blastDraft.email && typeof (data||{}).email !== 'string')
-                     || (blastDraft.sms   && typeof (data||{}).sms   !== 'string');
+        const missing = (draft.email && typeof (data||{}).email !== 'string')
+                     || (draft.sms   && typeof (data||{}).sms   !== 'string');
         if(missing) throw new Error('no rewritten copy came back (is /api/draft actually running?)');
 
         const et = document.getElementById('preview-email'), st = document.getElementById('preview-sms');
-        if(blastDraft.email && et && typeof data.email === 'string') et.value = data.email;
-        if(blastDraft.sms && st && typeof data.sms === 'string') st.value = data.sms;
+        if(draft.email && et && typeof data.email === 'string'){ et.value = data.email; lastLoadedCopy.email = data.email; }
+        if(draft.sms && st && typeof data.sms === 'string'){ st.value = data.sms; lastLoadedCopy.sms = data.sms; }
 
         // The copy changed, so the operator has to re-review before it can be queued.
         const rev = document.getElementById('reviewed');
         if(rev && rev.checked){ rev.checked = false; rev.dispatchEvent(new Event('change')); }
 
-        const wrote = [blastDraft.email ? 'Email' : '', blastDraft.sms ? 'SMS' : ''].filter(Boolean).join(' + ');
-        setDraftStatus('Rewrote ' + esc(wrote || 'nothing — no channels were on') + ' via ' + esc(data.model || 'the agent') +
+        refreshDraftState();   // persists the rewritten copy to the autosave
+        const wrote = [draft.email ? 'Email' : '', draft.sms ? 'SMS' : ''].filter(Boolean).join(' + ');
+        setDraftStatus('Rewrote ' + esc(wrote) + ' via ' + esc(data.model || 'the agent') +
           '. Re-read the preview and tick “I’ve reviewed this copy” again before queueing.', 'ok');
       }catch(err){
         setDraftStatus('Rewrite failed: ' + esc(err.message) +

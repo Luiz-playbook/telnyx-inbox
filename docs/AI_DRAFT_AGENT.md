@@ -9,21 +9,31 @@ Implementation: [`api/draft.js`](../api/draft.js). The prompts live in that file
 
 ---
 
-## Why there are two buttons
-
-> Save draft → Apply to draft
+## Where the draft comes from
 
 The Compose tab has four cards, and the copy in **Preview** is only correct relative to
 the other three: which **play** is selected, what's in **Market & Game**, and which
-**channels/senders** are on in **Audience & Channels**. Those are live form fields —
-an operator can change the market after the copy was written.
+**channels/senders** are on in **Audience & Channels**.
 
-**Save draft** snapshots all three into one object. **Apply** sends that snapshot, not
-the live DOM. This means the copy is rewritten against the values the operator actually
-reviewed, and a mid-edit field change can't silently leak into the prompt.
+**Apply captures all three live, at click time.** There is no save step and no
+saved-vs-current gap to police — the snapshot cannot be stale, because it is taken at
+the moment it is used.
 
-Applying also **clears the "I've reviewed this copy" checkbox**, because the copy the
-operator approved no longer exists. That re-locks "Add to Send Plan".
+An earlier version gated Apply behind a manual *Save draft*, with drift detection to
+catch edits made after saving. That was solved friction: it made the operator do
+bookkeeping to protect against a problem that only existed because of the save step.
+Capturing at click time removes both.
+
+What remains:
+
+- The **draft pill** in Audience & Channels is a passive readout of what the next Apply
+  would send (`WILL REWRITE — Ticket Blast · Ohio · Browns Home Opener · Email + SMS`).
+- **Save Draft** in Market & Game persists compose state to `localStorage` and is
+  restored on load — useful because `SEND_PLAN` is in-memory and a refresh otherwise
+  loses everything. Autosave writes the same key on every change, so the button is a
+  convenience with confirmation, not a prerequisite.
+- Applying **clears the "I've reviewed this copy" checkbox**, because the copy the
+  operator approved no longer exists. That re-locks "Add to Send Plan".
 
 ---
 
