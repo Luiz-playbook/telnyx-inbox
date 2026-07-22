@@ -161,7 +161,7 @@
                     <a href="#" class="link link-primary text-sm font-semibold">New draft</a>
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="form-control"><label class="label"><span class="label-text">Market</span></label><input class="input input-bordered" value="Charlotte North Carolina" placeholder="e.g. Cleveland"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Market</span></label><select id="market-select" class="select select-bordered"><option value="">Loading markets…</option></select></div>
                     <div class="form-control"><label class="label"><span class="label-text">Game / Event</span></label><input class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
                     <div class="form-control"><label class="label"><span class="label-text">Game date</span></label><input type="date" class="input input-bordered"></div>
                     <div class="form-control"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input type="number" step="0.01" class="input input-bordered" value="20"></div>
@@ -170,6 +170,10 @@
                     <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input class="input input-bordered" value="unknown"></div>
                   </div>
                   <div class="form-control"><label class="label"><span class="label-text">Notes</span></label><input class="input input-bordered" value="Lower bowl, section 112"></div>
+                  <div id="market-phones" class="hidden">
+                    <div class="label-text font-semibold mb-1">Phone numbers in <span id="mp-name"></span> <span class="text-base-content/50 font-normal">(<span id="mp-count">0</span>)</span></div>
+                    <div class="border border-base-300 rounded-lg max-h-44 overflow-y-auto p-2 text-sm font-mono leading-relaxed bg-base-100" id="mp-list"></div>
+                  </div>
                   <div class="flex flex-wrap gap-2 pt-1">
                     <button class="btn btn-primary btn-sm">Save Draft</button>
                     <button class="btn btn-outline btn-sm border-base-300">New Draft</button>
@@ -281,7 +285,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     </main>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
   <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
+    function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // Market dropdown — real US states that have phone contacts (Supabase RPCs over company_intel/contact_intel).
+    async function loadMarkets(){
+      const sel=document.getElementById('market-select'); if(!sel) return;
+      if(!sb){ sel.innerHTML='<option value="">config.js not filled in</option>'; return; }
+      const { data, error } = await sb.rpc('markets_with_phones');
+      if(error){ sel.innerHTML='<option value="">Failed to load markets</option>'; return; }
+      sel.innerHTML = '<option value="">Select a market…</option>' +
+        (data||[]).map(m=>`<option value="${esc(m.code)}" data-name="${esc(m.name)}">${esc(m.name)} (${m.phone_count})</option>`).join('');
+    }
+    async function loadMarketPhones(code, name){
+      const box=document.getElementById('market-phones'), list=document.getElementById('mp-list');
+      if(!code){ box.classList.add('hidden'); return; }
+      document.getElementById('mp-name').textContent = name || code; box.classList.remove('hidden'); list.textContent='Loading…';
+      const { data, error } = await sb.rpc('market_phones', { p_code: code });
+      if(error){ list.textContent='Failed: '+error.message; return; }
+      const rows = data||[];
+      document.getElementById('mp-count').textContent = rows.length + (rows.length>=1000 ? '+' : '');
+      list.innerHTML = rows.length ? rows.map(r=>esc(r.phone)).join('<br>') : '<span class="text-base-content/40">No phone numbers</span>';
+    }
+
     // Static placeholder queue — real data gets wired in later.
     const QUEUE = [
       { send:'2026-07-20', vip:'61.4%', market:'Cleveland',  cost:'$0.012/email' },
@@ -322,6 +352,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showTab(a.dataset.tab); }));
     showTab('compose');
+
+    // Market dropdown → phone numbers for the selected market.
+    const marketSel = document.getElementById('market-select');
+    if (marketSel){
+      marketSel.addEventListener('change', e => { const o=e.target.selectedOptions[0]; loadMarketPhones(e.target.value, o ? o.getAttribute('data-name') : ''); });
+      loadMarkets();
+    }
   </script>
 </body>
 </html>
