@@ -28,10 +28,11 @@
 
     <div class="flex flex-1 min-h-0">
       <aside class="w-72 shrink-0 border-r border-base-300 bg-base-100 flex flex-col">
-        <div class="p-4 flex items-center justify-between">
+        <div class="p-4 pb-2 flex items-center justify-between">
           <h1 class="text-xl font-bold">Templates</h1>
           <button class="btn btn-primary btn-sm" id="new-btn">+ New</button>
         </div>
+        <div class="px-4 pb-2"><input id="tpl-search" class="input input-bordered input-sm w-full" placeholder="Search templates"></div>
         <ul class="menu px-2 overflow-y-auto flex-1" id="rows"><li class="px-2 py-6 text-center text-base-content/50">Loading…</li></ul>
       </aside>
       <main class="flex-1 overflow-y-auto" id="editor">
@@ -47,23 +48,67 @@
     const cfg = window.INBOX_CONFIG || {};
     const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
     const el = (id) => document.getElementById(id);
-    const state = { items: [], activeId: null, draft: null };
+    const state = { own: [], blasts: [], filter: '', activeId: null, draft: null };
     const SAMPLE = { name:'Jordan Smith', first_name:'Jordan', phone:'+1 (615) 555-0142', email:'jordan@example.com' };
 
     function toast(m,t='info'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[t]; const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(m)}</span>`; el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
     function esc(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
     function render(body,v){ return (body||'').replace(/\{\{\s*(\w+)\s*\}\}/g,(_,k)=>(v[k]??'')); }
 
-    async function load(){ const {data,error}=await sb.from('message_templates').select('*').order('updated_at',{ascending:false});
-      if(error){toast('Load failed: '+error.message,'err');return;} state.items=data||[]; renderList(); }
-    function renderList(){ const box=el('rows'); if(!state.items.length){box.innerHTML='<li class="px-2 py-6 text-center text-base-content/50">No templates yet</li>';return;}
-      box.innerHTML=state.items.map(t=>{ const ch=(t.channel||'sms'); return `<li><a class="${t.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${t.id}"><span class="font-semibold flex items-center gap-2">${esc(t.name)} <span class="badge badge-xs ${ch==='email'?'badge-info':'badge-ghost'}">${ch==='email'?'Email':'SMS'}</span></span><span class="text-xs text-base-content/60 truncate max-w-full">${esc((t.body||'').slice(0,60)||'—')}</span></a></li>`;}).join('');
-      box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id))); }
-    function newItem(){ state.activeId=null; state.draft={name:'',body:'',subject:'',channel:'sms'}; renderList(); renderEditor(); }
-    function open(id){ const t=state.items.find(x=>x.id===id); if(!t)return; state.activeId=id; state.draft={name:t.name,body:t.body,subject:t.subject||'',channel:t.channel||'sms'}; renderList(); renderEditor(); }
+    async function load(){
+      const [own, blasts] = await Promise.all([
+        sb.from('message_templates').select('*').order('updated_at',{ascending:false}),
+        sb.from('blast_templates').select('id,name,email_template,list_name,open_rate,scheduled_for').order('scheduled_for',{ascending:false,nullsFirst:false}),
+      ]);
+      if(own.error){ toast('Load failed: '+own.error.message,'err'); return; }
+      state.own = (own.data||[]).map(t=>({ ...t, source:'own' }));
+      if(blasts.error){ toast('Blast templates unavailable: '+blasts.error.message,'err'); state.blasts=[]; }
+      else state.blasts = (blasts.data||[]).filter(b=>b.email_template).map(b=>({ id:'blast:'+b.id, name:b.name||'(untitled blast)', body:b.email_template, list_name:b.list_name, open_rate:b.open_rate, channel:'email', source:'blast' }));
+      renderList();
+    }
+    function findItem(id){ return state.own.find(x=>x.id===id) || state.blasts.find(x=>x.id===id); }
+    function matchFilter(t,f){ if(!f) return true; f=f.toLowerCase(); return (t.name||'').toLowerCase().includes(f) || (t.body||'').toLowerCase().includes(f) || (t.list_name||'').toLowerCase().includes(f); }
+    function ownRow(t){ const ch=(t.channel||'sms'); return `<li><a class="${t.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${esc(t.id)}"><span class="font-semibold flex items-center gap-2">${esc(t.name)} <span class="badge badge-xs ${ch==='email'?'badge-info':'badge-ghost'}">${ch==='email'?'Email':'SMS'}</span></span><span class="text-xs text-base-content/60 truncate max-w-full">${esc((t.body||'').slice(0,60)||'—')}</span></a></li>`; }
+    function blastRow(t){ const open=(t.open_rate!=null)?Number(t.open_rate).toFixed(1)+'% open':''; return `<li><a class="${t.id===state.activeId?'active':''} flex-col items-start gap-0" data-id="${esc(t.id)}"><span class="font-semibold flex items-center gap-2 truncate max-w-full">${esc(t.name)} <span class="badge badge-xs badge-info">Email</span></span><span class="text-xs text-base-content/60 truncate max-w-full">${esc(t.list_name||'—')}${open?' · '+open:''}</span></a></li>`; }
+    function renderList(){
+      const f=state.filter.trim();
+      const own=state.own.filter(t=>matchFilter(t,f)), blasts=state.blasts.filter(t=>matchFilter(t,f));
+      const head=(title,n)=>`<li class="menu-title px-2 pt-3"><span>${esc(title)} · ${n}</span></li>`;
+      const empty=(m)=>`<li class="px-2 py-2 text-xs text-base-content/40">${esc(m)}</li>`;
+      const box=el('rows');
+      box.innerHTML = head('My templates', own.length) + (own.length?own.map(ownRow).join(''):empty('No saved templates'))
+        + head('From past blasts · email', blasts.length) + (blasts.length?blasts.map(blastRow).join(''):empty(f?'No matches':'None'));
+      box.querySelectorAll('a[data-id]').forEach(n=>n.addEventListener('click',()=>open(n.dataset.id)));
+    }
+    function newItem(){ state.activeId=null; state.draft={source:'own',name:'',body:'',subject:'',channel:'sms'}; renderList(); renderEditor(); }
+    function open(id){ const t=findItem(id); if(!t)return; state.activeId=id;
+      if(t.source==='blast'){ state.draft={source:'blast',name:t.name,body:t.body,list_name:t.list_name,open_rate:t.open_rate}; }
+      else{ state.draft={source:'own',name:t.name,body:t.body,subject:t.subject||'',channel:t.channel||'sms'}; }
+      renderList(); renderEditor(); }
 
+    function renderBlastView(){
+      const d=state.draft; const open=(d.open_rate!=null)?Number(d.open_rate).toFixed(1)+'% open':'n/a';
+      el('editor').innerHTML=`
+        <div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4 flex items-center justify-between">
+          <h2 class="text-lg font-bold truncate">${esc(d.name)}</h2>
+          <div class="flex gap-2 items-center"><span class="badge badge-info">Email · from blasts</span><button class="btn btn-sm btn-primary" id="copy">Copy to editable template</button></div>
+        </div>
+        <div class="p-6 max-w-3xl space-y-5">
+          <div class="text-sm text-base-content/60">Market: <b>${esc(d.list_name||'—')}</b> · Historical <b>${esc(open)}</b> · Read-only (source: <code>blast_templates</code>)</div>
+          <div class="form-control"><label class="label"><span class="label-text font-semibold">Body</span></label>
+            <div class="whitespace-pre-wrap border border-base-300 rounded-lg p-4 bg-white text-sm leading-relaxed">${esc(d.body)}</div></div>
+        </div>`;
+      el('copy').addEventListener('click', copyBlastToOwn);
+    }
+    async function copyBlastToOwn(){
+      const d=state.draft; const btn=el('copy'); btn.disabled=true;
+      try{ const {data,error}=await sb.from('message_templates').insert({ name:d.name, body:d.body, channel:'email', subject:d.name }).select().single(); if(error)throw error;
+        toast('Copied to an editable template','ok'); await load(); state.activeId=data.id; open(data.id);
+      }catch(err){ toast('Copy failed: '+err.message,'err'); btn.disabled=false; }
+    }
     function renderEditor(){
       if(!state.draft){ el('editor').innerHTML='<div class="h-full flex items-center justify-center text-base-content/50">Select a template, or click + New</div>'; return; }
+      if(state.draft.source==='blast'){ renderBlastView(); return; }
       const isNew=!state.activeId; const isEmail=state.draft.channel==='email';
       el('editor').innerHTML=`
         <div class="sticky top-0 z-10 bg-base-200/80 backdrop-blur border-b border-base-300 px-6 py-4 flex items-center justify-between">
@@ -122,6 +167,7 @@
       if(error){toast('Delete failed: '+error.message,'err');return;} state.activeId=null; state.draft=null; await load(); renderEditor(); toast('Deleted','ok'); }
 
     el('new-btn').addEventListener('click', newItem);
+    el('tpl-search').addEventListener('input', e=>{ state.filter=e.target.value; renderList(); });
     if(!cfg.SUPABASE_URL||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in','err'); else load();
   </script>
 </body>
