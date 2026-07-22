@@ -43,7 +43,11 @@ export default async function handler(req, res) {
       body: JSON.stringify({ model: 'claude-opus-4-8', max_tokens: 1024, system: SYSTEM, messages: clean }),
     });
     const data = await r.json();
-    if (!r.ok) { res.status(502).json({ error: 'anthropic error', detail: data }); return; }
+    if (!r.ok) {
+      const e = (data && data.error) || {};
+      res.status(502).json({ error: 'Anthropic error: ' + (e.message || `HTTP ${r.status}`), type: e.type || null });
+      return;
+    }
     const text = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     res.status(200).json({ text: text || '(no reply)' });
   } catch (e) {

@@ -85,7 +85,11 @@ export default async function handler(req, res) {
       }),
     });
     const claude = await claudeRes.json();
-    if (!claudeRes.ok) { res.status(502).json({ error: 'anthropic error', detail: claude }); return; }
+    if (!claudeRes.ok) {
+      const e = (claude && claude.error) || {};
+      res.status(502).json({ error: 'Anthropic error: ' + (e.message || `HTTP ${claudeRes.status}`), type: e.type || null });
+      return;
+    }
     const text = (claude.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     let parsed; try { parsed = JSON.parse(text); } catch { res.status(502).json({ error: 'could not parse decisions', text }); return; }
     const decisions = (parsed.decisions || []).map(d => ({ ...d, run_date: today }));
