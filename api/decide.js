@@ -1,9 +1,10 @@
 // Serverless Cron (Vercel): the daily AI campaign decider, in-code (no n8n).
-// Runs on the schedule in vercel.json → for each upcoming event, Claude decides
+// Runs on the schedule in vercel.json → for each upcoming event, OpenAI decides
 // send/skip + which template, and each decision is written to campaign_send_log.
 //
 // Env vars (Vercel > Settings > Environment Variables):
-//   ANTHROPIC_API_KEY   – required, the Claude API key
+//   OPENAI_API_KEY      – required
+//   OPENAI_MODEL        – optional, defaults to gpt-4o
 //   SUPABASE_URL        – already set (used by the frontend build)
 //   SUPABASE_ANON_KEY   – already set; reads are anon-policy'd, writes go through
 //                         the log_campaign_decisions() SECURITY DEFINER RPC
@@ -13,6 +14,8 @@
 // Decides + logs only. Actual sending is not wired here yet (needs per-market lists).
 
 export const config = { maxDuration: 60 };
+
+const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
 
 const SYSTEM = [
   'You are the daily campaign send decider for a ticket-sales team. Each day you decide, per upcoming event, whether it deserves an email/SMS blast and which historical template to reuse. Follow these rules exactly:',
@@ -54,9 +57,9 @@ export default async function handler(req, res) {
   if (cronSecret && req.headers.authorization !== `Bearer ${cronSecret}`) {
     res.status(401).json({ error: 'unauthorized' }); return;
   }
-  const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
+  const key = (process.env.OPENAI_API_KEY || '').trim();
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!anthropicKey) { res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set on the server' }); return; }
+  if (!key) { res.status(500).json({ error: 'OPENAI_API_KEY is not set on the server' }); return; }
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -71,26 +74,25 @@ export default async function handler(req, res) {
     const events = await evR.json(), templates = await tplR.json();
     if (!Array.isArray(events)) { res.status(502).json({ error: 'events fetch failed', detail: events }); return; }
 
-    // 2. ask Claude to decide
+    // 2. ask OpenAI to decide (structured JSON output)
     const user = `TODAY: ${today}\n\nUPCOMING EVENTS:\n${JSON.stringify(events)}\n\nTEMPLATE LIBRARY (historical blasts, list_name = market):\n${JSON.stringify(templates)}`;
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: 'claude-opus-4-8',
-        max_tokens: 8000,
-        system: SYSTEM,
-        messages: [{ role: 'user', content: user }],
-        output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+        model: MODEL,
+        max_tokens: 4000,
+        messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }],
+        response_format: { type: 'json_schema', json_schema: { name: 'campaign_decisions', strict: true, schema: SCHEMA } },
       }),
     });
-    const claude = await claudeRes.json();
-    if (!claudeRes.ok) {
-      const e = (claude && claude.error) || {};
-      res.status(502).json({ error: 'Anthropic error: ' + (e.message || `HTTP ${claudeRes.status}`), type: e.type || null });
+    const ai = await aiRes.json();
+    if (!aiRes.ok) {
+      const e = (ai && ai.error) || {};
+      res.status(502).json({ error: 'OpenAI error: ' + (e.message || `HTTP ${aiRes.status}`), type: e.type || e.code || null });
       return;
     }
-    const text = (claude.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const text = (ai.choices && ai.choices[0] && ai.choices[0].message && ai.choices[0].message.content) || '';
     let parsed; try { parsed = JSON.parse(text); } catch { res.status(502).json({ error: 'could not parse decisions', text }); return; }
     const decisions = (parsed.decisions || []).map(d => ({ ...d, run_date: today }));
 
