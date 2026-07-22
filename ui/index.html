@@ -363,8 +363,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.getElementById('play-summary').textContent = c.dataset.desc || '';
     }));
 
-    // Channels firing — toggle each channel pill.
-    document.querySelectorAll('#channels .chan').forEach(c => c.addEventListener('click', () => c.classList.toggle('sel')));
+    // Channels firing — toggle each channel pill; a deselected channel disables its sender dropdown.
+    function syncChannelSenders(){
+      const on = ch => { const b=document.querySelector('#channels .chan[data-chan="'+ch+'"]'); return b ? b.classList.contains('sel') : true; };
+      const es=document.getElementById('email-sender'), ss=document.getElementById('sms-sender');
+      if(es) es.disabled = !on('email');
+      if(ss) ss.disabled = !on('sms');
+    }
+    document.querySelectorAll('#channels .chan').forEach(c => c.addEventListener('click', () => { c.classList.toggle('sel'); syncChannelSenders(); }));
+    syncChannelSenders();
 
     // Review gate — "Add to Send Plan" enables only once reviewed.
     const reviewed = document.getElementById('reviewed'), addPlan = document.getElementById('add-plan');
