@@ -28,6 +28,10 @@
     .play-card.sel{ border-color:#e8935a; background:#fdeee4; box-shadow:0 0 0 1px #e8935a inset; }
     .play-title{ font-weight:800; color:#133b49; font-size:15px; }
     .play-desc{ font-size:12.5px; color:#6b7a90; line-height:1.5; }
+    /* audience & channels */
+    .draft-pill{ display:inline-block; background:#eaf0fe; color:#2f6bff; border:1px solid #d3def8; border-radius:9999px; padding:6px 14px; font-size:13px; font-weight:700; }
+    .chan{ border:1px solid #d8e2ef; border-radius:8px; padding:6px 16px; font-weight:700; font-size:13px; background:#fff; color:#5e6e82; cursor:pointer; }
+    .chan.sel{ background:#133b49; color:#fff; border-color:#133b49; }
     /* queue table */
     .q-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; }
     .q-table td{ padding:12px 16px; vertical-align:middle; border-top:1px solid #edf2f9; white-space:nowrap; }
@@ -148,23 +152,99 @@
               </div>
             </div>
 
-            <!-- market & game -->
+            <!-- market & game  +  audience & channels (side by side) -->
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-5">
+              <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4 gap-3">
+                  <div class="flex items-center justify-between">
+                    <h2 class="font-extrabold text-[#133b49]">Market &amp; Game</h2>
+                    <a href="#" class="link link-primary text-sm font-semibold">New draft</a>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="form-control"><label class="label"><span class="label-text">Market</span></label><input class="input input-bordered" value="Charlotte North Carolina" placeholder="e.g. Cleveland"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Game / Event</span></label><input class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Game date</span></label><input type="date" class="input input-bordered"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input type="number" step="0.01" class="input input-bordered" value="20"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Assigned BDA</span></label><input class="input input-bordered" value="unassigned"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Last suite</span></label><input class="input input-bordered" value="unknown"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input class="input input-bordered" value="unknown"></div>
+                  </div>
+                  <div class="form-control"><label class="label"><span class="label-text">Notes</span></label><input class="input input-bordered" value="Lower bowl, section 112"></div>
+                  <div class="flex flex-wrap gap-2 pt-1">
+                    <button class="btn btn-primary btn-sm">Save Draft</button>
+                    <button class="btn btn-outline btn-sm border-base-300">New Draft</button>
+                    <button class="btn btn-outline btn-sm border-base-300">Resync ticket data</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4 gap-3">
+                  <h2 class="font-extrabold text-[#133b49]">Audience &amp; Channels</h2>
+                  <div><span class="draft-pill">DRAFT — no market selected</span></div>
+                  <div class="text-sm text-base-content/70 space-y-2">
+                    <p>DRAFT — no market selected</p>
+                    <p>Audience: unknown contacts (email-only export — SMS counts not separable yet) · Avg CTR no history · Opt-out no history</p>
+                    <p>Per Cole Rules, 0 of 4 markets in your queue are currently held back (cooldown, window, or impossible) and won't fire yet.</p>
+                  </div>
+                  <div>
+                    <div class="label-text font-semibold mb-1.5">Channels firing</div>
+                    <div class="flex flex-wrap gap-2" id="channels">
+                      <button class="chan sel" data-chan="email">Email</button>
+                      <button class="chan sel" data-chan="sms">SMS</button>
+                      <button class="chan" data-chan="rcs">RCS</button>
+                      <button class="chan" data-chan="push">Push</button>
+                      <button class="chan" data-chan="inapp">In-app</button>
+                    </div>
+                  </div>
+                  <p class="text-xs text-base-content/40">RCS, Push, and In-app aren't connected yet — Email and SMS are the only real channels today.</p>
+                  <div class="form-control"><label class="label"><span class="label-text font-semibold">Email sender <span class="font-normal text-base-content/50">(autofilled per play, switch if needed)</span></span></label>
+                    <select class="select select-bordered"><option>Josh Marcus</option><option>John (john@callplaybook.com)</option><option>Rion (rion@callplaybook.com)</option></select></div>
+                  <div class="form-control"><label class="label"><span class="label-text font-semibold">SMS sender <span class="font-normal text-base-content/50">(autofilled per play, switch if needed)</span></span></label>
+                    <select class="select select-bordered"><option>Josh Marcus</option><option>Telnyx · +16158050766</option></select></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- anything specific for this blast? (AI rewrite) -->
             <div class="card bg-base-100 border border-base-300">
               <div class="card-body p-4 gap-3">
-                <div class="flex items-center justify-between">
-                  <h2 class="font-extrabold text-[#133b49]">Market &amp; Game</h2>
-                  <a href="#" class="link link-primary text-sm font-semibold">New draft</a>
+                <div>
+                  <h2 class="font-extrabold text-[#133b49]">Anything specific for this blast?</h2>
+                  <p class="text-sm text-base-content/60">Tell the agent what makes this run different — it rewrites the copy to match. Falls back to a manual note if AI rewrite isn't available.</p>
                 </div>
+                <div class="flex gap-2">
+                  <input class="input input-bordered flex-1" placeholder="e.g. mention the new sponsorship program">
+                  <button class="btn btn-primary">Apply to draft</button>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button class="agent-chip">Mention sponsorship program</button>
+                  <button class="agent-chip">Make it more urgent</button>
+                  <button class="agent-chip">Reference the suite event</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- preview -->
+            <div class="card bg-base-100 border border-base-300">
+              <div class="card-body p-4 gap-3">
+                <h2 class="font-extrabold text-[#133b49]">Preview <span class="text-sm font-semibold text-base-content/50">— editable, this is exactly what would send</span></h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div class="form-control"><label class="label"><span class="label-text">Market</span></label>
-                    <input class="input input-bordered" value="Charlotte North Carolina" placeholder="e.g. Cleveland"></div>
-                  <div class="form-control"><label class="label"><span class="label-text">Game / Event</span></label>
-                    <input class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
-                  <div class="form-control"><label class="label"><span class="label-text">Game date</span></label>
-                    <input type="date" class="input input-bordered"></div>
-                  <div class="form-control"><label class="label"><span class="label-text">Cost per bundle ($)</span></label>
-                    <input type="number" step="0.01" class="input input-bordered" placeholder="0.00"></div>
+                  <div class="form-control"><label class="label"><span class="label-text">Email</span></label>
+                    <textarea class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
+
+My name is Josh Marcus, CEO/Co-Founder of Playbook. We provide tools designed to automate the day-to-day processes of running programs, registration, scheduling, payments, reporting, communication workflows, and other backend processes that typically create unnecessary admin overhead for staff.
+We've also started rolling out new sponsorship and rev share opportunities and we thought of your organization right away.
+Would you be open to a quick 20 minute call sometime this week?
+
+Best,
+Josh Marcus
+CEO &amp; Co-Founder | Playbook Sports</textarea></div>
+                  <div class="form-control"><label class="label"><span class="label-text">SMS</span></label>
+                    <textarea class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
                 </div>
+                <label class="flex items-center gap-2 cursor-pointer w-max"><input type="checkbox" class="checkbox checkbox-sm" id="reviewed"><span class="text-sm">I've reviewed this copy and audience</span></label>
+                <div><button class="btn btn-sm" id="add-plan" disabled>Add to Send Plan</button></div>
               </div>
             </div>
           </div>
@@ -225,6 +305,13 @@
       c.classList.add('sel');
       document.getElementById('play-summary').textContent = c.dataset.desc || '';
     }));
+
+    // Channels firing — toggle each channel pill.
+    document.querySelectorAll('#channels .chan').forEach(c => c.addEventListener('click', () => c.classList.toggle('sel')));
+
+    // Review gate — "Add to Send Plan" enables only once reviewed.
+    const reviewed = document.getElementById('reviewed'), addPlan = document.getElementById('add-plan');
+    if (reviewed) reviewed.addEventListener('change', () => { addPlan.disabled = !reviewed.checked; addPlan.classList.toggle('btn-primary', reviewed.checked); });
 
     // Tab switching — Compose and Queue are built; others show the placeholder.
     const VIEW = { compose:'view-compose', queue:'view-queue' };
