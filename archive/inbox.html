@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inbox</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.14/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="./theme.css" rel="stylesheet" />
+  <style> html,body{height:100%} </style>
+</head>
+<body class="h-full">
+  <div class="flex flex-col h-screen bg-base-200">
+    <header class="shrink-0">
+      <div class="pb-topbar flex items-center gap-4 px-5 h-14">
+        <img src="./assets/pb-logo-navbar.png" alt="Playbook" class="h-7 w-auto" />
+        <span class="text-white/70 text-sm font-semibold hidden sm:inline">Messaging</span>
+        <div class="ml-auto flex items-center gap-2 text-white/80 text-sm">
+          <span>Inbox:</span>
+          <select id="num-switch" class="select select-sm text-base-content" title="Which number's inbox to view"></select>
+          <button id="num-refresh" class="btn btn-sm btn-ghost text-white hover:bg-white/10" title="Pull latest numbers from Telnyx">↻</button>
+        </div>
+      </div>
+      <nav class="pb-tabs px-5">
+        <a href="./index.html" class="active">Inbox</a>
+        <a href="./companies.html">Companies</a>
+        <a href="./campaigns.html">Campaigns</a>
+        <a href="./templates.html">Templates</a>
+        <a href="./bulk.html">Recipients</a>
+        <a href="./lookup.html">Checker</a>
+      </nav>
+    </header>
+
+    <div class="flex flex-1 min-h-0">
+      <!-- conversations -->
+      <aside class="w-80 shrink-0 border-r border-base-300 bg-base-100 flex flex-col">
+        <div class="px-4 py-3 flex items-baseline justify-between"><h1 class="text-xl font-bold">Inbox</h1><span class="text-xs text-base-content/60" id="unread-count"></span></div>
+        <div id="convs" class="overflow-y-auto flex-1"><div class="p-6 text-center text-base-content/50">Loading…</div></div>
+      </aside>
+      <!-- thread -->
+      <main class="flex-1 flex flex-col min-w-0" id="thread"><div class="h-full flex items-center justify-center text-base-content/50" id="placeholder">Select a conversation</div></main>
+      <!-- details -->
+      <aside class="w-72 shrink-0 border-l border-base-300 bg-base-100 overflow-y-auto hidden" id="details">
+        <div class="px-5 py-4 border-b border-base-300"><h2 class="font-bold">Details</h2></div>
+        <div id="details-body"></div>
+      </aside>
+    </div>
+  </div>
+  <div class="toast toast-end" id="toast-wrap"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./config.js"></script>
+  <script>
+    const cfg = window.INBOX_CONFIG || {};
+    const sb = supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY);
+    const el = (id) => document.getElementById(id);
+    const state = { convs: [], activeId: null, messages: [], numbers: [] };
+    function activeNumber(){ return localStorage.getItem('active_telnyx_number') || (state.numbers[0] && state.numbers[0].phone_number) || null; }
+    const canSend = () => cfg.REPLY_WEBHOOK_URL && !cfg.REPLY_WEBHOOK_URL.startsWith('<<');
+
+    function toast(m,t='err'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[t]; const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(m)}</span>`; el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3500); }
+    const AV=['#f2637a','#7b61ff','#22b573','#2f6bff','#f5a623','#00b3c6','#e2568d','#5c6bc0','#26a69a','#ab47bc'];
+    function avatarColor(s){ let h=0; for(const c of (s||''))h=(h*31+c.charCodeAt(0))%997; return AV[h%AV.length]; }
+    function initials(num){ const d=(num||'').replace(/\D/g,''); return d.slice(-2)||'#'; }
+    function fmtPhone(num){ const d=(num||'').replace(/\D/g,''); if(d.length===11&&d[0]==='1')return `+1 (${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`; if(d.length===10)return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; return num||''; }
+    function relTime(ts){ const d=new Date(ts),now=new Date(),diff=(now-d)/1000; if(diff<3600)return Math.max(1,Math.floor(diff/60))+'m'; if(diff<86400&&d.toDateString()===now.toDateString())return Math.floor(diff/3600)+'h'; if(diff<604800)return Math.floor(diff/86400)+'d'; return d.toLocaleDateString([],{month:'short',day:'numeric'}); }
+    function clockTime(ts){ return new Date(ts).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'}).toLowerCase(); }
+    function dayLabel(ts){ const d=new Date(ts),now=new Date(); if(d.toDateString()===now.toDateString())return 'Today'; const y=new Date(now);y.setDate(now.getDate()-1); if(d.toDateString()===y.toDateString())return 'Yesterday'; return d.toLocaleDateString([],{month:'long',day:'numeric',year:'numeric'}); }
+    function esc(s){ return (s||'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+    async function loadNumbers(){
+      const {data}=await sb.from('telnyx_numbers').select('*').eq('active',true).order('sort_order'); state.numbers=data||[];
+      const sel=el('num-switch'); if(!sel)return;
+      if(!localStorage.getItem('active_telnyx_number')&&state.numbers[0])localStorage.setItem('active_telnyx_number',state.numbers[0].phone_number);
+      const cur=activeNumber(); sel.innerHTML=state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===cur?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(fmtPhone(n.phone_number))}</option>`).join('')||'<option>No numbers</option>';
+      sel.addEventListener('change',()=>{ localStorage.setItem('active_telnyx_number',sel.value); state.activeId=null; el('thread').innerHTML='<div class="h-full flex items-center justify-center text-base-content/50">Select a conversation</div>'; el('details').classList.add('hidden'); loadConversations(); });
+      const rb=el('num-refresh'); if(rb)rb.addEventListener('click',()=>refreshNumbers(rb));
+    }
+    async function refreshNumbers(btn){ if(!cfg.SYNC_NUMBERS_WEBHOOK_URL||cfg.SYNC_NUMBERS_WEBHOOK_URL.startsWith('<<')){toast('Number sync isn’t wired yet');return;} btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-xs"></span>';
+      try{ await fetch(cfg.SYNC_NUMBERS_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':cfg.REPLY_SECRET||''},body:'{}'}); }catch(e){}
+      setTimeout(async()=>{ const {data}=await sb.from('telnyx_numbers').select('*').eq('active',true).order('sort_order'); state.numbers=data||[]; const sel=el('num-switch'),cur=activeNumber(); sel.innerHTML=state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===cur?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(fmtPhone(n.phone_number))}</option>`).join('')||'<option>No numbers</option>'; btn.disabled=false; btn.textContent='↻'; },3500);
+    }
+
+    async function loadConversations(){
+      const num=activeNumber(); let q=sb.from('telnyx_conversations').select('*').order('last_message_at',{ascending:false}); if(num)q=q.eq('telnyx_number',num);
+      const {data,error}=await q; if(error){toast('Load conversations failed: '+error.message);return;}
+      state.convs=data||[]; const unread=state.convs.filter(c=>c.unread).length; el('unread-count').textContent=unread?`${unread} unread`:''; renderConversations();
+    }
+    function renderConversations(){
+      const box=el('convs'); if(!state.convs.length){box.innerHTML='<div class="p-6 text-center text-base-content/50">No conversations yet</div>';return;}
+      box.innerHTML=state.convs.map(c=>`
+        <div class="flex gap-3 px-4 py-3 cursor-pointer border-b border-base-200 hover:bg-base-200 ${c.id===state.activeId?'bg-primary/10':''}" data-id="${c.id}">
+          <div class="w-10 h-10 rounded-full grid place-items-center text-white font-bold text-sm shrink-0" style="background:${avatarColor(c.contact_number)}">${initials(c.contact_number)}</div>
+          <div class="min-w-0 flex-1">
+            <div class="flex justify-between items-baseline gap-2"><span class="font-semibold truncate ${c.unread?'font-bold':''}">${esc(fmtPhone(c.contact_number))}</span><span class="text-xs text-base-content/40 shrink-0">${relTime(c.last_message_at)}</span></div>
+            <div class="text-sm text-base-content/60 truncate flex items-center gap-1.5 ${c.unread?'!text-base-content font-medium':''}">${c.last_direction==='outbound'?'<span class="text-base-content/40">↩</span>':''}<span class="truncate">${esc(c.last_preview||'')}</span>${c.unread?'<span class="w-2 h-2 rounded-full bg-primary ml-auto shrink-0"></span>':''}</div>
+          </div>
+        </div>`).join('');
+      box.querySelectorAll('[data-id]').forEach(n=>n.addEventListener('click',()=>openConversation(n.dataset.id)));
+    }
+
+    async function openConversation(id){
+      state.activeId=id; renderConversations(); const conv=state.convs.find(c=>c.id===id); renderThreadShell(conv); renderDetails(conv);
+      if(conv&&conv.unread)sb.from('telnyx_conversations').update({unread:false}).eq('id',id).then(()=>{});
+      const {data,error}=await sb.from('telnyx_messages').select('*').eq('conversation_id',id).order('created_at',{ascending:true});
+      if(error){toast('Load messages failed: '+error.message);return;} state.messages=data||[]; renderMessages();
+    }
+    function renderThreadShell(conv){
+      el('thread').innerHTML=`
+        <div class="px-5 py-3 border-b border-base-300 bg-base-100 flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full grid place-items-center text-white text-xs font-bold" style="background:${conv?avatarColor(conv.contact_number):'#ccc'}">${conv?initials(conv.contact_number):''}</div>
+          <div><div class="font-bold">${conv?esc(fmtPhone(conv.contact_number)):''}</div><div class="text-xs text-base-content/50">via ${conv?esc(fmtPhone(conv.telnyx_number)):''}</div></div>
+        </div>
+        <div id="messages" class="flex-1 overflow-y-auto p-5 flex flex-col gap-1"></div>
+        <div class="border-t border-base-300 p-3 bg-base-100">
+          <div class="border border-base-300 rounded-xl p-2">
+            <textarea id="reply" class="textarea w-full border-0 focus:outline-none resize-none min-h-12" placeholder="Write a message…" ${canSend()?'':'disabled'}></textarea>
+            <div class="flex items-center justify-end gap-3"><span class="text-xs text-base-content/40" id="counter">0/160</span><button class="btn btn-primary btn-sm" id="send" ${canSend()?'':'disabled'}>Send</button></div>
+          </div>
+        </div>`;
+      const ta=el('reply'),btn=el('send'),counter=el('counter');
+      btn.addEventListener('click',sendReply); ta.addEventListener('input',()=>{counter.textContent=`${ta.value.length}/160`;});
+      ta.addEventListener('keydown',e=>{ if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendReply();} }); ta.focus();
+    }
+    function renderMessages(){
+      const box=el('messages'); if(!box)return; let html='',lastDay='';
+      for(const m of state.messages){ const day=new Date(m.created_at).toDateString(); if(day!==lastDay){html+=`<div class="text-center text-xs text-base-content/40 my-3">${dayLabel(m.created_at)}</div>`;lastDay=day;}
+        const num=m.direction==='inbound'?m.from_number:m.to_number;
+        const tick=m.direction==='outbound'?(['delivered','sent','finalized'].includes((m.status||'').toLowerCase())?'<span class="text-primary font-bold ml-1">✓✓</span>':'<span class="text-base-content/40 ml-1">✓</span>'):'';
+        const side=m.direction==='outbound'?'flex-row-reverse self-end':'self-start';
+        const bg=m.direction==='outbound'?'bg-primary/15 rounded-br-sm':'bg-base-200 rounded-bl-sm';
+        html+=`<div class="flex items-end gap-2 ${side} max-w-[74%]">
+          <div class="w-6 h-6 rounded-full grid place-items-center text-white text-[10px] font-bold shrink-0 mb-0.5" style="background:${m.direction==='outbound'?'#2f6bff':avatarColor(num)}">${m.direction==='outbound'?'•':initials(num)}</div>
+          <div><div class="${bg} rounded-2xl px-3 py-2 whitespace-pre-wrap break-words">${esc(m.body||'')}</div><div class="text-[11px] text-base-content/40 mt-1 ${m.direction==='outbound'?'text-right':''}">${clockTime(m.created_at)}${tick}</div></div>
+        </div>`; }
+      box.innerHTML=html; box.scrollTop=box.scrollHeight;
+    }
+    function renderDetails(conv){
+      if(!conv){el('details').classList.add('hidden');return;} el('details').classList.remove('hidden');
+      el('details-body').innerHTML=`
+        <div class="p-5 text-center border-b border-base-300">
+          <div class="w-14 h-14 rounded-full grid place-items-center text-white text-lg font-bold mx-auto mb-2" style="background:${avatarColor(conv.contact_number)}">${initials(conv.contact_number)}</div>
+          <div class="font-bold">${esc(fmtPhone(conv.contact_number))}</div>
+        </div>
+        <div class="p-5 text-sm space-y-2">
+          <div class="flex justify-between"><span class="text-base-content/60">Phone</span><span>${esc(fmtPhone(conv.contact_number))}</span></div>
+          <div class="flex justify-between"><span class="text-base-content/60">Texting from</span><span>${esc(fmtPhone(conv.telnyx_number))}</span></div>
+          <div class="flex justify-between"><span class="text-base-content/60">Status</span><span>${conv.unread?'Unread':'Open'}</span></div>
+          <div class="flex justify-between"><span class="text-base-content/60">Last message</span><span>${relTime(conv.last_message_at)} ago</span></div>
+        </div>`;
+    }
+    async function sendReply(){
+      const ta=el('reply'),btn=el('send'); const text=ta.value.trim(); if(!text||!state.activeId)return;
+      if(!canSend()){toast('Reply webhook URL not configured');return;} btn.disabled=true; ta.disabled=true;
+      const tmp={id:'tmp-'+Date.now(),direction:'outbound',to_number:'',body:text,status:'sending',created_at:new Date().toISOString()}; state.messages.push(tmp); renderMessages();
+      try{ const res=await fetch(cfg.REPLY_WEBHOOK_URL,{method:'POST',headers:{'Content-Type':'application/json','x-inbox-secret':cfg.REPLY_SECRET},body:JSON.stringify({conversation_id:state.activeId,text})});
+        if(!res.ok)throw new Error('HTTP '+res.status); ta.value=''; el('counter').textContent='0/160'; state.messages=state.messages.filter(m=>m.id!==tmp.id); renderMessages();
+      }catch(err){ tmp.status='failed'; renderMessages(); toast('Send failed: '+err.message); }finally{ btn.disabled=false; ta.disabled=false; ta.focus(); }
+    }
+    function subscribe(){
+      sb.channel('inbox')
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'telnyx_messages'},p=>{ const m=p.new; if(m.conversation_id===state.activeId&&!state.messages.some(x=>x.id===m.id)){state.messages.push(m);renderMessages();} })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'telnyx_messages'},p=>{ const i=state.messages.findIndex(x=>x.id===p.new.id); if(i>=0){state.messages[i]=p.new;renderMessages();} })
+        .on('postgres_changes',{event:'*',schema:'public',table:'telnyx_conversations'},()=>loadConversations())
+        .subscribe();
+    }
+    if(!cfg||cfg.SUPABASE_URL.startsWith('<<')) toast('config.js is not filled in.'); else { loadNumbers().then(loadConversations).then(()=>{ if(state.convs[0])openConversation(state.convs[0].id); }); subscribe(); }
+  </script>
+</body>
+</html>
