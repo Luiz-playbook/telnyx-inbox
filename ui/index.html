@@ -153,7 +153,7 @@
                   <span class="text-sm font-semibold text-base-content/50">— pick a play, the agent sets up the rest</span></h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3" id="plays">
                   <button class="play-card" data-play="ticket" data-desc="Tickets as a demo-booking incentive to sports orgs in a market. Single touch today across email and SMS.">
-                    <span class="badge badge-success badge-sm">Recommended</span>
+                    <span class="badge badge-success badge-sm text-white">Recommended</span>
                     <div class="play-title">Ticket Blast</div>
                     <div class="play-desc">Tickets as a demo-booking incentive to sports orgs in a market.</div>
                   </button>
@@ -185,14 +185,14 @@
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div class="form-control"><label class="label"><span class="label-text">Market</span></label><select id="market-select" class="select select-bordered"><option value="">Loading markets…</option></select></div>
                     <div class="form-control"><label class="label"><span class="label-text" id="ctx-label">Game / Event</span></label><input id="ctx-input" class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
-                    <div class="form-control" id="field-gamedate"><label class="label"><span class="label-text">Game date</span></label><input type="date" class="input input-bordered"></div>
-                    <div class="form-control" id="field-cost"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input type="number" step="0.01" class="input input-bordered" value="20"></div>
+                    <div class="form-control" id="field-gamedate"><label class="label"><span class="label-text">Game date</span></label><input id="game-date" type="date" class="input input-bordered"></div>
+                    <div class="form-control" id="field-cost"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input id="cost-bundle" type="number" step="0.01" class="input input-bordered" value="20"></div>
                     <div class="form-control hidden" id="field-sport"><label class="label"><span class="label-text">Sport</span></label><select id="sport-select" class="select select-bordered"><option>Volleyball</option><option>Basketball</option><option>Soccer</option><option>Baseball</option><option>Softball</option><option>Football</option><option>Hockey</option><option>Lacrosse</option><option>Wrestling</option><option>Other</option></select></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Assigned BDA</span></label><input class="input input-bordered" value="unassigned"></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Last suite</span></label><input class="input input-bordered" value="unknown"></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input class="input input-bordered" value="unknown"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Assigned BDA</span></label><input id="assigned-bda" class="input input-bordered" value="unassigned"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Last suite</span></label><input id="last-suite" class="input input-bordered" value="unknown"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input id="next-suite" class="input input-bordered" value="unknown"></div>
                   </div>
-                  <div class="form-control"><label class="label"><span class="label-text">Notes</span></label><input class="input input-bordered" value="Lower bowl, section 112"></div>
+                  <div class="form-control"><label class="label"><span class="label-text">Notes</span></label><input id="blast-notes" class="input input-bordered" value="Lower bowl, section 112"></div>
                   <div id="market-contacts" class="hidden space-y-3">
                     <div>
                       <div class="label-text font-semibold mb-1">Phone numbers in <span id="mc-name"></span> <span class="text-base-content/50 font-normal">(<span id="mp-count">0</span>)</span></div>
@@ -204,7 +204,7 @@
                     </div>
                   </div>
                   <div class="flex flex-wrap gap-2 pt-1">
-                    <button class="btn btn-primary btn-sm">Save Draft</button>
+                    <button class="btn btn-primary btn-sm" id="save-draft">Save Draft</button>
                     <button class="btn btn-outline btn-sm border-base-300">New Draft</button>
                     <button class="btn btn-outline btn-sm border-base-300">Resync ticket data</button>
                   </div>
@@ -214,7 +214,7 @@
               <div class="card bg-base-100 border border-base-300">
                 <div class="card-body p-4 gap-3">
                   <h2 class="font-extrabold text-[#133b49]">Audience &amp; Channels</h2>
-                  <div><span class="draft-pill">DRAFT — no market selected</span></div>
+                  <div><span class="draft-pill" id="draft-pill">DRAFT — not saved yet</span></div>
                   <div class="text-sm text-base-content/70 space-y-2">
                     <p>DRAFT — no market selected</p>
                     <p>Audience: unknown contacts (email-only export — SMS counts not separable yet) · Avg CTR no history · Opt-out no history</p>
@@ -243,13 +243,16 @@
                   <p class="text-sm text-base-content/60">Tell the agent what makes this run different — it rewrites the copy to match. Falls back to a manual note if AI rewrite isn't available.</p>
                 </div>
                 <div class="flex gap-2">
-                  <input class="input input-bordered flex-1" placeholder="e.g. mention the new sponsorship program">
-                  <button class="btn btn-primary">Apply to draft</button>
+                  <input id="blast-instruction" class="input input-bordered flex-1" placeholder="e.g. mention the new sponsorship program" autocomplete="off">
+                  <button class="btn btn-primary" id="apply-draft" disabled>Apply to draft</button>
                 </div>
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2" id="blast-chips">
                   <button class="agent-chip">Mention sponsorship program</button>
                   <button class="agent-chip">Make it more urgent</button>
                   <button class="agent-chip">Reference the suite event</button>
+                </div>
+                <div class="text-xs text-base-content/50 leading-relaxed" id="draft-status">
+                  Hit <strong>Save Draft</strong> in Market &amp; Game first — that snapshots the play, the Market &amp; Game fields, and Audience &amp; Channels, so the agent rewrites against the values you can actually see. Apply then sends that snapshot plus your instruction and replaces the previews below.
                 </div>
               </div>
             </div>
@@ -259,7 +262,7 @@
               <div class="card-body p-4 gap-3">
                 <h2 class="font-extrabold text-[#133b49]">Preview <span class="text-sm font-semibold text-base-content/50">— editable, this is exactly what would send</span></h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div class="form-control"><label class="label"><span class="label-text">Email</span></label>
+                  <div class="form-control" id="preview-email-wrap"><label class="label"><span class="label-text">Email</span></label>
                     <textarea id="preview-email" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
 
 My name is Josh Marcus, CEO/Co-Founder of Playbook. We provide tools designed to automate the day-to-day processes of running programs, registration, scheduling, payments, reporting, communication workflows, and other backend processes that typically create unnecessary admin overhead for staff.
@@ -269,8 +272,11 @@ Would you be open to a quick 20 minute call sometime this week?
 Best,
 Josh Marcus
 CEO &amp; Co-Founder | Playbook Sports</textarea></div>
-                  <div class="form-control"><label class="label"><span class="label-text">SMS</span></label>
+                  <div class="form-control" id="preview-sms-wrap"><label class="label"><span class="label-text">SMS</span></label>
                     <textarea id="preview-sms" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
+                </div>
+                <div id="preview-none" class="hidden text-sm text-base-content/50 border border-dashed border-base-300 rounded-lg p-4 text-center">
+                  No channels are firing — turn on Email and/or SMS in Audience &amp; Channels to see what would send.
                 </div>
                 <label class="flex items-center gap-2 cursor-pointer w-max"><input type="checkbox" class="checkbox checkbox-sm" id="reviewed"><span class="text-sm">I've reviewed this copy and audience</span></label>
                 <div><button class="btn btn-sm" id="add-plan" disabled>Add to Send Plan</button></div>
@@ -481,6 +487,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const es=document.getElementById('email-sender'), ss=document.getElementById('sms-sender');
       if(es) es.disabled = !on('email');
       if(ss) ss.disabled = !on('sms');
+      // A channel that isn't firing has no preview to show — leaving the box visible
+      // implies copy that will never send.
+      const ew=document.getElementById('preview-email-wrap'), sw=document.getElementById('preview-sms-wrap');
+      if(ew) ew.classList.toggle('hidden', !on('email'));
+      if(sw) sw.classList.toggle('hidden', !on('sms'));
+      const none=document.getElementById('preview-none');
+      if(none) none.classList.toggle('hidden', on('email') || on('sms'));
     }
     document.querySelectorAll('#channels .chan').forEach(c => c.addEventListener('click', () => { c.classList.toggle('sel'); syncChannelSenders(); }));
     syncChannelSenders();
@@ -507,6 +520,243 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       renderQueue();
       showTab('queue');
+    });
+
+    // ===== "Anything specific for this blast?" — AI rewrite of the Preview copy =====
+    // Two steps on purpose. Save draft snapshots the play + Market & Game + Audience &
+    // Channels exactly as they read on screen; Apply sends that snapshot (never the
+    // live DOM) plus the instruction to /api/draft, which holds the model key
+    // server-side. The browser never sees an LLM key.
+    let blastDraft = null;
+
+    function val(id){ const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+    function selectedPlay(){
+      const card = document.querySelector('#plays .play-card.sel');
+      return card ? { key: card.dataset.play || '', label: (card.querySelector('.play-title')||{}).textContent || '', desc: card.dataset.desc || '' } : null;
+    }
+
+    function snapshotDraft(){
+      const msel = document.getElementById('market-select');
+      const opt = msel ? msel.selectedOptions[0] : null;
+      const play = selectedPlay();
+      const sportField = document.getElementById('field-sport');
+      const sportShown = sportField && !sportField.classList.contains('hidden');
+      return {
+        play: play ? play.key : '', playLabel: play ? play.label : '', playDesc: play ? play.desc : '',
+        marketCode: msel ? msel.value : '', marketName: opt ? (opt.getAttribute('data-name') || '') : '',
+        contextLabel: (document.getElementById('ctx-label')||{}).textContent || '',
+        context: val('ctx-input'),
+        sport: sportShown ? val('sport-select') : '',
+        gameDate: sportShown ? '' : val('game-date'),
+        costPerBundle: sportShown ? '' : val('cost-bundle'),
+        assignedBda: val('assigned-bda'), lastSuite: val('last-suite'), nextSuite: val('next-suite'),
+        notes: val('blast-notes'),
+        email: channelOn('email'), sms: channelOn('sms'),
+        emailFrom: val('email-sender'), smsFrom: val('sms-sender'),
+        emailBody: (document.getElementById('preview-email')||{}).value || '',
+        smsBody: (document.getElementById('preview-sms')||{}).value || '',
+      };
+    }
+
+    function draftSummary(d){
+      const bits = [
+        d.playLabel || '(no play)',
+        d.marketName || '(no market)',
+        d.context || '(no ' + (d.contextLabel || 'context').toLowerCase() + ')',
+        d.sport || d.gameDate || '',
+        [d.email ? 'Email' : '', d.sms ? 'SMS' : ''].filter(Boolean).join(' + ') || 'no channels',
+      ].filter(Boolean);
+      return bits.join(' · ');
+    }
+
+    function setDraftStatus(html, tone){
+      const box = document.getElementById('draft-status'); if(!box) return;
+      const tones = { error:'text-error', ok:'text-success', warn:'text-[#c94d07]' };
+      box.className = 'text-xs leading-relaxed ' + (tones[tone] || 'text-base-content/50');
+      box.innerHTML = html;
+    }
+
+    // ===== Templates → Compose =====
+    // The Compose play picker and message_templates.play are the same taxonomy, so
+    // (play, channel) selects exactly one row. Switching play loads that copy as the
+    // starting point; the AI rewrite then edits it rather than authoring from scratch.
+    const PLAY_TO_TEMPLATE = { ticket:'Ticketblast', suite:'Suite', teammate:'Teammate AI', waitlist:'Event Waitlist' };
+    let lastLoadedCopy = { email:null, sms:null };
+
+    function copyIsPristine(){
+      // Only auto-load over copy we put there ourselves, or the untouched page default.
+      const et = document.getElementById('preview-email'), st = document.getElementById('preview-sms');
+      const eOk = !et || lastLoadedCopy.email === null || et.value === lastLoadedCopy.email;
+      const sOk = !st || lastLoadedCopy.sms === null || st.value === lastLoadedCopy.sms;
+      return eOk && sOk;
+    }
+
+    async function loadPlayCopy(playKey, opts){
+      const wantPlay = PLAY_TO_TEMPLATE[playKey];
+      if(!wantPlay || !sb) return;
+      const force = opts && opts.force;
+      if(!force && !copyIsPristine()){
+        setDraftStatus('Play changed to <strong>' + esc(wantPlay) + '</strong>, but the preview has edits so it was left alone. ' +
+          '<button class="link link-primary" id="force-load-copy">Load ' + esc(wantPlay) + ' copy anyway</button>', 'warn');
+        const btn = document.getElementById('force-load-copy');
+        if(btn) btn.addEventListener('click', () => loadPlayCopy(playKey, { force:true }));
+        return;
+      }
+
+      // Ticketblast has an initial AND a followup row per channel, so order by
+      // sort_order and take the first — that is deterministically the initial touch.
+      const { data, error } = await sb.from('message_templates')
+        .select('play,channel,variant,body,is_placeholder,sort_order')
+        .eq('play', wantPlay)
+        .order('sort_order', { ascending: true, nullsFirst: false });
+      if(error || !data || !data.length){
+        setDraftStatus('No stored copy for ' + esc(wantPlay) + (error ? ' (' + esc(error.message) + ')' : '') + ' — the preview was left as-is.', 'warn');
+        return;
+      }
+
+      const pick = ch => data.find(r => r.channel === ch);
+      const em = pick('email'), sm = pick('sms');
+      const et = document.getElementById('preview-email'), st = document.getElementById('preview-sms');
+      if(em && et){ et.value = em.body || ''; lastLoadedCopy.email = et.value; }
+      if(sm && st){ st.value = sm.body || ''; lastLoadedCopy.sms = st.value; }
+
+      const placeholder = [em, sm].filter(r => r && r.is_placeholder).length;
+      const variant = (em && em.variant) || (sm && sm.variant) || '';
+      setDraftStatus('Loaded <strong>' + esc(wantPlay) + (variant ? ' (' + esc(variant) + ')' : '') + '</strong> copy from Templates' +
+        (placeholder ? ' — heads up, it is a <strong>placeholder</strong>, not authored outreach. Paste the real sequence before sending.' :
+                       '. Edit it here, or describe what is different for this run and hit Apply.'),
+        placeholder ? 'warn' : 'ok');
+
+      // New base copy invalidates the saved draft and the review tick.
+      refreshDraftState();
+      const rev = document.getElementById('reviewed');
+      if(rev && rev.checked){ rev.checked = false; rev.dispatchEvent(new Event('change')); }
+    }
+
+    document.querySelectorAll('#plays .play-card').forEach(c =>
+      c.addEventListener('click', () => loadPlayCopy(c.dataset.play)));
+
+    const saveDraftBtn = document.getElementById('save-draft');
+    const applyDraftBtn = document.getElementById('apply-draft');
+
+    // Field-by-field drift detection. A saved draft goes stale the moment any input it
+    // captured changes, otherwise Apply would silently rewrite against values the
+    // operator can no longer see on screen.
+    const DRIFT_LABELS = {
+      play:'Play', marketName:'Market', context:'Game / Event', sport:'Sport', gameDate:'Game date',
+      costPerBundle:'Cost per bundle', assignedBda:'Assigned BDA', lastSuite:'Last suite',
+      nextSuite:'Next suite', notes:'Notes', email:'Email channel', sms:'SMS channel',
+      emailFrom:'Email sender', smsFrom:'SMS sender', emailBody:'Email copy', smsBody:'SMS copy',
+    };
+    function draftDrift(){
+      if(!blastDraft) return [];
+      const now = snapshotDraft();
+      return Object.keys(DRIFT_LABELS).filter(k => String(blastDraft[k] ?? '') !== String(now[k] ?? ''))
+                   .map(k => DRIFT_LABELS[k]);
+    }
+    // One save, one indicator. "Save Draft" lives in Market & Game (where the fields
+    // are); the AI card has no save of its own — it just reports whether the draft it
+    // would send is current, via the same pill the Audience card already showed.
+    function setPill(text, tone){
+      const pill = document.getElementById('draft-pill'); if(!pill) return;
+      const styles = {
+        none: 'background:#f1f4f7;color:#8695a7;border-color:#e5ebf1;',
+        ok:   'background:#eaf5ee;color:#067523;border-color:#cfe9d8;',
+        warn: 'background:#fdeee4;color:#c94d07;border-color:#f5d3bd;',
+      };
+      pill.setAttribute('style', styles[tone] || styles.none);
+      pill.textContent = text;
+    }
+
+    function refreshDraftState(){
+      if(!blastDraft){
+        if(applyDraftBtn){ applyDraftBtn.disabled = true; applyDraftBtn.title = 'Save the draft first'; }
+        if(saveDraftBtn) saveDraftBtn.classList.remove('btn-warning');
+        setPill('DRAFT — not saved yet', 'none');
+        return;
+      }
+      const drift = draftDrift();
+      if(applyDraftBtn){
+        applyDraftBtn.disabled = drift.length > 0;
+        applyDraftBtn.title = drift.length ? 'Draft is out of date — hit Save Draft again' : '';
+      }
+      if(drift.length){
+        if(saveDraftBtn) saveDraftBtn.classList.add('btn-warning');
+        setPill('DRAFT — unsaved changes (' + drift.length + ')', 'warn');
+        setDraftStatus('<strong>Draft is out of date.</strong> Changed since you saved: ' +
+          esc(drift.join(', ')) + '. Hit <strong>Save Draft</strong> in Market &amp; Game so the agent rewrites against what you see now.', 'warn');
+      }else{
+        if(saveDraftBtn) saveDraftBtn.classList.remove('btn-warning');
+        setPill('DRAFT SAVED — ' + draftSummary(blastDraft), 'ok');
+      }
+    }
+
+    if(saveDraftBtn) saveDraftBtn.addEventListener('click', () => {
+      blastDraft = snapshotDraft();
+      refreshDraftState();
+      setDraftStatus('Draft saved — <strong>' + esc(draftSummary(blastDraft)) + '</strong>. Apply will rewrite the previews against exactly this.', 'ok');
+    });
+
+    // Anything that feeds the snapshot re-checks drift. Capture phase so the play
+    // cards' own click handler ordering doesn't matter.
+    const composeView = document.getElementById('view-compose');
+    if(composeView){
+      composeView.addEventListener('input', refreshDraftState);
+      composeView.addEventListener('change', refreshDraftState);
+      composeView.addEventListener('click', e => {
+        if(e.target.closest('.play-card') || e.target.closest('#channels .chan')) setTimeout(refreshDraftState, 0);
+      });
+    }
+
+    // Chips fill the instruction box rather than firing immediately — the operator
+    // still gets to edit the wording before it goes to the model.
+    const blastChips = document.getElementById('blast-chips');
+    if(blastChips) blastChips.addEventListener('click', e => {
+      const b = e.target.closest('.agent-chip'); if(!b) return;
+      const box = document.getElementById('blast-instruction');
+      if(box){ box.value = b.textContent.trim(); box.focus(); }
+    });
+
+    if(applyDraftBtn) applyDraftBtn.addEventListener('click', async () => {
+      if(!blastDraft){ setDraftStatus('Save the draft first.', 'error'); return; }
+      const instruction = val('blast-instruction');
+      if(!instruction){ setDraftStatus('Type what makes this blast different, then Apply.', 'error'); return; }
+
+      applyDraftBtn.disabled = true; applyDraftBtn.textContent = 'Rewriting…';
+      setDraftStatus('Sending the saved draft to the campaign agent…');
+      try{
+        const res = await fetch('/api/draft', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
+          body: JSON.stringify({ draft: blastDraft, instruction }),
+        });
+        const data = await res.json().catch(() => null);
+        if(!res.ok) throw new Error((data && data.error) || ('HTTP ' + res.status));
+        if(data && data.error) throw new Error(data.error);
+        // A static dev server with --single rewrites unknown paths to index.html and
+        // answers 200 with HTML. Without this the apply would silently "succeed" and
+        // change nothing, so require the channels we asked for to come back as strings.
+        const missing = (blastDraft.email && typeof (data||{}).email !== 'string')
+                     || (blastDraft.sms   && typeof (data||{}).sms   !== 'string');
+        if(missing) throw new Error('no rewritten copy came back (is /api/draft actually running?)');
+
+        const et = document.getElementById('preview-email'), st = document.getElementById('preview-sms');
+        if(blastDraft.email && et && typeof data.email === 'string') et.value = data.email;
+        if(blastDraft.sms && st && typeof data.sms === 'string') st.value = data.sms;
+
+        // The copy changed, so the operator has to re-review before it can be queued.
+        const rev = document.getElementById('reviewed');
+        if(rev && rev.checked){ rev.checked = false; rev.dispatchEvent(new Event('change')); }
+
+        const wrote = [blastDraft.email ? 'Email' : '', blastDraft.sms ? 'SMS' : ''].filter(Boolean).join(' + ');
+        setDraftStatus('Rewrote ' + esc(wrote || 'nothing — no channels were on') + ' via ' + esc(data.model || 'the agent') +
+          '. Re-read the preview and tick “I’ve reviewed this copy” again before queueing.', 'ok');
+      }catch(err){
+        setDraftStatus('Rewrite failed: ' + esc(err.message) +
+          '. <code>/api/draft</code> only exists when the app runs on Vercel (or <code>vercel dev</code>) — a plain static server has no backend to call.', 'error');
+      }finally{
+        applyDraftBtn.disabled = false; applyDraftBtn.textContent = 'Apply to draft';
+      }
     });
 
     // ===== Templates tab =====
