@@ -157,35 +157,32 @@
           <!-- ===== COMPOSE & SEND ===== -->
           <div data-view id="view-compose" class="space-y-5">
 
-            <!-- Companies by state — company_intel (HubSpot), grouped by state/province with counts -->
+            <!-- Companies by state — company_intel (HubSpot): per-state counts + senders -->
             <div class="flex items-center gap-3 flex-wrap">
               <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">HUBSPOT</span>
               <h1 class="text-2xl font-extrabold text-[#133b49]">Companies by State</h1>
               <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-4">
-              <!-- states list -->
-              <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-3 gap-2">
-                  <input id="cbs-search" class="input input-bordered input-sm" placeholder="Search state…" autocomplete="off">
-                  <div id="cbs-states" class="overflow-y-auto max-h-[calc(100vh-320px)] pr-1 space-y-1">
-                    <div class="text-center text-base-content/50 py-8">Loading&hellip;</div>
-                  </div>
-                </div>
-              </div>
-              <!-- companies in the selected state -->
-              <div class="card bg-base-100 border border-base-300">
-                <div class="card-body p-4 gap-3">
-                  <h2 class="font-extrabold text-[#133b49]" id="cbs-detail-title">Select a state</h2>
-                  <div class="overflow-auto max-h-[calc(100vh-320px)]">
-                    <table class="camp-table w-full">
-                      <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
-                        <th>Company</th><th>City</th><th>Sport</th><th>Segment</th><th>Site</th>
-                      </tr></thead>
-                      <tbody id="cbs-companies"><tr><td colspan="5" class="text-center text-base-content/50 py-10">Pick a state on the left.</td></tr></tbody>
-                    </table>
-                  </div>
-                </div>
+            <div class="flex items-center justify-end flex-wrap gap-3">
+              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-44" placeholder="Search state…" autocomplete="off" /></label>
+            </div>
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-280px)]">
+                <table class="camp-table w-full min-w-[900px]">
+                  <thead class="sticky top-0 z-10">
+                    <tr class="border-b border-base-300 bg-base-100">
+                      <th>State</th>
+                      <th>Companies</th>
+                      <th>Phone #s</th>
+                      <th>ICP</th>
+                      <th>SCP</th>
+                      <th>Other</th>
+                      <th>Send from</th>
+                      <th>Text from</th>
+                    </tr>
+                  </thead>
+                  <tbody id="cbs-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                </table>
               </div>
             </div>
 
@@ -1264,61 +1261,53 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     })();
 
     // ===== Companies by State (company_intel / HubSpot) — powers the Campaigns tab =====
-    // Groups HubSpot companies by state/province (companies_by_state RPC) with counts,
-    // click a state to list its companies (companies_in_state RPC). Scoped IIFE; reuses outer sb.
-    (function companiesByStateModule(){
+    // One row per state: company count, phone-number count, ICP/SCP/Other segment counts
+    // (state_summary RPC), plus a per-state Send-from (email) and Text-from (SMS) sender.
+    // Sender choices persist per state in localStorage. Scoped IIFE; reuses outer sb.
+    (function stateSummaryModule(){
       const el = (id) => document.getElementById(id);
-      if(!el('cbs-states')) return;
+      if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
-      let STATES = [], selectedCode = null, filter = '';
+      const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
+      let ROWS = [], NUMBERS = [], filter = '';
+      const emailFromOf = c => localStorage.getItem('campaign_email_from_'+c) || EMAIL_SENDERS[0];
+      const smsFromOf   = c => localStorage.getItem('campaign_sms_from_'+c)   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
 
-      function renderStates(){
-        const box = el('cbs-states'); const f = filter.trim().toLowerCase();
-        const items = STATES.filter(s => !f || s.name.toLowerCase().includes(f) || (s.code||'').toLowerCase().includes(f));
-        if(!items.length){ box.innerHTML = '<div class="text-center text-base-content/50 py-8">No states match.</div>'; return; }
-        box.innerHTML = items.map(s => {
-          const on = s.code === selectedCode;
-          return `<button class="cbs-state w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left ${on?'bg-[#fdeee4]':'hover:bg-[#f5f8fb]'}" data-code="${esc(s.code)}" data-name="${esc(s.name)}">
-            <span class="font-semibold text-[#133b49] truncate">${esc(s.name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(s.country)}</span></span>
-            <span class="badge badge-sm border-0 font-bold ${on?'bg-[#e55608] text-white':'bg-[#eef1f6] text-[#5e6e82]'}">${fmt(s.companies)}</span>
-          </button>`;
-        }).join('');
-        box.querySelectorAll('.cbs-state').forEach(b => b.addEventListener('click', () => selectState(b.dataset.code, b.dataset.name)));
-      }
-
-      async function selectState(code, name){
-        selectedCode = code; renderStates();
-        const st = STATES.find(s => s.code === code);
-        el('cbs-detail-title').innerHTML = `${esc(name)} <span class="text-sm font-semibold text-base-content/50">— ${fmt(st?st.companies:0)} companies</span>`;
-        const tb = el('cbs-companies');
-        tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">Loading…</td></tr>';
-        const { data, error } = await sb.rpc('companies_in_state', { p_code: code });
-        if(error){ tb.innerHTML = `<tr><td colspan="5" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
-        const rows = data || [];
-        if(!rows.length){ tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">No companies.</td></tr>'; return; }
-        tb.innerHTML = rows.map(c => `<tr class="camp-row">
-          <td class="font-semibold text-[#133b49]">${esc(c.organization_name||'—')}</td>
-          <td class="text-base-content/70">${esc(c.city||'—')}</td>
-          <td>${c.primary_sport?`<span class="sport-pill">${esc(c.primary_sport)}</span>`:'—'}</td>
-          <td class="text-base-content/70">${esc(c.segment||'—')}</td>
-          <td>${c.website_url?`<a href="${esc(c.website_url)}" target="_blank" rel="noopener" class="link link-primary">site</a>`:'—'}</td>
+      function render(){
+        const f = filter.trim().toLowerCase();
+        const items = ROWS.filter(s => !f || s.name.toLowerCase().includes(f) || (s.code||'').toLowerCase().includes(f));
+        const tb = el('cbs-rows');
+        if(!items.length){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No states match.</td></tr>'; return; }
+        tb.innerHTML = items.map(s => `<tr class="camp-row">
+          <td class="font-semibold text-[#133b49] whitespace-nowrap">${esc(s.name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(s.country)}</span></td>
+          <td class="font-semibold">${fmt(s.companies)}</td>
+          <td>${fmt(s.phones)}</td>
+          <td><span class="seg seg-icp">${fmt(s.icp)}</span></td>
+          <td><span class="seg seg-scp">${fmt(s.scp)}</span></td>
+          <td><span class="seg seg-non">${fmt(s.other)}</span></td>
+          <td><select class="select select-bordered select-xs mini-select w-48" data-email-from="${esc(s.code)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(s.code)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>
+          <td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(s.code)}">${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(s.code)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>
         </tr>`).join('');
+        tb.querySelectorAll('[data-email-from]').forEach(n => n.addEventListener('change', () => localStorage.setItem('campaign_email_from_'+n.dataset.emailFrom, n.value)));
+        tb.querySelectorAll('[data-sms-from]').forEach(n => n.addEventListener('change', () => localStorage.setItem('campaign_sms_from_'+n.dataset.smsFrom, n.value)));
       }
 
       async function load(){
-        const box = el('cbs-states');
-        if(!sb){ box.innerHTML = '<div class="text-center text-error py-8">config.js not filled in</div>'; return; }
-        const { data, error } = await sb.rpc('companies_by_state');
-        if(error){ box.innerHTML = `<div class="text-center text-error py-8">${esc(error.message)}</div>`; return; }
-        STATES = data || [];
-        const total = STATES.reduce((a,s)=>a+Number(s.companies||0),0);
-        el('cbs-total').textContent = `${STATES.length} states · ${fmt(total)} companies`;
-        renderStates();
-        if(STATES.length) selectState(STATES[0].code, STATES[0].name); // auto-open the largest
+        const tb = el('cbs-rows');
+        if(!sb){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        const [sum, nums] = await Promise.all([
+          sb.rpc('state_summary'),
+          sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}),
+        ]);
+        if(sum.error){ tb.innerHTML = `<tr><td colspan="8" class="text-center text-error py-8">${esc(sum.error.message)}</td></tr>`; return; }
+        ROWS = sum.data || []; NUMBERS = nums.error ? [] : (nums.data || []);
+        const total = ROWS.reduce((a,s)=>a+Number(s.companies||0),0);
+        el('cbs-total').textContent = `${ROWS.length} states · ${fmt(total)} companies`;
+        render();
       }
 
-      el('cbs-search').addEventListener('input', e => { filter = e.target.value; renderStates(); });
+      el('cbs-search').addEventListener('input', e => { filter = e.target.value; render(); });
       load();
     })();
 
