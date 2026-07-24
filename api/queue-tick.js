@@ -55,14 +55,14 @@ export default async function handler(req, res) {
 
       const sent = [];
       if (r.sms && phones.length && hookOk(smsHook)) {
-        const messages = phones.map(to => ({ to, text: r.sms_copy || '' }));
-        const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ messages }) });
+        const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
+        const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
         sent.push(rr.ok ? `SMS ${messages.length}` : `SMS failed`);
       }
       if (r.email && emails.length && hookOk(emailHook)) {
         const html = nl2br(r.email_copy || '');
-        const messages = emails.map(to => ({ to, subject: r.title, html }));
-        const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ messages }) });
+        const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject: r.title, html }));
+        const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
         sent.push(rr.ok ? `Email ${messages.length}` : `Email failed`);
       }
       const summary = [phones.length ? `${phones.length} SMS` : '', emails.length ? `${emails.length} email` : ''].filter(Boolean).join(' · ');

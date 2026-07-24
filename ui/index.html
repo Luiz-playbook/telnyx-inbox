@@ -178,11 +178,9 @@
                       <th>ICP</th>
                       <th>SCP</th>
                       <th>Other</th>
-                      <th>Send from</th>
-                      <th>Text from</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr><td colspan="9" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="cbs-rows"><tr><td colspan="7" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -338,7 +336,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <span class="text-xs text-base-content/50">What the agent thinks should go out. Unactioned blasts <strong>auto-send after 48h</strong> — approval is optional, not blocking.</span>
                 </div>
                 <div class="overflow-x-auto border border-base-300 rounded-lg">
-                  <table class="camp-table w-full min-w-[1000px]">
+                  <table class="camp-table w-full min-w-[1240px]">
                     <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
                       <th class="w-8"></th>
                       <th>Blast</th>
@@ -347,9 +345,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       <th>Ticket $</th>
                       <th>Schedule</th>
                       <th>Status</th>
+                      <th>Send from</th>
+                      <th>Text from</th>
                       <th>Actions</th>
                     </tr></thead>
-                    <tbody id="q-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                    <tbody id="q-rows"><tr><td colspan="10" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                   </table>
                 </div>
                 <p class="text-xs text-base-content/50 leading-relaxed">Placeholder rows are shown until real blasts are queued (by the nightly agent or manually) — those land in the same queue and render here identically. <strong>Confirm</strong> approves without changing the send time; <strong>Snooze</strong> pushes the schedule 7 days out and keeps it queued.</p>
@@ -1237,19 +1237,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
     })();
 
-    // ===== Campaigns by Event (icp_events) — powers the Campaigns tab =====
-    // One row per event, resolved to the market/state it targets (team → metro → state),
-    // with that state's audience (companies / phones / ICP-SCP-Other) and Send-from (email) /
-    // Text-from (SMS) senders. Sender choices persist per target state. Scoped IIFE; reuses sb.
+    // ===== Campaigns by Event (ticketblaster.sports_ticket) — powers the Campaigns tab =====
+    // One row per event, resolved to the market/state it targets (home team → state), with that
+    // state's audience (companies / phones / ICP-SCP-Other). Senders live in the Queue, not here.
     (function eventTargetsModule(){
       const el = (id) => document.getElementById(id);
       if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
-      const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
-      let ROWS = [], NUMBERS = [], filter = '';
-      const emailFromOf = c => localStorage.getItem('campaign_email_from_'+c) || EMAIL_SENDERS[0];
-      const smsFromOf   = c => localStorage.getItem('campaign_sms_from_'+c)   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
+      let ROWS = [], filter = '';
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
       const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
@@ -1261,9 +1257,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           || (e.state_name||'').toLowerCase().includes(f)
           || (e.state_code||'').toLowerCase().includes(f));
         const tb = el('cbs-rows');
-        if(!items.length){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
+        if(!items.length){ tb.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
         tb.innerHTML = items.map(e => {
-          const code = e.state_code || 'none';
           const market = e.state_name
             ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(e.state_name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(e.country||'')}</span></span>${e.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(e.market_key))}</div>`:''}`
             : '<span class="text-base-content/40">Unassigned</span>';
@@ -1275,23 +1270,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <td><span class="seg seg-icp">${fmt(e.icp)}</span></td>
           <td><span class="seg seg-scp">${fmt(e.scp)}</span></td>
           <td><span class="seg seg-non">${fmt(e.other)}</span></td>
-          <td><select class="select select-bordered select-xs mini-select w-48" data-email-from="${esc(code)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(code)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>
-          <td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(code)}">${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(code)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>
         </tr>`;
         }).join('');
-        tb.querySelectorAll('[data-email-from]').forEach(n => n.addEventListener('change', () => localStorage.setItem('campaign_email_from_'+n.dataset.emailFrom, n.value)));
-        tb.querySelectorAll('[data-sms-from]').forEach(n => n.addEventListener('change', () => localStorage.setItem('campaign_sms_from_'+n.dataset.smsFrom, n.value)));
       }
 
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
-        const [ev, nums] = await Promise.all([
-          sb.rpc('event_targets'),
-          sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}),
-        ]);
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
-        ROWS = ev.data || []; NUMBERS = nums.error ? [] : (nums.data || []);
+        if(!sb){ tb.innerHTML = '<tr><td colspan="7" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        const ev = await sb.rpc('event_targets');
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="7" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        ROWS = ev.data || [];
         const states = new Set(ROWS.map(e => e.state_code).filter(Boolean));
         el('cbs-total').textContent = `${ROWS.length} events · ${states.size} target states`;
         render();
@@ -1311,7 +1299,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
       const AUTOSEND_H = 48;
-      let QUEUE = [], expanded = new Set();
+      const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
+      let QUEUE = [], NUMBERS = [], expanded = new Set();
 
       const toLocalInput = iso => { const d=new Date(iso), p=n=>String(n).padStart(2,'0');
         return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -1327,11 +1316,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">auto-sends in ${autoSendIn(r)}h</div>`;
       }
 
+      const emailFromOf = r => r.email_from || EMAIL_SENDERS[0];
+      const smsFromOf   = r => r.sms_from   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
+
       function render(){
         const tb = el('q-rows');
-        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="8" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
+        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
         tb.innerHTML = QUEUE.map(r => {
           const open = expanded.has(r.id), sent = r.status==='sent';
+          const emailSel = `<select class="select select-bordered select-xs mini-select w-48" data-qemail="${esc(r.id)}" ${(!r.email||sent)?'disabled':''}>${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(r)?'selected':''}>${esc(a)}</option>`).join('')}</select>`;
+          const smsSel = `<select class="select select-bordered select-xs mini-select w-44" data-qsms="${esc(r.id)}" ${(!r.sms||sent)?'disabled':''}>${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(r)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select>`;
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
             <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(r.title)}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}</div></td>
@@ -1340,6 +1334,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${r.ticket_price!=null?('$'+r.ticket_price):'—'}</td>
             <td><input type="datetime-local" class="input input-bordered input-xs w-52" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
             <td class="whitespace-nowrap">${statusCell(r)}</td>
+            <td>${r.email?emailSel:'<span class="text-base-content/40">—</span>'}</td>
+            <td>${r.sms?smsSel:'<span class="text-base-content/40">—</span>'}</td>
             <td>${sent?'<span class="text-xs text-base-content/40">—</span>':`<div class="flex gap-1">
               <button class="btn btn-xs btn-outline btn-success" data-confirm="${esc(r.id)}">Confirm</button>
               <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>
@@ -1347,7 +1343,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           </tr>`;
           const emailBlock = r.email ? `<div><div class="label-text font-semibold mb-1">Email copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-email="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.email_copy||'')}</textarea></div>` : '';
           const smsBlock   = r.sms   ? `<div><div class="label-text font-semibold mb-1">SMS copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-sms="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.sms_copy||'')}</textarea></div>` : '';
-          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="7" class="py-3">
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
             <div class="grid grid-cols-1 ${(r.email&&r.sms)?'md:grid-cols-2':''} gap-4">${emailBlock}${smsBlock}</div>
             ${sent?'':`<div class="mt-2"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50 ml-2" data-copystatus="${esc(r.id)}"></span></div>`}
           </td></tr>`;
@@ -1371,6 +1367,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(!inp.value) return; const iso=new Date(inp.value).toISOString();
           await sb.rpc('queue_set_schedule',{p_id:inp.dataset.schedule, p_when:iso}); await refresh();
         }));
+        tb.querySelectorAll('[data-qemail]').forEach(s=>s.addEventListener('change', ()=>{
+          sb.rpc('queue_set_sender',{p_id:s.dataset.qemail, p_email_from:s.value, p_sms_from:null});
+        }));
+        tb.querySelectorAll('[data-qsms]').forEach(s=>s.addEventListener('change', ()=>{
+          sb.rpc('queue_set_sender',{p_id:s.dataset.qsms, p_email_from:null, p_sms_from:s.value});
+        }));
         tb.querySelectorAll('[data-savecopy]').forEach(b=>b.addEventListener('click', async ()=>{
           const id=b.dataset.savecopy, em=tb.querySelector(`[data-copy-email="${id}"]`), sm=tb.querySelector(`[data-copy-sms="${id}"]`), st=tb.querySelector(`[data-copystatus="${id}"]`);
           b.disabled=true; if(st) st.textContent='Saving…';
@@ -1381,14 +1383,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function refresh(){
         const { data, error } = await sb.rpc('get_campaign_queue');
-        if(error){ el('q-rows').innerHTML=`<tr><td colspan="8" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        if(error){ el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         const pend=QUEUE.filter(r=>r.status==='pending').length, conf=QUEUE.filter(r=>r.status==='confirmed').length;
         el('q-summary').textContent = `${QUEUE.length} queued · ${conf} confirmed · ${pend} pending`;
         render();
       }
       async function loadQueue(){
-        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
         await refresh();
       }
       window.__loadQueue = loadQueue;
