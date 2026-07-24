@@ -72,6 +72,16 @@
     #agent-resize{ position:relative; }
     #agent-resize::before{ content:""; position:absolute; inset:0 -3px; }
     body.agent-resizing{ cursor:col-resize; user-select:none; }
+    /* Trigger Blast result toast */
+    #pb-toast{ position:fixed; z-index:9999; right:1rem; bottom:1rem; display:flex; flex-direction:column; gap:.5rem; max-width:min(92vw,420px); }
+    .pb-toast-card{ background:#fff; border:1px solid #e5ebf1; border-left-width:4px; border-radius:12px; box-shadow:0 12px 34px rgba(19,59,73,.18); padding:14px 16px; transition:opacity .18s ease, transform .18s ease; animation:pbToastIn .22s ease-out; }
+    .pb-toast-card.ok{ border-left-color:#2fae7a; }
+    .pb-toast-card.err{ border-left-color:#e5484d; }
+    @keyframes pbToastIn{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
+    /* In-page confirm modal (replaces native confirm()) */
+    .pb-modal-overlay{ position:fixed; inset:0; z-index:10000; background:rgba(19,59,73,.45); display:flex; align-items:center; justify-content:center; padding:1rem; animation:pbFadeIn .15s ease-out; }
+    .pb-modal-card{ background:#fff; border-radius:16px; box-shadow:0 20px 60px rgba(19,59,73,.3); padding:22px; max-width:440px; width:100%; animation:pbToastIn .2s ease-out; }
+    @keyframes pbFadeIn{ from{opacity:0} to{opacity:1} }
     /* Campaigns table (ported from the legacy PB Internal scheduler) */
     .camp-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; background:#fff; }
     .camp-table td{ padding:14px 16px; vertical-align:middle; border-top:1px solid #edf2f9; }
@@ -175,7 +185,8 @@
               <h1 class="text-2xl font-extrabold text-[#133b49]">Campaigns by Event</h1>
               <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
-            <div class="flex items-center justify-end flex-wrap gap-3">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-52" placeholder="Search event or state…" autocomplete="off" /></label>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
@@ -1330,6 +1341,169 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
 
       el('cbs-search').addEventListener('input', e => { filter = e.target.value; render(); });
+
+      // Rich result toast (daisyUI card, auto-dismiss + manual close).
+      function pbToast({ type='ok', title, lines=[], chips=[], foot }){
+        let host = document.getElementById('pb-toast');
+        if(!host){ host = document.createElement('div'); host.id='pb-toast'; document.body.appendChild(host); }
+        const card = document.createElement('div');
+        card.className = 'pb-toast-card ' + (type==='err'?'err':'ok');
+        const icon = type==='err' ? '&#9888;' : '&#10003;';
+        card.innerHTML =
+          `<div class="flex items-start gap-2">
+             <span class="text-lg leading-none ${type==='err'?'text-error':'text-success'}">${icon}</span>
+             <div class="flex-1 min-w-0">
+               <div class="font-bold text-[#133b49]">${title||''}</div>
+               ${lines.filter(Boolean).map(l=>`<div class="text-sm text-base-content/70 mt-0.5">${l}</div>`).join('')}
+               ${chips.length?`<div class="flex flex-wrap gap-1 mt-2">${chips.map(c=>`<span class="badge badge-sm bg-[#eaf5ee] text-[#067523] border-[#cfe9d8]">${c}</span>`).join('')}</div>`:''}
+               ${foot?`<div class="text-xs text-base-content/50 mt-2">${foot}</div>`:''}
+             </div>
+             <button class="btn btn-ghost btn-xs btn-square -mr-1 -mt-1" aria-label="Dismiss">&#10005;</button>
+           </div>`;
+        const close = ()=>{ card.style.opacity='0'; card.style.transform='translateY(8px)'; setTimeout(()=>card.remove(), 180); };
+        card.querySelector('button').addEventListener('click', close);
+        host.appendChild(card);
+        setTimeout(close, type==='err'?12000:9000);
+      }
+
+      // In-page confirm modal (replaces native confirm()). Returns Promise<boolean>.
+      function pbConfirm({ title, body, okText='Continue', cancelText='Cancel' }){
+        return new Promise(resolve => {
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          ov.innerHTML =
+            `<div class="pb-modal-card" role="dialog" aria-modal="true">
+               <div class="flex items-start gap-2 mb-1">
+                 <span class="text-xl leading-none text-[#e55608]">&#9889;</span>
+                 <div class="font-extrabold text-lg text-[#133b49]">${title||''}</div>
+               </div>
+               <div class="text-sm text-base-content/70 whitespace-pre-line mb-4">${body||''}</div>
+               <div class="flex justify-end gap-2">
+                 <button class="btn btn-sm btn-ghost" data-cancel>${cancelText}</button>
+                 <button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>${okText}</button>
+               </div>
+             </div>`;
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const onKey = e => { if(e.key==='Escape') done(false); else if(e.key==='Enter') done(true); };
+          ov.querySelector('[data-ok]').addEventListener('click', ()=>done(true));
+          ov.querySelector('[data-cancel]').addEventListener('click', ()=>done(false));
+          ov.addEventListener('click', e => { if(e.target===ov) done(false); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-ok]').focus();
+        });
+      }
+
+      // TEMP: manual blast trigger. Runs the deterministic decider
+      // (rpc_event_recommendations — recency/cooldown, market history, timing, fill %,
+      // opt-out health, Cole Rules), takes the top CAP decision='send' markets IN THE
+      // DECIDER'S OWN RANK ORDER (sendable, lowest-fill first), lines them up in the
+      // Queue as TEST rows (is_placeholder=true → queue-tick NEVER sends them), and logs
+      // each picked market to ticketblaster_market_blasts_log (source='test') so the
+      // cooldown counts them. Nothing goes out. Remove before wiring real sends.
+      const CAP = 3;
+      el('trigger-blast')?.addEventListener('click', async () => {
+        const btn = el('trigger-blast');
+        if(!sb){ pbToast({ type:'err', title:'Cannot reach the decider', lines:['config.js is not filled in.'] }); return; }
+        const ok = await pbConfirm({
+          title: 'Trigger Blast — TEST',
+          body: 'The agent picks up to '+CAP+' markets to blast, based on recency (cooldown floor), market history, event timing, fill %, and opt-out health — then lines them up in the Queue as TEST rows and logs them to the market blast log.\n\nNothing is sent.',
+          okText: 'Run test',
+        });
+        if(!ok) return;
+
+        const orig = btn.innerHTML; btn.disabled = true;
+        btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deciding…';
+        try {
+          const [rec, cnt] = await Promise.all([
+            sb.rpc('rpc_event_recommendations'),
+            sb.rpc('market_recipient_counts'),
+          ]);
+          if(rec.error) throw new Error(rec.error.message);
+          const all = rec.data || [];
+
+          // market_key -> { state_code, phone_count, email_count } for recipient reach
+          const reach = {};
+          (cnt.data || []).forEach(m => { reach[m.market_key] = m; });
+
+          // The RPC already returns sendable rows first, lowest-fill first — keep that order.
+          const sends = all.filter(r => r.decision === 'send').slice(0, CAP);
+
+          // why the rest were held back — for the summary
+          const skipBy = {};
+          all.filter(r => r.decision !== 'send').forEach(r => {
+            const k = (r.reason_code || 'other').replace(/_/g,' ');
+            skipBy[k] = (skipBy[k]||0) + 1;
+          });
+
+          let queued = [];
+          if(sends.length){
+            const rows = sends.map(r => {
+              const perf = (r.open_rate_w!=null)
+                ? ` ${r.open_rate_w}% open / ${r.ctr_w}% CTR over ${r.n_blasts} prior blast${r.n_blasts==1?'':'s'}.` : '';
+              const tmpl = r.best_template ? ` Best template: ${r.best_template}.` : '';
+              const rc = reach[r.market_key] || {};
+              const phones = Number(rc.phone_count) || 0, emails = Number(rc.email_count) || 0;
+              const reachNote = (emails||phones) ? ` Reach: ${emails} email / ${phones} SMS.` : '';
+              const note = '[TEST — will NOT send] Decider pick for ' + (r.market_label||'this market') + '.' + tmpl + perf + reachNote;
+              return {
+                title: '[TEST] ' + (r.team || 'Blast') + (r.market_label ? ' — ' + r.market_label : ''),
+                state_name: r.market_label || null,
+                state_code: rc.state_code || null,
+                event_id: r.event_id || null,
+                email: true, sms: true,
+                phone_count: phones, sms_count: phones, email_count: emails,
+                email_copy: note,
+                sms_copy: note,
+              };
+            });
+            const ins = await sb.rpc('queue_enqueue_test', { p_rows: rows });
+            if(ins.error) throw new Error(ins.error.message);
+            queued = ins.data || [];
+
+            // Log each picked market to the blast log (source='test', counts toward cooldown).
+            const toLog = sends.filter(r => r.market_key).map(r => ({
+              market_key: r.market_key,
+              event_id: r.event_id || null,
+              channel: 'email+sms',
+              template_name: r.best_template || null,
+              source: 'test',
+              notes: 'Trigger Blast [Temp btn] — test, not sent',
+            }));
+            if(toLog.length){
+              const lg = await sb.rpc('log_market_blast', { p_rows: toLog });
+              if(lg.error) throw new Error(lg.error.message);
+            }
+          }
+
+          const skipStr = Object.entries(skipBy).map(([k,v]) => `${v} ${k}`).join(' · ') || 'none';
+          const totalEmail = sends.reduce((s,r) => s + (Number((reach[r.market_key]||{}).email_count)||0), 0);
+          const totalPhone = sends.reduce((s,r) => s + (Number((reach[r.market_key]||{}).phone_count)||0), 0);
+          pbToast({
+            type: 'ok',
+            title: `Trigger Blast — ${queued.length} test blast${queued.length===1?'':'s'} queued`,
+            lines: [
+              `Evaluated ${all.length} events · capped at ${CAP}.`,
+              queued.length ? `Reach: ${totalEmail.toLocaleString()} email · ${totalPhone.toLocaleString()} SMS (test only).` : `Nothing queued — all markets held back.`,
+              queued.length ? `Logged to the market blast log (source: test).` : ``,
+              `Held back: ${skipStr}.`,
+            ],
+            chips: sends.map(r => esc(r.market_label || r.team || 'market')),
+            foot: queued.length ? 'Placeholder rows — nothing sends. Opening the Queue…' : 'Adjust Cole Rules to loosen the gates, then retry.',
+          });
+
+          // jump to the Queue tab and refresh it so the new rows show
+          if(queued.length){
+            document.querySelector('.pb-tabs [data-tab="queue"]')?.click();
+            if(typeof window.__loadQueue === 'function') await window.__loadQueue();
+          }
+        } catch(e){
+          pbToast({ type:'err', title:'Trigger Blast failed', lines:[ esc(e && e.message || String(e)) ] });
+        } finally {
+          btn.disabled = false; btn.innerHTML = orig;
+        }
+      });
+
       load();
     })();
 
@@ -1372,7 +1546,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const smsSel = `<select class="select select-bordered select-xs mini-select w-44" data-qsms="${esc(r.id)}" ${(!r.sms||sent)?'disabled':''}>${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(r)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select>`;
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(r.title)}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}</div></td>
+            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(r.title)}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}${r.email && r.email_count ? ' · '+fmt(r.email_count)+' email' : ''}</div></td>
             <td>${fmt(r.phone_count)}</td>
             <td>${r.sms ? fmt(r.sms_count) : '—'}</td>
             <td>${r.ticket_price!=null?('$'+r.ticket_price):'—'}</td>
