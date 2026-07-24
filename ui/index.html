@@ -60,7 +60,15 @@
     /* Campaign Agent rail is drag-resizable from lg up; width lives in --agent-w (persisted). */
     @media (min-width:1024px){
       #agent-rail{ width:var(--agent-w,340px); flex:0 0 var(--agent-w,340px); }
+      #agent-rail.agent-collapsed{ width:52px; flex:0 0 52px; padding-left:8px; padding-right:8px; }
     }
+    /* Collapsed rail: hide body + resize grip, keep a slim reopen strip. */
+    #agent-rail.agent-collapsed .agent-body{ display:none; }
+    #agent-rail.agent-collapsed .agent-label-text{ display:none; }
+    #agent-rail.agent-collapsed .agent-header{ flex-direction:column-reverse; gap:8px; }
+    #agent-rail.agent-collapsed + #agent-resize{ display:none; }
+    #agent-collapse{ transition:transform .15s; }
+    #agent-rail.agent-collapsed #agent-collapse{ transform:rotate(180deg); }
     #agent-resize{ position:relative; }
     #agent-resize::before{ content:""; position:absolute; inset:0 -3px; }
     body.agent-resizing{ cursor:col-resize; user-select:none; }
@@ -104,7 +112,7 @@
         </span>
       </div>
 
-      <!-- tabs + new blast -->
+      <!-- tabs -->
       <div class="pb-tabs px-5 flex items-center justify-between">
         <nav class="flex items-center">
           <a href="#" data-tab="compose" class="active">Campaigns</a>
@@ -113,7 +121,6 @@
           <a href="#" data-tab="templates">Templates</a>
           <a href="#" data-tab="rules">Cole Rules</a>
         </nav>
-        <button class="btn btn-primary btn-sm gap-1 my-1.5"><span class="text-base leading-none">+</span> New Blast</button>
       </div>
     </header>
 
@@ -124,26 +131,31 @@
              column height and scrolls on its own, so scrolling the content can never pull a
              blank strip in underneath it. -->
         <aside id="agent-rail" class="lg:shrink-0 lg:h-full lg:overflow-y-auto bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
-          <div class="agent-label flex items-center gap-1"><span class="text-[#e55608]">&#10022;</span> Campaign Agent</div>
-
-          <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
-
-          <div class="flex flex-wrap gap-2" id="agent-chips">
-            <button class="agent-chip">What's ready today?</button>
-            <button class="agent-chip">Suppressed markets?</button>
-            <button class="agent-chip">Load Cleveland</button>
-            <button class="agent-chip">Draft a suite invite</button>
-            <button class="agent-chip">Teammate AI (basketball)</button>
-            <button class="agent-chip">Event waitlist</button>
-            <button class="agent-chip">Show templates</button>
-            <button class="agent-chip">Open the queue</button>
+          <div class="agent-header flex items-center justify-between gap-1">
+            <div class="agent-label flex items-center gap-1"><span class="text-[#e55608]">&#10022;</span> <span class="agent-label-text">Campaign Agent</span></div>
+            <button id="agent-collapse" class="btn btn-ghost btn-xs btn-square" title="Collapse the Campaign Agent" aria-label="Collapse the Campaign Agent">&#10094;</button>
           </div>
 
-          <div id="agent-log" class="space-y-2"></div>
+          <div class="agent-body space-y-3">
+            <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
 
-          <div class="flex items-center gap-2 pt-1">
-            <input id="agent-input" class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
-            <button id="agent-send" class="btn btn-circle btn-primary text-lg">&#8594;</button>
+            <div class="flex flex-wrap gap-2" id="agent-chips">
+              <button class="agent-chip">What's ready today?</button>
+              <button class="agent-chip">Suppressed markets?</button>
+              <button class="agent-chip">Load Cleveland</button>
+              <button class="agent-chip">Draft a suite invite</button>
+              <button class="agent-chip">Teammate AI (basketball)</button>
+              <button class="agent-chip">Event waitlist</button>
+              <button class="agent-chip">Show templates</button>
+              <button class="agent-chip">Open the queue</button>
+            </div>
+
+            <div id="agent-log" class="space-y-2"></div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <input id="agent-input" class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
+              <button id="agent-send" class="btn btn-circle btn-primary text-lg">&#8594;</button>
+            </div>
           </div>
         </aside>
 
@@ -1219,6 +1231,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       grip.addEventListener('dblclick', function(){ // reset to default
         rail.style.setProperty('--agent-w','340px'); localStorage.removeItem('blaster_agent_w');
+      });
+
+      // Collapse / expand the rail; state persisted.
+      const btn=document.getElementById('agent-collapse');
+      function apply(collapsed){
+        rail.classList.toggle('agent-collapsed', collapsed);
+        if(btn){
+          btn.title = collapsed ? 'Expand the Campaign Agent' : 'Collapse the Campaign Agent';
+          btn.setAttribute('aria-label', btn.title);
+        }
+      }
+      apply(localStorage.getItem('blaster_agent_collapsed')==='1');
+      if(btn) btn.addEventListener('click', function(){
+        const collapsed=!rail.classList.contains('agent-collapsed');
+        apply(collapsed);
+        localStorage.setItem('blaster_agent_collapsed', collapsed?'1':'0');
       });
     })();
 
