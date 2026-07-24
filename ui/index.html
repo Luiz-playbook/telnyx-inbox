@@ -64,6 +64,23 @@
     #agent-resize{ position:relative; }
     #agent-resize::before{ content:""; position:absolute; inset:0 -3px; }
     body.agent-resizing{ cursor:col-resize; user-select:none; }
+    /* Campaigns table (ported from the legacy PB Internal scheduler) */
+    .camp-table th{ font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#8695a7; font-weight:700; text-align:left; padding:10px 16px; white-space:nowrap; background:#fff; }
+    .camp-table td{ padding:14px 16px; vertical-align:middle; border-top:1px solid #edf2f9; }
+    .camp-row:hover{ background:#f8fafc; }
+    .seg{ font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 7px; border-radius:5px; text-transform:uppercase; white-space:nowrap; }
+    .seg-icp{ background:#e3edff; color:#2f6bff; }
+    .seg-scp{ background:#fde7d6; color:#e55608; }
+    .seg-non{ background:#eef1f6; color:#6b7a90; }
+    .tagpill{ display:inline-flex; align-items:center; font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:9999px; text-transform:uppercase; }
+    .tag-vip{ background:#efe6ff; color:#7b61ff; }
+    .tag-food{ background:#e2f5e9; color:#067523; }
+    .tag-sched{ background:#eef1f6; color:#6b7a90; }
+    .sport-pill{ display:inline-flex; align-items:center; font-size:12px; font-weight:700; color:#3f7d7d; }
+    .status-chip{ font-weight:700; font-size:13px; color:#6b7a90; padding:6px 14px; border-radius:9999px; border:1px solid transparent; cursor:pointer; white-space:nowrap; }
+    .status-chip:hover{ background:#eef1f6; }
+    .status-chip.active{ color:#e55608; border-color:#e55608; background:#fff; }
+    .mini-select{ font-size:12px; }
   </style>
 </head>
 <body class="h-full">
@@ -90,7 +107,7 @@
       <!-- tabs + new blast -->
       <div class="pb-tabs px-5 flex items-center justify-between">
         <nav class="flex items-center">
-          <a href="#" data-tab="compose" class="active">Compose &amp; Send</a>
+          <a href="#" data-tab="compose" class="active">Campaigns</a>
           <a href="#" data-tab="queue">Queue</a>
           <a href="#" data-tab="history">Market History</a>
           <a href="#" data-tab="templates">Templates</a>
@@ -140,6 +157,54 @@
           <!-- ===== COMPOSE & SEND ===== -->
           <div data-view id="view-compose" class="space-y-5">
 
+            <!-- Campaigns — the legacy PB Internal scheduler over icp_events (replaces the old compose form) -->
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">INTERNAL</span>
+              <h1 class="text-2xl font-extrabold text-[#133b49]">PB Internal</h1>
+              <span class="text-sm text-base-content/50">Campaigns are auto-populated from ticket events.</span>
+            </div>
+            <div class="flex items-center justify-end flex-wrap gap-3">
+              <button class="btn btn-primary btn-sm gap-2" id="sync-btn"><span id="sync-ico">&#8635;</span> Sync ticket data &amp; update</button>
+            </div>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold uppercase tracking-wide text-base-content/40 mr-1">Status</span>
+                <div class="flex items-center gap-1" id="status-chips"></div>
+              </div>
+              <div class="flex items-center gap-2">
+                <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="search" type="text" class="grow w-40" placeholder="Search events" /></label>
+                <button class="btn btn-sm btn-ghost border border-base-300 bg-base-100 gap-2" id="split-btn" title="Group rows by sport"><span class="opacity-60">|||</span> Split by sport</button>
+                <div class="dropdown dropdown-end">
+                  <button tabindex="0" class="btn btn-sm btn-ghost border border-base-300 bg-base-100 gap-2"><span class="opacity-60">&#9783;</span> Columns</button>
+                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-20 w-52 p-2 shadow border border-base-300" id="col-menu"></ul>
+                </div>
+              </div>
+            </div>
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-260px)]">
+                <table class="camp-table w-full min-w-[1200px]">
+                  <thead class="sticky top-0 z-10">
+                    <tr class="border-b border-base-300 bg-base-100">
+                      <th class="w-10"><input type="checkbox" class="checkbox checkbox-xs" id="check-all" /></th>
+                      <th data-col="event">Event</th>
+                      <th data-col="market">Market combo</th>
+                      <th data-col="sport">Sport(s)</th>
+                      <th data-col="rec">Recommendation</th>
+                      <th data-col="template">Best template</th>
+                      <th data-col="tags">Tags</th>
+                      <th data-col="emails">Send from</th>
+                      <th data-col="sms">Text from</th>
+                      <th data-col="suite">Last suite</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rows"><tr><td colspan="10" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="toast toast-end" id="toast-wrap"></div>
+
+            <!-- legacy Blaster compose UI — kept in the DOM (hidden) so its wiring stays intact -->
+            <div class="hidden">
             <!-- marketing blast plays -->
             <div class="card bg-base-100 border border-base-300">
               <div class="card-body p-4 gap-3">
@@ -276,6 +341,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <div><button class="btn btn-sm" id="add-plan" disabled>Add to Send Plan</button></div>
               </div>
             </div>
+            </div><!-- /legacy hidden compose -->
           </div>
 
           <!-- ===== QUEUE ===== -->
@@ -1209,6 +1275,254 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(send) send.addEventListener('click', ()=>sendAgent(input.value));
       if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendAgent(input.value); } });
       document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
+    })();
+
+    // ===== Campaigns (PB Internal scheduler over icp_events) — powers the Compose tab =====
+    // Ported from the legacy campaigns.html. Scoped in an IIFE so its helpers (esc/toast/
+    // state/EMAIL_SENDERS) don't collide with the Blaster script's own. Reuses outer sb + cfg.
+    (function campaignsModule(){
+      const el = (id) => document.getElementById(id);
+      if(!el('rows')) return; // compose markup not present — nothing to wire
+
+      const state = {
+        events: [], blasts: [], numbers: [], filter: '', status: 'All',
+        splitBySport: false, selected: new Set(),
+        cols: { event:true, market:true, sport:true, rec:true, template:true, tags:true, emails:true, sms:true, suite:true },
+      };
+      const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
+      function emailFromOf(e){ return localStorage.getItem('campaign_email_from_'+e.id) || EMAIL_SENDERS[0]; }
+      function setEmailFrom(e,v){ localStorage.setItem('campaign_email_from_'+e.id, v); }
+      function smsFromOf(e){ return localStorage.getItem('campaign_sms_from_'+e.id) || (state.numbers[0] && state.numbers[0].phone_number) || ''; }
+      function setSmsFrom(e,v){ localStorage.setItem('campaign_sms_from_'+e.id, v); }
+      const STATUSES = ['All', 'Scheduled - not confirmed', 'Confirmed', 'Sent'];
+
+      function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+      function toast(msg, type='info'){ const cls={ok:'alert-success',err:'alert-error',info:'alert-info'}[type]||'alert-info';
+        const d=document.createElement('div'); d.className=`alert ${cls} shadow`; d.innerHTML=`<span>${esc(msg)}</span>`;
+        el('toast-wrap').appendChild(d); setTimeout(()=>d.remove(),3000); }
+      function hash(str){ let h=0; for(const c of (str||'')) h=(h*31 + c.charCodeAt(0))>>>0; return h; }
+
+      const TEAM = {
+        yankees:['New York','Baseball'], mets:['New York','Baseball'], brewers:['Milwaukee','Baseball'],
+        dodgers:['Los Angeles','Baseball'], padres:['San Diego','Baseball'], cubs:['Chicago','Baseball'],
+        'white sox':['Chicago','Baseball'], cardinals:['St. Louis','Baseball'], astros:['Houston','Baseball'],
+        braves:['Atlanta','Baseball'], angels:['Los Angeles','Baseball'], 'anaheim angels':['Los Angeles','Baseball'],
+        reds:['Cincinnati','Baseball'], 'cincy reds':['Cincinnati','Baseball'], guardians:['Cleveland','Baseball'],
+        tigers:['Detroit','Baseball'], 'detroit tigers':['Detroit','Baseball'], diamondbacks:['Phoenix','Baseball'],
+        'kc royals':['Kansas City','Baseball'], royals:['Kansas City','Baseball'], marlins:['Miami','Baseball'],
+        'miami marlins':['Miami','Baseball'], mariners:['Seattle','Baseball'], nationals:['Washington','Baseball'],
+        orioles:['Baltimore','Baseball'], phillies:['Philadelphia','Baseball'], pirates:['Pittsburgh','Baseball'],
+        rangers:['Texas','Baseball'], rays:['Tampa Bay','Baseball'], 'blue jays':['Toronto','Baseball'],
+        rockies:['Denver','Baseball'], giants:['San Francisco','Baseball'], athletics:['Oakland','Baseball'],
+        'red sox':['Boston','Baseball'], twins:['Minnesota','Baseball'],
+        '76ers':['Philadelphia','Basketball'], bulls:['Chicago','Basketball'], 'chicago bulls':['Chicago','Basketball'],
+        celtics:['Boston','Basketball'], clippers:['Los Angeles','Basketball'], lakers:['Los Angeles','Basketball'],
+        grizzlies:['Memphis','Basketball'], hawks:['Atlanta','Basketball'], heat:['Miami','Basketball'],
+        hornets:['Charlotte','Basketball'], jazz:['Utah','Basketball'], knicks:['New York','Basketball'],
+        'ny knicks':['New York','Basketball'], magic:['Orlando','Basketball'], nets:['Brooklyn','Basketball'],
+        nuggets:['Denver','Basketball'], pacers:['Indiana','Basketball'], pelicans:['New Orleans','Basketball'],
+        pistons:['Detroit','Basketball'], raptors:['Toronto','Basketball'], blazers:['Portland','Basketball'],
+        blackhawks:['Chicago','Hockey'], 'chicago blackhawks':['Chicago','Hockey'], blues:['St. Louis','Hockey'],
+        canucks:['Vancouver','Hockey'], capitals:['Washington','Hockey'], flames:['Calgary','Hockey'],
+        flyers:['Philadelphia','Hockey'], hurricanes:['Carolina','Hockey'], islanders:['New York','Hockey'],
+        'la kings':['Los Angeles','Hockey'], 'minn wild':['Minnesota','Hockey'], 'nj devils':['New Jersey','Hockey'],
+        'ny rangers':['New York','Hockey'], penguins:['Pittsburgh','Hockey'], 'ny rangers (group)':['New York','Hockey'],
+      };
+      function normTeam(name){ return (name||'').toLowerCase().replace(/\s*\(group\)\s*/,'').replace(/\s*@.*/,'').trim(); }
+      function teamEntry(name){
+        const key = normTeam(name);
+        if(TEAM[key]) return TEAM[key];
+        let best=null;
+        for(const k in TEAM){ if((key===k)||key.endsWith(' '+k)){ if(!best||k.length>best.length) best=k; } }
+        return best?TEAM[best]:null;
+      }
+      function marketOf(e){
+        const t=teamEntry(e.team_name); if(t) return t[0];
+        if(/^univ|university|college|state\b/i.test(e.team_name||'')) return (e.team_name||'').replace(/^university of\s*/i,'');
+        return '—';
+      }
+      function sportOf(e){
+        const t=teamEntry(e.team_name); if(t) return t[1];
+        if(/^univ|university|college/i.test(e.team_name||'')) return 'College';
+        return 'Multi';
+      }
+      function segOf(e){ return ['ICP','SCP','Non ICP-SCP'][hash(e.id) % 3]; }
+      function tagsOf(e){ const h=hash(e.id); const t=['Scheduled']; if(h%2===0) t.unshift('VIP'); if(h%3===0) t.push('FOOD'); return t; }
+
+      const REGION = {
+        'new york':['new york','yankees','mets','tri state','tri-state'], brooklyn:['brooklyn','new york','tri state'],
+        'new jersey':['new jersey','tri state','tri-state'],
+        cleveland:['cleveland','ohio'], cincinnati:['cincinnati','cincinatti','ohio'],
+        boston:['boston','red sox','massachusetts','new england'], denver:['denver','colorado'],
+        'los angeles':['los angeles','anaheim','angels'], atlanta:['atlanta','georgia'], phoenix:['phoenix','arizona'],
+        minnesota:['minnesota','minneapolis'], texas:['texas','dallas','arlington','san antonio'], houston:['houston'],
+        baltimore:['baltimore','maryland'], 'san francisco':['san francisco','santa clara','bay area'],
+        washington:['washington dc','washington d','dmv'], detroit:['detroit','michigan'],
+        charlotte:['charlotte','north carolina'], carolina:['carolina','charlotte','north carolina'],
+        milwaukee:['milwaukee','wisconsin'], philadelphia:['philadelphia','pennsylvania'],
+        pittsburgh:['pittsburgh','pennsylvania'], 'st. louis':['st. louis','st louis','missouri'],
+        'kansas city':['kansas city'], 'tampa bay':['tampa'], toronto:['toronto'], seattle:['seattle','washington state'],
+        miami:['miami','florida'], orlando:['orlando','florida'], 'san diego':['san diego'],
+        oakland:['oakland','athletics'], chicago:['chicago','illinois'], utah:['utah','salt lake'],
+        indiana:['indiana','indianapolis'], memphis:['memphis','tennessee'], 'new orleans':['new orleans','louisiana'],
+        portland:['portland','oregon'], vancouver:['vancouver'], calgary:['calgary'],
+      };
+      function blastAliases(e){
+        const city = marketOf(e).toLowerCase();
+        const set = new Set(REGION[city] || (city && city!=='—' ? [city] : []));
+        const nick = normTeam(e.team_name); if(nick) set.add(nick);
+        return [...set].filter(a=>a && a.length>=3);
+      }
+      function matchTemplates(e){
+        const aliases = blastAliases(e); if(!aliases.length) return [];
+        return state.blasts.filter(b=>{
+          const ln=(b.list_name||'').toLowerCase(); if(!ln) return false;
+          return aliases.some(a=> ln.includes(a) || a.includes(ln));
+        });
+      }
+      function bestTemplate(e){
+        const m=matchTemplates(e); if(!m.length) return null;
+        const ranked=m.filter(b=>(b.sent_emails||0)>0)
+          .sort((a,b)=> (Number(b.open_rate)-Number(a.open_rate)) || (Number(b.clickthru_rate||0)-Number(a.clickthru_rate||0)));
+        return { top: ranked[0]||m[0], count: m.length };
+      }
+      function sendWindow(b){ if(!b||!b.scheduled_for) return ''; const d=new Date(b.scheduled_for);
+        return d.toLocaleDateString(undefined,{weekday:'short'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric'}); }
+      function recommendation(e, bt){
+        const today=new Date().toISOString().slice(0,10);
+        if(e.event_date && e.event_date < today) return {verdict:'skip', tier:'past', label:'Past', reason:'Event has passed'};
+        if(!bt) return {verdict:'nolist', tier:'nolist', label:'No list', reason:'No matching email list yet'};
+        const fill = e.filled_pct==null ? null : Number(e.filled_pct);
+        if(fill!=null && fill>=90) return {verdict:'skip', tier:'full', label:'Skip', reason:`Suite ${fill}% filled`};
+        if(fill==null)   return {verdict:'blast', tier:'rec',  label:'Blast',        reason:'Fill unknown — build demand'};
+        if(fill<=25)     return {verdict:'blast', tier:'high', label:'Blast · High', reason:`Only ${fill}% filled`};
+        if(fill<=75)     return {verdict:'blast', tier:'med',  label:'Blast · Med',  reason:`${fill}% filled`};
+        return               {verdict:'blast', tier:'low',  label:'Blast · Low',  reason:`${fill}% filled`};
+      }
+      function recBadgeClass(tier){ return {
+        high:'badge-error', med:'badge-warning', rec:'badge-info', low:'badge-ghost',
+        full:'badge-ghost opacity-60', past:'badge-ghost opacity-50', nolist:'badge-outline',
+      }[tier]||'badge-ghost'; }
+
+      function statusKey(id){ return 'campaign_status_'+id; }
+      function statusOf(e){ return localStorage.getItem(statusKey(e.id)) || 'Scheduled - not confirmed'; }
+      function setStatus(e, s){ if(s==='Scheduled - not confirmed') localStorage.removeItem(statusKey(e.id)); else localStorage.setItem(statusKey(e.id), s); }
+
+      function eventTitle(e){ return e.opponent ? `${e.team_name} at ${e.opponent}` : (e.team_name||'Untitled event'); }
+      function shortDate(d){ if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate(); }
+      function priceOf(e){ const p=(e.price_per_person!=null)?e.price_per_person:null; return p!=null?`$${p}/ticket`:''; }
+      function suiteDate(e){ const d=e.updated_at||e.created_at; if(!d) return '—'; return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
+
+      async function loadAll(){
+        if(!sb) return;
+        const [{data,error}, blastRes, numRes] = await Promise.all([
+          sb.from('icp_events').select('*'),
+          sb.from('blast_templates').select('list_name,name,sent_emails,open_rate,click_rate,clickthru_rate,scheduled_for'),
+          sb.from('telnyx_numbers').select('phone_number,label,active,sort_order').order('sort_order',{ascending:true}),
+        ]);
+        if(error){ toast('Load failed: '+error.message,'err'); el('rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-10">'+esc(error.message)+'</td></tr>'; return; }
+        if(blastRes.error){ toast('Templates unavailable: '+blastRes.error.message,'err'); }
+        if(numRes.error){ toast('Numbers unavailable: '+numRes.error.message,'err'); }
+        state.blasts = blastRes.data || [];
+        state.numbers = numRes.data || [];
+        state.events=(data||[]).slice().sort((a,b)=> (a.event_date>b.event_date?-1:1)); render();
+      }
+
+      function renderStatusChips(){
+        el('status-chips').innerHTML = STATUSES.map(s=>`
+          <span class="status-chip ${s===state.status?'active':''}" data-status="${esc(s)}">${esc(s)}</span>`).join('');
+        el('status-chips').querySelectorAll('[data-status]').forEach(n=>n.addEventListener('click',()=>{ state.status=n.dataset.status; render(); }));
+      }
+      function renderColMenu(){
+        const labels={event:'Event',market:'Market combo',sport:'Sport(s)',rec:'Recommendation',template:'Best template',tags:'Tags',emails:'Send from',sms:'Text from',suite:'Last suite'};
+        el('col-menu').innerHTML = Object.keys(labels).map(k=>`
+          <li><label class="flex items-center gap-2 cursor-pointer ${k==='event'?'opacity-50':''}">
+            <input type="checkbox" class="checkbox checkbox-xs" data-col-toggle="${k}" ${state.cols[k]?'checked':''} ${k==='event'?'disabled':''}/>
+            <span>${labels[k]}</span></label></li>`).join('');
+        el('col-menu').querySelectorAll('[data-col-toggle]').forEach(n=>n.addEventListener('change',()=>{ state.cols[n.dataset.colToggle]=n.checked; render(); }));
+      }
+      function applyColVisibility(){
+        document.querySelectorAll('.camp-table [data-col]').forEach(th=>{ th.style.display = state.cols[th.dataset.col]?'':'none'; });
+      }
+      function visibleEvents(){
+        const f=state.filter.trim().toLowerCase();
+        return state.events.filter(e=>{
+          if(state.status!=='All' && statusOf(e)!==state.status) return false;
+          if(f && !(eventTitle(e).toLowerCase().includes(f) || marketOf(e).toLowerCase().includes(f))) return false;
+          return true;
+        });
+      }
+      function segClass(seg){ return seg==='ICP'?'seg-icp':seg==='SCP'?'seg-scp':'seg-non'; }
+      function tagClass(t){ return t==='VIP'?'tag-vip':t==='FOOD'?'tag-food':'tag-sched'; }
+
+      function rowHtml(e){
+        const c=state.cols, sel=state.selected.has(e.id);
+        const st=statusOf(e); const confirmed = st==='Confirmed'||st==='Sent';
+        const seg=segOf(e), tags=tagsOf(e);
+        const bt=bestTemplate(e), rec=recommendation(e,bt), sw=bt?sendWindow(bt.top):'';
+        const confirmBtn = confirmed
+          ? `<span class="badge badge-success badge-sm gap-1 font-semibold">&#10003; ${st==='Sent'?'Sent':'Confirmed'}</span>`
+          : `<button class="btn btn-xs btn-outline btn-info rounded-full px-3" data-confirm="${esc(e.id)}">Confirm</button>`;
+        return `<tr class="camp-row" data-row="${esc(e.id)}">
+          <td><input type="checkbox" class="checkbox checkbox-xs" data-select="${esc(e.id)}" ${sel?'checked':''}/></td>
+          ${c.event?`<td>
+            <div class="flex items-center gap-2">
+              <div class="min-w-0">
+                <div class="font-bold text-[#133b49] truncate">${esc(eventTitle(e))}</div>
+                <div class="text-xs text-base-content/50 mt-0.5">${esc(shortDate(e.event_date))}${priceOf(e)?` · <span class="text-primary font-semibold">${esc(priceOf(e))}</span>`:''}</div>
+              </div>
+              ${confirmBtn}
+            </div></td>`:''}
+          ${c.market?`<td><div class="flex items-center gap-2"><span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(marketOf(e))}</span><span class="seg ${segClass(seg)}">${esc(seg)}</span></div></td>`:''}
+          ${c.sport?`<td><span class="sport-pill">${esc(sportOf(e))}</span></td>`:''}
+          ${c.rec?`<td><span class="badge badge-sm font-semibold whitespace-nowrap ${recBadgeClass(rec.tier)}" title="${esc(rec.reason)}">${esc(rec.label)}</span><div class="text-xs text-base-content/50 mt-0.5 whitespace-nowrap">${esc(rec.reason)}</div></td>`:''}
+          ${c.template?`<td>${bt?`<div class="min-w-0"><div class="font-semibold text-[#133b49] truncate max-w-[220px]" title="${esc(bt.top.name)}">${esc(bt.top.name)}</div><div class="text-xs text-base-content/50 whitespace-nowrap">${Number(bt.top.open_rate).toFixed(1)}% open · ${bt.count} past${sw?` · best ${esc(sw)}`:''}</div></div>`:'<span class="text-base-content/40">—</span>'}</td>`:''}
+          ${c.tags?`<td><div class="flex flex-wrap gap-1">${tags.map(t=>`<span class="tagpill ${tagClass(t)}">${esc(t)}</span>`).join('')}</div></td>`:''}
+          ${c.emails?`<td><select class="select select-bordered select-xs mini-select w-52" data-email-from="${esc(e.id)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(e)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>`:''}
+          ${c.sms?`<td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(e.id)}">${state.numbers.length?state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(e)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>`:''}
+          ${c.suite?`<td class="text-sm text-base-content/60 whitespace-nowrap">${esc(suiteDate(e))}</td>`:''}
+        </tr>`;
+      }
+      function render(){
+        renderStatusChips();
+        const items=visibleEvents();
+        const box=el('rows');
+        if(!items.length){ box.innerHTML=`<tr><td colspan="10" class="text-center text-base-content/50 py-10">No campaigns match this view</td></tr>`; applyColVisibility(); return; }
+        const colspan = Object.values(state.cols).filter(Boolean).length + 1;
+        if(state.splitBySport){
+          const groups={}; items.forEach(e=>{ const s=sportOf(e); (groups[s]=groups[s]||[]).push(e); });
+          box.innerHTML = Object.keys(groups).sort().map(s=>`
+            <tr class="bg-base-200/60"><td colspan="${colspan}" class="!py-2 text-xs font-extrabold uppercase tracking-wide text-base-content/50">${esc(s)} · ${groups[s].length}</td></tr>
+            ${groups[s].map(rowHtml).join('')}`).join('');
+        } else { box.innerHTML = items.map(rowHtml).join(''); }
+        wireRows(); applyColVisibility();
+      }
+      function wireRows(){
+        document.querySelectorAll('[data-confirm]').forEach(n=>n.addEventListener('click',()=>{
+          const e=state.events.find(x=>x.id===n.dataset.confirm); if(!e) return;
+          setStatus(e,'Confirmed'); toast(`Confirmed “${eventTitle(e)}”`,'ok'); render();
+        }));
+        document.querySelectorAll('[data-select]').forEach(n=>n.addEventListener('change',()=>{
+          if(n.checked) state.selected.add(n.dataset.select); else state.selected.delete(n.dataset.select);
+        }));
+        document.querySelectorAll('[data-email-from]').forEach(n=>n.addEventListener('change',()=>{
+          const e=state.events.find(x=>x.id===n.dataset.emailFrom); if(e) setEmailFrom(e, n.value);
+        }));
+        document.querySelectorAll('[data-sms-from]').forEach(n=>n.addEventListener('change',()=>{
+          const e=state.events.find(x=>x.id===n.dataset.smsFrom); if(e) setSmsFrom(e, n.value);
+        }));
+      }
+
+      el('search').addEventListener('input', e=>{ state.filter=e.target.value; render(); });
+      el('split-btn').addEventListener('click', ()=>{ state.splitBySport=!state.splitBySport; el('split-btn').classList.toggle('btn-active', state.splitBySport); render(); });
+      el('check-all').addEventListener('change', e=>{ visibleEvents().forEach(ev=>{ if(e.target.checked) state.selected.add(ev.id); else state.selected.delete(ev.id); }); render(); });
+      el('sync-btn').addEventListener('click', async ()=>{
+        const b=el('sync-btn'); b.disabled=true; b.querySelector('#sync-ico').innerHTML='<span class="loading loading-spinner loading-xs"></span>';
+        await loadAll(); b.disabled=false; b.querySelector('#sync-ico').innerHTML='&#8635;'; toast('Ticket data refreshed','ok');
+      });
+
+      renderColMenu();
+      if(!sb || !cfg.SUPABASE_URL || String(cfg.SUPABASE_URL).startsWith('<<')) toast('config.js is not filled in','err'); else loadAll();
     })();
   </script>
 </body>
