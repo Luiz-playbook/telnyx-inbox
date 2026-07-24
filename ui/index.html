@@ -1394,20 +1394,51 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         });
       }
 
-      // TEMP: manual blast trigger. Runs the deterministic decider
-      // (rpc_event_recommendations — recency/cooldown, market history, timing, fill %,
-      // opt-out health, Cole Rules), takes the top CAP decision='send' markets IN THE
-      // DECIDER'S OWN RANK ORDER (sendable, lowest-fill first), lines them up in the
-      // Queue as TEST rows (is_placeholder=true → queue-tick NEVER sends them), and logs
-      // each picked market to ticketblaster_market_blasts_log (source='test') so the
-      // cooldown counts them. Nothing goes out. Remove before wiring real sends.
+      // TEMP: manual blast trigger. Two-stage decider:
+      //   1. HARD RULES (SQL, rpc_event_recommendations) — cooldown, forward window,
+      //      fill %, opt-out health, has-history. This is the safety floor.
+      //   2. LLM (/api/trigger-decide) — re-ranks the rule-approved candidates and may
+      //      VETO weak ones with a written reason. It can NEVER add a blocked market;
+      //      the server enforces that every returned event_id came from the safe set.
+      // The top CAP picks are queued as TEST rows (is_placeholder=true → queue-tick NEVER
+      // sends them) and logged to the market blast log (source='test') so cooldown counts
+      // them. If the endpoint/LLM is unavailable, it falls back to the rule order alone.
       const CAP = 3;
+
+      // Returns { picks:[{event_id,team,market_key,market_label,state_code,best_template,
+      //   open_rate_w,ctr_w,n_blasts,phone_count,email_count,reason}], vetoed, skipBy,
+      //   evaluated, llm }. Tries the server (rules+LLM) first, falls back to client rules.
+      async function decidePicks(){
+        try {
+          const r = await fetch('/api/trigger-decide', {
+            method:'POST',
+            headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') },
+            body: JSON.stringify({ cap: CAP }),
+          });
+          if(r.ok){ const d = await r.json(); if(d && d.ok) return d; }
+        } catch { /* fall back to client-only rules below */ }
+
+        // Fallback: deterministic, no LLM.
+        const [rec, cnt] = await Promise.all([ sb.rpc('rpc_event_recommendations'), sb.rpc('market_recipient_counts') ]);
+        if(rec.error) throw new Error(rec.error.message);
+        const all = rec.data || [];
+        const reach = {}; (cnt.data || []).forEach(m => { reach[m.market_key] = m; });
+        const skipBy = {}; all.filter(r => r.decision !== 'send').forEach(r => { const k = r.reason_code || 'other'; skipBy[k] = (skipBy[k]||0)+1; });
+        const picks = all.filter(r => r.decision === 'send').slice(0, CAP).map(r => {
+          const rc = reach[r.market_key] || {};
+          return { event_id:r.event_id, team:r.team, market_key:r.market_key, market_label:r.market_label,
+            state_code:rc.state_code||null, best_template:r.best_template, open_rate_w:r.open_rate_w, ctr_w:r.ctr_w,
+            n_blasts:r.n_blasts, phone_count:Number(rc.phone_count)||0, email_count:Number(rc.email_count)||0, reason:null };
+        });
+        return { ok:true, evaluated: all.length, llm:false, picks, vetoed:[], skipBy };
+      }
+
       el('trigger-blast')?.addEventListener('click', async () => {
         const btn = el('trigger-blast');
         if(!sb){ pbToast({ type:'err', title:'Cannot reach the decider', lines:['config.js is not filled in.'] }); return; }
         const ok = await pbConfirm({
           title: 'Trigger Blast — TEST',
-          body: 'The agent picks up to '+CAP+' markets to blast, based on recency (cooldown floor), market history, event timing, fill %, and opt-out health — then lines them up in the Queue as TEST rows and logs them to the market blast log.\n\nNothing is sent.',
+          body: 'Hard rules (cooldown, timing, fill %, opt-out health, history) pick the eligible markets; the AI then re-ranks them and may veto weak ones. The top '+CAP+' are lined up in the Queue as TEST rows and logged to the market blast log.\n\nNothing is sent.',
           okText: 'Run test',
         });
         if(!ok) return;
@@ -1415,60 +1446,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const orig = btn.innerHTML; btn.disabled = true;
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deciding…';
         try {
-          const [rec, cnt] = await Promise.all([
-            sb.rpc('rpc_event_recommendations'),
-            sb.rpc('market_recipient_counts'),
-          ]);
-          if(rec.error) throw new Error(rec.error.message);
-          const all = rec.data || [];
-
-          // market_key -> { state_code, phone_count, email_count } for recipient reach
-          const reach = {};
-          (cnt.data || []).forEach(m => { reach[m.market_key] = m; });
-
-          // The RPC already returns sendable rows first, lowest-fill first — keep that order.
-          const sends = all.filter(r => r.decision === 'send').slice(0, CAP);
-
-          // why the rest were held back — for the summary
-          const skipBy = {};
-          all.filter(r => r.decision !== 'send').forEach(r => {
-            const k = (r.reason_code || 'other').replace(/_/g,' ');
-            skipBy[k] = (skipBy[k]||0) + 1;
-          });
+          const dec = await decidePicks();
+          const sends = dec.picks || [];
+          const skipBy = dec.skipBy || {};
 
           let queued = [];
           if(sends.length){
-            const rows = sends.map(r => {
-              const perf = (r.open_rate_w!=null)
-                ? ` ${r.open_rate_w}% open / ${r.ctr_w}% CTR over ${r.n_blasts} prior blast${r.n_blasts==1?'':'s'}.` : '';
-              const tmpl = r.best_template ? ` Best template: ${r.best_template}.` : '';
-              const rc = reach[r.market_key] || {};
-              const phones = Number(rc.phone_count) || 0, emails = Number(rc.email_count) || 0;
+            const rows = sends.map(p => {
+              const perf = (p.open_rate_w!=null)
+                ? ` ${p.open_rate_w}% open / ${p.ctr_w}% CTR over ${p.n_blasts} prior blast${p.n_blasts==1?'':'s'}.` : '';
+              const tmpl = p.best_template ? ` Best template: ${p.best_template}.` : '';
+              const emails = Number(p.email_count)||0, phones = Number(p.phone_count)||0;
               const reachNote = (emails||phones) ? ` Reach: ${emails} email / ${phones} SMS.` : '';
-              const note = '[TEST — will NOT send] Decider pick for ' + (r.market_label||'this market') + '.' + tmpl + perf + reachNote;
+              const why = p.reason ? (' ' + p.reason) : (' Decider pick for ' + (p.market_label||'this market') + '.' + tmpl + perf);
+              const note = '[TEST — will NOT send]' + why + reachNote;
               return {
-                title: '[TEST] ' + (r.team || 'Blast') + (r.market_label ? ' — ' + r.market_label : ''),
-                state_name: r.market_label || null,
-                state_code: rc.state_code || null,
-                event_id: r.event_id || null,
+                title: '[TEST] ' + (p.team || 'Blast') + (p.market_label ? ' — ' + p.market_label : ''),
+                state_name: p.market_label || null,
+                state_code: p.state_code || null,
+                event_id: p.event_id || null,
                 email: true, sms: true,
                 phone_count: phones, sms_count: phones, email_count: emails,
-                email_copy: note,
-                sms_copy: note,
+                email_copy: note, sms_copy: note,
               };
             });
             const ins = await sb.rpc('queue_enqueue_test', { p_rows: rows });
             if(ins.error) throw new Error(ins.error.message);
             queued = ins.data || [];
 
-            // Log each picked market to the blast log (source='test', counts toward cooldown).
-            const toLog = sends.filter(r => r.market_key).map(r => ({
-              market_key: r.market_key,
-              event_id: r.event_id || null,
+            // Log each picked market (source='test', counts toward cooldown).
+            const toLog = sends.filter(p => p.market_key).map(p => ({
+              market_key: p.market_key,
+              event_id: p.event_id || null,
               channel: 'email+sms',
-              template_name: r.best_template || null,
+              template_name: p.best_template || null,
               source: 'test',
-              notes: 'Trigger Blast [Temp btn] — test, not sent',
+              notes: (dec.llm ? 'AI-ranked' : 'rule-ranked') + ' — Trigger Blast test, not sent',
             }));
             if(toLog.length){
               const lg = await sb.rpc('log_market_blast', { p_rows: toLog });
@@ -1476,23 +1489,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             }
           }
 
-          const skipStr = Object.entries(skipBy).map(([k,v]) => `${v} ${k}`).join(' · ') || 'none';
-          const totalEmail = sends.reduce((s,r) => s + (Number((reach[r.market_key]||{}).email_count)||0), 0);
-          const totalPhone = sends.reduce((s,r) => s + (Number((reach[r.market_key]||{}).phone_count)||0), 0);
+          const skipStr = Object.entries(skipBy).map(([k,v]) => `${v} ${String(k).replace(/_/g,' ')}`).join(' · ') || 'none';
+          const totalEmail = sends.reduce((s,p) => s + (Number(p.email_count)||0), 0);
+          const totalPhone = sends.reduce((s,p) => s + (Number(p.phone_count)||0), 0);
+          const vetoed = dec.vetoed || [];
           pbToast({
             type: 'ok',
             title: `Trigger Blast — ${queued.length} test blast${queued.length===1?'':'s'} queued`,
             lines: [
-              `Evaluated ${all.length} events · capped at ${CAP}.`,
+              `Evaluated ${dec.evaluated||0} events · ${dec.llm ? 'ranked by AI' : 'ranked by rules'} · capped at ${CAP}.`,
               queued.length ? `Reach: ${totalEmail.toLocaleString()} email · ${totalPhone.toLocaleString()} SMS (test only).` : `Nothing queued — all markets held back.`,
-              queued.length ? `Logged to the market blast log (source: test).` : ``,
-              `Held back: ${skipStr}.`,
+              vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
+              `Held back by rules: ${skipStr}.`,
             ],
-            chips: sends.map(r => esc(r.market_label || r.team || 'market')),
+            chips: sends.map(p => esc(p.market_label || p.team || 'market')),
             foot: queued.length ? 'Placeholder rows — nothing sends. Opening the Queue…' : 'Adjust Cole Rules to loosen the gates, then retry.',
           });
 
-          // jump to the Queue tab and refresh it so the new rows show
           if(queued.length){
             document.querySelector('.pb-tabs [data-tab="queue"]')?.click();
             if(typeof window.__loadQueue === 'function') await window.__loadQueue();
