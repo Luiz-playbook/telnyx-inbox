@@ -157,51 +157,37 @@
           <!-- ===== COMPOSE & SEND ===== -->
           <div data-view id="view-compose" class="space-y-5">
 
-            <!-- Campaigns — the legacy PB Internal scheduler over icp_events (replaces the old compose form) -->
+            <!-- Companies by state — company_intel (HubSpot), grouped by state/province with counts -->
             <div class="flex items-center gap-3 flex-wrap">
-              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">INTERNAL</span>
-              <h1 class="text-2xl font-extrabold text-[#133b49]">PB Internal</h1>
-              <span class="text-sm text-base-content/50">Campaigns are auto-populated from ticket events.</span>
+              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">HUBSPOT</span>
+              <h1 class="text-2xl font-extrabold text-[#133b49]">Companies by State</h1>
+              <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
-            <div class="flex items-center justify-end flex-wrap gap-3">
-              <button class="btn btn-primary btn-sm gap-2" id="sync-btn"><span id="sync-ico">&#8635;</span> Sync ticket data &amp; update</button>
-            </div>
-            <div class="flex items-center justify-between flex-wrap gap-3">
-              <div class="flex items-center gap-2">
-                <span class="text-xs font-bold uppercase tracking-wide text-base-content/40 mr-1">Status</span>
-                <div class="flex items-center gap-1" id="status-chips"></div>
+            <div class="grid grid-cols-1 md:grid-cols-[minmax(0,320px)_minmax(0,1fr)] gap-4">
+              <!-- states list -->
+              <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-3 gap-2">
+                  <input id="cbs-search" class="input input-bordered input-sm" placeholder="Search state…" autocomplete="off">
+                  <div id="cbs-states" class="overflow-y-auto max-h-[calc(100vh-320px)] pr-1 space-y-1">
+                    <div class="text-center text-base-content/50 py-8">Loading&hellip;</div>
+                  </div>
+                </div>
               </div>
-              <div class="flex items-center gap-2">
-                <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="search" type="text" class="grow w-40" placeholder="Search events" /></label>
-                <button class="btn btn-sm btn-ghost border border-base-300 bg-base-100 gap-2" id="split-btn" title="Group rows by sport"><span class="opacity-60">|||</span> Split by sport</button>
-                <div class="dropdown dropdown-end">
-                  <button tabindex="0" class="btn btn-sm btn-ghost border border-base-300 bg-base-100 gap-2"><span class="opacity-60">&#9783;</span> Columns</button>
-                  <ul tabindex="0" class="dropdown-content menu bg-base-100 rounded-box z-20 w-52 p-2 shadow border border-base-300" id="col-menu"></ul>
+              <!-- companies in the selected state -->
+              <div class="card bg-base-100 border border-base-300">
+                <div class="card-body p-4 gap-3">
+                  <h2 class="font-extrabold text-[#133b49]" id="cbs-detail-title">Select a state</h2>
+                  <div class="overflow-auto max-h-[calc(100vh-320px)]">
+                    <table class="camp-table w-full">
+                      <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
+                        <th>Company</th><th>City</th><th>Sport</th><th>Tier</th><th>Site</th>
+                      </tr></thead>
+                      <tbody id="cbs-companies"><tr><td colspan="5" class="text-center text-base-content/50 py-10">Pick a state on the left.</td></tr></tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             </div>
-            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
-              <div class="overflow-auto max-h-[calc(100vh-260px)]">
-                <table class="camp-table w-full min-w-[1200px]">
-                  <thead class="sticky top-0 z-10">
-                    <tr class="border-b border-base-300 bg-base-100">
-                      <th class="w-10"><input type="checkbox" class="checkbox checkbox-xs" id="check-all" /></th>
-                      <th data-col="event">Event</th>
-                      <th data-col="market">Market combo</th>
-                      <th data-col="sport">Sport(s)</th>
-                      <th data-col="rec">Recommendation</th>
-                      <th data-col="template">Best template</th>
-                      <th data-col="tags">Tags</th>
-                      <th data-col="emails">Send from</th>
-                      <th data-col="sms">Text from</th>
-                      <th data-col="suite">Last suite</th>
-                    </tr>
-                  </thead>
-                  <tbody id="rows"><tr><td colspan="10" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="toast toast-end" id="toast-wrap"></div>
 
             <!-- legacy Blaster compose UI — kept in the DOM (hidden) so its wiring stays intact -->
             <div class="hidden">
@@ -1277,9 +1263,67 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
     })();
 
-    // ===== Campaigns (PB Internal scheduler over icp_events) — powers the Compose tab =====
-    // Ported from the legacy campaigns.html. Scoped in an IIFE so its helpers (esc/toast/
-    // state/EMAIL_SENDERS) don't collide with the Blaster script's own. Reuses outer sb + cfg.
+    // ===== Companies by State (company_intel / HubSpot) — powers the Campaigns tab =====
+    // Groups HubSpot companies by state/province (companies_by_state RPC) with counts,
+    // click a state to list its companies (companies_in_state RPC). Scoped IIFE; reuses outer sb.
+    (function companiesByStateModule(){
+      const el = (id) => document.getElementById(id);
+      if(!el('cbs-states')) return;
+      const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const fmt = n => (Number(n)||0).toLocaleString();
+      let STATES = [], selectedCode = null, filter = '';
+
+      function renderStates(){
+        const box = el('cbs-states'); const f = filter.trim().toLowerCase();
+        const items = STATES.filter(s => !f || s.name.toLowerCase().includes(f) || (s.code||'').toLowerCase().includes(f));
+        if(!items.length){ box.innerHTML = '<div class="text-center text-base-content/50 py-8">No states match.</div>'; return; }
+        box.innerHTML = items.map(s => {
+          const on = s.code === selectedCode;
+          return `<button class="cbs-state w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-left ${on?'bg-[#fdeee4]':'hover:bg-[#f5f8fb]'}" data-code="${esc(s.code)}" data-name="${esc(s.name)}">
+            <span class="font-semibold text-[#133b49] truncate">${esc(s.name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(s.country)}</span></span>
+            <span class="badge badge-sm border-0 font-bold ${on?'bg-[#e55608] text-white':'bg-[#eef1f6] text-[#5e6e82]'}">${fmt(s.companies)}</span>
+          </button>`;
+        }).join('');
+        box.querySelectorAll('.cbs-state').forEach(b => b.addEventListener('click', () => selectState(b.dataset.code, b.dataset.name)));
+      }
+
+      async function selectState(code, name){
+        selectedCode = code; renderStates();
+        const st = STATES.find(s => s.code === code);
+        el('cbs-detail-title').innerHTML = `${esc(name)} <span class="text-sm font-semibold text-base-content/50">— ${fmt(st?st.companies:0)} companies</span>`;
+        const tb = el('cbs-companies');
+        tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">Loading…</td></tr>';
+        const { data, error } = await sb.rpc('companies_in_state', { p_code: code });
+        if(error){ tb.innerHTML = `<tr><td colspan="5" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        const rows = data || [];
+        if(!rows.length){ tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">No companies.</td></tr>'; return; }
+        tb.innerHTML = rows.map(c => `<tr class="camp-row">
+          <td class="font-semibold text-[#133b49]">${esc(c.organization_name||'—')}</td>
+          <td class="text-base-content/70">${esc(c.city||'—')}</td>
+          <td>${c.primary_sport?`<span class="sport-pill">${esc(c.primary_sport)}</span>`:'—'}</td>
+          <td class="text-base-content/70">${esc(c.tier||'—')}</td>
+          <td>${c.website_url?`<a href="${esc(c.website_url)}" target="_blank" rel="noopener" class="link link-primary">site</a>`:'—'}</td>
+        </tr>`).join('');
+      }
+
+      async function load(){
+        const box = el('cbs-states');
+        if(!sb){ box.innerHTML = '<div class="text-center text-error py-8">config.js not filled in</div>'; return; }
+        const { data, error } = await sb.rpc('companies_by_state');
+        if(error){ box.innerHTML = `<div class="text-center text-error py-8">${esc(error.message)}</div>`; return; }
+        STATES = data || [];
+        const total = STATES.reduce((a,s)=>a+Number(s.companies||0),0);
+        el('cbs-total').textContent = `${STATES.length} states · ${fmt(total)} companies`;
+        renderStates();
+        if(STATES.length) selectState(STATES[0].code, STATES[0].name); // auto-open the largest
+      }
+
+      el('cbs-search').addEventListener('input', e => { filter = e.target.value; renderStates(); });
+      load();
+    })();
+
+    // ===== (inert) legacy Campaigns scheduler — its #rows markup was removed, so the
+    // IIFE below returns immediately at its `if(!el('rows')) return;` guard. Kept for reference. =====
     (function campaignsModule(){
       const el = (id) => document.getElementById(id);
       if(!el('rows')) return; // compose markup not present — nothing to wire
