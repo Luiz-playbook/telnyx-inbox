@@ -379,46 +379,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
           <!-- ===== MARKET HISTORY / AI DECIDER ===== -->
           <div data-view id="view-history" class="hidden space-y-5">
-
-            <!-- AI decider over upcoming events -->
             <div class="card bg-base-100 border border-base-300">
-              <div class="card-body p-4 gap-3">
-                <div class="flex items-center justify-between gap-3 flex-wrap">
-                  <h2 class="font-extrabold text-[#133b49]">AI Decider &mdash; upcoming events
-                    <span class="text-sm font-semibold text-base-content/50" id="dec-summary"></span></h2>
-                  <div class="flex items-center gap-2">
-                    <span id="dec-note" class="text-xs text-base-content/50"></span>
-                    <button id="dec-run" class="btn btn-primary btn-sm">Run &amp; log with AI reasons</button>
-                  </div>
-                </div>
-                <p class="text-sm text-base-content/60">Every upcoming event is matched to its market&rsquo;s historical blast performance. The send/skip call and the best template are computed from the data (metrics-first); &ldquo;Run&rdquo; adds an AI-written rationale and logs each decision to <code>campaign_send_log</code>.</p>
-                <div class="overflow-x-auto">
-                  <table class="table table-sm">
-                    <thead><tr class="text-[#133b49]">
-                      <th>Event</th><th>Date</th><th>Fill</th><th>Market</th><th>Decision</th><th>Best template</th><th>Open / CTR</th><th>Why</th>
-                    </tr></thead>
-                    <tbody id="dec-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-6">Loading&hellip;</td></tr></tbody>
-                  </table>
-                </div>
+              <div class="card-body p-10 text-center">
+                <h2 class="font-extrabold text-[#133b49] text-lg">Market History cleared</h2>
+                <p class="text-sm text-base-content/50 mt-2 max-w-md mx-auto">The previous view showed placeholder/demo data and has been cleared. This will be rebuilt into a real <strong>Blast Send History</strong> (actual sends, by date) and a separate forward-looking <strong>Event + Price History</strong>.</p>
               </div>
             </div>
-
-            <!-- learned market performance -->
-            <div class="card bg-base-100 border border-base-300">
-              <div class="card-body p-4 gap-3">
-                <h2 class="font-extrabold text-[#133b49]">Market performance
-                  <span class="text-sm font-semibold text-base-content/50">&mdash; learned from historical blast_templates</span></h2>
-                <div class="overflow-x-auto">
-                  <table class="table table-sm">
-                    <thead><tr class="text-[#133b49]">
-                      <th>Market</th><th>Blasts</th><th>Sent</th><th>Open %</th><th>CTR %</th><th>Best template</th><th>Best day</th>
-                    </tr></thead>
-                    <tbody id="perf-rows"><tr><td colspan="7" class="text-center text-base-content/50 py-6">Loading&hellip;</td></tr></tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
           </div>
 
           <!-- ===== COLE RULES ===== -->
@@ -1075,7 +1041,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
       document.getElementById(VIEW[tab] || 'view-soon').classList.remove('hidden');
       if(tab === 'templates') loadTemplates();
-      if(tab === 'history') loadHistory();
       if(tab === 'rules') loadRules();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showTab(a.dataset.tab); }));
@@ -1133,6 +1098,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     async function loadHistory(){
       if(!sb) return;
+      if(!document.getElementById('dec-rows')) return; // Market History was cleared — nothing to load
       const pr=document.getElementById('perf-rows');
       const [perf, rec] = await Promise.all([ sb.rpc('rpc_market_performance'), sb.rpc('rpc_event_recommendations') ]);
       if(pr){
