@@ -332,18 +332,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <div data-view id="view-queue" class="hidden">
             <div class="card bg-base-100 border border-base-300">
               <div class="card-body p-4 gap-3">
-                <h2 class="font-extrabold text-[#133b49]">Ticket Blast Queue
-                  <span class="text-sm font-semibold text-base-content/50">(4 ready now, 0 scheduled ahead, 0 blocked/draft)</span></h2>
-                <div><button class="btn btn-sm btn-outline border-base-300">Copy Send Plan (confirmed &amp; ready-now)</button></div>
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <h2 class="font-extrabold text-[#133b49]">Daily Blast Queue
+                    <span class="text-sm font-semibold text-base-content/50" id="q-summary">Loading&hellip;</span></h2>
+                  <span class="text-xs text-base-content/50">What the agent thinks should go out. Unactioned blasts <strong>auto-send after 48h</strong> — approval is optional, not blocking.</span>
+                </div>
                 <div class="overflow-x-auto border border-base-300 rounded-lg">
-                  <table class="q-table w-full min-w-[640px]">
-                    <thead><tr class="bg-base-100 border-b border-base-300">
-                      <th>Confirmed</th><th>Status</th><th>Channels</th><th>Market</th><th>Recipients</th>
+                  <table class="camp-table w-full min-w-[1000px]">
+                    <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
+                      <th class="w-8"></th>
+                      <th>Blast</th>
+                      <th>Phone #s</th>
+                      <th>SMS</th>
+                      <th>Ticket $</th>
+                      <th>Schedule</th>
+                      <th>Status</th>
+                      <th>Actions</th>
                     </tr></thead>
-                    <tbody id="queue-rows"></tbody>
+                    <tbody id="q-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                   </table>
                 </div>
-                <p class="text-xs text-base-content/50 leading-relaxed">Exhaustive by design: every offer you add shows up here — ranked and ready now, scheduled for a specific future date once cooldown clears, or flagged impossible if the game will pass before cooldown clears. Only rows you've confirmed appear in the Send Plan. Use the Market History tab's &ldquo;Queue this market&rdquo; button to pull any of the 65 real markets in here without typing the name.</p>
+                <p class="text-xs text-base-content/50 leading-relaxed">Placeholder rows are shown until real blasts are queued (by the nightly agent or manually) — those land in the same queue and render here identically. <strong>Confirm</strong> approves without changing the send time; <strong>Snooze</strong> pushes the schedule 7 days out and keeps it queued.</p>
               </div>
             </div>
           </div>
@@ -1042,9 +1051,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.getElementById(VIEW[tab] || 'view-soon').classList.remove('hidden');
       if(tab === 'templates') loadTemplates();
       if(tab === 'rules') loadRules();
+      if(tab === 'queue' && window.__loadQueue) window.__loadQueue();
     }
-    document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); showTab(a.dataset.tab); }));
-    showTab('compose');
+    document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
+    (function(){ const t=(location.hash||'').replace('#',''); showTab(VIEW[t]?t:'compose'); })();
 
     // Market dropdown → phone numbers for the selected market.
     const marketSel = document.getElementById('market-select');
@@ -1289,6 +1299,100 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       el('cbs-search').addEventListener('input', e => { filter = e.target.value; render(); });
       load();
+    })();
+
+    // ===== Daily Blast Queue (campaign_queue) — powers the Queue tab =====
+    // Persistent: placeholder rows now, real blasts later, same UI. Confirm approves without
+    // moving the send time; Snooze pushes it +7d and keeps it queued; schedule is editable;
+    // the accordion exposes the email/SMS copy. Unactioned rows auto-send after 48h.
+    (function queueModule(){
+      const el = (id) => document.getElementById(id);
+      if(!el('q-rows')) return;
+      const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const fmt = n => (Number(n)||0).toLocaleString();
+      const AUTOSEND_H = 48;
+      let QUEUE = [], expanded = new Set();
+
+      const toLocalInput = iso => { const d=new Date(iso), p=n=>String(n).padStart(2,'0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+      const whenLabel = iso => { const d=new Date(iso);
+        return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); };
+      const autoSendIn = r => Math.max(0, Math.round((new Date(r.created_at).getTime() + AUTOSEND_H*3600e3 - Date.now())/3600e3));
+      const chan = r => [r.email?'Email':'', r.sms?'SMS':''].filter(Boolean).join(' + ') || '—';
+      function statusCell(r){
+        if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
+        if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
+        if(r.status==='confirmed')return `<span class="badge badge-success badge-sm text-white">Confirmed</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
+        if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] text-base-content/50 mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))}</div>`;
+        return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">auto-sends in ${autoSendIn(r)}h</div>`;
+      }
+
+      function render(){
+        const tb = el('q-rows');
+        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="8" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
+        tb.innerHTML = QUEUE.map(r => {
+          const open = expanded.has(r.id), sent = r.status==='sent';
+          const main = `<tr class="camp-row">
+            <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
+            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(r.title)}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}</div></td>
+            <td>${fmt(r.phone_count)}</td>
+            <td>${r.sms ? fmt(r.sms_count) : '—'}</td>
+            <td>${r.ticket_price!=null?('$'+r.ticket_price):'—'}</td>
+            <td><input type="datetime-local" class="input input-bordered input-xs w-52" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
+            <td class="whitespace-nowrap">${statusCell(r)}</td>
+            <td>${sent?'<span class="text-xs text-base-content/40">—</span>':`<div class="flex gap-1">
+              <button class="btn btn-xs btn-outline btn-success" data-confirm="${esc(r.id)}">Confirm</button>
+              <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>
+            </div>`}</td>
+          </tr>`;
+          const emailBlock = r.email ? `<div><div class="label-text font-semibold mb-1">Email copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-email="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.email_copy||'')}</textarea></div>` : '';
+          const smsBlock   = r.sms   ? `<div><div class="label-text font-semibold mb-1">SMS copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-sms="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.sms_copy||'')}</textarea></div>` : '';
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="7" class="py-3">
+            <div class="grid grid-cols-1 ${(r.email&&r.sms)?'md:grid-cols-2':''} gap-4">${emailBlock}${smsBlock}</div>
+            ${sent?'':`<div class="mt-2"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50 ml-2" data-copystatus="${esc(r.id)}"></span></div>`}
+          </td></tr>`;
+          return main + detail;
+        }).join('');
+        wire();
+      }
+
+      function wire(){
+        const tb = el('q-rows');
+        tb.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{
+          const id=b.dataset.toggle; expanded.has(id)?expanded.delete(id):expanded.add(id); render();
+        }));
+        tb.querySelectorAll('[data-confirm]').forEach(b=>b.addEventListener('click', async ()=>{
+          b.disabled=true; await sb.rpc('queue_confirm',{p_id:b.dataset.confirm}); await refresh();
+        }));
+        tb.querySelectorAll('[data-snooze]').forEach(b=>b.addEventListener('click', async ()=>{
+          b.disabled=true; await sb.rpc('queue_snooze',{p_id:b.dataset.snooze, p_days:7}); await refresh();
+        }));
+        tb.querySelectorAll('[data-schedule]').forEach(inp=>inp.addEventListener('change', async ()=>{
+          if(!inp.value) return; const iso=new Date(inp.value).toISOString();
+          await sb.rpc('queue_set_schedule',{p_id:inp.dataset.schedule, p_when:iso}); await refresh();
+        }));
+        tb.querySelectorAll('[data-savecopy]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id=b.dataset.savecopy, em=tb.querySelector(`[data-copy-email="${id}"]`), sm=tb.querySelector(`[data-copy-sms="${id}"]`), st=tb.querySelector(`[data-copystatus="${id}"]`);
+          b.disabled=true; if(st) st.textContent='Saving…';
+          await sb.rpc('queue_set_copy',{p_id:id, p_email: em?em.value:null, p_sms: sm?sm.value:null});
+          if(st) st.textContent='Saved'; b.disabled=false;
+        }));
+      }
+
+      async function refresh(){
+        const { data, error } = await sb.rpc('get_campaign_queue');
+        if(error){ el('q-rows').innerHTML=`<tr><td colspan="8" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        QUEUE = data || [];
+        const pend=QUEUE.filter(r=>r.status==='pending').length, conf=QUEUE.filter(r=>r.status==='confirmed').length;
+        el('q-summary').textContent = `${QUEUE.length} queued · ${conf} confirmed · ${pend} pending`;
+        render();
+      }
+      async function loadQueue(){
+        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        await refresh();
+      }
+      window.__loadQueue = loadQueue;
+      loadQueue();
     })();
 
     // ===== (inert) legacy Campaigns scheduler — its #rows markup was removed, so the
