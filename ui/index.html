@@ -389,9 +389,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <!-- ===== MARKET HISTORY / AI DECIDER ===== -->
           <div data-view id="view-history" class="hidden space-y-5">
             <div class="card bg-base-100 border border-base-300">
-              <div class="card-body p-10 text-center">
-                <h2 class="font-extrabold text-[#133b49] text-lg">Market History cleared</h2>
-                <p class="text-sm text-base-content/50 mt-2 max-w-md mx-auto">The previous view showed placeholder/demo data and has been cleared. This will be rebuilt into a real <strong>Blast Send History</strong> (actual sends, by date) and a separate forward-looking <strong>Event + Price History</strong>.</p>
+              <div class="card-body p-4 gap-3">
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <h2 class="font-extrabold text-[#133b49]">Blast Send History
+                    <span class="text-sm font-semibold text-base-content/50" id="bh-summary"></span></h2>
+                  <div class="flex items-center gap-2">
+                    <span id="bh-note" class="text-xs text-base-content/50"></span>
+                    <button id="bh-sync" class="btn btn-primary btn-sm">Sync now</button>
+                  </div>
+                </div>
+                <p class="text-sm text-base-content/60">Every email blast actually sent, synced from Salesmsg &mdash; most recent first (recency is the primary signal). All rows are tagged <strong>Email</strong>; SMS history can be added later. Refreshes on open and on demand.</p>
+                <div class="overflow-x-auto border border-base-300 rounded-lg">
+                  <table class="camp-table w-full min-w-[820px]">
+                    <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
+                      <th>Date</th><th>Blast</th><th>Channel</th><th>Status</th><th>Recipients</th><th>Sent</th>
+                    </tr></thead>
+                    <tbody id="bh-rows"><tr><td colspan="6" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </div>
@@ -1052,6 +1067,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'templates') loadTemplates();
       if(tab === 'rules') loadRules();
       if(tab === 'queue' && window.__loadQueue) window.__loadQueue();
+      if(tab === 'history' && window.__loadBlastHistory) window.__loadBlastHistory();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
     (function(){ const t=(location.hash||'').replace('#',''); showTab(VIEW[t]?t:'compose'); })();
@@ -1396,6 +1412,47 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
       window.__loadQueue = loadQueue;
       loadQueue();
+    })();
+
+    // ===== Blast Send History (salesmsg_broadcasts) — powers the Market History tab =====
+    // Reads the synced Salesmsg email-blast history from Supabase (recency first), and triggers
+    // a background sync (/api/salesmsg-sync) on open + a manual "Sync now". Everything tagged Email.
+    (function blastHistoryModule(){
+      const el = (id) => document.getElementById(id);
+      if(!el('bh-rows')) return;
+      const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const fmt = n => n==null ? '—' : (Number(n)||0).toLocaleString();
+      const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}) : '—';
+
+      async function readTable(){
+        const tb = el('bh-rows'); if(!sb){ tb.innerHTML='<tr><td colspan="6" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        const { data, error } = await sb.from('salesmsg_broadcasts').select('*').order('sent_at',{ascending:false,nullsFirst:false}).limit(1000);
+        if(error){ tb.innerHTML=`<tr><td colspan="6" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        const rows = data || [];
+        el('bh-summary').textContent = rows.length ? `(${rows.length} email blast${rows.length===1?'':'s'})` : '';
+        if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="text-center text-base-content/50 py-10">No blasts synced yet — they appear here as email blasts are sent via Salesmsg.</td></tr>'; return; }
+        tb.innerHTML = rows.map(r=>`<tr class="camp-row">
+          <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
+          <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
+          <td><span class="badge badge-sm badge-info">${esc(r.channel||'Email')}</span></td>
+          <td class="text-base-content/70">${esc(r.status||'—')}</td>
+          <td>${fmt(r.recipients)}</td>
+          <td>${fmt(r.sent_count)}</td>
+        </tr>`).join('');
+      }
+      async function sync(silent){
+        const btn=el('bh-sync'), note=el('bh-note');
+        try{
+          if(!silent && btn){ btn.disabled=true; btn.textContent='Syncing…'; }
+          const r = await fetch('/api/salesmsg-sync', { method:'POST', headers:{'content-type':'application/json','x-inbox-secret':(cfg.REPLY_SECRET||'')}, body:'{}' });
+          const d = await r.json().catch(()=>({}));
+          if(r.ok){ if(note) note.textContent = `synced ${d.upserted ?? 0} · fetched ${d.fetched ?? 0}`; await readTable(); }
+          else if(note && !silent){ note.textContent = 'sync failed: ' + (d.error || ('HTTP '+r.status)); }
+        }catch(e){ if(note && !silent) note.textContent = 'sync needs the deployed /api'; }
+        if(btn){ btn.disabled=false; btn.textContent='Sync now'; }
+      }
+      el('bh-sync')?.addEventListener('click', ()=>sync(false));
+      window.__loadBlastHistory = async () => { await readTable(); sync(true); };
     })();
 
     // ===== (inert) legacy Campaigns scheduler — its #rows markup was removed, so the
