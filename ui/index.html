@@ -180,7 +180,7 @@
                   <div class="overflow-auto max-h-[calc(100vh-320px)]">
                     <table class="camp-table w-full">
                       <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
-                        <th>Company</th><th>City</th><th>Sport</th><th>Tier</th><th>Site</th>
+                        <th>Company</th><th>City</th><th>Sport</th><th>Segment</th><th>Site</th>
                       </tr></thead>
                       <tbody id="cbs-companies"><tr><td colspan="5" class="text-center text-base-content/50 py-10">Pick a state on the left.</td></tr></tbody>
                     </table>
@@ -1301,7 +1301,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <td class="font-semibold text-[#133b49]">${esc(c.organization_name||'—')}</td>
           <td class="text-base-content/70">${esc(c.city||'—')}</td>
           <td>${c.primary_sport?`<span class="sport-pill">${esc(c.primary_sport)}</span>`:'—'}</td>
-          <td class="text-base-content/70">${esc(c.tier||'—')}</td>
+          <td class="text-base-content/70">${esc(c.segment||'—')}</td>
           <td>${c.website_url?`<a href="${esc(c.website_url)}" target="_blank" rel="noopener" class="link link-primary">site</a>`:'—'}</td>
         </tr>`).join('');
       }
