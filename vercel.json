@@ -1,9 +1,5 @@
 {
   "buildCommand": "node scripts/gen-config.js",
   "outputDirectory": "ui",
-  "cleanUrls": true,
-  "crons": [
-    { "path": "/api/decide", "schedule": "0 14 * * *" },
-    { "path": "/api/queue-tick", "schedule": "0 13 * * *" }
-  ]
+  "cleanUrls": true
 }
