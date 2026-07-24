@@ -157,21 +157,22 @@
           <!-- ===== COMPOSE & SEND ===== -->
           <div data-view id="view-compose" class="space-y-5">
 
-            <!-- Companies by state — company_intel (HubSpot): per-state counts + senders -->
+            <!-- Campaigns by event — icp_events, each resolved to its target market/state -->
             <div class="flex items-center gap-3 flex-wrap">
-              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">HUBSPOT</span>
-              <h1 class="text-2xl font-extrabold text-[#133b49]">Companies by State</h1>
+              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">EVENTS</span>
+              <h1 class="text-2xl font-extrabold text-[#133b49]">Campaigns by Event</h1>
               <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
             <div class="flex items-center justify-end flex-wrap gap-3">
-              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-44" placeholder="Search state…" autocomplete="off" /></label>
+              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-52" placeholder="Search event or state…" autocomplete="off" /></label>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-280px)]">
-                <table class="camp-table w-full min-w-[900px]">
+                <table class="camp-table w-full min-w-[1100px]">
                   <thead class="sticky top-0 z-10">
                     <tr class="border-b border-base-300 bg-base-100">
-                      <th>State</th>
+                      <th>Event</th>
+                      <th>Market / State</th>
                       <th>Companies</th>
                       <th>Phone #s</th>
                       <th>ICP</th>
@@ -181,7 +182,7 @@
                       <th>Text from</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="cbs-rows"><tr><td colspan="9" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -1260,11 +1261,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
     })();
 
-    // ===== Companies by State (company_intel / HubSpot) — powers the Campaigns tab =====
-    // One row per state: company count, phone-number count, ICP/SCP/Other segment counts
-    // (state_summary RPC), plus a per-state Send-from (email) and Text-from (SMS) sender.
-    // Sender choices persist per state in localStorage. Scoped IIFE; reuses outer sb.
-    (function stateSummaryModule(){
+    // ===== Campaigns by Event (icp_events) — powers the Campaigns tab =====
+    // One row per event, resolved to the market/state it targets (team → metro → state),
+    // with that state's audience (companies / phones / ICP-SCP-Other) and Send-from (email) /
+    // Text-from (SMS) senders. Sender choices persist per target state. Scoped IIFE; reuses sb.
+    (function eventTargetsModule(){
       const el = (id) => document.getElementById(id);
       if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1273,37 +1274,50 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       let ROWS = [], NUMBERS = [], filter = '';
       const emailFromOf = c => localStorage.getItem('campaign_email_from_'+c) || EMAIL_SENDERS[0];
       const smsFromOf   = c => localStorage.getItem('campaign_sms_from_'+c)   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
+      const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+      const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
+      const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
 
       function render(){
         const f = filter.trim().toLowerCase();
-        const items = ROWS.filter(s => !f || s.name.toLowerCase().includes(f) || (s.code||'').toLowerCase().includes(f));
+        const items = ROWS.filter(e => !f
+          || evTitle(e).toLowerCase().includes(f)
+          || (e.state_name||'').toLowerCase().includes(f)
+          || (e.state_code||'').toLowerCase().includes(f));
         const tb = el('cbs-rows');
-        if(!items.length){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No states match.</td></tr>'; return; }
-        tb.innerHTML = items.map(s => `<tr class="camp-row">
-          <td class="font-semibold text-[#133b49] whitespace-nowrap">${esc(s.name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(s.country)}</span></td>
-          <td class="font-semibold">${fmt(s.companies)}</td>
-          <td>${fmt(s.phones)}</td>
-          <td><span class="seg seg-icp">${fmt(s.icp)}</span></td>
-          <td><span class="seg seg-scp">${fmt(s.scp)}</span></td>
-          <td><span class="seg seg-non">${fmt(s.other)}</span></td>
-          <td><select class="select select-bordered select-xs mini-select w-48" data-email-from="${esc(s.code)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(s.code)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>
-          <td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(s.code)}">${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(s.code)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>
-        </tr>`).join('');
+        if(!items.length){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
+        tb.innerHTML = items.map(e => {
+          const code = e.state_code || 'none';
+          const market = e.state_name
+            ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(e.state_name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(e.country||'')}</span></span>${e.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(e.market_key))}</div>`:''}`
+            : '<span class="text-base-content/40">Unassigned</span>';
+          return `<tr class="camp-row">
+          <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}</div><div class="text-xs text-base-content/50">${esc(shortDate(e.event_date))}</div></td>
+          <td>${market}</td>
+          <td class="font-semibold">${fmt(e.companies)}</td>
+          <td>${fmt(e.phones)}</td>
+          <td><span class="seg seg-icp">${fmt(e.icp)}</span></td>
+          <td><span class="seg seg-scp">${fmt(e.scp)}</span></td>
+          <td><span class="seg seg-non">${fmt(e.other)}</span></td>
+          <td><select class="select select-bordered select-xs mini-select w-48" data-email-from="${esc(code)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(code)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>
+          <td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(code)}">${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(code)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>
+        </tr>`;
+        }).join('');
         tb.querySelectorAll('[data-email-from]').forEach(n => n.addEventListener('change', () => localStorage.setItem('campaign_email_from_'+n.dataset.emailFrom, n.value)));
         tb.querySelectorAll('[data-sms-from]').forEach(n => n.addEventListener('change', () => localStorage.setItem('campaign_sms_from_'+n.dataset.smsFrom, n.value)));
       }
 
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
-        const [sum, nums] = await Promise.all([
-          sb.rpc('state_summary'),
+        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        const [ev, nums] = await Promise.all([
+          sb.rpc('event_targets'),
           sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}),
         ]);
-        if(sum.error){ tb.innerHTML = `<tr><td colspan="8" class="text-center text-error py-8">${esc(sum.error.message)}</td></tr>`; return; }
-        ROWS = sum.data || []; NUMBERS = nums.error ? [] : (nums.data || []);
-        const total = ROWS.reduce((a,s)=>a+Number(s.companies||0),0);
-        el('cbs-total').textContent = `${ROWS.length} states · ${fmt(total)} companies`;
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        ROWS = ev.data || []; NUMBERS = nums.error ? [] : (nums.data || []);
+        const states = new Set(ROWS.map(e => e.state_code).filter(Boolean));
+        el('cbs-total').textContent = `${ROWS.length} events · ${states.size} target states`;
         render();
       }
 
