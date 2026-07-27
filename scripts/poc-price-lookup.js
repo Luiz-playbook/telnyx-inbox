@@ -91,6 +91,7 @@ async function runTier(name, list, batchSize, grounded) {
   const batches = chunk(list, batchSize);
   let inTok = 0, outTok = 0, ms = 0, got = 0, miss = 0, failCalls = 0, groundedCalls = 0;
   const prices = [];
+  const dump = [];
   for (const b of batches) {
     const r = await callGemini(m.id, buildPrompt(b), grounded);
     if (!r.ok) { failCalls++; console.log(`   ! call failed: ${r.err}`); continue; }
@@ -100,8 +101,11 @@ async function runTier(name, list, batchSize, grounded) {
       const hit = rows.find(x => String(x.ref) === String(g.external_id));
       if (hit && hit.price_usd != null) { got++; prices.push({ ref: g.external_id, price: hit.price_usd }); }
       else miss++;
+      dump.push({ date: g.event_date, matchup: `${g.team} v ${g.opponent}`, venue: g.venue,
+        price: hit?.price_usd ?? null, source: hit?.source ?? null, note: hit?.note ?? null });
     }
   }
+  if (has('--dump')) console.table(dump);
   const cost = (inTok / 1e6) * m.in + (outTok / 1e6) * m.out + groundedCalls * GROUNDING_PER_REQ;
   return { name, id: m.id, grounded, games: list.length, batches: batches.length, batchSize,
     priced: got, missing: miss, failCalls, inTok, outTok, ms, cost, prices };
