@@ -1,5 +1,8 @@
 {
   "buildCommand": "node scripts/gen-config.js",
   "outputDirectory": "ui",
-  "cleanUrls": true
+  "cleanUrls": true,
+  "crons": [
+    { "path": "/api/price-refresh", "schedule": "0 9 */3 * *" }
+  ]
 }
