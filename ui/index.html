@@ -1530,7 +1530,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
       const AUTOSEND_H = 48;
-      const EMAIL_SENDERS = ['john@callplaybook.com', 'rion@callplaybook.com'];
+      // Send-from options carry the delivery METHOD so it's obvious what's carrying the send.
+      // Mail merge (Gmail via n8n) and Telnyx are wired; CakeMail / SalesMessage are placeholders.
+      const EMAIL_SENDERS = [
+        { v:'john@callplaybook.com', method:'Mail merge',   label:'john@callplaybook.com' },
+        { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
+        { v:'cakemail',              method:'CakeMail',     label:'(placeholder)' },
+        { v:'salesmessage',          method:'SalesMessage', label:'(placeholder)' },
+      ];
+      const emailMethodOf = v => (EMAIL_SENDERS.find(s => s.v === v) || {}).method || 'Mail merge';
+      const smsMethodOf   = v => v === 'salesmessage' ? 'SalesMessage' : (v ? 'Telnyx' : '—');
       let QUEUE = [], NUMBERS = [], expanded = new Set();
 
       const toLocalInput = iso => { const d=new Date(iso), p=n=>String(n).padStart(2,'0');
@@ -1551,7 +1560,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">auto-sends in ${autoSendIn(r)}h</div>`;
       }
 
-      const emailFromOf = r => r.email_from || EMAIL_SENDERS[0];
+      const emailFromOf = r => r.email_from || EMAIL_SENDERS[0].v;
       const smsFromOf   = r => r.sms_from   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
 
       function render(){
@@ -1559,8 +1568,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
         tb.innerHTML = QUEUE.map(r => {
           const open = expanded.has(r.id), sent = r.status==='sent';
-          const emailSel = `<select class="select select-bordered select-xs mini-select w-48" data-qemail="${esc(r.id)}" ${(!r.email||sent)?'disabled':''}>${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(r)?'selected':''}>${esc(a)}</option>`).join('')}</select>`;
-          const smsSel = `<select class="select select-bordered select-xs mini-select w-44" data-qsms="${esc(r.id)}" ${(!r.sms||sent)?'disabled':''}>${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(r)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select>`;
+          const curEmail = emailFromOf(r), curSms = smsFromOf(r);
+          const emailSel = `<select class="select select-bordered select-xs mini-select w-56" data-qemail="${esc(r.id)}" ${(!r.email||sent)?'disabled':''}>${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}" ${s.v===curEmail?'selected':''}>${esc(s.method)} · ${esc(s.label)}</option>`).join('')}</select>`;
+          const smsOpts = [...NUMBERS.map(n=>({ v:n.phone_number, method:'Telnyx', label:(n.label?n.label+' · ':'')+n.phone_number })), { v:'salesmessage', method:'SalesMessage', label:'(placeholder)' }];
+          const smsSel = `<select class="select select-bordered select-xs mini-select w-52" data-qsms="${esc(r.id)}" ${(!r.sms||sent)?'disabled':''}>${smsOpts.map(o=>`<option value="${esc(o.v)}" ${o.v===curSms?'selected':''}>${esc(o.method)} · ${esc(o.label)}</option>`).join('')}</select>`;
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
             <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}${r.email && r.email_count ? ' · '+fmt(r.email_count)+' email' : ''}</div></td>
@@ -1578,7 +1589,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           </tr>`;
           const emailBlock = r.email ? `<div><div class="label-text font-semibold mb-1">Email copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-email="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.email_copy||'')}</textarea></div>` : '';
           const smsBlock   = r.sms   ? `<div><div class="label-text font-semibold mb-1">SMS copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-sms="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.sms_copy||'')}</textarea></div>` : '';
+          const methodLine = `<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3">
+            ${r.email?`<span class="text-base-content/70">Email carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(emailMethodOf(curEmail))}</span> <span class="text-base-content/50">${esc(curEmail)}</span></span>`:''}
+            ${r.sms?`<span class="text-base-content/70">SMS carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(smsMethodOf(curSms))}</span> <span class="text-base-content/50">${esc(curSms)}</span></span>`:''}
+          </div>`;
           const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
+            ${methodLine}
             <div class="grid grid-cols-1 ${(r.email&&r.sms)?'md:grid-cols-2':''} gap-4">${emailBlock}${smsBlock}</div>
             ${sent?'':`<div class="mt-2"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50 ml-2" data-copystatus="${esc(r.id)}"></span></div>`}
           </td></tr>`;
