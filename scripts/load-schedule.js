@@ -1,0 +1,123 @@
+// AI-830: schedule refresh pipeline. Pulls a league's released games into events_master
+// and records a change-log row (events_master_schedule_runs) with the ids added.
+//
+// Idempotent — upsert_events_master() skips games already present, so re-running (or an
+// overlapping monthly run) only ever ADDS newly released games. Never re-scrapes.
+//
+//   node --env-file=.env scripts/load-schedule.js --league mlb                 # StatsAPI, full remaining season
+//   node --env-file=.env scripts/load-schedule.js --league nhl --start 2026-10-01 --end 2027-04-30
+//   node --env-file=.env scripts/load-schedule.js --league nba --dry
+//
+// MLB uses the MLB StatsAPI (one call spans the range). NBA/NFL/NHL/college use ESPN's
+// hidden scoreboard API, walked day by day across the window.
+//
+// Env: SUPABASE_URL, SUPABASE_ANON_KEY.
+
+const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+const SUPA_KEY = process.env.SUPABASE_ANON_KEY;
+if (!SUPA_URL || !SUPA_KEY) { console.error('Missing SUPABASE_URL / SUPABASE_ANON_KEY'); process.exit(1); }
+
+const args = process.argv.slice(2);
+const flag = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
+const DRY = args.includes('--dry');
+const LEAGUE = (flag('--league', 'mlb')).toLowerCase();
+const YEAR = Number(flag('--year', '2026'));
+const today = new Date().toISOString().slice(0, 10);
+const START = flag('--start', today);
+const END = flag('--end', `${YEAR}-12-31`);
+const SEASON = `${YEAR}-${LEAGUE}`;
+
+// ESPN sport/league path per league
+const ESPN = {
+  nba: 'basketball/nba', nfl: 'football/nfl', nhl: 'hockey/nhl',
+  ncaaf: 'football/college-football', ncaab: 'basketball/mens-college-basketball',
+};
+
+async function getJson(url) {
+  const res = await fetch(url, { headers: { accept: 'application/json' } });
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText} for ${url}`);
+  return res.json();
+}
+
+// ---- MLB: StatsAPI, one call for the whole range ----
+async function loadMLB() {
+  const teamsUrl = `https://statsapi.mlb.com/api/v1/teams?sportId=1&season=${YEAR}`;
+  const teams = new Map();
+  for (const t of (await getJson(teamsUrl)).teams || [])
+    teams.set(t.id, { nick: (t.teamName || t.name || '').toLowerCase().trim(), full: t.name });
+  const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&gameType=R&startDate=${START}&endDate=${END}`;
+  const sched = await getJson(url);
+  const rows = [];
+  for (const day of sched.dates || []) for (const g of day.games || []) {
+    const home = teams.get(g.teams?.home?.team?.id) || {}, away = teams.get(g.teams?.away?.team?.id) || {};
+    rows.push({
+      league: 'mlb', team: home.nick || (g.teams?.home?.team?.name || '').toLowerCase(),
+      team_full: home.full, opponent: away.nick || g.teams?.away?.team?.name,
+      event_date: day.date, event_time: g.gameDate ? g.gameDate.slice(11, 19) : null,
+      venue: g.venue?.name || null, home_away: 'home', external_id: String(g.gamePk),
+      source_url: url, source_note: 'MLB StatsAPI; event_time UTC', season: SEASON,
+    });
+  }
+  return { rows, source: url };
+}
+
+// ---- ESPN: scoreboard walked day by day across [START, END] ----
+async function loadESPN() {
+  const path = ESPN[LEAGUE];
+  if (!path) throw new Error(`no ESPN mapping for league "${LEAGUE}"`);
+  const rows = [];
+  const d = new Date(START + 'T00:00:00Z'), end = new Date(END + 'T00:00:00Z');
+  let firstUrl = null;
+  for (; d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const ymd = d.toISOString().slice(0, 10).replace(/-/g, '');
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${path}/scoreboard?dates=${ymd}&limit=400`;
+    if (!firstUrl) firstUrl = url;
+    let data;
+    try { data = await getJson(url); } catch { continue; }
+    for (const ev of data.events || []) {
+      const comp = ev.competitions?.[0]; if (!comp) continue;
+      const home = comp.competitors?.find(c => c.homeAway === 'home');
+      const away = comp.competitors?.find(c => c.homeAway === 'away');
+      if (!home || !away) continue;
+      rows.push({
+        league: LEAGUE, team: (home.team?.name || home.team?.shortDisplayName || '').toLowerCase(),
+        team_full: home.team?.displayName, opponent: (away.team?.name || away.team?.shortDisplayName || '').toLowerCase(),
+        event_date: (ev.date || '').slice(0, 10), event_time: (ev.date || '').slice(11, 19) || null,
+        venue: comp.venue?.fullName || null, home_away: 'home', external_id: String(ev.id),
+        source_url: url, source_note: 'ESPN scoreboard; event_time UTC', season: SEASON,
+      });
+    }
+  }
+  return { rows, source: firstUrl };
+}
+
+async function rpc(name, body) {
+  const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${name}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', apikey: SUPA_KEY, authorization: `Bearer ${SUPA_KEY}` },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${name} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
+const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
+
+(async () => {
+  console.log(`Schedule refresh: ${LEAGUE} ${START}->${END} (season ${SEASON})${DRY ? ' [DRY]' : ''}`);
+  const { rows, source } = LEAGUE === 'mlb' ? await loadMLB() : await loadESPN();
+  console.log(`Fetched ${rows.length} games from ${LEAGUE === 'mlb' ? 'MLB StatsAPI' : 'ESPN'}.`);
+  if (!rows.length) { console.log('Nothing to load (season may not be released yet).'); return; }
+
+  if (DRY) { console.table(rows.slice(0, 8).map(r => ({ date: r.event_date, team: r.team, opp: r.opponent, venue: r.venue }))); console.log(`(dry — ${rows.length} would upsert)`); return; }
+
+  const addedIds = [];
+  let fetched = 0;
+  for (const batch of chunk(rows, 200)) {
+    const out = await rpc('upsert_events_master', { p_rows: batch });
+    for (const r of out) { fetched++; if (r.out_inserted && r.out_id) addedIds.push(r.out_id); }
+  }
+  const runId = await rpc('record_schedule_run', { p: {
+    league: LEAGUE, season: SEASON, source_url: source, fetched, added: addedIds.length, added_ids: addedIds,
+  } });
+  console.log(`\nDone. ${fetched} processed, ${addedIds.length} newly added. Change-log run ${runId}.`);
+})().catch(e => { console.error(e); process.exit(1); });
