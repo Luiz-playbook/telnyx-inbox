@@ -1540,7 +1540,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       ];
       const emailMethodOf = v => (EMAIL_SENDERS.find(s => s.v === v) || {}).method || 'Mail merge';
       const smsMethodOf   = v => v === 'salesmessage' ? 'SalesMessage' : (v ? 'Telnyx' : '—');
-      let QUEUE = [], NUMBERS = [], expanded = new Set();
+      let QUEUE = [], NUMBERS = [], COOLDOWNS = {}, expanded = new Set();
+      // 14-day per-market cooldown: a market blasted recently is held. Shown per row.
+      const cooldownNote = r => { const c = COOLDOWNS[(r.state_code||'').toUpperCase()]; return (c && c.cooled) ? `<div class="text-[11px] font-semibold text-[#c94d07] mt-0.5">&#9203; cooling &middot; ${c.days_left}d left</div>` : ''; };
 
       const toLocalInput = iso => { const d=new Date(iso), p=n=>String(n).padStart(2,'0');
         return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -1579,7 +1581,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${r.sms ? fmt(r.sms_count) : '—'}</td>
             <td>${r.ticket_price!=null?('$'+r.ticket_price):'—'}</td>
             <td><input type="datetime-local" class="input input-bordered input-xs w-52" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
-            <td class="whitespace-nowrap">${statusCell(r)}</td>
+            <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
             <td>${r.email?emailSel:'<span class="text-base-content/40">—</span>'}</td>
             <td>${r.sms?smsSel:'<span class="text-base-content/40">—</span>'}</td>
             <td>${sent?'<span class="text-xs text-base-content/40">—</span>':`<div class="flex gap-1">
@@ -1643,6 +1645,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function loadQueue(){
         if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
+        const cd = await sb.rpc('market_cooldowns'); COOLDOWNS = {}; (cd.error ? [] : (cd.data||[])).forEach(c => { COOLDOWNS[(c.market_code||'').toUpperCase()] = c; });
         await refresh();
       }
       window.__loadQueue = loadQueue;

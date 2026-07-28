@@ -46,8 +46,14 @@ export default async function handler(req, res) {
       (r.status === 'pending' && new Date(r.created_at).getTime() + AUTOSEND_MS <= now)
     ));
 
-    const results = [];
+    // 14-day per-market cooldown pre-filter: markets blasted recently never reach the send step.
+    const cd = await (await rpc('market_cooldowns')).json();
+    const cooled = new Set((Array.isArray(cd) ? cd : []).filter(c => c.cooled).map(c => (c.market_code || '').toUpperCase()));
+
+    const results = [], held = [];
     for (const r of due) {
+      const mkt = (r.state_code || '').toUpperCase();
+      if (mkt && cooled.has(mkt)) { held.push({ id: r.id, title: r.title, market: mkt }); continue; } // cooling down — skip
       const reason = new Date(r.scheduled_for).getTime() <= now ? 'scheduled' : 'auto-48h';
       let phones = [], emails = [];
       if (r.sms && r.state_code)   { const d = await (await rpc('market_phones', { p_code: r.state_code })).json(); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
@@ -67,10 +73,15 @@ export default async function handler(req, res) {
       }
       const summary = [phones.length ? `${phones.length} SMS` : '', emails.length ? `${emails.length} email` : ''].filter(Boolean).join(' · ');
       await rpc('queue_mark_sent', { p_id: r.id, p_recipients: summary });
+      // Write to the notebook so this market goes on cooldown. Per Josh: an email send
+      // counts for both channels, so one row (market + day) cools email AND SMS.
+      if (r.state_code && (phones.length || emails.length)) {
+        await rpc('log_market_blast', { p_code: r.state_code, p_name: r.state_name || null, p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id });
+      }
       results.push({ id: r.id, title: r.title, reason, sent, recipients: summary });
     }
 
-    res.status(200).json({ ok: true, checked: q.length, due: due.length, sent: results, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook) } });
+    res.status(200).json({ ok: true, checked: q.length, due: due.length, sent: results, held, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook) } });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
