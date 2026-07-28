@@ -134,6 +134,12 @@
       </div>
     </header>
 
+    <!-- TEST MODE banner — shown only while send_allowlist is non-empty (real markets blocked) -->
+    <div id="test-mode-banner" class="hidden shrink-0 bg-[#e55608] text-white px-5 py-2 text-sm flex items-center gap-2">
+      <span class="font-extrabold tracking-wide">&#9888; TEST MODE</span>
+      <span id="test-mode-detail" class="font-normal text-white/90"></span>
+    </div>
+
     <!-- body -->
     <main class="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden">
 
@@ -179,7 +185,7 @@
           <!-- ===== COMPOSE & SEND ===== -->
           <div data-view id="view-compose" class="space-y-5">
 
-            <!-- Campaigns by event — icp_events, each resolved to its target market/state -->
+            <!-- Campaigns by event — events_master (MLB StatsAPI load), each resolved to its target market/state -->
             <div class="flex items-center gap-3 flex-wrap">
               <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">EVENTS</span>
               <h1 class="text-2xl font-extrabold text-[#133b49]">Campaigns by Event</h1>
@@ -187,7 +193,12 @@
             </div>
             <div class="flex items-center justify-between flex-wrap gap-3">
               <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
-              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-52" placeholder="Search event or state…" autocomplete="off" /></label>
+              <div class="flex items-center gap-2 flex-wrap">
+                <select id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
+                <select id="cbs-state" class="select select-bordered select-sm"><option value="">All states</option></select>
+                <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-52" placeholder="Search event or state…" autocomplete="off" /></label>
+              </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-280px)]">
@@ -195,6 +206,8 @@
                   <thead class="sticky top-0 z-10">
                     <tr class="border-b border-base-300 bg-base-100">
                       <th>Event</th>
+                      <th>Cheapest</th>
+                      <th>Sport</th>
                       <th>Market / State</th>
                       <th>Companies</th>
                       <th>Phone #s</th>
@@ -203,7 +216,7 @@
                       <th>Other</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr><td colspan="7" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="cbs-rows"><tr><td colspan="9" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -492,6 +505,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+    // TEST MODE: send_allowlist restricts which markets can actually send. Surface it loudly
+    // so a tester never mistakes a 0-recipient send to a real market for a real send.
+    // window.__ALLOWED_CODES holds the allowlisted state codes (empty = normal mode).
+    window.__ALLOWED_CODES = new Set();
+    async function refreshTestMode(){
+      if(!sb) return;
+      const { data, error } = await sb.rpc('send_test_mode');
+      const rows = error ? [] : (data || []);
+      window.__ALLOWED_CODES = new Set(rows.map(r => (r.code||'').toUpperCase()));
+      const banner = document.getElementById('test-mode-banner');
+      const detail = document.getElementById('test-mode-detail');
+      if(!banner) return;
+      if(rows.length){
+        banner.classList.remove('hidden');
+        detail.textContent = `Sends are restricted to ${rows.map(r=>r.code).join(', ')} only — every other market is blocked (0 recipients). Nothing you click on a real market will send.`;
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+    if(sb) refreshTestMode();
     function normPhone(p){ let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; }
     function isValidPhone(p){ return /^\+\d{10,15}$/.test(p||''); }
     function isValidEmail(e){ return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||''); }
@@ -1300,25 +1333,41 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
-      let ROWS = [], filter = '';
+      let ROWS = [], filter = '', sportF = '', leagueF = '', stateF = '';
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
       const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
 
       function render(){
         const f = filter.trim().toLowerCase();
-        const items = ROWS.filter(e => !f
-          || evTitle(e).toLowerCase().includes(f)
-          || (e.state_name||'').toLowerCase().includes(f)
-          || (e.state_code||'').toLowerCase().includes(f));
+        const items = ROWS.filter(e => {
+          if(sportF  && (e.sport||'')  !== sportF)  return false;
+          if(leagueF && (e.league||'') !== leagueF) return false;
+          if(stateF  && (e.state_code||'') !== stateF) return false;
+          return !f
+            || evTitle(e).toLowerCase().includes(f)
+            || (e.state_name||'').toLowerCase().includes(f)
+            || (e.state_code||'').toLowerCase().includes(f);
+        });
         const tb = el('cbs-rows');
-        if(!items.length){ tb.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
+        if(!items.length){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
         tb.innerHTML = items.map(e => {
           const market = e.state_name
             ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(e.state_name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(e.country||'')}</span></span>${e.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(e.market_key))}</div>`:''}`
             : '<span class="text-base-content/40">Unassigned</span>';
-          return `<tr class="camp-row">
-          <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}</div><div class="text-xs text-base-content/50">${esc(shortDate(e.event_date))}</div></td>
+          const sport = e.sport
+            ? `<span class="sport-pill">${esc(e.sport)}</span>${e.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(e.league)}</div>`:''}`
+            : '<span class="text-base-content/40">—</span>';
+          // TEST MODE cue: badge the sendable market, dim + flag the blocked ones.
+          const testOn = window.__ALLOWED_CODES && window.__ALLOWED_CODES.size > 0;
+          const allowed = testOn && window.__ALLOWED_CODES.has((e.state_code||'').toUpperCase());
+          const sendTag = !testOn ? ''
+            : allowed ? ' <span class="badge badge-success badge-sm text-white align-middle">&#10003; sendable</span>'
+                      : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
+          return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
+          <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}</div><div class="text-xs text-base-content/50">${esc(shortDate(e.event_date))}</div></td>
+          <td>${e.ticket_price!=null?`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span><div class="text-[10px] text-base-content/40">get-in</div>`:'<span class="text-base-content/40">—</span>'}</td>
+          <td>${sport}</td>
           <td>${market}</td>
           <td class="font-semibold">${fmt(e.companies)}</td>
           <td>${fmt(e.phones)}</td>
@@ -1328,19 +1377,34 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         </tr>`;
         }).join('');
       }
+      // Fill a <select> with distinct values from ROWS, keeping the "All" option at top.
+      function fillFilter(id, keyFn, labelFn){
+        const sel = el(id); if(!sel) return;
+        const cur = sel.value;
+        const vals = [...new Set(ROWS.map(keyFn).filter(Boolean))].sort();
+        sel.innerHTML = sel.options[0].outerHTML + vals.map(v=>`<option value="${esc(v)}">${esc(labelFn?labelFn(v):v)}</option>`).join('');
+        sel.value = vals.includes(cur) ? cur : '';
+      }
 
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="7" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         const ev = await sb.rpc('event_targets');
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="7" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         const states = new Set(ROWS.map(e => e.state_code).filter(Boolean));
         el('cbs-total').textContent = `${ROWS.length} events · ${states.size} target states`;
+        fillFilter('cbs-sport',  e => e.sport);
+        fillFilter('cbs-league', e => e.league);
+        fillFilter('cbs-state',  e => e.state_code, c => c);
+        await refreshTestMode();   // populate window.__ALLOWED_CODES before first render (test-mode cues)
         render();
       }
 
       el('cbs-search').addEventListener('input', e => { filter = e.target.value; render(); });
+      el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; render(); });
+      el('cbs-league')?.addEventListener('change', e => { leagueF = e.target.value; render(); });
+      el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; render(); });
 
       // Rich result toast (daisyUI card, auto-dismiss + manual close).
       function pbToast({ type='ok', title, lines=[], chips=[], foot }){
