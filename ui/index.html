@@ -197,6 +197,17 @@
                 <select id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
                 <select id="cbs-state" class="select select-bordered select-sm"><option value="">All states</option></select>
+                <select id="cbs-window" class="select select-bordered select-sm" title="Upcoming window">
+                  <option value="">All upcoming</option>
+                  <option value="7">Next 7 days</option>
+                  <option value="14">Next 14 days</option>
+                  <option value="30">Next 30 days</option>
+                </select>
+                <select id="cbs-price" class="select select-bordered select-sm" title="Ticket price">
+                  <option value="">Any price</option>
+                  <option value="has">Has ticket price</option>
+                  <option value="no">No price yet</option>
+                </select>
                 <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100"><input id="cbs-search" type="text" class="grow w-52" placeholder="Search event or state…" autocomplete="off" /></label>
               </div>
             </div>
@@ -1333,17 +1344,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
-      let ROWS = [], filter = '', sportF = '', leagueF = '', stateF = '';
+      let ROWS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '';
+      const dateCutoff = n => { const d=new Date(); d.setDate(d.getDate()+Number(n)); return d.toISOString().slice(0,10); };
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
       const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
 
       function render(){
         const f = filter.trim().toLowerCase();
+        const winCut = windowF ? dateCutoff(windowF) : null;
         const items = ROWS.filter(e => {
           if(sportF  && (e.sport||'')  !== sportF)  return false;
           if(leagueF && (e.league||'') !== leagueF) return false;
           if(stateF  && (e.state_code||'') !== stateF) return false;
+          if(winCut  && (e.event_date||'') > winCut) return false;        // within the upcoming window
+          if(priceF==='has' && e.ticket_price==null) return false;         // only games with a ticket price
+          if(priceF==='no'  && e.ticket_price!=null) return false;         // only games still unpriced
           return !f
             || evTitle(e).toLowerCase().includes(f)
             || (e.state_name||'').toLowerCase().includes(f)
@@ -1366,7 +1382,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}</div><div class="text-xs text-base-content/50">${esc(shortDate(e.event_date))}</div></td>
-          <td>${e.ticket_price!=null?`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span><div class="text-[10px] text-base-content/40">get-in</div>`:'<span class="text-base-content/40">—</span>'}</td>
+          <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}<div class="text-[10px] text-base-content/40">get-in</div>`:'<span class="text-base-content/40">—</span>'}</td>
           <td>${sport}</td>
           <td>${market}</td>
           <td class="font-semibold">${fmt(e.companies)}</td>
@@ -1405,6 +1421,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; render(); });
       el('cbs-league')?.addEventListener('change', e => { leagueF = e.target.value; render(); });
       el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; render(); });
+      el('cbs-window')?.addEventListener('change', e => { windowF = e.target.value; render(); });
+      el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; render(); });
 
       // Rich result toast (daisyUI card, auto-dismiss + manual close).
       function pbToast({ type='ok', title, lines=[], chips=[], foot }){
