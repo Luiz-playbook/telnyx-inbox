@@ -1539,6 +1539,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); };
       const autoSendIn = r => Math.max(0, Math.round((new Date(r.created_at).getTime() + AUTOSEND_H*3600e3 - Date.now())/3600e3));
       const chan = r => [r.email?'Email':'', r.sms?'SMS':''].filter(Boolean).join(' + ') || '—';
+      // Scannable title: home team vs opponent + the SEND date (scheduled_for, not created_at),
+      // so the title tracks reschedules/snoozes. Falls back to the stored name.
+      const sendDateShort = iso => { try{ return new Date(iso).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
+      const blastTitle = r => (r.team && r.opponent) ? `${r.team} vs ${r.opponent} — ${sendDateShort(r.scheduled_for)}` : (r.title || 'Blast');
       function statusCell(r){
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
@@ -1559,7 +1563,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const smsSel = `<select class="select select-bordered select-xs mini-select w-44" data-qsms="${esc(r.id)}" ${(!r.sms||sent)?'disabled':''}>${NUMBERS.length?NUMBERS.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(r)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select>`;
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(r.title)}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}${r.email && r.email_count ? ' · '+fmt(r.email_count)+' email' : ''}</div></td>
+            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}${r.email && r.email_count ? ' · '+fmt(r.email_count)+' email' : ''}</div></td>
             <td>${fmt(r.phone_count)}</td>
             <td>${r.sms ? fmt(r.sms_count) : '—'}</td>
             <td>${r.ticket_price!=null?('$'+r.ticket_price):'—'}</td>
