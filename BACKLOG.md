@@ -137,3 +137,26 @@ finalized branch wired.)
 | `COMPANY_AI_WEBHOOK_URL` | HubSpot-deal scraper webhook | defaulted |
 | `ALLOWED_EMAIL_DOMAIN` | login domain lock | `callplaybook.com` |
 | `TELNYX_API_KEY` | **Number Lookup (owner key needed)** | **MISSING / blocked** |
+| `SALESMSG_API_KEY` | `/api/salesmsg-sync` auth | **MISSING / blocked** |
+
+---
+
+## Salesmsg sync — cron disabled 2026-07-29
+`/api/salesmsg-sync` was on an hourly Vercel cron and failed every run:
+`SALESMSG_API_KEY is not set on the server`. Removed from `vercel.json` crons;
+the endpoint still works on-demand from the UI ("Sync now", Market History tab).
+
+Re-add `{ "path": "/api/salesmsg-sync", "schedule": "0 * * * *" }` once auth works.
+
+Blocked on an auth-model decision — the repo currently disagrees with itself:
+- `api/salesmsg-sync.js` expects a **static** `SALESMSG_API_KEY` (not set anywhere).
+- `.env` instead carries **OAuth** vars (`SALESMSG_CLIENT_ID/_SECRET/_REDIRECT_URI/
+  _SETUP_SECRET`) that **no code reads**. `SALESMSG_REDIRECT_URI` is empty.
+- Supabase has `salesmsg_secrets` (OAuth token store) — **0 rows**, flow never ran —
+  and `salesmsg_broadcasts` + `upsert_salesmsg_broadcasts(p_rows jsonb)`. None of
+  these are in `migrations/` (schema drift; backfill as a migration).
+
+Recommended: ask Salesmsg for a static API key. Then `salesmsg-sync.js` works as
+written with no code change, and the OAuth vars + `salesmsg_secrets` can be dropped.
+OAuth would additionally need a service-role key (this repo has none — `ui/config.js`
+is public, so anon-only), two new callback endpoints, and a token-refresh helper.

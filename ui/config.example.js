@@ -20,4 +20,6 @@ window.INBOX_CONFIG = {
   BULK_SEND_WEBHOOK_URL: "<<PASTE_N8N_BULK_SEND_WEBHOOK_URL>>",
   // n8n workflow that receives { messages:[{to,subject,html}] } and sends each via Gmail.
   EMAIL_SEND_WEBHOOK_URL: "<<PASTE_N8N_GMAIL_BULK_SEND_WEBHOOK_URL>>",
+  // CakeMail has no key here on purpose: it is sent from our own API (/api/cakemail-send)
+  // with CAKEMAIL_PAT, which must stay server-side. This file is public.
 };

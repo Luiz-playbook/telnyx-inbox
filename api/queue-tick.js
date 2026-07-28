@@ -10,7 +10,15 @@
 // through the same webhooks as the manual Queue "Confirm"; marks rows sent.
 //
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET / REPLY_SECRET,
-//      BULK_SEND_WEBHOOK_URL (SMS), EMAIL_SEND_WEBHOOK_URL (email).
+//      BULK_SEND_WEBHOOK_URL (SMS), EMAIL_SEND_WEBHOOK_URL (Gmail mail merge),
+//      CAKEMAIL_PAT (CakeMail — sent straight from here, no n8n).
+//
+// Email routing is decided by the row's email_from: a value shaped
+// 'cakemail:<account_id>:<sender_id>' goes straight to the CakeMail API via
+// lib/cakemail.js, anything else to the Gmail mail merge webhook.
+// Keep this in sync with EMAIL_SENDERS / cakemailSender in ui/index.html.
+
+import { sendCampaign, parseCakemailFrom, cakemailKey } from '../lib/cakemail.js';
 
 export const config = { maxDuration: 60 };
 
@@ -65,11 +73,32 @@ export default async function handler(req, res) {
         const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
         sent.push(rr.ok ? `SMS ${messages.length}` : `SMS failed`);
       }
-      if (r.email && emails.length && hookOk(emailHook)) {
+      if (r.email && emails.length) {
         const html = nl2br(r.email_copy || '');
-        const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject: r.title, html }));
-        const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
-        sent.push(rr.ok ? `Email ${messages.length}` : `Email failed`);
+        const cm = parseCakemailFrom(r.email_from);
+        if (cm) {
+          // Straight to the CakeMail API — one campaign for the whole market, five calls
+          // total regardless of recipient count. A failure here must not abort the run:
+          // record it and let the remaining due rows proceed.
+          if (!cakemailKey()) { sent.push('CakeMail not configured (CAKEMAIL_PAT unset)'); }
+          else {
+            try {
+              const out = await sendCampaign({
+                accountId: cm.accountId, senderId: cm.senderId,
+                emails, subject: r.title, html,
+                name: `${r.title} — ${r.state_code || 'blast'}`,
+                tags: ['telnyx-inbox', r.state_code || 'blast'].filter(Boolean),
+              });
+              sent.push(`CakeMail ${out.recipients} (campaign ${out.campaignId})`);
+            } catch (e) {
+              sent.push(`CakeMail failed: ${String((e && e.message) || e)}`);
+            }
+          }
+        } else if (hookOk(emailHook)) {
+          const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject: r.title, html }));
+          const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
+          sent.push(rr.ok ? `Email ${messages.length}` : `Email failed`);
+        }
       }
       const summary = [phones.length ? `${phones.length} SMS` : '', emails.length ? `${emails.length} email` : ''].filter(Boolean).join(' · ');
       await rpc('queue_mark_sent', { p_id: r.id, p_recipients: summary });
@@ -81,7 +110,7 @@ export default async function handler(req, res) {
       results.push({ id: r.id, title: r.title, reason, sent, recipients: summary });
     }
 
-    res.status(200).json({ ok: true, checked: q.length, due: due.length, sent: results, held, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook) } });
+    res.status(200).json({ ok: true, checked: q.length, due: due.length, sent: results, held, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook), cakemail: !!cakemailKey() } });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }

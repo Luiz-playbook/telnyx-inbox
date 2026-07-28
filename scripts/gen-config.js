@@ -18,6 +18,9 @@ const cfg = {
   // n8n Gmail bulk-send webhook — receives { messages:[{to,subject,html}] }, Switch-by-from.
   EMAIL_SEND_WEBHOOK_URL: process.env.EMAIL_SEND_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/gmail-bulk-send',
+  // NOTE: CakeMail deliberately has NO entry here. It is sent straight from our own API
+  // (api/cakemail-send.js + lib/cakemail.js) using CAKEMAIL_PAT, which is server-side only —
+  // everything in this object is written into ui/config.js and served to every visitor.
   // n8n workflow that pulls the messaging-profile's numbers into telnyx_numbers.
   SYNC_NUMBERS_WEBHOOK_URL: process.env.SYNC_NUMBERS_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-sync-numbers',

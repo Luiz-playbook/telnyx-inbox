@@ -1514,20 +1514,47 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const sends = dec.picks || [];
           const skipBy = dec.skipBy || {};
 
+          // TEST MODE (send_allowlist, migration 023): when the allowlist is non-empty only
+          // those codes resolve recipients, so queueing a real market would line up a blast
+          // that silently reaches nobody. Retarget every pick at the allowlisted test market
+          // instead — the decider's event/team/template choice is kept, so the row still
+          // exercises the real path, it just points at contacts we own. Empty allowlist =
+          // normal mode and picks keep their own markets.
+          let testMode = null;
+          const tmRes = await sb.rpc('send_test_mode');
+          const tmRows = tmRes.error ? [] : (tmRes.data || []);
+          if(tmRows.length){
+            const code = tmRows[0].code;
+            const [em, ph] = await Promise.all([
+              sb.rpc('market_emails', { p_code: code }),
+              sb.rpc('market_phones', { p_code: code }),
+            ]);
+            testMode = {
+              code,
+              label: 'Test Market ' + code,
+              emails: em.error ? 0 : (em.data||[]).length,
+              phones: ph.error ? 0 : (ph.data||[]).length,
+            };
+          }
+
           let queued = [];
           if(sends.length){
             const rows = sends.map(p => {
               const perf = (p.open_rate_w!=null)
                 ? ` ${p.open_rate_w}% open / ${p.ctr_w}% CTR over ${p.n_blasts} prior blast${p.n_blasts==1?'':'s'}.` : '';
               const tmpl = p.best_template ? ` Best template: ${p.best_template}.` : '';
-              const emails = Number(p.email_count)||0, phones = Number(p.phone_count)||0;
+              // In test mode the reach shown must be the TEST market's, not the picked market's —
+              // otherwise the row advertises thousands of recipients it will never touch.
+              const emails = testMode ? testMode.emails : (Number(p.email_count)||0);
+              const phones = testMode ? testMode.phones : (Number(p.phone_count)||0);
               const reachNote = (emails||phones) ? ` Reach: ${emails} email / ${phones} SMS.` : '';
               const why = p.reason ? (' ' + p.reason) : (' Decider pick for ' + (p.market_label||'this market') + '.' + tmpl + perf);
-              const note = '[TEST — will NOT send]' + why + reachNote;
+              const retarget = testMode ? ` Retargeted from ${p.market_label||'its market'} to ${testMode.label}.` : '';
+              const note = '[TEST — will NOT send]' + why + retarget + reachNote;
               return {
-                title: '[TEST] ' + (p.team || 'Blast') + (p.market_label ? ' — ' + p.market_label : ''),
-                state_name: p.market_label || null,
-                state_code: p.state_code || null,
+                title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (testMode ? testMode.label : (p.market_label || '')),
+                state_name: testMode ? testMode.label : (p.market_label || null),
+                state_code: testMode ? testMode.code : (p.state_code || null),
                 event_id: p.event_id || null,
                 email: true, sms: true,
                 phone_count: phones, sms_count: phones, email_count: emails,
@@ -1554,14 +1581,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           }
 
           const skipStr = Object.entries(skipBy).map(([k,v]) => `${v} ${String(k).replace(/_/g,' ')}`).join(' · ') || 'none';
-          const totalEmail = sends.reduce((s,p) => s + (Number(p.email_count)||0), 0);
-          const totalPhone = sends.reduce((s,p) => s + (Number(p.phone_count)||0), 0);
+          // Reach must reflect what was actually queued — in test mode that's the test market
+          // repeated per row, not the picked markets' real counts.
+          const totalEmail = testMode ? testMode.emails * sends.length : sends.reduce((s,p) => s + (Number(p.email_count)||0), 0);
+          const totalPhone = testMode ? testMode.phones * sends.length : sends.reduce((s,p) => s + (Number(p.phone_count)||0), 0);
           const vetoed = dec.vetoed || [];
           pbToast({
             type: 'ok',
             title: `Trigger Blast — ${queued.length} test blast${queued.length===1?'':'s'} queued`,
             lines: [
               `Evaluated ${dec.evaluated||0} events · ${dec.llm ? 'ranked by AI' : 'ranked by rules'} · capped at ${CAP}.`,
+              testMode ? `TEST MODE — all picks retargeted to ${testMode.label} (${testMode.emails} email · ${testMode.phones} SMS). Real markets resolve to zero recipients.` : ``,
               queued.length ? `Reach: ${totalEmail.toLocaleString()} email · ${totalPhone.toLocaleString()} SMS (test only).` : `Nothing queued — all markets held back.`,
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
               `Held back by rules: ${skipStr}.`,
@@ -1595,14 +1625,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const fmt = n => (Number(n)||0).toLocaleString();
       const AUTOSEND_H = 48;
       // Send-from options carry the delivery METHOD so it's obvious what's carrying the send.
-      // Mail merge (Gmail via n8n) and Telnyx are wired; CakeMail / SalesMessage are placeholders.
+      // Mail merge (Gmail via n8n) and Telnyx are wired. CakeMail sends straight from our own
+      // API (/api/cakemail-send → lib/cakemail.js), no n8n; SalesMessage is still a placeholder.
+      //
+      // A CakeMail option's value is `cakemail:<account_id>:<sender_id>` — senders live in a
+      // specific sub-account and every CakeMail call is scoped by ?account_id=, so both ids
+      // travel together. The sender id comes from GET /brands/default/senders, NOT a plain
+      // address, because the campaign body takes sender:{id}.
+      //
+      // Only send from a domain with an ACTIVE DKIM key. pbtest@playbookemail.com works
+      // (key 5119, DNS published); callplaybook.com senders are refused at schedule time with
+      // "Action blocked due to a low account score" because that domain has no published key.
       const EMAIL_SENDERS = [
         { v:'john@callplaybook.com', method:'Mail merge',   label:'john@callplaybook.com' },
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
-        { v:'cakemail',              method:'CakeMail',     label:'(placeholder)' },
+        { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
         { v:'salesmessage',          method:'SalesMessage', label:'(placeholder)' },
       ];
+      // 'cakemail:<account_id>:<sender_id>' → { accountId, senderId }; anything else → null.
+      const cakemailSender = v => { const m = /^cakemail:([^:]+):(.+)$/.exec(String(v||'')); return m ? { accountId:m[1], senderId:m[2] } : null; };
       const emailMethodOf = v => (EMAIL_SENDERS.find(s => s.v === v) || {}).method || 'Mail merge';
+      // Never show the raw stored value — a CakeMail row stores ids, not an address.
+      const emailFromLabel = v => { const s = EMAIL_SENDERS.find(x => x.v === v); if(s) return s.label;
+        const cm = cakemailSender(v); return cm ? `sender ${cm.senderId} · account ${cm.accountId}` : (v || '—'); };
       const smsMethodOf   = v => v === 'salesmessage' ? 'SalesMessage' : (v ? 'Telnyx' : '—');
       let QUEUE = [], NUMBERS = [], COOLDOWNS = {}, expanded = new Set();
       // 14-day per-market cooldown: a market blasted recently is held. Shown per row.
@@ -1617,7 +1662,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Scannable title: home team vs opponent + the SEND date (scheduled_for, not created_at),
       // so the title tracks reschedules/snoozes. Falls back to the stored name.
       const sendDateShort = iso => { try{ return new Date(iso).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
-      const blastTitle = r => (r.team && r.opponent) ? `${r.team} vs ${r.opponent} — ${sendDateShort(r.scheduled_for)}` : (r.title || 'Blast');
+      // is_placeholder rows never send (queue-tick skips them), so the title must SAY so.
+      // The team-vs-opponent form is built from columns and would otherwise drop the '[TEST]'
+      // prefix that lives in the stored title — making a placeholder look like a real blast.
+      const blastTitle = r => {
+        const t = (r.team && r.opponent) ? `${r.team} vs ${r.opponent} — ${sendDateShort(r.scheduled_for)}` : (r.title || 'Blast');
+        return (r.is_placeholder && !/^\[TEST/i.test(t)) ? '[TEST] ' + t : t;
+      };
       function statusCell(r){
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
@@ -1656,7 +1707,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const emailBlock = r.email ? `<div><div class="label-text font-semibold mb-1">Email copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-email="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.email_copy||'')}</textarea></div>` : '';
           const smsBlock   = r.sms   ? `<div><div class="label-text font-semibold mb-1">SMS copy</div><textarea class="textarea textarea-bordered w-full text-sm min-h-32" data-copy-sms="${esc(r.id)}" ${sent?'disabled':''}>${esc(r.sms_copy||'')}</textarea></div>` : '';
           const methodLine = `<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3">
-            ${r.email?`<span class="text-base-content/70">Email carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(emailMethodOf(curEmail))}</span> <span class="text-base-content/50">${esc(curEmail)}</span></span>`:''}
+            ${r.email?`<span class="text-base-content/70">Email carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(emailMethodOf(curEmail))}</span> <span class="text-base-content/50">${esc(emailFromLabel(curEmail))}</span></span>`:''}
             ${r.sms?`<span class="text-base-content/70">SMS carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(smsMethodOf(curSms))}</span> <span class="text-base-content/50">${esc(curSms)}</span></span>`:''}
           </div>`;
           const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
