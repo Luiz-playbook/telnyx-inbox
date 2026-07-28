@@ -8,8 +8,9 @@
 //   node --env-file=.env scripts/load-schedule.js --league nhl --start 2026-10-01 --end 2027-04-30
 //   node --env-file=.env scripts/load-schedule.js --league nba --dry
 //
-// MLB uses the MLB StatsAPI (one call spans the range). NBA/NFL/NHL/college use ESPN's
-// hidden scoreboard API, walked day by day across the window.
+// Sources: MLB -> MLB StatsAPI, NHL -> official api-web.nhle.com (both return a full
+// season cleanly). NBA/NFL/college -> ESPN's hidden scoreboard API, walked day by day.
+// All map to the same row shape and go through upsert_events_master (dedup + market).
 //
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY.
 
@@ -61,6 +62,39 @@ async function loadMLB() {
   return { rows, source: url };
 }
 
+// ---- NHL: official api-web.nhle.com. One call per team returns the whole season;
+// iterating all teams and keeping home games only yields each game exactly once. ----
+async function loadNHL() {
+  const seasonId = `${YEAR}${YEAR + 1}`;                 // e.g. 20262027
+  const st = await getJson('https://api-web.nhle.com/v1/standings/now');
+  const tricodes = [...new Set((st.standings || []).map(s => s.teamAbbrev?.default).filter(Boolean))];
+  const rows = [];
+  let firstUrl = null;
+  for (const tri of tricodes) {
+    const url = `https://api-web.nhle.com/v1/club-schedule-season/${tri}/${seasonId}`;
+    if (!firstUrl) firstUrl = url;
+    let data;
+    try { data = await getJson(url); } catch { continue; }
+    for (const g of data.games || []) {
+      if (g.gameType !== 2) continue;                    // 2 = regular season
+      if (g.homeTeam?.abbrev !== tri) continue;          // home games only -> game counted once
+      const home = g.homeTeam, away = g.awayTeam;
+      rows.push({
+        league: 'nhl',
+        team: (home.commonName?.default || home.abbrev || '').toLowerCase(),
+        team_full: [home.placeName?.default, home.commonName?.default].filter(Boolean).join(' ') || home.abbrev,
+        opponent: (away.commonName?.default || away.abbrev || '').toLowerCase(),
+        event_date: g.gameDate,
+        event_time: g.startTimeUTC ? g.startTimeUTC.slice(11, 19) : null,
+        venue: g.venue?.default || null,
+        home_away: 'home', external_id: String(g.id),
+        source_url: url, source_note: 'NHL api-web; event_time UTC', season: SEASON,
+      });
+    }
+  }
+  return { rows, source: firstUrl || 'https://api-web.nhle.com' };
+}
+
 // ---- ESPN: scoreboard walked day by day across [START, END] ----
 async function loadESPN() {
   const path = ESPN[LEAGUE];
@@ -104,8 +138,10 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 
 (async () => {
   console.log(`Schedule refresh: ${LEAGUE} ${START}->${END} (season ${SEASON})${DRY ? ' [DRY]' : ''}`);
-  const { rows, source } = LEAGUE === 'mlb' ? await loadMLB() : await loadESPN();
-  console.log(`Fetched ${rows.length} games from ${LEAGUE === 'mlb' ? 'MLB StatsAPI' : 'ESPN'}.`);
+  const loaders = { mlb: loadMLB, nhl: loadNHL };         // official APIs; others fall back to ESPN
+  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web' }[LEAGUE] || 'ESPN';
+  const { rows, source } = await (loaders[LEAGUE] || loadESPN)();
+  console.log(`Fetched ${rows.length} games from ${sourceName}.`);
   if (!rows.length) { console.log('Nothing to load (season may not be released yet).'); return; }
 
   if (DRY) { console.table(rows.slice(0, 8).map(r => ({ date: r.event_date, team: r.team, opp: r.opponent, venue: r.venue }))); console.log(`(dry — ${rows.length} would upsert)`); return; }
