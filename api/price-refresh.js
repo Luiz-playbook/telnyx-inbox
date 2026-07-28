@@ -15,65 +15,26 @@
 //
 // Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET/REPLY_SECRET.
 
+import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, callGeminiPrices } from '../lib/price.js';
+
 export const config = { maxDuration: 300 };
 
-const MODEL = 'gemini-2.5-flash-lite';
-const IN_COST = 0.10 / 1e6, OUT_COST = 0.40 / 1e6, GROUNDING_PER_REQ = 0.035; // approx, verify
+const MODEL = PRICE_MODEL;
+const IN_COST = PRICE_IN_COST, OUT_COST = PRICE_OUT_COST;
 const BATCH = 6;
 
 const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
-
-function buildPrompt(batch) {
-  const lines = batch.map(g =>
-    `- ref=${g.external_id}: on ${g.event_date}, the ${g.team} host the ${g.opponent} at ${g.venue || 'their venue'}`);
-  return [
-    'You look up CURRENT resale ticket prices for specific MLB games. For each game below,',
-    'find the lowest available "get-in" price per ticket in USD on the secondary market',
-    '(StubHub / SeatGeek / Ticketmaster resale). Use web search. Do NOT guess: if you cannot',
-    'find a price, return price_usd = null. Return ONLY JSON of shape',
-    '{"prices":[{"ref":"<ref>","price_usd":<number|null>,"source":"<site>"}]}.',
-    '', 'Games:', ...lines,
-  ].join('\n');
-}
-
-async function callGemini(gkey, prompt) {
-  const body = {
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0 },
-    tools: [{ google_search: {} }],
-  };
-  const t0 = Date.now();
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${gkey}`,
-    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  const ms = Date.now() - t0;
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) return { ok: false, ms };
-  const text = (json.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('');
-  const u = json.usageMetadata || {};
-  let parsed = null;
-  try { parsed = JSON.parse(text.replace(/^```json\s*|\s*```$/g, '').trim()); } catch { /* null */ }
-  return { ok: true, ms, parsed, inTok: u.promptTokenCount || 0, outTok: u.candidatesTokenCount || 0 };
-}
 
 // one grounded pass over the batches; returns priced rows + which batches came back empty
 async function pricePass(gkey, batches, acc) {
   const priced = [];
   const failedBatches = [];
   for (const b of batches) {
-    const r = await callGemini(gkey, buildPrompt(b));
+    const r = await callGeminiPrices(gkey, b);
     if (!r.ok) { failedBatches.push(b); continue; }
     acc.inTok += r.inTok; acc.outTok += r.outTok; acc.groundedCalls++;
-    const rows = r.parsed?.prices || [];
-    let hitInBatch = 0;
-    for (const g of b) {
-      const hit = rows.find(x => String(x.ref) === String(g.external_id));
-      if (hit && hit.price_usd != null) {
-        priced.push({ external_id: g.external_id, price_usd: hit.price_usd, source: hit.source || 'gemini' });
-        hitInBatch++;
-      }
-    }
-    if (hitInBatch === 0) failedBatches.push(b); // whole-batch miss -> retry candidate
+    priced.push(...r.priced);
+    if (r.priced.length === 0) failedBatches.push(b); // whole-batch miss -> retry candidate
   }
   return { priced, failedBatches };
 }
