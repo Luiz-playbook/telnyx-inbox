@@ -1503,10 +1503,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       const ymd = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
       const perDayInput = () => Math.max(1, Math.min(10, Number(el('tb-perday')?.value) || PER_DAY_DEFAULT));
+      const defaultThrough = () => { const d = new Date(); d.setDate(d.getDate() + DAYS_DEFAULT - 1); return ymd(d); };
+      // The date is fixed but today moves toward it, so an untouched field gives a window that
+      // shrinks 4 days -> 3 -> 2 -> 1 and finally collapses once the date passes. Josh wants the
+      // next four days ALWAYS scheduled, so anything short of the default window (empty, elapsed,
+      // or merely close) rolls forward to today + DAYS_DEFAULT-1. A date further out is a
+      // deliberate longer window and is left exactly as typed.
       const throughInput = () => {
-        const v = el('tb-through')?.value;
-        if(v) return v;
-        const d = new Date(); d.setDate(d.getDate() + DAYS_DEFAULT - 1); return ymd(d);
+        const inp = el('tb-through'), floor = defaultThrough();
+        const v = inp?.value;
+        if(v && v >= floor) return v;
+        if(inp) inp.value = floor;
+        return floor;
       };
       // Send slot: 10:00 local on the assigned day, so a day's blasts group together.
       const slotIso = day => { const [y,m,d] = String(day||'').split('-').map(Number);
@@ -1514,8 +1522,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const dayLabel = day => { const [y,m,d] = String(day||'').split('-').map(Number);
         return new Date(y, m-1, d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); };
 
-      // default the date picker to today + (DAYS_DEFAULT-1)
-      if(el('tb-through') && !el('tb-through').value) el('tb-through').value = throughInput();
+      // Seed the picker (today + DAYS_DEFAULT-1) and forbid picking a day already gone.
+      if(el('tb-through')){ el('tb-through').min = ymd(new Date()); throughInput(); }
 
       // Returns { picks:[{…, slot_date}], plan:[{date,existing,need,added}], vetoed, skipBy,
       //   evaluated, llm, per_day, through }. Server (rules+LLM) first, client rules as fallback.
