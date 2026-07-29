@@ -212,6 +212,12 @@
                   <option value="14">Next 14 days</option>
                   <option value="30">Next 30 days</option>
                 </select>
+                <select id="cbs-segment" class="select select-bordered select-sm" title="Audience segment">
+                  <option value="">All segments</option>
+                  <option value="ICP">ICP</option>
+                  <option value="SCP">SCP</option>
+                  <option value="Other">Other</option>
+                </select>
                 <select id="cbs-price" class="select select-bordered select-sm" title="Ticket price">
                   <option value="">Any price</option>
                   <option value="has">Has ticket price</option>
@@ -229,14 +235,15 @@
                       <th>Cheapest</th>
                       <th>Sport</th>
                       <th>Market / State</th>
+                      <!-- One row per segment: ICP, SCP, Other. Every count on the row is that
+                           segment's alone — companies, plus reach on each channel. -->
+                      <th>Segment</th>
                       <th>Companies</th>
+                      <th>Emails</th>
                       <th>Phone #s</th>
-                      <th>ICP</th>
-                      <th>SCP</th>
-                      <th>Other</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr><td colspan="9" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="cbs-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                 </table>
               </div>
             </div>
@@ -1355,7 +1362,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
-      let ROWS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '';
+      // A market with no contacts of that kind can't be blasted on that channel, so the zero
+      // is flagged rather than sitting quietly among real counts.
+      const reachCell = n => (Number(n)||0)
+        ? fmt(n)
+        : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market">0</span>';
+      let ROWS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '', segF = '';
+      const SEG_CLASS = { ICP:'seg-icp', SCP:'seg-scp' };   // anything else renders as the neutral pill
+      const segBadge = s => `<span class="seg ${SEG_CLASS[s] || 'seg-non'}">${esc(s || 'Other')}</span>`;
       const dateCutoff = n => { const d=new Date(); d.setDate(d.getDate()+Number(n)); return d.toISOString().slice(0,10); };
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
@@ -1368,6 +1382,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(sportF  && (e.sport||'')  !== sportF)  return false;
           if(leagueF && (e.league||'') !== leagueF) return false;
           if(stateF  && (e.state_code||'') !== stateF) return false;
+          if(segF    && (e.segment||'Other') !== segF) return false;
           if(winCut  && (e.event_date||'') > winCut) return false;        // within the upcoming window
           if(priceF==='has' && e.ticket_price==null) return false;         // only games with a ticket price
           if(priceF==='no'  && e.ticket_price!=null) return false;         // only games still unpriced
@@ -1377,7 +1392,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             || (e.state_code||'').toLowerCase().includes(f);
         });
         const tb = el('cbs-rows');
-        if(!items.length){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
+        if(!items.length){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
         tb.innerHTML = items.map(e => {
           const market = e.state_name
             ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(e.state_name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(e.country||'')}</span></span>${e.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(e.market_key))}</div>`:''}`
@@ -1396,11 +1411,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}<div class="text-[10px] text-base-content/40">get-in</div>`:'<span class="text-base-content/40">—</span>'}</td>
           <td>${sport}</td>
           <td>${market}</td>
+          <td>${segBadge(e.segment)}</td>
           <td class="font-semibold">${fmt(e.companies)}</td>
-          <td>${fmt(e.phones)}</td>
-          <td><span class="seg seg-icp">${fmt(e.icp)}</span></td>
-          <td><span class="seg seg-scp">${fmt(e.scp)}</span></td>
-          <td><span class="seg seg-non">${fmt(e.other)}</span></td>
+          <td>${reachCell(e.emails)}</td>
+          <td>${reachCell(e.phones)}</td>
         </tr>`;
         }).join('');
       }
@@ -1415,12 +1429,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         const ev = await sb.rpc('event_targets');
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="8" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
+        // A row is now an event × segment, so events must be counted distinctly.
         const states = new Set(ROWS.map(e => e.state_code).filter(Boolean));
-        el('cbs-total').textContent = `${ROWS.length} events · ${states.size} target states`;
+        const events = new Set(ROWS.map(e => e.event_id).filter(Boolean));
+        el('cbs-total').textContent = `${events.size} events · ${ROWS.length} segment rows · ${states.size} target states`;
         fillFilter('cbs-sport',  e => e.sport);
         fillFilter('cbs-league', e => e.league);
         fillFilter('cbs-state',  e => e.state_code, c => c);
@@ -1434,6 +1450,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; render(); });
       el('cbs-window')?.addEventListener('change', e => { windowF = e.target.value; render(); });
       el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; render(); });
+      el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; render(); });
 
       // Rich result toast (daisyUI card, auto-dismiss + manual close).
       function pbToast({ type='ok', title, lines=[], chips=[], foot }){
