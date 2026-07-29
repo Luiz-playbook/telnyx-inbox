@@ -1,0 +1,246 @@
+{
+  "name": "CakeMail send test (PB Sports)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## CakeMail send test — PB Sports account 1679383\n\nFill in `token` in the **Config** node, then Execute Workflow.\n\nSequence: create list → accept policy → import contacts → create campaign → **schedule (this sends)**.\n\nIf node 6 returns `403 \"Action blocked due to a low account score\"`, the block is on the account's API sending, not on how the request is built — the same failure happens from a plain script.\n\nNodes 1-5 do NOT send. Only node 6 does.",
+        "height": 460,
+        "width": 620,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-780, -260],
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Read me"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-720, 40],
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "When clicking Execute"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "token",
+              "value": "PASTE_CAKEMAIL_PAT_HERE",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "account_id",
+              "value": "1679383",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "sender_id",
+              "value": "Bk0SjruxSB2im5kcnhpY",
+              "type": "string"
+            },
+            {
+              "id": "c4",
+              "name": "subject",
+              "value": "[TEST] Cakemail send from PB Sports account",
+              "type": "string"
+            },
+            {
+              "id": "c5",
+              "name": "html",
+              "value": "<html><body><p>This is only a test email, please ignore it.</p></body></html>",
+              "type": "string"
+            },
+            {
+              "id": "c6",
+              "name": "emails",
+              "value": "={{ [\"vhea@callplaybook.com\",\"john@callplaybook.com\",\"josh@callplaybook.com\",\"cole@callplaybook.com\",\"mgimutao@callplaybook.com\"] }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-500, 40],
+      "id": "a1000000-0000-4000-8000-000000000003",
+      "name": "Config"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cakemail.dev/lists",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "={{ $json.account_id }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "authorization", "value": "=Bearer {{ $json.token }}" },
+            { "name": "accept", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"name\": {{ JSON.stringify('[TEST] n8n ' + $now.toFormat('yyyy-MM-dd HH:mm:ss')) }},\n  \"default_sender\": { \"id\": \"{{ $json.sender_id }}\" },\n  \"language\": \"en_US\"\n}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-280, 40],
+      "id": "a1000000-0000-4000-8000-000000000004",
+      "name": "1. Create list"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.cakemail.dev/lists/{{ $json.id }}/accept-policy",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "={{ $('Config').item.json.account_id }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "authorization", "value": "=Bearer {{ $('Config').item.json.token }}" },
+            { "name": "accept", "value": "application/json" }
+          ]
+        },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-60, 40],
+      "id": "a1000000-0000-4000-8000-000000000005",
+      "name": "2. Accept policy"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.cakemail.dev/lists/{{ $('1. Create list').item.json.id }}/import-contacts",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "={{ $('Config').item.json.account_id }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "authorization", "value": "=Bearer {{ $('Config').item.json.token }}" },
+            { "name": "accept", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"contacts\": {{ JSON.stringify($('Config').item.json.emails.map(e => ({ email: e }))) }},\n  \"import_to\": \"active\"\n}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [160, 40],
+      "id": "a1000000-0000-4000-8000-000000000006",
+      "name": "3. Import contacts"
+    },
+    {
+      "parameters": {
+        "amount": 5
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [380, 40],
+      "id": "a1000000-0000-4000-8000-000000000007",
+      "name": "4. Wait for import",
+      "webhookId": "b2000000-0000-4000-8000-000000000007"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.cakemail.dev/campaigns",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "={{ $('Config').item.json.account_id }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "authorization", "value": "=Bearer {{ $('Config').item.json.token }}" },
+            { "name": "accept", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"audience\": { \"list_id\": {{ $('1. Create list').item.json.id }} },\n  \"sender\": { \"id\": \"{{ $('Config').item.json.sender_id }}\" },\n  \"content\": {\n    \"type\": \"html\",\n    \"subject\": {{ JSON.stringify($('Config').item.json.subject) }},\n    \"html\": {{ JSON.stringify($('Config').item.json.html) }},\n    \"default_unsubscribe_link\": true\n  },\n  \"name\": {{ JSON.stringify($('Config').item.json.subject) }},\n  \"tags\": [\"n8n\", \"TEST\"]\n}",
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [600, 40],
+      "id": "a1000000-0000-4000-8000-000000000008",
+      "name": "5. Create campaign"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.cakemail.dev/campaigns/{{ $json.id }}/schedule",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "account_id", "value": "={{ $('Config').item.json.account_id }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "authorization", "value": "=Bearer {{ $('Config').item.json.token }}" },
+            { "name": "accept", "value": "application/json" }
+          ]
+        },
+        "options": { "response": { "response": { "neverError": true } } }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [820, 40],
+      "id": "a1000000-0000-4000-8000-000000000009",
+      "name": "6. Schedule (SENDS)"
+    }
+  ],
+  "connections": {
+    "When clicking Execute": {
+      "main": [[{ "node": "Config", "type": "main", "index": 0 }]]
+    },
+    "Config": {
+      "main": [[{ "node": "1. Create list", "type": "main", "index": 0 }]]
+    },
+    "1. Create list": {
+      "main": [[{ "node": "2. Accept policy", "type": "main", "index": 0 }]]
+    },
+    "2. Accept policy": {
+      "main": [[{ "node": "3. Import contacts", "type": "main", "index": 0 }]]
+    },
+    "3. Import contacts": {
+      "main": [[{ "node": "4. Wait for import", "type": "main", "index": 0 }]]
+    },
+    "4. Wait for import": {
+      "main": [[{ "node": "5. Create campaign", "type": "main", "index": 0 }]]
+    },
+    "5. Create campaign": {
+      "main": [[{ "node": "6. Schedule (SENDS)", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}
