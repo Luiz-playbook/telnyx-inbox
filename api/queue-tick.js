@@ -1,9 +1,12 @@
 // Auto-send tick for the daily blast queue (Vercel Cron).
 //
-// A queued blast sends when EITHER: it's confirmed and its scheduled time has arrived,
-// OR it was never actioned within 48h of being queued (approval is optional, not blocking).
-// Placeholder/demo rows (is_placeholder=true) are NEVER auto-sent — this endpoint is
-// dormant until real blasts are queued.
+// A queued blast sends when its scheduled slot arrives — confirmed or not (approval is
+// optional, not blocking). Placeholder/demo rows (is_placeholder=true) are NEVER auto-sent
+// — this endpoint is dormant until real blasts are queued.
+//
+// The old rule also fired any row left unactioned 48h after it was QUEUED, ignoring
+// scheduled_for. With the multi-day queue (four days lined up at once, migration 030) that
+// would blast a day-4 market on day 2, so scheduled_for is now the only trigger.
 //
 // Runs from Vercel Cron (Authorization: Bearer CRON_SECRET) or on-demand
 // (x-inbox-secret: REPLY_SECRET). Reads the queue + recipients via anon RPCs; sends
@@ -21,8 +24,6 @@
 import { sendCampaign, parseCakemailFrom, cakemailKey } from '../lib/cakemail.js';
 
 export const config = { maxDuration: 60 };
-
-const AUTOSEND_MS = 48 * 3600 * 1000;
 
 const normPhone = p => { let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; };
 const validPhone = p => /^\+\d{10,15}$/.test(p||'');
@@ -48,11 +49,9 @@ export default async function handler(req, res) {
     const q = await (await rpc('get_campaign_queue')).json();
     if (!Array.isArray(q)) { res.status(502).json({ error: 'queue fetch failed', detail: q }); return; }
 
-    // due = real, not already sent, and (schedule reached OR pending past the 48h auto-send window)
-    const due = q.filter(r => !r.is_placeholder && r.status !== 'sent' && r.status !== 'sending' && (
-      new Date(r.scheduled_for).getTime() <= now ||
-      (r.status === 'pending' && new Date(r.created_at).getTime() + AUTOSEND_MS <= now)
-    ));
+    // due = real, not already sent, and its scheduled slot has arrived
+    const due = q.filter(r => !r.is_placeholder && r.status !== 'sent' && r.status !== 'sending'
+      && new Date(r.scheduled_for).getTime() <= now);
 
     // 14-day per-market cooldown pre-filter: markets blasted recently never reach the send step.
     const cd = await (await rpc('market_cooldowns')).json();
@@ -62,7 +61,7 @@ export default async function handler(req, res) {
     for (const r of due) {
       const mkt = (r.state_code || '').toUpperCase();
       if (mkt && cooled.has(mkt)) { held.push({ id: r.id, title: r.title, market: mkt }); continue; } // cooling down — skip
-      const reason = new Date(r.scheduled_for).getTime() <= now ? 'scheduled' : 'auto-48h';
+      const reason = r.status === 'confirmed' ? 'scheduled' : 'scheduled-unactioned';
       let phones = [], emails = [];
       if (r.sms && r.state_code)   { const d = await (await rpc('market_phones', { p_code: r.state_code })).json(); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
       if (r.email && r.state_code) { const d = await (await rpc('market_emails', { p_code: r.state_code })).json(); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }

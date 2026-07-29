@@ -192,7 +192,16 @@
               <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
             <div class="flex items-center justify-between flex-wrap gap-3">
-              <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
+              <div class="flex items-end gap-2 flex-wrap">
+                <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
+                <!-- Multi-day, additive: fill the queue with N markets/day through this date. -->
+                <label class="text-xs text-base-content/60">Markets/day
+                  <input id="tb-perday" type="number" min="1" max="10" value="4" class="input input-bordered input-xs w-16 ml-1">
+                </label>
+                <label class="text-xs text-base-content/60">Through
+                  <input id="tb-through" type="date" class="input input-bordered input-xs w-36 ml-1">
+                </label>
+              </div>
               <div class="flex items-center gap-2 flex-wrap">
                 <select id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
@@ -380,7 +389,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <div class="flex items-center justify-between gap-3 flex-wrap">
                   <h2 class="font-extrabold text-[#133b49]">Daily Blast Queue
                     <span class="text-sm font-semibold text-base-content/50" id="q-summary">Loading&hellip;</span></h2>
-                  <span class="text-xs text-base-content/50">What the agent thinks should go out. Unactioned blasts <strong>auto-send after 48h</strong> — approval is optional, not blocking.</span>
+                  <span class="text-xs text-base-content/50">What the agent thinks should go out, banded by send day. Unactioned blasts <strong>still go at their scheduled slot</strong> — approval is optional, not blocking.</span>
                 </div>
                 <div class="overflow-x-auto border border-base-300 rounded-lg">
                   <table class="camp-table w-full min-w-[1240px]">
@@ -1482,55 +1491,101 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       //   2. LLM (/api/trigger-decide) — re-ranks the rule-approved candidates and may
       //      VETO weak ones with a written reason. It can NEVER add a blocked market;
       //      the server enforces that every returned event_id came from the safe set.
-      // The top CAP picks are queued as TEST rows (is_placeholder=true → queue-tick NEVER
-      // sends them) and logged to the market blast log (source='test') so cooldown counts
-      // them. If the endpoint/LLM is unavailable, it falls back to the rule order alone.
-      const CAP = 3;
+      // The picks are queued as TEST rows (is_placeholder=true → queue-tick NEVER sends them)
+      // and logged to the market blast log (source='test') so cooldown counts them. If the
+      // endpoint/LLM is unavailable, it falls back to the rule order alone.
+      //
+      // MULTI-DAY + ADDITIVE (Josh, 2026-07-28): a run schedules PER_DAY markets for every day
+      // from today through the "Through" date, and only fills what the queue is MISSING —
+      // days already at quota are left untouched and a market already queued is never picked
+      // again. So triggering twice adds nothing the second time instead of rewriting the queue.
+      const PER_DAY_DEFAULT = 4, DAYS_DEFAULT = 4;
 
-      // Returns { picks:[{event_id,team,market_key,market_label,state_code,best_template,
-      //   open_rate_w,ctr_w,n_blasts,phone_count,email_count,reason}], vetoed, skipBy,
-      //   evaluated, llm }. Tries the server (rules+LLM) first, falls back to client rules.
-      async function decidePicks(){
+      const ymd = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+      const perDayInput = () => Math.max(1, Math.min(10, Number(el('tb-perday')?.value) || PER_DAY_DEFAULT));
+      const throughInput = () => {
+        const v = el('tb-through')?.value;
+        if(v) return v;
+        const d = new Date(); d.setDate(d.getDate() + DAYS_DEFAULT - 1); return ymd(d);
+      };
+      // Send slot: 10:00 local on the assigned day, so a day's blasts group together.
+      const slotIso = day => { const [y,m,d] = String(day||'').split('-').map(Number);
+        return (y && m && d) ? new Date(y, m-1, d, 10, 0, 0).toISOString() : new Date().toISOString(); };
+      const dayLabel = day => { const [y,m,d] = String(day||'').split('-').map(Number);
+        return new Date(y, m-1, d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); };
+
+      // default the date picker to today + (DAYS_DEFAULT-1)
+      if(el('tb-through') && !el('tb-through').value) el('tb-through').value = throughInput();
+
+      // Returns { picks:[{…, slot_date}], plan:[{date,existing,need,added}], vetoed, skipBy,
+      //   evaluated, llm, per_day, through }. Server (rules+LLM) first, client rules as fallback.
+      async function decidePicks(perDay, through){
         try {
           const r = await fetch('/api/trigger-decide', {
             method:'POST',
             headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') },
-            body: JSON.stringify({ cap: CAP }),
+            body: JSON.stringify({ per_day: perDay, through }),
           });
           if(r.ok){ const d = await r.json(); if(d && d.ok) return d; }
         } catch { /* fall back to client-only rules below */ }
 
-        // Fallback: deterministic, no LLM.
-        const [rec, cnt] = await Promise.all([ sb.rpc('rpc_event_recommendations'), sb.rpc('market_recipient_counts') ]);
+        // Fallback: deterministic, no LLM — same additive + multi-day maths, done here.
+        const [rec, cnt, q] = await Promise.all([
+          sb.rpc('rpc_event_recommendations'), sb.rpc('market_recipient_counts'), sb.rpc('get_campaign_queue'),
+        ]);
         if(rec.error) throw new Error(rec.error.message);
         const all = rec.data || [];
         const reach = {}; (cnt.data || []).forEach(m => { reach[m.market_key] = m; });
         const skipBy = {}; all.filter(r => r.decision !== 'send').forEach(r => { const k = r.reason_code || 'other'; skipBy[k] = (skipBy[k]||0)+1; });
-        const picks = all.filter(r => r.decision === 'send').slice(0, CAP).map(r => {
-          const rc = reach[r.market_key] || {};
-          return { event_id:r.event_id, team:r.team, market_key:r.market_key, market_label:r.market_label,
-            state_code:rc.state_code||null, best_template:r.best_template, open_rate_w:r.open_rate_w, ctr_w:r.ctr_w,
-            n_blasts:r.n_blasts, phone_count:Number(rc.phone_count)||0, email_count:Number(rc.email_count)||0, reason:null };
+
+        const live = (q.error ? [] : (q.data||[])).filter(r => r.status!=='sent' && r.status!=='sending');
+        const takenEvents = new Set(live.map(r => String(r.event_id||'')).filter(Boolean));
+        const takenMarkets = new Set(live.map(r => String(r.state_code||'').toUpperCase()).filter(Boolean));
+        const filled = {}; live.forEach(r => { const d = new Date(r.scheduled_for); const k = ymd(d); filled[k] = (filled[k]||0)+1; });
+
+        const days = []; for(let d = new Date(); ymd(d) <= through && days.length < 14; d.setDate(d.getDate()+1)) days.push(ymd(new Date(d)));
+        if(!days.length) days.push(ymd(new Date()));
+        const plan = days.map(date => ({ date, existing: filled[date]||0, need: Math.max(0, perDay - (filled[date]||0)), added: 0 }));
+
+        const eligible = all.filter(r => r.decision === 'send').filter(r => {
+          const code = String((reach[r.market_key]||{}).state_code || '').toUpperCase();
+          return !takenEvents.has(String(r.event_id)) && !(code && takenMarkets.has(code));
         });
-        return { ok:true, evaluated: all.length, llm:false, picks, vetoed:[], skipBy };
+
+        const usedMarkets = new Set(); const picks = []; let di = 0;
+        for(const r of eligible){
+          const mk = String(r.market_key || r.event_id);
+          if(usedMarkets.has(mk)) continue;
+          while(di < plan.length && plan[di].added >= plan[di].need) di++;
+          if(di >= plan.length) break;
+          usedMarkets.add(mk); plan[di].added++;
+          const rc = reach[r.market_key] || {};
+          picks.push({ event_id:r.event_id, team:r.team, market_key:r.market_key, market_label:r.market_label,
+            state_code:rc.state_code||null, best_template:r.best_template, open_rate_w:r.open_rate_w, ctr_w:r.ctr_w,
+            n_blasts:r.n_blasts, phone_count:Number(rc.phone_count)||0, email_count:Number(rc.email_count)||0,
+            reason:null, slot_date: plan[di].date });
+        }
+        return { ok:true, evaluated: all.length, llm:false, picks, vetoed:[], skipBy, plan, per_day: perDay, through };
       }
 
       el('trigger-blast')?.addEventListener('click', async () => {
         const btn = el('trigger-blast');
         if(!sb){ pbToast({ type:'err', title:'Cannot reach the decider', lines:['config.js is not filled in.'] }); return; }
+        const perDay = perDayInput(), through = throughInput();
         const ok = await pbConfirm({
           title: 'Trigger Blast — TEST',
-          body: 'Hard rules (cooldown, timing, fill %, opt-out health, history) pick the eligible markets; the AI then re-ranks them and may veto weak ones. The top '+CAP+' are lined up in the Queue as TEST rows and logged to the market blast log.\n\nNothing is sent.',
-          okText: 'Run test',
+          body: 'Hard rules (cooldown, timing, fill %, opt-out health, history) pick the eligible markets; the AI then re-ranks them and may veto weak ones.\n\nSchedules '+perDay+' markets/day through '+dayLabel(through)+', and only fills the days the Queue is short — anything already queued stays exactly as it is.\n\nNothing is sent.',
+          okText: 'Schedule blasts',
         });
         if(!ok) return;
 
         const orig = btn.innerHTML; btn.disabled = true;
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Deciding…';
         try {
-          const dec = await decidePicks();
+          const dec = await decidePicks(perDay, through);
           const sends = dec.picks || [];
           const skipBy = dec.skipBy || {};
+          const plan = dec.plan || [];
 
           // TEST MODE (send_allowlist, migration 023): when the allowlist is non-empty only
           // those codes resolve recipients, so queueing a real market would line up a blast
@@ -1570,6 +1625,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               const retarget = testMode ? ` Retargeted from ${p.market_label||'its market'} to ${testMode.label}.` : '';
               const note = '[TEST — will NOT send]' + why + retarget + reachNote;
               return {
+                scheduled_for: slotIso(p.slot_date),
                 title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (testMode ? testMode.label : (p.market_label || '')),
                 state_name: testMode ? testMode.label : (p.market_label || null),
                 state_code: testMode ? testMode.code : (p.state_code || null),
@@ -1604,18 +1660,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const totalEmail = testMode ? testMode.emails * sends.length : sends.reduce((s,p) => s + (Number(p.email_count)||0), 0);
           const totalPhone = testMode ? testMode.phones * sends.length : sends.reduce((s,p) => s + (Number(p.phone_count)||0), 0);
           const vetoed = dec.vetoed || [];
+          // Per-day picture: what was already there vs what this run added. `skipped` is the
+          // additive guard firing server-side (queue_enqueue_test found the slot taken).
+          const planStr = plan.map(d => `${dayLabel(d.date)}: ${d.existing + d.added}/${perDay}${d.added?` (+${d.added})`:''}`).join(' · ');
+          const skipped = sends.length - queued.length;
+          const nothingToDo = !sends.length && plan.every(d => !d.need);
           pbToast({
             type: 'ok',
-            title: `Trigger Blast — ${queued.length} test blast${queued.length===1?'':'s'} queued`,
+            title: `Trigger Blast — ${queued.length} blast${queued.length===1?'':'s'} added`,
             lines: [
-              `Evaluated ${dec.evaluated||0} events · ${dec.llm ? 'ranked by AI' : 'ranked by rules'} · capped at ${CAP}.`,
+              `Evaluated ${dec.evaluated||0} events · ${dec.llm ? 'ranked by AI' : 'ranked by rules'} · ${perDay}/day through ${dayLabel(through)}.`,
+              planStr ? `Queue by day — ${planStr}` : ``,
               testMode ? `TEST MODE — all picks retargeted to ${testMode.label} (${testMode.emails} email · ${testMode.phones} SMS). Real markets resolve to zero recipients.` : ``,
-              queued.length ? `Reach: ${totalEmail.toLocaleString()} email · ${totalPhone.toLocaleString()} SMS (test only).` : `Nothing queued — all markets held back.`,
+              queued.length ? `Reach: ${totalEmail.toLocaleString()} email · ${totalPhone.toLocaleString()} SMS (test only).`
+                : (nothingToDo ? `Queue already full through ${dayLabel(through)} — nothing to add.` : `Nothing added — all markets held back.`),
+              skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
               `Held back by rules: ${skipStr}.`,
             ],
-            chips: sends.map(p => esc(p.market_label || p.team || 'market')),
-            foot: queued.length ? 'Placeholder rows — nothing sends. Opening the Queue…' : 'Adjust Cole Rules to loosen the gates, then retry.',
+            chips: sends.map(p => esc((p.market_label || p.team || 'market') + (p.slot_date ? ` · ${dayLabel(p.slot_date)}` : ''))),
+            foot: queued.length ? 'Placeholder rows — nothing sends. Opening the Queue…' : 'Existing rows are kept. Push the "Through" date out or loosen Cole Rules to add more.',
           });
 
           if(queued.length){
@@ -1635,13 +1699,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // ===== Daily Blast Queue (campaign_queue) — powers the Queue tab =====
     // Persistent: placeholder rows now, real blasts later, same UI. Confirm approves without
     // moving the send time; Snooze pushes it +7d and keeps it queued; schedule is editable;
-    // the accordion exposes the email/SMS copy. Unactioned rows auto-send after 48h.
+    // the accordion exposes the email/SMS copy. Rows are grouped by send day (the queue spans
+    // several days now); an unactioned row sends when its slot arrives, approval optional.
     (function queueModule(){
       const el = (id) => document.getElementById(id);
       if(!el('q-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
-      const AUTOSEND_H = 48;
       // Send-from options carry the delivery METHOD so it's obvious what's carrying the send.
       // Mail merge (Gmail via n8n) and Telnyx are wired. CakeMail sends straight from our own
       // API (/api/cakemail-send → lib/cakemail.js), no n8n; SalesMessage is still a placeholder.
@@ -1654,9 +1718,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Only send from a domain with an ACTIVE DKIM key. pbtest@playbookemail.com works
       // (key 5119, DNS published); callplaybook.com senders are refused at schedule time with
       // "Action blocked due to a low account score" because that domain has no published key.
+      //
+      // Account 1679383 is the real sender account. Its ONLY DKIM key is getteammate.ai and
+      // that key is inactive with no DNS record, so Josh.marcus@callplaybook.com is expected
+      // to hit the same block until a callplaybook.com key is created AND published AND
+      // activated. Left selectable because that is a DNS fix, not a code one — but do not
+      // assume it sends until it has been proven once.
       const EMAIL_SENDERS = [
         { v:'john@callplaybook.com', method:'Mail merge',   label:'john@callplaybook.com' },
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
+        { v:'cakemail:1679383:Bk0SjruxSB2im5kcnhpY', method:'CakeMail', label:'Josh.marcus@callplaybook.com' },
+        { v:'cakemail:1679383:a0JY63GyFWwXfa6AgN92', method:'CakeMail', label:'cole@callplaybook.com' },
         { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
         { v:'salesmessage',          method:'SalesMessage', label:'(placeholder)' },
       ];
@@ -1675,7 +1747,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
       const whenLabel = iso => { const d=new Date(iso);
         return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); };
-      const autoSendIn = r => Math.max(0, Math.round((new Date(r.created_at).getTime() + AUTOSEND_H*3600e3 - Date.now())/3600e3));
       const chan = r => [r.email?'Email':'', r.sms?'SMS':''].filter(Boolean).join(' + ') || '—';
       // Scannable title: home team vs opponent + the SEND date (scheduled_for, not created_at),
       // so the title tracks reschedules/snoozes. Falls back to the stored name.
@@ -1692,7 +1763,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
         if(r.status==='confirmed')return `<span class="badge badge-success badge-sm text-white">Confirmed</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
         if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] text-base-content/50 mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))}</div>`;
-        return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">auto-sends in ${autoSendIn(r)}h</div>`;
+        // Approval stays optional — an unactioned row still goes at its slot, not 48h after
+        // it was queued (a blast scheduled 4 days out must not fire early).
+        return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
       }
 
       const emailFromOf = r => r.email_from || EMAIL_SENDERS[0].v;
@@ -1701,8 +1774,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function render(){
         const tb = el('q-rows');
         if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
+        // Multi-day view: the queue now spans several send days, so rows are banded by the
+        // day they go out (get_campaign_queue already orders by scheduled_for).
+        let lastDay = null;
         tb.innerHTML = QUEUE.map(r => {
           const open = expanded.has(r.id), sent = r.status==='sent';
+          const day = String(r.scheduled_for||'').slice(0,10);
+          let dayHead = '';
+          if(day !== lastDay){
+            lastDay = day;
+            const n = QUEUE.filter(x => String(x.scheduled_for||'').slice(0,10) === day).length;
+            dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
+              ${esc(sendDateShort(r.scheduled_for))} <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span></td></tr>`;
+          }
           const curEmail = emailFromOf(r), curSms = smsFromOf(r);
           const emailSel = `<select class="select select-bordered select-xs mini-select w-56" data-qemail="${esc(r.id)}" ${(!r.email||sent)?'disabled':''}>${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}" ${s.v===curEmail?'selected':''}>${esc(s.method)} · ${esc(s.label)}</option>`).join('')}</select>`;
           const smsOpts = [...NUMBERS.map(n=>({ v:n.phone_number, method:'Telnyx', label:(n.label?n.label+' · ':'')+n.phone_number })), { v:'salesmessage', method:'SalesMessage', label:'(placeholder)' }];
@@ -1733,7 +1817,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <div class="grid grid-cols-1 ${(r.email&&r.sms)?'md:grid-cols-2':''} gap-4">${emailBlock}${smsBlock}</div>
             ${sent?'':`<div class="mt-2"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50 ml-2" data-copystatus="${esc(r.id)}"></span></div>`}
           </td></tr>`;
-          return main + detail;
+          return dayHead + main + detail;
         }).join('');
         wire();
       }

@@ -10,6 +10,15 @@
 //
 // Auth: cron bearer (CRON_SECRET) OR UI inbox-secret (REPLY_SECRET), same as decide.js.
 // Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL, SUPABASE_ANON_KEY.
+//
+// MULTI-DAY / ADDITIVE (Josh, 2026-07-28). Body {per_day, through} schedules blasts across
+// a window instead of dumping them all on today: `per_day` markets for every day from today
+// through `through` (default 4/day for 4 days = 16 in the queue). What the queue ALREADY
+// holds is read first, so a re-run only fills the gaps — same input never produces a second
+// copy of the same market, and days that are already full are left alone. Each pick carries
+// a `slot_date`; the browser enqueues it at that date (queue_enqueue_test also de-dupes
+// server-side, migration 030). Legacy body {cap} with no `through` keeps the old
+// everything-today behaviour.
 
 export const config = { maxDuration: 30 };
 
@@ -49,6 +58,25 @@ const SCHEMA = {
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+const MAX_DAYS = 14;      // widest window a single trigger may schedule
+const MAX_PICKS = 40;     // hard ceiling on rows one run can add
+
+const dayStr = d => d.toISOString().slice(0, 10);
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return dayStr(d); };
+
+// today .. through (inclusive), clamped to MAX_DAYS. Bad/past `through` = today only.
+function windowDays(through) {
+  const start = dayStr(new Date());
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(through || ''))) return [start];
+  const days = [];
+  for (let i = 0; i < MAX_DAYS; i++) {
+    const d = addDays(start, i);
+    days.push(d);
+    if (d >= through) break;
+  }
+  return days;
+}
+
 export default async function handler(req, res) {
   const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
   const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
@@ -58,21 +86,52 @@ export default async function handler(req, res) {
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
 
-  const cap = Math.max(1, Math.min(10, Number(req.body?.cap) || 3));
+  const through = req.body?.through || null;
+  const days = windowDays(through);
+  const perDay = through
+    ? Math.max(1, Math.min(10, Number(req.body?.per_day) || 4))
+    : Math.max(1, Math.min(10, Number(req.body?.cap) || 3));   // legacy: cap == one day's worth
+
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: '{}' });
 
   try {
-    const [recRes, cntRes] = await Promise.all([rpc('rpc_event_recommendations'), rpc('market_recipient_counts')]);
+    const [recRes, cntRes, qRes] = await Promise.all([
+      rpc('rpc_event_recommendations'), rpc('market_recipient_counts'), rpc('get_campaign_queue'),
+    ]);
     const recs = await recRes.json();
     const counts = await cntRes.json().catch(() => []);
+    const queue = await qRes.json().catch(() => []);
     if (!recRes.ok || !Array.isArray(recs)) { res.status(502).json({ error: 'recommendations fetch failed', detail: recs }); return; }
+
+    // What the queue already holds. Live = anything not already sent; those slots are taken
+    // and their events/markets must not be picked again, or the trigger duplicates itself.
+    const live = (Array.isArray(queue) ? queue : []).filter(r => r.status !== 'sent' && r.status !== 'sending');
+    const takenEvents = new Set(live.map(r => String(r.event_id || '')).filter(Boolean));
+    const takenMarkets = new Set(live.map(r => String(r.state_code || '').toUpperCase()).filter(Boolean));
+    const filled = {};                                  // slot_date -> live rows on that day
+    live.forEach(r => { const d = String(r.scheduled_for || '').slice(0, 10); filled[d] = (filled[d] || 0) + 1; });
+
+    // Per-day gaps: only the shortfall gets filled, so a full day is never touched again.
+    const plan = days.map(d => {
+      const existing = filled[d] || 0;
+      return { date: d, existing, need: Math.max(0, perDay - existing), added: 0 };
+    });
+    const need = Math.min(MAX_PICKS, plan.reduce((s, p) => s + p.need, 0));
 
     const reach = {};
     (Array.isArray(counts) ? counts : []).forEach(m => { reach[m.market_key] = m; });
 
-    // rule-approved candidates (the safety floor already applied in SQL), in rank order
-    const candidates = recs.filter(r => r.decision === 'send').map(r => {
+    // rule-approved candidates (the safety floor already applied in SQL), in rank order.
+    // Anything already sitting in the queue is dropped here — that's the additive rule.
+    const alreadyQueued = [];
+    const approved = recs.filter(r => r.decision === 'send').filter(r => {
+      const code = String((reach[r.market_key] || {}).state_code || '').toUpperCase();
+      const dup = takenEvents.has(String(r.event_id)) || (code && takenMarkets.has(code));
+      if (dup) alreadyQueued.push({ event_id: r.event_id, market_label: r.market_label });
+      return !dup;
+    });
+    const candidates = approved.map(r => {
       const rc = reach[r.market_key] || {};
       return {
         event_id: r.event_id, team: r.team, market_key: r.market_key, market_label: r.market_label,
@@ -93,7 +152,7 @@ export default async function handler(req, res) {
     let picks = [], vetoed = [], llm = false;
     const key = (process.env.OPENAI_API_KEY || '').trim();
 
-    if (key && candidates.length) {
+    if (key && candidates.length && need) {
       try {
         const payload = candidates.map(c => ({
           event_id: c.event_id, team: c.team, market: c.market_label,
@@ -109,7 +168,7 @@ export default async function handler(req, res) {
             model: MODEL, max_tokens: 2000,
             messages: [
               { role: 'system', content: SYSTEM },
-              { role: 'user', content: `Choose up to ${cap} markets to blast now, best-first. Candidates:\n` + JSON.stringify(payload) },
+              { role: 'user', content: `Choose up to ${need} markets to blast across the next ${days.length} day(s) — ${perDay} per day, best-first. Candidates:\n` + JSON.stringify(payload) },
             ],
             response_format: { type: 'json_schema', json_schema: { name: 'trigger_decision', strict: true, schema: SCHEMA } },
           }),
@@ -135,18 +194,39 @@ export default async function handler(req, res) {
     // fallback / backfill: if the LLM didn't run or under-picked, top up from rule order
     if (!picks.length) {
       picks = candidates.map(c => ({ ...c, reason: null }));
-    } else if (picks.length < cap) {
+    } else if (picks.length < need) {
       const have = new Set(picks.map(p => String(p.event_id)));
       const vetoedIds = new Set(vetoed.map(v => String(v.event_id)));
       for (const c of candidates) {
-        if (picks.length >= cap) break;
+        if (picks.length >= need) break;
         const id = String(c.event_id);
         if (!have.has(id) && !vetoedIds.has(id)) { picks.push({ ...c, reason: null }); have.add(id); }
       }
     }
-    picks = picks.slice(0, cap);
+    picks = picks.slice(0, need);
 
-    res.status(200).json({ ok: true, evaluated: recs.length, cap, llm, candidates: candidates.length, picks, vetoed, skipBy });
+    // Spread the picks over the window: fill each day up to its gap, one market per market
+    // per window (a second game in a market the same week is a duplicate blast, not a pick).
+    const usedMarkets = new Set();
+    const scheduled = [];
+    let di = 0;
+    for (const p of picks) {
+      const mk = String(p.market_key || p.event_id);
+      if (usedMarkets.has(mk)) continue;
+      while (di < plan.length && plan[di].added >= plan[di].need) di++;
+      if (di >= plan.length) break;                 // window full — the rest waits for the next run
+      usedMarkets.add(mk);
+      plan[di].added++;
+      scheduled.push({ ...p, slot_date: plan[di].date });
+    }
+    picks = scheduled;
+
+    res.status(200).json({
+      ok: true, evaluated: recs.length, llm, candidates: candidates.length,
+      per_day: perDay, through: days[days.length - 1], days: days.length,
+      cap: need, need, plan, already_queued: alreadyQueued,
+      picks, vetoed, skipBy,
+    });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
