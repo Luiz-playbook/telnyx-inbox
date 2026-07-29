@@ -3,7 +3,7 @@
   "outputDirectory": "ui",
   "cleanUrls": true,
   "crons": [
-    { "path": "/api/price-refresh", "schedule": "0 9 */3 * *" },
+    { "path": "/api/price-refresh", "schedule": "0 */12 * * *" },
     { "path": "/api/schedule-refresh", "schedule": "0 8 1 * *" },
     { "path": "/api/decide", "schedule": "0 14 * * *" },
     { "path": "/api/queue-tick", "schedule": "0 * * * *" }

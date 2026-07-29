@@ -15,10 +15,11 @@ async function getJson(url) {
 const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  // dedicated price/schedule cron secret, isolated from the shared CRON_SECRET (see
+  // price-refresh.js). Accepted via ?token= or Bearer; unset => open.
+  const priceSecret = process.env.PRICE_CRON_SECRET;
+  const tokenOk = priceSecret && (req.query?.token === priceSecret || req.headers.authorization === `Bearer ${priceSecret}`);
+  if (priceSecret && !tokenOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }

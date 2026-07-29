@@ -40,10 +40,12 @@ async function pricePass(gkey, batches, acc) {
 }
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  // Dedicated secret for the price/schedule crons, isolated from the shared CRON_SECRET so
+  // enabling these never wakes the other crons. Accepted via ?token= (Vercel delivers it in
+  // the cron path) or Bearer header. Unset => endpoint open; the cooldown below caps cost.
+  const priceSecret = process.env.PRICE_CRON_SECRET;
+  const tokenOk = priceSecret && (req.query?.token === priceSecret || req.headers.authorization === `Bearer ${priceSecret}`);
+  if (priceSecret && !tokenOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const gkey = (process.env.GEMINI_API_KEY || '').trim();
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
@@ -51,12 +53,22 @@ export default async function handler(req, res) {
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
+  const force = req.query?.force === '1' || req.query?.force === 'true';
   const started = Date.now();
 
   try {
-    // tunable knobs
-    const rulesR = await fetch(`${supaUrl}/rest/v1/decider_rules?id=eq.1&select=price_window_days,price_skip_below,price_stale_hours`, { headers: sh });
-    const rules = (await rulesR.json())[0] || { price_window_days: 20, price_skip_below: 15, price_stale_hours: 72 };
+    // open-endpoint safety: skip if a real run happened < 6h ago (unless forced/dry)
+    const COOLDOWN_H = 6;
+    if (!dry && !force) {
+      const lr = await fetch(`${supaUrl}/rest/v1/events_master_price_runs?dry_run=eq.false&order=started_at.desc&limit=1&select=started_at`, { headers: sh }).then(r => r.json()).catch(() => []);
+      const last = Array.isArray(lr) && lr[0]?.started_at ? new Date(lr[0].started_at).getTime() : 0;
+      if (last && (Date.now() - last) < COOLDOWN_H * 3600e3) {
+        res.status(200).json({ ok: true, skipped: 'cooldown', last_run: lr[0].started_at, cooldown_h: COOLDOWN_H }); return;
+      }
+    }
+    // tunable knobs (tiered staleness: near-term games decay fast -> shorter freshness window)
+    const rulesR = await fetch(`${supaUrl}/rest/v1/decider_rules?id=eq.1&select=price_window_days,price_skip_below,price_stale_hours,price_stale_hours_near,price_near_days`, { headers: sh });
+    const rules = (await rulesR.json())[0] || { price_window_days: 20, price_skip_below: 15, price_stale_hours: 48, price_stale_hours_near: 12, price_near_days: 3 };
 
     // eligibility: games the decider says to 'send' (market/cooldown/window rules applied there)
     const recR = await fetch(`${supaUrl}/rest/v1/rpc/rpc_event_recommendations`, { method: 'POST', headers: sh, body: '{}' });
@@ -66,7 +78,9 @@ export default async function handler(req, res) {
     if (!sendIds.length) { res.status(200).json({ ok: true, eligible: 0, note: 'no send-eligible games' }); return; }
 
     // pull those events, narrow to the price window + skip rule (cheap games locked in / fresh prices kept)
-    const staleCut = new Date(Date.now() - rules.price_stale_hours * 3600e3).toISOString();
+    const nearCut = new Date(Date.now() - rules.price_stale_hours_near * 3600e3).toISOString();
+    const farCut = new Date(Date.now() - rules.price_stale_hours * 3600e3).toISOString();
+    const today = new Date().toISOString().slice(0, 10);
     const winCut = new Date(Date.now() + rules.price_window_days * 864e5).toISOString().slice(0, 10);
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
@@ -78,7 +92,10 @@ export default async function handler(req, res) {
     const eligibleTotal = games.length;
     games = games.filter(g => {
       if (g.best_price != null && Number(g.best_price) < Number(rules.price_skip_below)) return false; // locked-in cheap
-      if (g.best_price != null && g.priced_at && g.priced_at > staleCut) return false;                 // still fresh
+      // tiered freshness: near-term games use the short window, far games the long one
+      const daysUntil = Math.round((new Date(g.event_date) - new Date(today)) / 864e5);
+      const cut = daysUntil <= rules.price_near_days ? nearCut : farCut;
+      if (g.best_price != null && g.priced_at && g.priced_at > cut) return false;                       // still fresh for its tier
       return true;
     });
     const limit = Number(req.query?.limit || 0);
