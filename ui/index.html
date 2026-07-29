@@ -396,8 +396,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
                       <th class="w-8"></th>
                       <th>Blast</th>
+                      <!-- Per Josh: the two numbers that matter are how many emails and how many
+                           phone numbers we can reach. "Phones" vs "SMS" was the same count twice. -->
+                      <th>Emails</th>
                       <th>Phone #s</th>
-                      <th>SMS</th>
                       <th>Ticket $</th>
                       <th>Schedule</th>
                       <th>Status</th>
@@ -1628,7 +1630,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               // otherwise the row advertises thousands of recipients it will never touch.
               const emails = testMode ? testMode.emails : (Number(p.email_count)||0);
               const phones = testMode ? testMode.phones : (Number(p.phone_count)||0);
-              const reachNote = (emails||phones) ? ` Reach: ${emails} email / ${phones} SMS.` : '';
+              const reachNote = (emails||phones) ? ` Reach: ${emails} emails / ${phones} phone numbers.` : '';
               const why = p.reason ? (' ' + p.reason) : (' Decider pick for ' + (p.market_label||'this market') + '.' + tmpl + perf);
               const retarget = testMode ? ` Retargeted from ${p.market_label||'its market'} to ${testMode.label}.` : '';
               const note = '[TEST — will NOT send]' + why + retarget + reachNote;
@@ -1680,7 +1682,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               `Evaluated ${dec.evaluated||0} events · ${dec.llm ? 'ranked by AI' : 'ranked by rules'} · ${perDay}/day through ${dayLabel(through)}.`,
               planStr ? `Queue by day — ${planStr}` : ``,
               testMode ? `TEST MODE — all picks retargeted to ${testMode.label} (${testMode.emails} email · ${testMode.phones} SMS). Real markets resolve to zero recipients.` : ``,
-              queued.length ? `Reach: ${totalEmail.toLocaleString()} email · ${totalPhone.toLocaleString()} SMS (test only).`
+              queued.length ? `Reach: ${totalEmail.toLocaleString()} emails · ${totalPhone.toLocaleString()} phone numbers (test only).`
                 : (nothingToDo ? `Queue already full through ${dayLabel(through)} — nothing to add.` : `Nothing added — all markets held back.`),
               skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
@@ -1723,22 +1725,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // travel together. The sender id comes from GET /brands/default/senders, NOT a plain
       // address, because the campaign body takes sender:{id}.
       //
-      // Only send from a domain with an ACTIVE DKIM key. pbtest@playbookemail.com works
-      // (key 5119, DNS published); callplaybook.com senders are refused at schedule time with
-      // "Action blocked due to a low account score" because that domain has no published key.
+      // callplaybook.com is DELIBERATELY left unauthenticated (Cole, permanent): with no DKIM
+      // on the From domain CakeMail signs with its own, which is why links come from
+      // playbookemail.com. Do not "fix" this by authenticating the domain.
       //
-      // Account 1679383 is the real sender account. Its ONLY DKIM key is getteammate.ai and
-      // that key is inactive with no DNS record, so Josh.marcus@callplaybook.com is expected
-      // to hit the same block until a callplaybook.com key is created AND published AND
-      // activated. Left selectable because that is a DNS fix, not a code one — but do not
-      // assume it sends until it has been proven once.
+      // Sending needs a CONFIRMED sender, not DKIM — every option below is confirmed.
+      // Two brand-new empty sub-accounts (1760519, 1673473) were refused at schedule time with
+      // "Action blocked due to a low account score", but both had zero sending history, so
+      // that is likely account maturity rather than the missing DKIM. Account 1679383 is the
+      // established account and is expected to send; only pbtest@playbookemail.com (1679456)
+      // has actually been proven end to end.
       const EMAIL_SENDERS = [
         { v:'john@callplaybook.com', method:'Mail merge',   label:'john@callplaybook.com' },
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
         { v:'cakemail:1679383:Bk0SjruxSB2im5kcnhpY', method:'CakeMail', label:'Josh.marcus@callplaybook.com' },
         { v:'cakemail:1679383:a0JY63GyFWwXfa6AgN92', method:'CakeMail', label:'cole@callplaybook.com' },
         { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
-        { v:'salesmessage',          method:'SalesMessage', label:'(placeholder)' },
+        // No SalesMessage here: it is an SMS product and carries nothing on the email side.
+        // It stays in the "Text from" list, where it is a real (if still unwired) option.
       ];
       // 'cakemail:<account_id>:<sender_id>' → { accountId, senderId }; anything else → null.
       const cakemailSender = v => { const m = /^cakemail:([^:]+):(.+)$/.exec(String(v||'')); return m ? { accountId:m[1], senderId:m[2] } : null; };
@@ -1756,6 +1760,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const whenLabel = iso => { const d=new Date(iso);
         return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); };
       const chan = r => [r.email?'Email':'', r.sms?'SMS':''].filter(Boolean).join(' + ') || '—';
+      // Reach, one column per channel: emails carry the email blast, phone numbers carry SMS.
+      // A channel that's off reads '—'; a channel that's ON but resolves to nobody is the case
+      // worth catching before send, so the zero is flagged rather than blending in.
+      const reachCell = (on, n) => !on
+        ? '<span class="text-base-content/40">—</span>'
+        : ((Number(n)||0) ? fmt(n) : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market">0</span>');
       // Scannable title: home team vs opponent + the SEND date (scheduled_for, not created_at),
       // so the title tracks reschedules/snoozes. Falls back to the stored name.
       const sendDateShort = iso => { try{ return new Date(iso).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
@@ -1776,7 +1786,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
       }
 
-      const emailFromOf = r => r.email_from || EMAIL_SENDERS[0].v;
+      // A row stored with a sender no longer offered (the retired SalesMessage placeholder)
+      // would render as option #1 while still holding a value nothing can actually send from,
+      // so the fallback is applied on read and written back in refresh().
+      const validEmailFrom = v => EMAIL_SENDERS.some(s => s.v === v);
+      const emailFromOf = r => (validEmailFrom(r.email_from) ? r.email_from : EMAIL_SENDERS[0].v);
       const smsFromOf   = r => r.sms_from   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
 
       function render(){
@@ -1801,9 +1815,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const smsSel = `<select class="select select-bordered select-xs mini-select w-52" data-qsms="${esc(r.id)}" ${(!r.sms||sent)?'disabled':''}>${smsOpts.map(o=>`<option value="${esc(o.v)}" ${o.v===curSms?'selected':''}>${esc(o.method)} · ${esc(o.label)}</option>`).join('')}</select>`;
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}${r.email && r.email_count ? ' · '+fmt(r.email_count)+' email' : ''}</div></td>
-            <td>${fmt(r.phone_count)}</td>
-            <td>${r.sms ? fmt(r.sms_count) : '—'}</td>
+            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}</div><div class="text-xs text-base-content/50">${esc(r.state_name||'')} · ${esc(chan(r))}</div></td>
+            <td>${reachCell(r.email, r.email_count)}</td>
+            <td>${reachCell(r.sms, r.phone_count)}</td>
             <td>${r.ticket_price!=null?('$'+r.ticket_price):'—'}</td>
             <td><input type="datetime-local" class="input input-bordered input-xs w-52" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
@@ -1863,8 +1877,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const { data, error } = await sb.rpc('get_campaign_queue');
         if(error){ el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
+        // Repair rows pointing at a retired sender so the stored value matches what's shown.
+        for(const r of QUEUE.filter(r => r.email_from && !validEmailFrom(r.email_from) && r.status !== 'sent')){
+          await sb.rpc('queue_set_sender', { p_id: r.id, p_email_from: EMAIL_SENDERS[0].v, p_sms_from: null });
+          r.email_from = EMAIL_SENDERS[0].v;
+        }
         const pend=QUEUE.filter(r=>r.status==='pending').length, conf=QUEUE.filter(r=>r.status==='confirmed').length;
-        el('q-summary').textContent = `${QUEUE.length} queued · ${conf} confirmed · ${pend} pending`;
+        // Reach totals live in the header too — how many emails and how many phone numbers
+        // the un-sent queue would touch, counted per channel and only where that channel is on.
+        const totE = QUEUE.filter(r => r.email && r.status !== 'sent').reduce((s,r) => s + (Number(r.email_count)||0), 0);
+        const totP = QUEUE.filter(r => r.sms   && r.status !== 'sent').reduce((s,r) => s + (Number(r.phone_count)||0), 0);
+        el('q-summary').textContent = `${QUEUE.length} queued · ${conf} confirmed · ${pend} pending · ${fmt(totE)} emails · ${fmt(totP)} phone numbers`;
         render();
       }
       async function loadQueue(){
