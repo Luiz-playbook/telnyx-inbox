@@ -1546,7 +1546,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const dateCutoff = n => { const d=new Date(); d.setDate(d.getDate()+Number(n)); return d.toISOString().slice(0,10); };
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const clip = (s, n = 17) => { s = (s||'').toString(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
-      const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
+      // events_master.team is the HOME side and `opponent` visits — the venue and market_code
+      // both belong to `team`. Rendering "<team> at <opponent>" therefore stated every fixture
+      // backwards: "Blue Jays at Cardinals" for a game at Rogers Centre in the Toronto market.
+      // Away-at-home is the convention the ticket sites use, so it matches their pages too.
+      const evTitle = e => e.opponent ? `${e.opponent} at ${e.team}` : (e.team || 'Untitled event');
       // event_targets() only returns games from today onwards, so "today" is the earliest a row
       // can be — and the one worth flagging: a blast queued for a game happening in hours gives
       // recipients almost no time to act on the offer. A warning, not a block.
@@ -2263,13 +2267,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         ? '<span class="text-base-content/40">—</span>'
         : ((Number(n)||0) ? fmt(n) : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market">0</span>');
       const sendDateShort = iso => { try{ return new Date(iso).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
-      // Identical to Campaigns by Event's title: "<team> at <opponent>", with the game date on
-      // the line below. The send date used to be jammed into the title, which duplicated the
-      // day band right above the row and made the two tabs read differently for the same blast.
+      // Identical to Campaigns by Event's title: "<opponent> at <team>", because `team` is the
+      // HOME side — the venue and market belong to it — so the visitor is named first. The send
+      // date used to be jammed into the title, which duplicated the day band right above the row.
       // is_placeholder rows never send (queue-tick skips them), so the '[TEST]' prefix that
       // lives in the stored title has to be re-applied here or a placeholder looks real.
       const blastTitle = r => {
-        const t = r.team ? (r.opponent ? `${r.team} at ${r.opponent}` : r.team) : (r.title || 'Blast');
+        const t = r.team ? (r.opponent ? `${r.opponent} at ${r.team}` : r.team) : (r.title || 'Blast');
         return (r.is_placeholder && !/^\[TEST/i.test(t)) ? '[TEST] ' + t : t;
       };
       function statusCell(r){
