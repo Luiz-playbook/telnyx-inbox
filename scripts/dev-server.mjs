@@ -51,6 +51,18 @@ async function readBody(req) {
   return raw;
 }
 
+// Anything under lib/ that was touched after this process booted is already cached by Node
+// and cannot be reloaded in place.
+const STARTED_AT = Date.now();
+function changedLibFiles() {
+  const dir = path.join(root, 'lib');
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
+    .filter(f => fs.statSync(path.join(dir, f)).mtimeMs > STARTED_AT)
+    .map(f => `lib/${f}`);
+}
+
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://localhost:${PORT}`);
   const pathname = decodeURIComponent(u.pathname);
@@ -60,6 +72,20 @@ const server = http.createServer(async (req, res) => {
     const name = pathname.slice('/api/'.length).replace(/\/$/, '');
     const file = path.join(root, 'api', `${name}.js`);
     if (!fs.existsSync(file)) { res.statusCode = 404; return res.end('no such api route'); }
+    // An api/ file is re-imported on every edit via the ?t= cache-buster, but the modules it
+    // imports statically (lib/*.js) keep resolving to their plain, already-cached URL — so a
+    // lib edit is invisible until the process restarts, and the symptom is a baffling
+    // "does not provide an export named X" from code that plainly exports it. A specifier
+    // inside a module can't be rewritten from here, so say so instead of serving stale code.
+    const staleLib = changedLibFiles();
+    if (staleLib.length) {
+      console.error(`\n  lib/ changed since this dev server started: ${staleLib.join(', ')}`);
+      console.error('  Node has the old copy cached — restart the dev server (Ctrl-C, then run it again).\n');
+      res.statusCode = 503;
+      return res.end(JSON.stringify({
+        error: `dev server is running stale code: ${staleLib.join(', ')} changed after start. Restart the dev server.`,
+      }));
+    }
     try {
       const mod = await import(pathToFileURL(file).href + `?t=${fs.statSync(file).mtimeMs}`);
       const handler = mod.default;

@@ -2,6 +2,10 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# dev server output when it's started detached rather than in a terminal
+dev-server.log
+dev-server.log.err
+
 # Local runtime config — contains the Supabase anon key + reply secret.
 # Copy ui/config.example.js -> ui/config.js and fill it in locally.
 ui/config.js

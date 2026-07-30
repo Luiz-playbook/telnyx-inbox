@@ -37,6 +37,18 @@ function decorate(res) {
   return res;
 }
 
+// Anything under lib/ touched after boot is already cached by Node and cannot be reloaded
+// in place — editing a handler is fine, editing a lib it imports is not.
+const STARTED_AT = Date.now();
+const LIB = path.join(path.dirname(API), 'lib');
+function changedLibFiles() {
+  if (!fs.existsSync(LIB)) return [];
+  return fs.readdirSync(LIB)
+    .filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
+    .filter(f => fs.statSync(path.join(LIB, f)).mtimeMs > STARTED_AT)
+    .map(f => `lib/${f}`);
+}
+
 const server = http.createServer(async (req, res) => {
   decorate(res);
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -52,6 +64,19 @@ const server = http.createServer(async (req, res) => {
     const raw = await readBody(req);
     try { req.body = raw ? JSON.parse(raw) : {}; } catch { req.body = raw; }
 
+    // The cache-buster below only reloads the HANDLER. Modules it imports statically
+    // (lib/*.js) resolve to their plain URL, which Node has cached since first use, so a lib
+    // edit stays invisible until this process restarts. The symptom is a baffling
+    // "does not provide an export named X" from a file that plainly exports it. A specifier
+    // inside a module can't be rewritten from out here, so refuse rather than run stale code.
+    const staleLib = changedLibFiles();
+    if (staleLib.length) {
+      console.error(`\n  ${staleLib.join(', ')} changed after this server started — Node still has the old copy.`);
+      console.error('  Restart the dev server (Ctrl-C, then run it again).\n');
+      res.status(503).json({ error: `dev server is running stale code: ${staleLib.join(', ')} changed after start. Restart the dev server.` });
+      console.log(`${req.method} ${pathname} -> ${res.statusCode}`);
+      return;
+    }
     try {
       // cache-bust so editing a handler doesn't need a restart
       const mod = await import(pathToFileURL(file).href + '?t=' + Date.now());
