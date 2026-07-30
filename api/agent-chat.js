@@ -41,23 +41,6 @@ export default async function handler(req, res) {
       : /not set/i.test(msg) ? 'Agent is not configured yet.'
       : /timeout|too long/i.test(msg) ? 'The agent took too long to respond.'
       : 'The agent is unavailable right now.';
-    // TEMP DIAGNOSTIC (remove after debugging): surface a scrubbed error + runtime facts.
-    // Internal messages carry no secrets, but scrub token/url/key defensively anyway.
-    const scrub = s => s
-      .replace(new RegExp((process.env.OPENCLAW_GATEWAY_TOKEN || 'x').slice(0, 8), 'g'), '<tok>')
-      .replace(/wss?:\/\/[^\s"']+/g, '<url>')
-      .replace(/[A-Za-z0-9+/_=-]{40,}/g, '<b64>');
-    const diag = req.query && req.query.debug === '1' ? {
-      raw: scrub(msg),
-      hasWebSocket: typeof WebSocket !== 'undefined',
-      node: process.version,
-      have: {
-        url: !!process.env.OPENCLAW_GATEWAY_URL,
-        token: !!process.env.OPENCLAW_GATEWAY_TOKEN,
-        deviceKey: !!process.env.OPENCLAW_DEVICE_KEY,
-        deviceKeyLen: (process.env.OPENCLAW_DEVICE_KEY || '').length,
-      },
-    } : undefined;
-    res.status(502).json({ error: safe, diag });
+    res.status(502).json({ error: safe });
   }
 }
