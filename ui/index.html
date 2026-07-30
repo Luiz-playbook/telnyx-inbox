@@ -1811,30 +1811,60 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         note.textContent = `last run ${when} · ${run.priced} priced · $${Number(run.cost_usd||0).toFixed(4)}`;
       }
 
-      async function runPriceRefresh(force){
+      // One call. Kept separate from the button state below so the retry-after-cooldown path
+      // can reuse it WITHOUT re-entering the function that owns the spinner.
+      async function callPriceRefresh(force){
+        const r = await fetch('/api/price-refresh' + (force ? '?force=1' : ''), { method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
+        const d = await r.json().catch(()=>({}));
+        if(r.status === 401){ const e = new Error('/api/price-refresh requires PRICE_CRON_SECRET, which is server-side only. It still runs on its own 12-hourly schedule.'); e.unauthorised = true; throw e; }
+        if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        return d;
+      }
+
+      // Elapsed-time ticker: a 60-second wait with a static label looks like a hang, and the
+      // operator has no other signal that a paid job is in flight.
+      function priceBusy(on, startedAt){
         const btn = el('refresh-prices'), note = el('refresh-prices-note');
-        const orig = btn.innerHTML;
-        btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Pricing…';
-        if(note) note.textContent = 'this can take a few minutes';
+        if(!btn) return;
+        if(on){
+          btn.disabled = true;
+          btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Pricing…';
+          if(note) note.textContent = 'this usually takes about a minute';
+          clearInterval(priceBusy._t);
+          priceBusy._t = setInterval(() => {
+            if(note) note.textContent = `pricing… ${Math.round((Date.now() - startedAt)/1000)}s elapsed`;
+          }, 1000);
+        } else {
+          clearInterval(priceBusy._t);
+          btn.disabled = false;
+          btn.innerHTML = '&#8635; Refresh prices';   // fixed label, never a captured snapshot
+          showLastPriceRun();
+        }
+      }
+
+      async function runPriceRefresh(){
+        // The button state is owned HERE and nowhere else. This used to recurse into itself
+        // for the force-retry, and in an async function `return f()` runs the outer finally
+        // BEFORE the inner call settles: the outer restored the button while the retry was
+        // still running, so the real 57-second run showed no spinner at all, and the inner
+        // finally then restored a label it had captured *as* the spinner — leaving the button
+        // stuck on "Pricing…". The retry is a second call now, not a second entry.
         try {
-          const r = await fetch('/api/price-refresh' + (force ? '?force=1' : ''), { method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
-          const d = await r.json().catch(()=>({}));
-          if(r.status === 401){
-            pbToast({ type:'err', title:'Price refresh is not authorised from the browser',
-              lines:['/api/price-refresh requires PRICE_CRON_SECRET, which is server-side only. It still runs on its own 12-hourly schedule.'] });
-            return;
-          }
-          if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+          priceBusy(true, Date.now());
+          let d = await callPriceRefresh(false);
 
           if(d.skipped === 'cooldown'){
+            priceBusy(false);          // stop spinning while the question is on screen
             const again = await pbConfirm({
               title: 'Prices were refreshed recently',
               body: `The last real run was ${d.last_run ? new Date(d.last_run).toLocaleString() : 'less than ' + d.cooldown_h + 'h ago'}, and the job holds a ${d.cooldown_h}h cooldown to keep the cost down.\n\nRun it again anyway?`,
               okText: 'Run anyway',
             });
-            if(again) return runPriceRefresh(true);
-            return;
+            if(!again) return;
+            priceBusy(true, Date.now());
+            d = await callPriceRefresh(true);
           }
+
           if(d.eligible === 0){
             pbToast({ type:'ok', title:'Nothing to price', lines:[ d.note || 'No games are send-eligible right now, so there is nothing worth pricing.' ] });
             return;
@@ -1860,16 +1890,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               `Cost $${(d.cost_usd ?? 0).toFixed(4)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
             ].filter(Boolean),
           });
-          await showLastPriceRun();
           await load();   // pull the new prices into the table
         } catch(e){
-          pbToast({ type:'err', title:'Price refresh failed', lines:[ String((e && e.message) || e) ] });
+          pbToast({
+            type:'err',
+            title: e && e.unauthorised ? 'Price refresh is not authorised from the browser' : 'Price refresh failed',
+            lines:[ String((e && e.message) || e) ],
+          });
         } finally {
-          btn.disabled = false; btn.innerHTML = orig;
-          showLastPriceRun();   // replaces the progress text with the real last-run cost
+          priceBusy(false);   // single owner of the reset, on every path
         }
       }
-      el('refresh-prices')?.addEventListener('click', () => runPriceRefresh(false));
+      el('refresh-prices')?.addEventListener('click', () => runPriceRefresh());
       showLastPriceRun();
 
       // TEMP: manual blast trigger. Two-stage decider:
