@@ -37,7 +37,10 @@ export default async function handler(req, res) {
   } catch (e) {
     // Do not leak internals (tokens/keys/hosts). Return a generic message + a short code.
     const msg = String((e && e.message) || e);
-    const safe = /not set|unavailable/i.test(msg) ? 'Agent is not configured yet.' : /timeout/i.test(msg) ? 'The agent took too long to respond.' : 'The agent is unavailable right now.';
+    const safe = /device_pending_approval/i.test(msg) ? 'This device is awaiting one-time approval on the gateway.'
+      : /not set/i.test(msg) ? 'Agent is not configured yet.'
+      : /timeout|too long/i.test(msg) ? 'The agent took too long to respond.'
+      : 'The agent is unavailable right now.';
     res.status(502).json({ error: safe });
   }
 }
