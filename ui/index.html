@@ -277,7 +277,7 @@
                 <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
                 <!-- This button spends money, so it says so before it is pressed, not after. The
                      note carries the last run's real cost, read from events_master_price_runs. -->
-                <span class="tooltip tooltip-left tooltip-wide cursor-help" data-tip="Each run asks an AI model to look up live get-in prices for every send-eligible game, and that costs money per run — typically a few cents. The job refuses to run twice within 6 hours unless you confirm. The exact cost of each run is recorded and shown here.">
+                <span id="refresh-prices-info" class="tooltip tooltip-left tooltip-wide cursor-help" data-tip="Only games in the near horizon are priced — a price for a game months away will have moved long before the blast goes out, and those games are not sendable yet anyway. An AI model looks up the live get-in price for each one, so every run costs money; you are shown the game count and the estimated cost before anything is spent, and the actual cost of the last run is shown here.">
                   <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-base-content/30 text-base-content/50 text-[10px] font-bold">i</span>
                 </span>
                 <span id="refresh-prices-note" class="text-xs text-base-content/50"></span>
@@ -1799,6 +1799,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // What the last run actually cost, so the spend is visible before pressing the button
       // again rather than only in the toast that follows. events_master_price_runs is
       // anon-readable; a failure here is silent because it is decoration, not function.
+      // The horizon is a DB knob (decider_rules.price_window_days), so the tooltip states the
+      // real number rather than a hardcoded "20 days" that silently drifts when it is tuned.
+      async function showPriceWindow(){
+        const info = el('refresh-prices-info'); if(!info || !sb) return;
+        const { data, error } = await sb.from('decider_rules').select('price_window_days').eq('id', 1).limit(1);
+        const days = !error && data && data[0] && data[0].price_window_days;
+        if(!days) return;
+        info.dataset.tip = `Only games in the next ${days} days are priced — a price for a game further out will have moved long before the blast goes out, and those games are not sendable yet anyway. An AI model looks up the live get-in price for each one, so every run costs money; you are shown the game count and the estimated cost before anything is spent, and the actual cost of the last run is shown here.`;
+      }
+
       async function showLastPriceRun(){
         const note = el('refresh-prices-note'); if(!note || !sb) return;
         const { data, error } = await sb.from('events_master_price_runs')
@@ -1866,7 +1876,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           }
           const go = await pbConfirm({
             title: `Refresh prices for ${est.would_price} game${est.would_price===1?'':'s'}?`,
-            body: `Every eligible game is repriced, including ones priced recently — about ${est.batches} lookup${est.batches===1?'':'s'}, roughly $${Number(est.est_cost_usd||0).toFixed(2)}.\n\nThis can take a minute or two.`,
+            body: `Every game playing in the next ${est.window_days || 20} days is repriced, including ones priced recently — about ${est.batches} lookup${est.batches===1?'':'s'}, roughly $${Number(est.est_cost_usd||0).toFixed(2)}.\n\nGames further out are not priced: the price would move before the blast goes out, and they are not sendable yet.\n\nThis can take a minute or two.`,
             okText: 'Refresh all',
           });
           if(!go) return;
@@ -1894,6 +1904,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             lines: [
               d.write_error || '',
               `${wrote} written · ${d.attempted} attempted of ${d.eligible} eligible${d.missing ? ` · ${d.missing} returned no price` : ''}`,
+              d.unverified ? `${d.unverified} dropped — priced but no listing link, so the number could not be verified.` : '',
               leagues ? `Leagues: ${leagues}` : '',
               lost && !d.write_error ? 'Prices were paid for but did not match a stored event — check the write path before running again.' : '',
               `Cost $${(d.cost_usd ?? 0).toFixed(4)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
@@ -1912,6 +1923,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
       el('refresh-prices')?.addEventListener('click', () => runPriceRefresh());
       showLastPriceRun();
+      showPriceWindow();
 
       // TEMP: manual blast trigger. Two-stage decider:
       //   1. HARD RULES (SQL, rpc_event_recommendations) — cooldown, forward window,

@@ -120,6 +120,7 @@ export default async function handler(req, res) {
       res.status(200).json({
         ok: true, estimate: true, eligible: eligibleTotal, would_price: wouldPrice,
         batches: batchCount, est_cost_usd: Number((batchCount * GROUNDING_PER_REQ).toFixed(4)),
+        window_days: Number(rules.price_window_days),   // so the UI never hardcodes the horizon
       });
       return;
     }
@@ -139,7 +140,14 @@ export default async function handler(req, res) {
 
     // dedupe (a game could be priced in pass 1 and again in a retry batch)
     const byId = new Map(allPriced.map(r => [r.external_id, r]));
-    const priceRows = [...byId.values()];
+    // A price nobody can check is not worth storing: the Cheapest cell exists so an operator can
+    // click through and confirm the number before a blast quotes it. A price with no listing URL
+    // is unverifiable, so it is dropped rather than shown as fact. This does cost coverage —
+    // the model returns a usable link for roughly 60% of the games it prices — so the count is
+    // reported as `unverified` rather than hidden.
+    const all = [...byId.values()];
+    const priceRows = all.filter(r => r.url);
+    const unverified = all.length - priceRows.length;
 
     // Every league present, not just MLB. The old call passed p_league:'mlb' into a function
     // that filters `where league = p_league`, so an NFL or NHL price was paid for and then
@@ -168,7 +176,7 @@ export default async function handler(req, res) {
     const durationMs = Date.now() - started;
     const runLog = {
       model: MODEL, eligible: eligibleTotal, attempted: games.length,
-      priced: priceRows.length, missing: games.length - priceRows.length,
+      priced: priceRows.length, missing: games.length - priceRows.length,   // includes the unverified drops
       batches: batches.length, retried_batches: retriedBatches,
       in_tokens: acc.inTok, out_tokens: acc.outTok, cost_usd: Number(cost.toFixed(4)),
       duration_ms: durationMs, dry_run: dry,
@@ -177,7 +185,7 @@ export default async function handler(req, res) {
 
     // ok:false when prices were found but could not be stored — the caller must not report a
     // run that cost money and changed nothing as a success.
-    res.status(200).json({ ok: !writeError, dry, written, by_league: byLeague, write_error: writeError || undefined, ...runLog });
+    res.status(200).json({ ok: !writeError, dry, written, by_league: byLeague, unverified, write_error: writeError || undefined, ...runLog });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }

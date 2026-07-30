@@ -71,6 +71,34 @@ Notes:
 - **Prompt is pinned** (AI-845): single ticket (per seat), **pre-fee listed** price.
 - **Job:** `api/price-refresh.js` prices the decider's send-eligible games, writes `best_price`
   via `set_event_prices()` (also appends to `events_master_price_history`). Migration [`020`](../migrations/020_price_refresh.sql), [`030`](../migrations/030_price_accuracy_tiered_refresh.sql).
+- **Scope — only the near horizon.** Most events are never priced, by design. The funnel, as of
+  2026-07-30:
+
+  | stage | count | dropped because |
+  |---|---|---|
+  | upcoming in `events_master` | 2,407 | — |
+  | decider says `send` | 179 | `too_early` / `no_history` / `cooldown` / `nearly_full` |
+  | within `price_window_days` (20) | **127** | a price 3 months out will have moved by send time |
+
+  So an empty Cheapest column usually means "not in range yet", not a failure. It also explains
+  why every priced game is MLB: NFL opens 9/9 and NHL 9/29, both outside a 20-day window, so
+  **0** of their 1,608 upcoming games are in range. They start pricing themselves in mid-August
+  as their openers come within the window — expect per-run cost to roughly double then.
+- **Listing URL:** `price_url` holds the page the price was read from, and the Cheapest cell on
+  Campaigns and Queue links through it. The column existed from migration `025` but nothing wrote
+  it until migration [`039`](../migrations/039_set_event_prices_store_url.sql) — the prompt only
+  returned `source`, a site *name*. `cleanPriceUrl()` keeps absolute http(s) URLs only and
+  rejects non-ASCII or whitespace in the path: a real run returned a SeatGeek link with "Oriole
+  Park" garbled into Tamil script, well-formed and 404ing. A broken link under a price is worse
+  than none — it invites verification against nothing. A null URL never clears a stored one.
+- **All leagues.** The write used to pass `p_league:'mlb'` into a function filtering on league, so
+  an NFL/NHL price would be looked up, *paid for*, and silently discarded — `priced` counted it,
+  `written` never did. Migration [`038`](../migrations/038_set_event_prices_all_leagues.sql) adds
+  `set_event_prices(p_rows)` matching on `external_id` (globally unique) and taking the league
+  from the row it updates. Masked until NFL/NHL enter the window; it would have burned money then.
+- **Cheap games and URLs.** A game under `price_skip_below` is never repriced (the price is as good
+  as it gets), which also meant one priced before URL capture could never *acquire* a link. Such a
+  game is now let through exactly while `price_url is null`; once it has one, the skip resumes.
 - **Cadence (tiered):** near-term games (≤3 days) refresh every 12h, far games 48h. Cron runs
   every 12h; per-game freshness picks the tier. Knobs on `decider_rules`: `price_stale_hours`,
   `price_stale_hours_near`, `price_near_days`, `price_window_days`, `price_skip_below`.
@@ -79,6 +107,15 @@ Notes:
   above + price history to measure decay.
 - **Agent:** the Campaign Agent (`api/chat.js`) answers price questions via `get_event_price`
   (cache-first from `events_master`, one grounded lookup on a miss, writes back).
+- **Manual "Refresh prices" (Campaigns tab).** Same job, run on demand. `force=1` bypasses the run
+  cooldown **and** the per-game freshness/cheap skips: pressing refresh reprices *every* game in
+  the window, not the subset the cron considers due — a button that silently skips 100 of 127
+  games is not what the word means. Those skips still apply in full to the cron, which is what
+  they were for. The cost guard is therefore up front, not a refusal afterwards: `?estimate=1`
+  returns the game count, batch count, estimated cost and `window_days` **without calling the
+  model** (free, writes nothing, logs nothing), and the confirm dialog quotes it — *"Refresh
+  prices for 127 games? … roughly $0.77"*. Cancelling costs nothing. The `i` tooltip reads
+  `price_window_days` live so it never hardcodes the horizon.
 
 ## 5. Cron & ops
 
@@ -92,8 +129,8 @@ Notes:
 
 ## 6. Open items
 
-- **🚑 Gemini spend cap:** the Gemini key is over its monthly spend cap (`429 RESOURCE_EXHAUSTED`).
-  Blocks ALL pricing (job, agent, POC) until raised at ai.studio/spend.
+- ~~**🚑 Gemini spend cap**~~ — resolved. Pricing runs again: 2026-07-30 runs of 127 and 27 games
+  completed and billed ($0.844 / $0.283). Left here as history; delete when Phase 2 lands.
 - **AI-827 accuracy spot-check:** confirm exact $ vs live StubHub/SeatGeek by hand (coverage
   proven, exact number not).
 - **AI-845 Phase 2 (spike):** lower-level (100-level) + VIP price capture — 3-tier grounded prompt
