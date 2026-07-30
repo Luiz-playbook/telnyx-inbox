@@ -1876,7 +1876,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           }
           const go = await pbConfirm({
             title: `Refresh prices for ${est.would_price} game${est.would_price===1?'':'s'}?`,
-            body: `Every game playing in the next ${est.window_days || 20} days is repriced, including ones priced recently — about ${est.batches} lookup${est.batches===1?'':'s'}, roughly $${Number(est.est_cost_usd||0).toFixed(2)}.\n\nGames further out are not priced: the price would move before the blast goes out, and they are not sendable yet.\n\nThis can take a minute or two.`,
+            // "22 lookups" is meaningless on its own — say why the cost is not 127 x the
+            // per-call price. Billing is per grounded request, so games are priced in batches.
+            body: `Every game playing in the next ${est.window_days || 20} days is repriced, including ones priced recently.\n\nCost: roughly $${Number(est.est_cost_usd||0).toFixed(2)} — the AI is billed per search, not per game, so these are looked up in ${est.batches} batch${est.batches===1?'':'es'} of 6.\n\nGames further out are not priced: the price would move before the blast goes out, and they are not sendable yet.\n\nThis can take a minute or two.`,
             okText: 'Refresh all',
           });
           if(!go) return;
