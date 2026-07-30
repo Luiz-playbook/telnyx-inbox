@@ -213,7 +213,13 @@
               <h1 class="text-2xl font-extrabold text-[#133b49]">Campaigns by Event</h1>
               <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
-            <div><button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button></div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
+              <!-- Runs the same job as the 12-hourly cron. It costs money per run, so the
+                   endpoint's own 6h cooldown is respected rather than forced by default. -->
+              <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
+              <span id="refresh-prices-note" class="text-xs text-base-content/50"></span>
+            </div>
             <!-- Toolbar row 1 — search anchored left, every filter grouped on the right. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
@@ -1752,6 +1758,61 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // The Queue's "Send Now" needs the same toast + confirm gate, and both live in this
       // closure, so they're published once rather than duplicated there.
       window.__pbToast = pbToast; window.__pbConfirm = pbConfirm;
+
+      // Manual price refresh — the same job the 12-hourly cron runs (/api/price-refresh).
+      //
+      // It costs real money: every run makes grounded Gemini calls and reports cost_usd. The
+      // endpoint guards itself with a 6h cooldown, which is respected rather than forced —
+      // if it reports a skip, the operator is asked before re-running with ?force=1, so the
+      // spend is always a deliberate answer to a stated question.
+      //
+      // Runs can take minutes (maxDuration 300), so the button holds a spinner throughout
+      // and the table reloads afterwards to pick up the new prices.
+      async function runPriceRefresh(force){
+        const btn = el('refresh-prices'), note = el('refresh-prices-note');
+        const orig = btn.innerHTML;
+        btn.disabled = true; btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Pricing…';
+        if(note) note.textContent = 'this can take a few minutes';
+        try {
+          const r = await fetch('/api/price-refresh' + (force ? '?force=1' : ''), { method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
+          const d = await r.json().catch(()=>({}));
+          if(r.status === 401){
+            pbToast({ type:'err', title:'Price refresh is not authorised from the browser',
+              lines:['/api/price-refresh requires PRICE_CRON_SECRET, which is server-side only. It still runs on its own 12-hourly schedule.'] });
+            return;
+          }
+          if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+
+          if(d.skipped === 'cooldown'){
+            const again = await pbConfirm({
+              title: 'Prices were refreshed recently',
+              body: `The last real run was ${d.last_run ? new Date(d.last_run).toLocaleString() : 'less than ' + d.cooldown_h + 'h ago'}, and the job holds a ${d.cooldown_h}h cooldown to keep the cost down.\n\nRun it again anyway?`,
+              okText: 'Run anyway',
+            });
+            if(again) return runPriceRefresh(true);
+            return;
+          }
+          if(d.eligible === 0){
+            pbToast({ type:'ok', title:'Nothing to price', lines:[ d.note || 'No games are send-eligible right now, so there is nothing worth pricing.' ] });
+            return;
+          }
+          pbToast({
+            type: d.priced ? 'ok' : 'err',
+            title: d.priced ? `Priced ${d.priced} game${d.priced===1?'':'s'}` : 'No prices came back',
+            lines: [
+              `${d.written || 0} written · ${d.attempted} attempted of ${d.eligible} eligible${d.missing ? ` · ${d.missing} missing` : ''}`,
+              `$${(d.cost_usd ?? 0).toFixed(4)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retry` : ''}`,
+            ],
+          });
+          await load();   // pull the new prices into the table
+        } catch(e){
+          pbToast({ type:'err', title:'Price refresh failed', lines:[ String((e && e.message) || e) ] });
+        } finally {
+          btn.disabled = false; btn.innerHTML = orig;
+          if(note) note.textContent = '';
+        }
+      }
+      el('refresh-prices')?.addEventListener('click', () => runPriceRefresh(false));
 
       // TEMP: manual blast trigger. Two-stage decider:
       //   1. HARD RULES (SQL, rpc_event_recommendations) — cooldown, forward window,
