@@ -47,6 +47,25 @@ Notes:
   log (rows added per run). Monthly cron `api/schedule-refresh.js` keeps MLB current; run
   `load-schedule.js --league <x>` on demand when a league releases. Migration [`026`](../migrations/026_schedule_refresh.sql).
 
+### Dates and times — read this before writing a date comparison
+
+- **`event_date` is the game's LOCAL date** (home team's). Every North American game starts in
+  the afternoon or evening local time, so this is also the **Eastern** date: 0 of 798 MLB and 0
+  of 1,344 NHL upcoming games start after midnight ET; one NFL game does.
+- **`event_time` is UTC time-of-day** — and for a west-coast night game it belongs to the *next*
+  UTC day. `Dodgers, event_date 2026-07-30, event_time 02:10` is 7:10pm PT on the 30th, i.e.
+  02:10 UTC on the 31st. **`event_date + event_time` is therefore a fictional timestamp.**
+  Doing exactly that produced a bogus "203 MLB / 933 NHL rows have wrong dates" result while
+  investigating; the columns are fine, combining them is not. There is no stored true start
+  instant — add one before any feature needs game *times*.
+- **"Today" is Eastern everywhere**, via `today_est()` in SQL and
+  `toLocaleDateString('en-CA', {timeZone:'America/New_York'})` in JS and the API. Not the
+  server's UTC (between 20:00 ET and midnight the UTC date has already rolled, which would have
+  made queue-tick refuse blasts for games not yet played) and not the browser's (a viewer in
+  Asia is a day ahead and saw tonight's games flagged as already played).
+- Still on UTC `current_date`: `rpc_event_recommendations`, for cooldown and forward-window
+  maths. Same latent issue, wider blast radius — deliberate change, not yet made.
+
 ## 3. Market resolution (team → market)
 
 - `market_bridge_team(team_lc → market_key)` — league-blind nickname map.
