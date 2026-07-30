@@ -100,7 +100,8 @@ export default async function handler(req, res) {
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
       `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}` +
-      `&select=id,external_id,league,team,opponent,event_date,venue,best_price,priced_at,price_url`, { headers: sh });
+      // team_full feeds the SeatGeek /<team>-tickets fallback slug — "guardians" is not one.
+      `&select=id,external_id,league,team,team_full,opponent,event_date,venue,best_price,priced_at,price_url`, { headers: sh });
     let games = await evR.json();
     if (!Array.isArray(games)) { res.status(502).json({ error: 'events fetch failed', detail: games }); return; }
 
