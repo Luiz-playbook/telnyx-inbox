@@ -116,6 +116,11 @@
     .stale-warn{ display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; margin-left:6px;
                  border-radius:9999px; background:#e5484d; color:#fff; font-size:11px; font-weight:800; line-height:1;
                  vertical-align:middle; cursor:help; }
+    /* Amber, not red: the game is TODAY — still sendable, but there is almost no lead time.
+       Deliberately a different colour from .stale-warn so "act fast" never reads as "too late". */
+    .today-warn{ display:inline-flex; align-items:center; gap:3px; margin-left:6px; padding:1px 7px; border-radius:9999px;
+                 background:#fdeee4; color:#c94d07; border:1px solid #f5d3bd; font-size:10px; font-weight:800;
+                 letter-spacing:.03em; text-transform:uppercase; vertical-align:middle; cursor:help; }
     /* The preview IS the editor — no separate textarea above it. */
     .edit-live{ outline:none; border-radius:6px; transition:box-shadow .12s, background .12s; cursor:text; }
     .edit-live:hover{ box-shadow:0 0 0 1px #e8935a inset; }
@@ -1526,6 +1531,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const clip = (s, n = 17) => { s = (s||'').toString(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
       const evTitle = e => e.opponent ? `${e.team} at ${e.opponent}` : (e.team || 'Untitled event');
+      // event_targets() only returns games from today onwards, so "today" is the earliest a row
+      // can be — and the one worth flagging: a blast queued for a game happening in hours gives
+      // recipients almost no time to act on the offer. A warning, not a block.
+      const todayYmd = () => { const d = new Date(), p = n => String(n).padStart(2,'0');
+        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
       const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
 
       function render(){
@@ -1578,7 +1588,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(el('cbs-prev')) el('cbs-prev').disabled = page <= 1;
         if(el('cbs-next')) el('cbs-next').disabled = page >= pages;
         if(!items.length){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
+        const today = todayYmd();
         tb.innerHTML = shown.map(e => {
+          const isToday = e.event_date === today;
           const market = e.state_name
             ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(e.state_name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(e.country||'')}</span></span>${e.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(e.market_key))}</div>`:''}`
             : '<span class="text-base-content/40">Unassigned</span>';
@@ -1592,7 +1604,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : allowed ? ' <span class="badge badge-success badge-sm text-white align-middle">&#10003; sendable</span>'
                       : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
-          <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}</div><div class="text-xs text-base-content/50">${esc(shortDate(e.event_date))}</div></td>
+          <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}</div></td>
           <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}<div class="text-[10px] text-base-content/40">get-in</div>`:'<span class="text-base-content/40">—</span>'}</td>
           <td>${sport}</td>
           <td>${market}</td>
