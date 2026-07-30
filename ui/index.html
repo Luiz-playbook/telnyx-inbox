@@ -218,18 +218,6 @@
               <h1 class="text-2xl font-extrabold text-[#133b49]">Campaigns by Event</h1>
               <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
             </div>
-            <div class="flex items-center gap-2 flex-wrap">
-              <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
-              <!-- Runs the same job as the 12-hourly cron. It costs money per run, so the
-                   endpoint's own 6h cooldown is respected rather than forced by default. -->
-              <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
-              <!-- This button spends money, so it says so before it is pressed, not after. The
-                   note carries the last run's real cost, read from events_master_price_runs. -->
-              <span class="tooltip tooltip-bottom cursor-help" data-tip="Each run asks an AI model to look up live get-in prices for every send-eligible game, and that costs money per run — typically a few cents. The job refuses to run twice within 6 hours unless you confirm. The exact cost of each run is recorded and shown here.">
-                <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-base-content/30 text-base-content/50 text-[10px] font-bold">i</span>
-              </span>
-              <span id="refresh-prices-note" class="text-xs text-base-content/50"></span>
-            </div>
             <!-- Toolbar row 1 — search anchored left, every filter grouped on the right. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
@@ -261,16 +249,31 @@
                 </select>
               </div>
             </div>
-            <!-- Toolbar row 2 — scheduling controls sit under the filters, directly above the
-                 table, pushed to the right edge. Multi-day, additive: fill the queue with N
-                 markets/day through this date. -->
-            <div class="flex items-end gap-2 flex-wrap justify-end">
-              <label class="text-xs text-base-content/60">Markets/day
-                <input id="tb-perday" type="number" min="1" max="10" value="4" class="input input-bordered input-xs w-16 ml-1">
-              </label>
-              <label class="text-xs text-base-content/60">Through
-                <input id="tb-through" type="date" class="input input-bordered input-xs w-36 ml-1">
-              </label>
+            <!-- Toolbar row 2 — the actions and the settings they read sit on one line,
+                 directly above the table: the inputs on the left, the buttons that consume
+                 them on the right. Multi-day, additive: fill the queue with N markets/day
+                 through this date. -->
+            <div class="flex items-end justify-between flex-wrap gap-3">
+              <div class="flex items-end gap-2 flex-wrap">
+                <label class="text-xs text-base-content/60">Markets/day
+                  <input id="tb-perday" type="number" min="1" max="10" value="4" class="input input-bordered input-xs w-16 ml-1">
+                </label>
+                <label class="text-xs text-base-content/60">Through
+                  <input id="tb-through" type="date" class="input input-bordered input-xs w-36 ml-1">
+                </label>
+              </div>
+              <div class="flex items-center gap-2 flex-wrap justify-end">
+                <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
+                <!-- Runs the same job as the 12-hourly cron. It costs money per run, so the
+                     endpoint's own 6h cooldown is respected rather than forced by default. -->
+                <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
+                <!-- This button spends money, so it says so before it is pressed, not after. The
+                     note carries the last run's real cost, read from events_master_price_runs. -->
+                <span class="tooltip tooltip-left cursor-help" data-tip="Each run asks an AI model to look up live get-in prices for every send-eligible game, and that costs money per run — typically a few cents. The job refuses to run twice within 6 hours unless you confirm. The exact cost of each run is recorded and shown here.">
+                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-base-content/30 text-base-content/50 text-[10px] font-bold">i</span>
+                </span>
+                <span id="refresh-prices-note" class="text-xs text-base-content/50"></span>
+              </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-280px)]">
