@@ -85,13 +85,19 @@ export default async function handler(req, res) {
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
       `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}` +
-      `&select=id,external_id,league,team,opponent,event_date,venue,best_price,priced_at`, { headers: sh });
+      `&select=id,external_id,league,team,opponent,event_date,venue,best_price,priced_at,price_url`, { headers: sh });
     let games = await evR.json();
     if (!Array.isArray(games)) { res.status(502).json({ error: 'events fetch failed', detail: games }); return; }
 
     const eligibleTotal = games.length;
     games = games.filter(g => {
-      if (g.best_price != null && Number(g.best_price) < Number(rules.price_skip_below)) return false; // locked-in cheap
+      // Locked-in cheap: a game already under the floor is not repriced, because the price is
+      // as good as it gets. But that rule also meant a cheap game priced before listing URLs
+      // were captured could NEVER acquire one — it is skipped by every future run forever, so
+      // its price stays permanently unverifiable. Let a cheap game through exactly while it
+      // has no url; once the run gives it one, the skip applies again. The freshness check
+      // below still bounds the retry to one attempt per staleness window.
+      if (g.best_price != null && Number(g.best_price) < Number(rules.price_skip_below) && g.price_url) return false;
       // tiered freshness: near-term games use the short window, far games the long one
       const daysUntil = Math.round((new Date(g.event_date) - new Date(today)) / 864e5);
       const cut = daysUntil <= rules.price_near_days ? nearCut : farCut;
