@@ -25,18 +25,33 @@ const BATCH = 6;
 
 const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) => a.slice(i * n, i * n + n));
 
-// one grounded pass over the batches; returns priced rows + which batches came back empty
-async function pricePass(gkey, batches, acc) {
-  const priced = [];
-  const failedBatches = [];
-  for (const b of batches) {
-    const r = await callGeminiPrices(gkey, b);
-    if (!r.ok) { failedBatches.push(b); continue; }
-    acc.inTok += r.inTok; acc.outTok += r.outTok; acc.groundedCalls++;
-    priced.push(...r.priced);
-    if (r.priced.length === 0) failedBatches.push(b); // whole-batch miss -> retry candidate
+// How many grounded calls are in flight at once. Batches used to run strictly one after
+// another, which made the wall clock the SUM of Gemini's latencies — and that latency is wildly
+// variable: 27 games took 57s on one run and 240s on the next. A full 22-batch refresh
+// therefore overran Vercel's ceiling and returned 504, losing every price already paid for.
+const CONCURRENCY = 5;
+
+// One grounded pass over the batches; returns priced rows, batches that came back empty, and
+// any that were never attempted because the deadline arrived. Nothing is thrown on timeout:
+// a partial result that gets written beats a 504 that discards work already billed for.
+async function pricePass(gkey, batches, acc, deadline) {
+  const priced = [], failedBatches = [], skipped = [];
+  let next = 0;
+  async function worker() {
+    for (;;) {
+      const idx = next++;
+      if (idx >= batches.length) return;
+      const b = batches[idx];
+      if (Date.now() > deadline) { skipped.push(b); continue; }   // drain, don't start
+      const r = await callGeminiPrices(gkey, b);
+      if (!r.ok) { failedBatches.push(b); continue; }
+      acc.inTok += r.inTok; acc.outTok += r.outTok; acc.groundedCalls++;
+      priced.push(...r.priced);
+      if (r.priced.length === 0) failedBatches.push(b); // whole-batch miss -> retry candidate
+    }
   }
-  return { priced, failedBatches };
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batches.length) }, worker));
+  return { priced, failedBatches, skipped };
 }
 
 export default async function handler(req, res) {
@@ -128,14 +143,23 @@ export default async function handler(req, res) {
     const acc = { inTok: 0, outTok: 0, groundedCalls: 0 };
     const batches = chunk(games, BATCH);
 
+    // Stop starting new work with enough margin to still write, log and respond inside the
+    // platform's 300s ceiling. Overrunning it returns 504 and loses every price already paid
+    // for, which is strictly worse than a smaller batch of prices that actually lands.
+    const BUDGET_MS = 200e3;
+    const deadline = started + BUDGET_MS;
+
     // pass 1, then one retry pass over the batches that came back empty
-    const p1 = await pricePass(gkey, batches, acc);
+    const p1 = await pricePass(gkey, batches, acc, deadline);
     let retriedBatches = 0;
     let allPriced = p1.priced;
-    if (p1.failedBatches.length) {
+    let skippedBatches = p1.skipped.length;
+    // Only retry if there is real time left — a retry that overruns costs the whole run.
+    if (p1.failedBatches.length && Date.now() < deadline - 30e3) {
       retriedBatches = p1.failedBatches.length;
-      const p2 = await pricePass(gkey, p1.failedBatches, acc);
+      const p2 = await pricePass(gkey, p1.failedBatches, acc, deadline);
       allPriced = allPriced.concat(p2.priced);
+      skippedBatches += p2.skipped.length;
     }
 
     // dedupe (a game could be priced in pass 1 and again in a retry batch)
@@ -185,7 +209,13 @@ export default async function handler(req, res) {
 
     // ok:false when prices were found but could not be stored — the caller must not report a
     // run that cost money and changed nothing as a success.
-    res.status(200).json({ ok: !writeError, dry, written, by_league: byLeague, unverified, write_error: writeError || undefined, ...runLog });
+    res.status(200).json({
+      ok: !writeError, dry, written, by_league: byLeague, unverified,
+      // Games left unpriced because time ran out — the caller can just run again to pick them up.
+      timed_out: skippedBatches > 0 || undefined,
+      not_reached: skippedBatches ? skippedBatches * BATCH : undefined,
+      write_error: writeError || undefined, ...runLog,
+    });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }

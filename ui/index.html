@@ -1841,8 +1841,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Pricing…';
           if(note) note.textContent = 'this usually takes about a minute';
           clearInterval(priceBusy._t);
+          // mm:ss — a run can pass a minute, and "97s elapsed" is harder to read at a glance.
+          const mmss = ms => { const s = Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
           priceBusy._t = setInterval(() => {
-            if(note) note.textContent = `pricing… ${Math.round((Date.now() - startedAt)/1000)}s elapsed`;
+            if(note) note.textContent = `pricing… ${mmss(Date.now() - startedAt)} elapsed`;
           }, 1000);
         } else {
           clearInterval(priceBusy._t);
@@ -1907,6 +1909,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               d.write_error || '',
               `${wrote} written · ${d.attempted} attempted of ${d.eligible} eligible${d.missing ? ` · ${d.missing} returned no price` : ''}`,
               d.unverified ? `${d.unverified} dropped — priced but no listing link, so the number could not be verified.` : '',
+              d.timed_out ? `Ran out of time before ~${d.not_reached} games — everything priced so far was saved. Run again to finish the rest.` : '',
               leagues ? `Leagues: ${leagues}` : '',
               lost && !d.write_error ? 'Prices were paid for but did not match a stored event — check the write path before running again.' : '',
               `Cost $${(d.cost_usd ?? 0).toFixed(4)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
