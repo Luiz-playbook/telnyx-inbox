@@ -1473,23 +1473,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       agentHistory.push({ role:'user', content:text });
       const bot = agentAppend('bot', '<span class="loading loading-dots loading-sm"></span>');
       try{
-        // Feature flag: set localStorage.blaster_agent_backend='openclaw' to use the memory-backed
-        // OpenClaw agent; anything else keeps the current OpenAI /api/chat. Lets us A/B the two.
-        if((localStorage.getItem('blaster_agent_backend')||(cfg.AGENT_BACKEND||'openai'))==='openclaw'){
-          const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
-          const data = await r.json().catch(()=>({}));
-          if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
-          if(bot) bot.innerHTML = esc(data.reply||'(no reply)').replace(/\n/g,'<br>');
-          agentHistory.push({ role:'assistant', content:data.reply||'' });
-          if(window.__loadQueue) window.__loadQueue(); // the agent may have edited queue rows
-          return;
-        }
-        const r = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ messages: agentHistory }) });
+        // The Campaign Agent panel IS the OpenClaw interface (memory-backed). sessionKey gives
+        // each user continuity across visits; the agent can edit queue rows, so refresh after.
+        const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
         const data = await r.json().catch(()=>({}));
         if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
-        if(bot) bot.innerHTML = esc(data.text||'(no reply)').replace(/\n/g,'<br>');
-        agentHistory.push({ role:'assistant', content:data.text||'' });
+        if(bot) bot.innerHTML = esc(data.reply||'(no reply)').replace(/\n/g,'<br>');
+        agentHistory.push({ role:'assistant', content:data.reply||'' });
+        if(window.__loadQueue) window.__loadQueue(); // the agent may have edited queue rows
       }catch(e){ if(bot) bot.textContent = 'Failed to reach the agent: '+e.message; }
     }
     // Stable per-browser session id → memory continuity across visits. Becomes the real user id
