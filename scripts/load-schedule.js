@@ -8,9 +8,10 @@
 //   node --env-file=.env scripts/load-schedule.js --league nhl --start 2026-10-01 --end 2027-04-30
 //   node --env-file=.env scripts/load-schedule.js --league nba --dry
 //
-// Sources: MLB -> MLB StatsAPI, NHL -> official api-web.nhle.com (both return a full
-// season cleanly). NBA/NFL/college -> ESPN's hidden scoreboard API, walked day by day.
-// All map to the same row shape and go through upsert_events_master (dedup + market).
+// Sources: MLB -> MLB StatsAPI, NHL -> official api-web.nhle.com, NFL -> nflverse
+// community CSV (no official NFL API; widely-public data, per AI-844). NBA/college ->
+// ESPN's hidden scoreboard API, walked day by day. All map to the same row shape and go
+// through upsert_events_master (dedup + market resolution).
 //
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY.
 
@@ -95,6 +96,52 @@ async function loadNHL() {
   return { rows, source: firstUrl || 'https://api-web.nhle.com' };
 }
 
+// ---- NFL: nflverse community dataset (widely-public, no official API needed).
+// One CSV holds every season; we filter to REG home games. Neutral-site (international)
+// games are excluded — the home team isn't actually hosting in its market. ----
+const NFL_TEAMS = {
+  ARI: ['cardinals', 'Arizona Cardinals'], ATL: ['falcons', 'Atlanta Falcons'],
+  BAL: ['ravens', 'Baltimore Ravens'], BUF: ['bills', 'Buffalo Bills'],
+  CAR: ['panthers', 'Carolina Panthers'], CHI: ['bears', 'Chicago Bears'],
+  CIN: ['bengals', 'Cincinnati Bengals'], CLE: ['browns', 'Cleveland Browns'],
+  DAL: ['cowboys', 'Dallas Cowboys'], DEN: ['broncos', 'Denver Broncos'],
+  DET: ['lions', 'Detroit Lions'], GB: ['packers', 'Green Bay Packers'],
+  HOU: ['texans', 'Houston Texans'], IND: ['colts', 'Indianapolis Colts'],
+  JAX: ['jaguars', 'Jacksonville Jaguars'], KC: ['chiefs', 'Kansas City Chiefs'],
+  LA: ['rams', 'Los Angeles Rams'], LAC: ['chargers', 'Los Angeles Chargers'],
+  LV: ['raiders', 'Las Vegas Raiders'], MIA: ['dolphins', 'Miami Dolphins'],
+  MIN: ['vikings', 'Minnesota Vikings'], NE: ['patriots', 'New England Patriots'],
+  NO: ['saints', 'New Orleans Saints'], NYG: ['giants', 'New York Giants'],
+  NYJ: ['jets', 'New York Jets'], PHI: ['eagles', 'Philadelphia Eagles'],
+  PIT: ['steelers', 'Pittsburgh Steelers'], SEA: ['seahawks', 'Seattle Seahawks'],
+  SF: ['49ers', 'San Francisco 49ers'], TB: ['buccaneers', 'Tampa Bay Buccaneers'],
+  TEN: ['titans', 'Tennessee Titans'], WAS: ['commanders', 'Washington Commanders'],
+};
+
+async function loadNFL() {
+  const url = 'https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv';
+  const res = await fetch(url, { headers: { 'user-agent': 'Mozilla/5.0' } });
+  if (!res.ok) throw new Error(`${res.status} for ${url}`);
+  const text = await res.text();
+  const linesRaw = text.split('\n');
+  const header = linesRaw[0].replace(/\r$/, '').split(',');
+  const ix = Object.fromEntries(header.map((h, i) => [h, i]));
+  const rows = [];
+  for (let i = 1; i < linesRaw.length; i++) {
+    const c = linesRaw[i].replace(/\r$/, '').split(',');
+    if (Number(c[ix.season]) !== YEAR || c[ix.game_type] !== 'REG' || c[ix.location] !== 'Home') continue;
+    const home = NFL_TEAMS[c[ix.home_team]] || [c[ix.home_team]?.toLowerCase(), c[ix.home_team]];
+    const away = NFL_TEAMS[c[ix.away_team]] || [c[ix.away_team]?.toLowerCase(), c[ix.away_team]];
+    rows.push({
+      league: 'nfl', team: home[0], team_full: home[1], opponent: away[0],
+      event_date: c[ix.gameday], event_time: (c[ix.gametime] || '') ? c[ix.gametime] + ':00' : null,
+      venue: c[ix.stadium] || null, home_away: 'home', external_id: c[ix.game_id],
+      source_url: url, source_note: 'nflverse/nfldata games.csv; gametime local ET', season: SEASON,
+    });
+  }
+  return { rows, source: url };
+}
+
 // ---- ESPN: scoreboard walked day by day across [START, END] ----
 async function loadESPN() {
   const path = ESPN[LEAGUE];
@@ -138,8 +185,8 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 
 (async () => {
   console.log(`Schedule refresh: ${LEAGUE} ${START}->${END} (season ${SEASON})${DRY ? ' [DRY]' : ''}`);
-  const loaders = { mlb: loadMLB, nhl: loadNHL };         // official APIs; others fall back to ESPN
-  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web' }[LEAGUE] || 'ESPN';
+  const loaders = { mlb: loadMLB, nhl: loadNHL, nfl: loadNFL }; // official/community; rest fall back to ESPN
+  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web', nfl: 'nflverse' }[LEAGUE] || 'ESPN';
   const { rows, source } = await (loaders[LEAGUE] || loadESPN)();
   console.log(`Fetched ${rows.length} games from ${sourceName}.`);
   if (!rows.length) { console.log('Nothing to load (season may not be released yet).'); return; }
