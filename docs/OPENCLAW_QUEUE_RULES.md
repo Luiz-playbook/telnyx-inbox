@@ -149,9 +149,10 @@ Before ranking, load all directives where `effective_until >= today` and
   and the market is still a bad idea, that is a ranking decision, not a directive.
 - If Cole revokes ("Nashville is fine now"), set `revoked_at` and confirm.
 
-### 4.4 Where directives live — NOT BUILT YET
+### 4.4 Where directives live — BUILT (migration 041)
 
-No table exists for this today. Proposed, matching the existing naming:
+`public.campaign_directives` + RPCs now exist
+(`migrations/041_campaign_directives.sql`), matching the naming below:
 
 ```sql
 create table public.campaign_directives (
@@ -170,12 +171,14 @@ create table public.campaign_directives (
 create index on public.campaign_directives (market_key, effective_until);
 ```
 
-Plus an RPC `campaign_directives_active()` returning the unexpired, unrevoked rows,
-and `campaign_directive_add(p jsonb)` / `campaign_directive_revoke(p_id uuid)`.
+RPCs (SECURITY DEFINER, granted to `anon`): `campaign_directives_active()` returns the
+unexpired, unrevoked rows; `campaign_directive_add(p jsonb)` records one (a new
+directive for the same market+kind supersedes the prior; a `block` with no stated
+duration defaults to +7 days); `campaign_directive_revoke(p_id uuid)` soft-revokes.
 
-Until that ships, the agent has **no durable memory of Cole's feedback across runs**.
-Anything relying on §4 is chat-session-scoped only. This is the one gap that has to be
-closed before OpenClaw can own the decision.
+The agent now has **durable memory of Cole's feedback across runs and sessions.** The
+`campaign-queueing` OpenClaw skill (on the VPS) loads `campaign_directives_active()`
+before every run and records directives when Cole gives a standing instruction.
 
 ---
 
@@ -257,9 +260,13 @@ skipped and not returned — so the return value is exactly what was **added**.
 
 ## Open items
 
-- [ ] Build `campaign_directives` + RPCs (§4.4) — blocking for durable Cole feedback.
-- [ ] Decide whether OpenClaw calls Supabase directly or through
-      `api/trigger-decide.js` with the LLM step removed.
+- [x] Build `campaign_directives` + RPCs (§4.4) — done, migration 041.
+- [x] Direct vs endpoint — **direct**: the OpenClaw `campaign-queueing` skill calls the
+      Supabase RPCs itself. `api/trigger-decide.js`'s gpt-4o step is superseded and can
+      be retired.
+- [x] Execution — the agent auto-enqueues on a daily cron (`daily-campaign-queue`,
+      8am ET, defaults per_day=4 / through=today+3, placeholders only). A human still
+      confirms before the send cron fires.
 - [ ] `campaign_send_log` exists but is not written by the current path — wire it or
       drop it from the audit story.
 - [ ] `CAMPAIGN_SEND_RULES.md` is stale (3–21 day window, 90% fill, daily cap 3,

@@ -196,6 +196,22 @@ send-allowlist, validation) applies automatically.
 **The cron does the sending.** The agent's job is to get the right row, copy,
 sender, channel, and date in place; the scheduled tick fires it.
 
+### Queueing decision (the decider)
+
+Choosing *which* markets/events get queued is a distinct procedure — spec in
+`docs/OPENCLAW_QUEUE_RULES.md`, operationalized in the VPS `campaign-queueing`
+skill: a SQL safety floor (`rpc_event_recommendations`, `decision='send'` only) →
+additive top-up (never rewrite) → a per-day grid (`per_day` × `through`, one market
+per window, ≤14-day window, ≤40 picks, self-healing `through` = today+3 default) →
+Cole's durable **block/boost directives** (`campaign_directives` table +
+`campaign_directive_active/add/revoke` RPCs, migration 041) → metric ranking. It
+enqueues **placeholders** only.
+
+A daily gateway cron job **`daily-campaign-queue`** (8am ET, session
+`agent:main:scheduler`) runs it unattended with the defaults; a human still confirms
+each row before the send cron fires. Manage it on the VPS with
+`openclaw cron list|get|run|disable daily-campaign-queue`.
+
 To change what the agent can do, edit the `SKILL.md` on the VPS (§8). Introspect
 the live RPC surface with:
 ```sql
