@@ -85,7 +85,7 @@ export default async function handler(req, res) {
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
       `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}` +
-      `&select=id,external_id,team,opponent,event_date,venue,best_price,priced_at`, { headers: sh });
+      `&select=id,external_id,league,team,opponent,event_date,venue,best_price,priced_at`, { headers: sh });
     let games = await evR.json();
     if (!Array.isArray(games)) { res.status(502).json({ error: 'events fetch failed', detail: games }); return; }
 
@@ -118,11 +118,27 @@ export default async function handler(req, res) {
     const byId = new Map(allPriced.map(r => [r.external_id, r]));
     const priceRows = [...byId.values()];
 
-    let written = 0;
+    // Every league present, not just MLB. The old call passed p_league:'mlb' into a function
+    // that filters `where league = p_league`, so an NFL or NHL price was paid for and then
+    // discarded — priced would count it, written never would. The one-argument overload
+    // (migration 038) matches on external_id, which is globally unique, and takes the league
+    // from the row it updates.
+    let written = 0, writeError = null;
     if (!dry && priceRows.length) {
       const wR = await fetch(`${supaUrl}/rest/v1/rpc/set_event_prices`, {
-        method: 'POST', headers: sh, body: JSON.stringify({ p_league: 'mlb', p_rows: priceRows }) });
-      written = await wR.json().catch(() => 0);
+        method: 'POST', headers: sh, body: JSON.stringify({ p_rows: priceRows }) });
+      const wBody = await wR.json().catch(() => null);
+      if (!wR.ok) { writeError = (wBody && (wBody.message || wBody.error)) || `write failed (HTTP ${wR.status})`; }
+      else { written = Number(wBody) || 0; }
+    }
+
+    // Which leagues this run actually touched — makes a league silently failing to write
+    // visible instead of hiding inside a single total.
+    const leagueOf = new Map(games.map(g => [g.external_id, g.league]));
+    const byLeague = {};
+    for (const row of priceRows) {
+      const lg = leagueOf.get(row.external_id) || 'unknown';
+      byLeague[lg] = (byLeague[lg] || 0) + 1;
     }
 
     const cost = acc.inTok * IN_COST + acc.outTok * OUT_COST + acc.groundedCalls * GROUNDING_PER_REQ;
@@ -136,7 +152,9 @@ export default async function handler(req, res) {
     };
     if (!dry) await fetch(`${supaUrl}/rest/v1/rpc/record_price_run`, { method: 'POST', headers: sh, body: JSON.stringify({ p: runLog }) }).catch(() => {});
 
-    res.status(200).json({ ok: true, dry, written, ...runLog });
+    // ok:false when prices were found but could not be stored — the caller must not report a
+    // run that cost money and changed nothing as a success.
+    res.status(200).json({ ok: !writeError, dry, written, by_league: byLeague, write_error: writeError || undefined, ...runLog });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
