@@ -16,10 +16,12 @@ export const config = { maxDuration: 60 };
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
 
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
+  // SEND ROUTE — requires a SERVER-ONLY secret. REPLY_SECRET is published in the public
+  // config.js, so it is intentionally NOT accepted here: the browser must never trigger a send.
+  const cronSecret = process.env.CRON_SECRET, sendSecret = process.env.SEND_SECRET;
   const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk  = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  const sendOk   = sendSecret && req.headers['x-send-secret'] === sendSecret;
+  if (!bearerOk && !sendOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const b = req.body && typeof req.body === 'object' ? req.body : (() => {
     try { return JSON.parse(req.body || '{}'); } catch { return {}; }

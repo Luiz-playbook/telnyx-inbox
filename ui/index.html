@@ -1340,12 +1340,31 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       agentHistory.push({ role:'user', content:text });
       const bot = agentAppend('bot', '<span class="loading loading-dots loading-sm"></span>');
       try{
+        // Feature flag: set localStorage.blaster_agent_backend='openclaw' to use the memory-backed
+        // OpenClaw agent; anything else keeps the current OpenAI /api/chat. Lets us A/B the two.
+        if((localStorage.getItem('blaster_agent_backend')||(cfg.AGENT_BACKEND||'openai'))==='openclaw'){
+          const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
+          const data = await r.json().catch(()=>({}));
+          if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
+          if(bot) bot.innerHTML = esc(data.reply||'(no reply)').replace(/\n/g,'<br>');
+          agentHistory.push({ role:'assistant', content:data.reply||'' });
+          if(window.__loadQueue) window.__loadQueue(); // the agent may have edited queue rows
+          return;
+        }
         const r = await fetch('/api/chat', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ messages: agentHistory }) });
         const data = await r.json().catch(()=>({}));
         if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
         if(bot) bot.innerHTML = esc(data.text||'(no reply)').replace(/\n/g,'<br>');
         agentHistory.push({ role:'assistant', content:data.text||'' });
       }catch(e){ if(bot) bot.textContent = 'Failed to reach the agent: '+e.message; }
+    }
+    // Stable per-browser session id → memory continuity across visits. Becomes the real user id
+    // once session auth lands (handoff §4.3).
+    function agentSessionKey(){
+      let s = localStorage.getItem('blaster_session_id');
+      if(!s){ s = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random().toString(16).slice(2)); localStorage.setItem('blaster_session_id', s); }
+      return 'blaster:'+s;
     }
     (function wireAgent(){
       const input=document.getElementById('agent-input'), send=document.getElementById('agent-send');

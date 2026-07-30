@@ -9,7 +9,8 @@
 // would blast a day-4 market on day 2, so scheduled_for is now the only trigger.
 //
 // Runs from Vercel Cron (Authorization: Bearer CRON_SECRET) or on-demand
-// (x-inbox-secret: REPLY_SECRET). Reads the queue + recipients via anon RPCs; sends
+// (x-send-secret: SEND_SECRET — server-only; the browser's public REPLY_SECRET is NOT accepted).
+// Reads the queue + recipients via anon RPCs; sends
 // through the same webhooks as the manual Queue "Confirm"; marks rows sent.
 //
 // Env: SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET / REPLY_SECRET,
@@ -31,10 +32,12 @@ const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
+  // SEND ROUTE — requires a SERVER-ONLY secret. REPLY_SECRET is published in the public
+  // config.js, so it is intentionally NOT accepted here: the browser must never trigger a send.
+  const cronSecret = process.env.CRON_SECRET, sendSecret = process.env.SEND_SECRET;
   const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk  = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  const sendOk   = sendSecret && req.headers['x-send-secret'] === sendSecret;
+  if (!bearerOk && !sendOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
@@ -42,6 +45,7 @@ export default async function handler(req, res) {
   const rpc = (fn, body) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
 
   const now = Date.now();
+  const webhookSecret = process.env.REPLY_SECRET || ''; // outbound gate the n8n workflows expect (unrelated to inbound auth)
   const smsHook = process.env.BULK_SEND_WEBHOOK_URL, emailHook = process.env.EMAIL_SEND_WEBHOOK_URL;
   const hookOk = u => u && !String(u).startsWith('<<');
 
@@ -69,7 +73,7 @@ export default async function handler(req, res) {
       const sent = [];
       if (r.sms && phones.length && hookOk(smsHook)) {
         const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
-        const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
+        const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
         sent.push(rr.ok ? `SMS ${messages.length}` : `SMS failed`);
       }
       if (r.email && emails.length) {
@@ -95,7 +99,7 @@ export default async function handler(req, res) {
           }
         } else if (hookOk(emailHook)) {
           const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject: r.title, html }));
-          const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': replySecret || '' }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
+          const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
           sent.push(rr.ok ? `Email ${messages.length}` : `Email failed`);
         }
       }
