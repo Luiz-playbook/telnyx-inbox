@@ -118,6 +118,14 @@
                  vertical-align:middle; cursor:help; }
     /* Amber, not red: the game is TODAY — still sendable, but there is almost no lead time.
        Deliberately a different colour from .stale-warn so "act fast" never reads as "too late". */
+    /* daisyUI paints tooltips at z-index 1, but the table's sticky <thead> is z-10, so a
+       tooltip opening downward over the table was being covered. Lift the whole tooltip —
+       trigger and both pseudo-elements — above it. */
+    .tooltip{ z-index:60; }
+    .tooltip:before, .tooltip:after{ z-index:60; }
+    /* Long explanatory tips need to wrap and read left-aligned, not as one squeezed line. */
+    .tooltip-wide:before{ width:max-content; max-width:min(24rem, 90vw); white-space:normal;
+                          text-align:left; line-height:1.5; padding:9px 12px; }
     .today-warn{ display:inline-flex; align-items:center; gap:3px; margin-left:6px; padding:1px 7px; border-radius:9999px;
                  background:#fdeee4; color:#c94d07; border:1px solid #f5d3bd; font-size:10px; font-weight:800;
                  letter-spacing:.03em; text-transform:uppercase; vertical-align:middle; cursor:help; }
@@ -269,7 +277,7 @@
                 <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
                 <!-- This button spends money, so it says so before it is pressed, not after. The
                      note carries the last run's real cost, read from events_master_price_runs. -->
-                <span class="tooltip tooltip-left cursor-help" data-tip="Each run asks an AI model to look up live get-in prices for every send-eligible game, and that costs money per run — typically a few cents. The job refuses to run twice within 6 hours unless you confirm. The exact cost of each run is recorded and shown here.">
+                <span class="tooltip tooltip-left tooltip-wide cursor-help" data-tip="Each run asks an AI model to look up live get-in prices for every send-eligible game, and that costs money per run — typically a few cents. The job refuses to run twice within 6 hours unless you confirm. The exact cost of each run is recorded and shown here.">
                   <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-base-content/30 text-base-content/50 text-[10px] font-bold">i</span>
                 </span>
                 <span id="refresh-prices-note" class="text-xs text-base-content/50"></span>
