@@ -46,9 +46,11 @@ export default async function handler(req, res) {
 
   const now = Date.now();
   const webhookSecret = process.env.REPLY_SECRET || ''; // outbound gate the n8n workflows expect (unrelated to inbound auth)
-  // Local calendar date, compared against events_master.event_date (a plain date, no time).
-  const today = (() => { const d = new Date(), p = n => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; })();
+  // US Eastern, compared against events_master.event_date (a plain date, no time). All fixtures
+  // are North American and event_date is their local date, so the server's own clock — UTC on
+  // Vercel — would call tonight's games "yesterday" for the last hours of every UTC day and
+  // refuse to send perfectly valid blasts.
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
   const smsHook = process.env.BULK_SEND_WEBHOOK_URL, emailHook = process.env.EMAIL_SEND_WEBHOOK_URL;
   const hookOk = u => u && !String(u).startsWith('<<');
 

@@ -1551,11 +1551,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // backwards: "Blue Jays at Cardinals" for a game at Rogers Centre in the Toronto market.
       // Away-at-home is the convention the ticket sites use, so it matches their pages too.
       const evTitle = e => e.opponent ? `${e.opponent} at ${e.team}` : (e.team || 'Untitled event');
-      // event_targets() only returns games from today onwards, so "today" is the earliest a row
-      // can be — and the one worth flagging: a blast queued for a game happening in hours gives
-      // recipients almost no time to act on the offer. A warning, not a block.
-      const todayYmd = () => { const d = new Date(), p = n => String(n).padStart(2,'0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+      // "Today" means today WHERE THE GAME IS, not in the viewer's timezone. The server filters
+      // on its own date and every fixture is North American, so a browser in Manila — a day
+      // ahead of US Eastern — would call tonight's games yesterday's and flag them wrongly.
+      // en-CA gives YYYY-MM-DD directly.
+      const todayYmd = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
 
       function render(){
@@ -2221,8 +2221,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // scheduled_for and never looks at the game date, so a row that sat in the queue too
       // long (or was snoozed past its own game) would still go out advertising a match that
       // has already been played. Nothing blocks it — this is the flag that says so.
-      const todayYmd = () => { const d = new Date(), p = n => String(n).padStart(2,'0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+      // US Eastern, not the viewer's clock — see the note on the Campaigns copy of this. A
+      // browser a day ahead of the game's timezone would mark tonight's fixtures as already
+      // played and the cron would then refuse to send them.
+      const todayYmd = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       const gameIsPast = r => !!(r.event_date && r.status !== 'sent' && String(r.event_date) < todayYmd());
       const daysAgo = d => Math.round((new Date(todayYmd()) - new Date(d)) / 86400000);
 
