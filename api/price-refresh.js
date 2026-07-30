@@ -90,7 +90,11 @@ export default async function handler(req, res) {
     if (!Array.isArray(games)) { res.status(502).json({ error: 'events fetch failed', detail: games }); return; }
 
     const eligibleTotal = games.length;
-    games = games.filter(g => {
+    // force = "reprice everything eligible", which is what the Refresh prices button means to
+    // an operator: they pressed refresh, they expect a refresh, not a subset. The per-game
+    // freshness and cheap-price skips exist to keep the CRON cheap; a human who has been shown
+    // the game count and the estimated cost and said yes has already answered that question.
+    games = force ? games : games.filter(g => {
       // Locked-in cheap: a game already under the floor is not repriced, because the price is
       // as good as it gets. But that rule also meant a cheap game priced before listing URLs
       // were captured could NEVER acquire one — it is skipped by every future run forever, so
@@ -106,6 +110,19 @@ export default async function handler(req, res) {
     });
     const limit = Number(req.query?.limit || 0);
     if (limit > 0) games = games.slice(0, limit);
+
+    // ?estimate=1 — how much would a full refresh cost? Answers WITHOUT calling the model, so
+    // the confirm dialog can state the real number of games and a real price before anyone
+    // commits to spending. Free, and nothing is written or logged.
+    if (req.query?.estimate === '1' || req.query?.estimate === 'true') {
+      const wouldPrice = games.length;   // already narrowed above, or not, per `force`
+      const batchCount = Math.ceil(wouldPrice / BATCH);
+      res.status(200).json({
+        ok: true, estimate: true, eligible: eligibleTotal, would_price: wouldPrice,
+        batches: batchCount, est_cost_usd: Number((batchCount * GROUNDING_PER_REQ).toFixed(4)),
+      });
+      return;
+    }
 
     const acc = { inTok: 0, outTok: 0, groundedCalls: 0 };
     const batches = chunk(games, BATCH);

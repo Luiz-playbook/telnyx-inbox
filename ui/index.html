@@ -1811,10 +1811,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         note.textContent = `last run ${when} · ${run.priced} priced · $${Number(run.cost_usd||0).toFixed(4)}`;
       }
 
-      // One call. Kept separate from the button state below so the retry-after-cooldown path
-      // can reuse it WITHOUT re-entering the function that owns the spinner.
-      async function callPriceRefresh(force){
-        const r = await fetch('/api/price-refresh' + (force ? '?force=1' : ''), { method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
+      // One call. Kept separate from the button state below so the estimate and the run can
+      // reuse it WITHOUT re-entering the function that owns the spinner.
+      async function callPriceRefresh(force, extra){
+        const r = await fetch('/api/price-refresh' + (force ? '?force=1' : '?x=0') + (extra || ''), { method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
         const d = await r.json().catch(()=>({}));
         if(r.status === 401){ const e = new Error('/api/price-refresh requires PRICE_CRON_SECRET, which is server-side only. It still runs on its own 12-hourly schedule.'); e.unauthorised = true; throw e; }
         if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
@@ -1849,21 +1849,30 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // still running, so the real 57-second run showed no spinner at all, and the inner
         // finally then restored a label it had captured *as* the spinner — leaving the button
         // stuck on "Pricing…". The retry is a second call now, not a second entry.
+        //
+        // Refresh means REFRESH: every eligible game, not the subset the cron considers due.
+        // The freshness and cheap-price skips exist to keep the SCHEDULED job cheap; someone
+        // pressing this button has asked for all of them. So the cost guard moves to the
+        // front — the server quotes the real game count and price before a penny is spent,
+        // instead of the job quietly declining afterwards and leaving prices stale.
         try {
           priceBusy(true, Date.now());
-          let d = await callPriceRefresh(false);
+          const est = await callPriceRefresh(true, '&estimate=1');
+          priceBusy(false);            // never leave it spinning behind a modal
 
-          if(d.skipped === 'cooldown'){
-            priceBusy(false);          // stop spinning while the question is on screen
-            const again = await pbConfirm({
-              title: 'Prices were refreshed recently',
-              body: `The last real run was ${d.last_run ? new Date(d.last_run).toLocaleString() : 'less than ' + d.cooldown_h + 'h ago'}, and the job holds a ${d.cooldown_h}h cooldown to keep the cost down.\n\nRun it again anyway?`,
-              okText: 'Run anyway',
-            });
-            if(!again) return;
-            priceBusy(true, Date.now());
-            d = await callPriceRefresh(true);
+          if(!est.would_price){
+            pbToast({ type:'ok', title:'Nothing to price', lines:['No games are send-eligible right now, so there is nothing to refresh.'] });
+            return;
           }
+          const go = await pbConfirm({
+            title: `Refresh prices for ${est.would_price} game${est.would_price===1?'':'s'}?`,
+            body: `Every eligible game is repriced, including ones priced recently — about ${est.batches} lookup${est.batches===1?'':'s'}, roughly $${Number(est.est_cost_usd||0).toFixed(2)}.\n\nThis can take a minute or two.`,
+            okText: 'Refresh all',
+          });
+          if(!go) return;
+
+          priceBusy(true, Date.now());
+          const d = await callPriceRefresh(true);
 
           if(d.eligible === 0){
             pbToast({ type:'ok', title:'Nothing to price', lines:[ d.note || 'No games are send-eligible right now, so there is nothing worth pricing.' ] });
