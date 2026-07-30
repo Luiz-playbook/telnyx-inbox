@@ -188,7 +188,18 @@
           </div>
 
           <div class="agent-body space-y-3">
-            <div class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
+            <!-- chat switcher: multiple conversations, each its own memory-backed OpenClaw session -->
+            <div class="flex items-center gap-2">
+              <div class="dropdown flex-1 min-w-0">
+                <button tabindex="0" role="button" id="chat-switch" class="btn btn-sm btn-ghost w-full justify-between normal-case font-normal border border-base-300">
+                  <span id="chat-title" class="truncate">New chat</span><span class="opacity-60 shrink-0">&#9662;</span>
+                </button>
+                <ul tabindex="0" id="chat-menu" class="dropdown-content menu menu-sm z-[70] mt-1 p-1 shadow bg-base-100 border border-base-300 rounded-box w-64 max-h-72 flex-nowrap overflow-y-auto"></ul>
+              </div>
+              <button id="chat-new" class="btn btn-sm btn-primary btn-square" title="New chat" aria-label="New chat">&#65291;</button>
+            </div>
+
+            <div id="agent-greeting" class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
 
             <div class="flex flex-wrap gap-2" id="agent-chips">
               <button class="agent-chip">What's ready today?</button>
@@ -1483,8 +1494,30 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
     })();
 
-    // ===== Campaign Agent chat (Tier A — talks to the /api/chat serverless endpoint) =====
-    const agentHistory = [];
+    // ===== Campaign Agent chat — multiple conversations with persistent history =====
+    // Each chat is a separate OpenClaw session (sessionKey 'blaster:<id>'), so the agent keeps
+    // distinct memory per conversation. Messages are also mirrored to localStorage so history
+    // shows instantly on reload without a round-trip. Becomes the real user id once session auth
+    // lands (handoff §4.3).
+    const CHATS_KEY = 'blaster_chats_v1';
+    const chatUuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random().toString(16).slice(2));
+    function loadChats(){
+      let s; try{ s = JSON.parse(localStorage.getItem(CHATS_KEY)||'null'); }catch{ s=null; }
+      if(!s || !Array.isArray(s.chats) || !s.chats.length){
+        // Migrate the previous single session so its server-side memory carries into Chat 1.
+        const legacy = localStorage.getItem('blaster_session_id');
+        const id = legacy || chatUuid();
+        s = { chats:[{ id, title:'Chat 1', createdAt:Date.now(), messages:[] }], activeId:id };
+        saveChats(s);
+      }
+      if(!s.chats.find(c=>c.id===s.activeId)) s.activeId = s.chats[0].id;
+      return s;
+    }
+    function saveChats(s){ try{ localStorage.setItem(CHATS_KEY, JSON.stringify(s)); }catch{} }
+    let CHATS = loadChats();
+    const activeChat = () => CHATS.chats.find(c=>c.id===CHATS.activeId) || CHATS.chats[0];
+    function agentSessionKey(){ return 'blaster:'+activeChat().id; }
+
     function agentAppend(who, html){
       const log=document.getElementById('agent-log'); if(!log) return null;
       const d=document.createElement('div');
@@ -1493,36 +1526,87 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       log.appendChild(d); d.scrollIntoView({block:'nearest'});
       return d;
     }
+    function pushMessage(role, content){
+      const c = activeChat(); c.messages.push({ role, content });
+      if(role==='user' && (!c.title || c.title==='New chat' || c.title==='Chat 1'))
+        c.title = content.slice(0,40) + (content.length>40?'…':'');
+      saveChats(CHATS);
+    }
+    function renderMessages(){
+      const log=document.getElementById('agent-log'); if(!log) return;
+      const c=activeChat(); log.innerHTML='';
+      c.messages.forEach(m=> agentAppend(m.role==='user'?'me':'bot', esc(m.content).replace(/\n/g,'<br>')));
+      const empty = c.messages.length===0;
+      const g=document.getElementById('agent-greeting'), ch=document.getElementById('agent-chips');
+      if(g) g.style.display = empty?'':'none';
+      if(ch) ch.style.display = empty?'':'none';
+    }
+    function renderChatMenu(){
+      const t=document.getElementById('chat-title'); if(t) t.textContent = activeChat().title;
+      const menu=document.getElementById('chat-menu'); if(!menu) return;
+      menu.innerHTML = CHATS.chats.map(c=>`
+        <li><a class="flex items-center justify-between gap-2 ${c.id===CHATS.activeId?'active':''}" data-switch="${c.id}">
+          <span class="truncate">${esc(c.title)}</span>
+          <span class="flex gap-1 shrink-0 opacity-60">
+            <button class="hover:text-primary" data-rename="${c.id}" title="Rename">&#9998;</button>
+            <button class="hover:text-error" data-del="${c.id}" title="Delete">&#10005;</button>
+          </span>
+        </a></li>`).join('') +
+        `<li class="border-t border-base-200 mt-1 pt-1"><a data-newchat="1">&#65291; New chat</a></li>`;
+    }
+    function newChat(){
+      const c={ id:chatUuid(), title:'New chat', createdAt:Date.now(), messages:[] };
+      CHATS.chats.unshift(c); CHATS.activeId=c.id; saveChats(CHATS);
+      renderChatMenu(); renderMessages(); document.getElementById('agent-input')?.focus();
+    }
+    function switchChat(id){ if(!CHATS.chats.find(c=>c.id===id)) return; CHATS.activeId=id; saveChats(CHATS); renderChatMenu(); renderMessages(); }
+    function deleteChat(id){
+      const i=CHATS.chats.findIndex(c=>c.id===id); if(i<0) return;
+      if(!confirm('Delete this chat? Its history is removed from this browser.')) return;
+      CHATS.chats.splice(i,1);
+      if(!CHATS.chats.length) CHATS.chats.push({ id:chatUuid(), title:'New chat', createdAt:Date.now(), messages:[] });
+      if(id===CHATS.activeId) CHATS.activeId = CHATS.chats[0].id;
+      saveChats(CHATS); renderChatMenu(); renderMessages();
+    }
+    function renameChat(id){
+      const c=CHATS.chats.find(x=>x.id===id); if(!c) return;
+      const name=prompt('Rename chat', c.title); if(name==null) return;
+      c.title = name.trim() || c.title; saveChats(CHATS); renderChatMenu();
+    }
+
     async function sendAgent(text){
       text=(text||'').trim(); if(!text) return;
       const input=document.getElementById('agent-input'); if(input) input.value='';
-      agentAppend('me', esc(text).replace(/\n/g,'<br>'));
-      agentHistory.push({ role:'user', content:text });
+      pushMessage('user', text);
+      renderMessages(); renderChatMenu(); // show the message, hide greeting, update the title
       const bot = agentAppend('bot', '<span class="loading loading-dots loading-sm"></span>');
       try{
-        // The Campaign Agent panel IS the OpenClaw interface (memory-backed). sessionKey gives
-        // each user continuity across visits; the agent can edit queue rows, so refresh after.
         const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
         const data = await r.json().catch(()=>({}));
         if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
-        if(bot) bot.innerHTML = esc(data.reply||'(no reply)').replace(/\n/g,'<br>');
-        agentHistory.push({ role:'assistant', content:data.reply||'' });
+        const reply = data.reply || '(no reply)';
+        if(bot) bot.innerHTML = esc(reply).replace(/\n/g,'<br>');
+        pushMessage('assistant', reply); // persist only successful replies
         if(window.__loadQueue) window.__loadQueue(); // the agent may have edited queue rows
       }catch(e){ if(bot) bot.textContent = 'Failed to reach the agent: '+e.message; }
-    }
-    // Stable per-browser session id → memory continuity across visits. Becomes the real user id
-    // once session auth lands (handoff §4.3).
-    function agentSessionKey(){
-      let s = localStorage.getItem('blaster_session_id');
-      if(!s){ s = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())+Math.random().toString(16).slice(2)); localStorage.setItem('blaster_session_id', s); }
-      return 'blaster:'+s;
     }
     (function wireAgent(){
       const input=document.getElementById('agent-input'), send=document.getElementById('agent-send');
       if(send) send.addEventListener('click', ()=>sendAgent(input.value));
       if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendAgent(input.value); } });
       document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
+      document.getElementById('chat-new')?.addEventListener('click', newChat);
+      const menu=document.getElementById('chat-menu');
+      if(menu) menu.addEventListener('click', e=>{
+        const t=e.target.closest('[data-newchat],[data-rename],[data-del],[data-switch]'); if(!t) return;
+        e.preventDefault();
+        if(t.dataset.newchat!=null) newChat();
+        else if(t.dataset.rename!=null){ e.stopPropagation(); renameChat(t.dataset.rename); }
+        else if(t.dataset.del!=null){ e.stopPropagation(); deleteChat(t.dataset.del); }
+        else if(t.dataset.switch!=null){ switchChat(t.dataset.switch); const a=document.activeElement; if(a&&a.blur) a.blur(); }
+      });
+      renderChatMenu(); renderMessages();
     })();
 
     // ===== Campaigns by Event (ticketblaster.sports_ticket) — powers the Campaigns tab =====
