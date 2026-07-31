@@ -207,6 +207,11 @@ Cole's durable **block/boost directives** (`campaign_directives` table +
 `campaign_directive_active/add/revoke` RPCs, migration 041) → metric ranking. It
 enqueues **placeholders** only.
 
+Rows carry the **real** picked market, not the test market: while `send_allowlist` is
+non-empty only the listed codes resolve recipients, so a real market in the queue
+already reaches nobody, and retargeting the pick would only hide the decision. Queueing
+writes **no** blast history — cooldown is earned by sending.
+
 A daily gateway cron job **`daily-campaign-queue`** (8am ET, session
 `agent:main:scheduler`) runs it unattended with the defaults; a human still confirms
 each row before the send cron fires. Manage it on the VPS with

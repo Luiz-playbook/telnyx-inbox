@@ -13,6 +13,30 @@ placeholder.
 
 ---
 
+## Test mode — queue the REAL market (2026-07-31)
+
+While `send_allowlist` (migration 023) is non-empty, only the listed codes resolve
+recipients: `market_phones` / `market_emails` return **zero rows** for every other
+market. That is the only recipient-resolution path for the send cron *and* for a manual
+"Send now", so **a real market in the queue cannot reach anybody.** Read the live list
+with `send_test_mode()`; today it holds `ZZ` alone.
+
+Therefore: **queue the market the decider actually picked.** Keep its real
+`state_code`, `state_name`, `event_id` and reach counts. Do **not** rewrite picks to the
+test market — the whole point of a test run is to see which markets the decider chose
+and why, and retargeting throws that away. Annotate the row instead (`[TEST — will NOT
+send] … Sending is blocked — only ZZ resolves recipients.`).
+
+`ui/index.html` did retarget to `ZZ` and no longer does. Two consequences worth
+knowing:
+
+- Every queued row used to carry `state_code = 'ZZ'`, so the §2 additive guard's
+  market de-dupe only ever saw `ZZ` and never blocked a real market from being picked
+  again while it sat in the queue. Real codes restore it.
+- Queueing no longer writes blast history — see §7.
+
+---
+
 ## 0. Data sources
 
 Supabase (`SUPABASE_URL`, anon key). All are RPCs — `POST /rest/v1/rpc/<name>` with `{}`.
@@ -23,8 +47,17 @@ Supabase (`SUPABASE_URL`, anon key). All are RPCs — `POST /rest/v1/rpc/<name>`
 | `market_recipient_counts()` | `market_key`, `state_code`, `phone_count`, `email_count` | reach per market |
 | `get_campaign_queue()` | current queue rows | what is already scheduled |
 | `queue_plan(p_from, p_to)` | per-day `queued` count + `event_ids` / `market_codes` already taken | day-by-day gaps |
-| `market_cooldowns()` | last blast date per market | cooldown audit |
+| `market_cooldowns()` | last blast date per market, keyed by `market_code` (`CA`) | send-time guard — ⚠ **not** the floor's cooldown, see below |
+| `send_test_mode()` | allowlisted codes; empty = normal mode | which markets can resolve recipients at all |
 | `queue_enqueue_test(p_rows jsonb)` | inserted rows | **write** — add placeholders |
+
+> ⚠ **Two blast logs, and they do not agree.** The §1 cooldown floor inside
+> `rpc_event_recommendations()` reads `ticketblaster_market_blasts_log` (keyed by
+> `market_key`, e.g. `san_francisco`). `market_cooldowns()` — used by `api/queue-tick.js`
+> at send time — reads a *different* table, `market_blast_log` (keyed by `market_code`,
+> e.g. `CA`). Nothing writes both. So `market_cooldowns()` is **not** a way to audit the
+> floor the agent is working under; to see what the floor sees, read `reason_code =
+> 'cooldown'` off `rpc_event_recommendations()` itself. See Open items.
 
 Tunable knobs live in one row: `decider_rules` where `id = 1`.
 
@@ -50,6 +83,12 @@ Current live values (2026-07-31):
 3. **Not full** — `filled_pct < 90`. A game with no booking row counts as 0% (sellable).
 4. **Inside the window** — `event_date - today <= forward_window_days` (30). Else `too_early`.
 5. **Past cooldown** — `today - last_blast >= cooldown_floor_days` (14). Else `cooldown`.
+   `last_blast` = newest `ticketblaster_market_blasts_log` row for that `market_key`.
+   **Currently inert:** that table's only writer was the Trigger Blast button logging
+   picks it never sent, which was removed and the 12 phantom rows deleted (2026-07-31).
+   It is now empty, so no event comes back `cooldown` until a real send writes to it —
+   which today nothing does. Cooldown is earned by **sending**, not by being queued or
+   picked; a market already in the queue is protected by §2 instead.
 
 > **HARD RULE.** The agent works **only** from rows where `decision = 'send'`.
 > It may never add an `event_id` that is not in that set, never invent an `event_id`,
@@ -248,6 +287,13 @@ skipped and not returned — so the return value is exactly what was **added**.
 
 - **Never send.** The agent queues placeholders. A human confirms (`queue_confirm`),
   and `api/queue-tick.js` refuses to send anything with `is_placeholder = true`.
+- **Never write blast history.** Do not call `log_market_blast` (either overload),
+  `queue_mark_sent`, or `upsert_salesmsg_broadcasts`. Queueing is not sending. The
+  14-day cooldown is written by `api/queue-tick.js` when a blast actually delivers, and
+  by nothing else — logging a pick puts a market on cooldown for a send that never
+  happened and eats into the next run's candidate pool.
+- **Never retarget a pick to the test market.** Queue the market that was chosen; the
+  allowlist is what stops the send (see Test mode).
 - **Never edit an existing queue row** as part of a queueing run. Copy, sender,
   schedule edits, and confirmations are the human's.
 - **Never invent an `event_id` or a market.**
@@ -267,6 +313,14 @@ skipped and not returned — so the return value is exactly what was **added**.
 - [x] Execution — the agent auto-enqueues on a daily cron (`daily-campaign-queue`,
       8am ET, defaults per_day=4 / through=today+3, placeholders only). A human still
       confirms before the send cron fires.
+- [ ] **Pick one canonical blast log.** `rpc_event_recommendations()` takes its cooldown
+      from `ticketblaster_market_blasts_log` (`market_key`); `api/queue-tick.js` writes
+      real sends to `market_blast_log` (`market_code`) via the other `log_market_blast`
+      overload. Nothing bridges them, so once sending opens up **a real send will never
+      register as a cooldown with the decider** and it will keep re-picking a market it
+      just blasted. `market_cooldowns()` still catches it at send time, so no double-send
+      — but every slot would be wasted. Was masked until 2026-07-31 because the test
+      writes were the only thing populating the decider's table.
 - [ ] `campaign_send_log` exists but is not written by the current path — wire it or
       drop it from the audit story.
 - [ ] `CAMPAIGN_SEND_RULES.md` is stale (3–21 day window, 90% fill, daily cap 3,

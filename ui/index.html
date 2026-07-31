@@ -2024,8 +2024,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       //   2. LLM (/api/trigger-decide) — re-ranks the rule-approved candidates and may
       //      VETO weak ones with a written reason. It can NEVER add a blocked market;
       //      the server enforces that every returned event_id came from the safe set.
-      // The picks are queued as TEST rows (is_placeholder=true → queue-tick NEVER sends them)
-      // and logged to the market blast log (source='test') so cooldown counts them. If the
+      // The picks keep their REAL market and are queued as TEST rows (is_placeholder=true →
+      // queue-tick NEVER sends them; and while send_allowlist is non-empty a real market
+      // resolves to zero recipients anyway, so even "Send now" delivers nothing). Queueing
+      // writes NO blast history — cooldown is earned by sending, not by being picked. If the
       // endpoint/LLM is unavailable, it falls back to the rule order alone.
       //
       // MULTI-DAY + ADDITIVE (Josh, 2026-07-28): a run schedules PER_DAY markets for every day
@@ -2115,7 +2117,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const perDay = perDayInput(), through = throughInput();
         const ok = await pbConfirm({
           title: 'Trigger Blast — TEST',
-          body: 'Hard rules (cooldown, timing, fill %, opt-out health, history) pick the eligible markets; the AI then re-ranks them and may veto weak ones.\n\nSchedules '+perDay+' markets/day through '+dayLabel(through)+', and only fills the days the Queue is short — anything already queued stays exactly as it is.\n\nNothing is sent.',
+          body: 'Hard rules (cooldown, timing, fill %, opt-out health, history) pick the eligible markets; the AI then re-ranks them and may veto weak ones.\n\nSchedules '+perDay+' markets/day through '+dayLabel(through)+', and only fills the days the Queue is short — anything already queued stays exactly as it is.\n\nRows carry their real market so you can judge the picks. Nothing is sent: only the allowlisted test market can resolve recipients, and no cooldown is written until something actually delivers.',
           okText: 'Schedule blasts',
         });
         if(!ok) return;
@@ -2128,28 +2130,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const skipBy = dec.skipBy || {};
           const plan = dec.plan || [];
 
-          // TEST MODE (send_allowlist, migration 023): when the allowlist is non-empty only
-          // those codes resolve recipients, so queueing a real market would line up a blast
-          // that silently reaches nobody. Retarget every pick at the allowlisted test market
-          // instead — the decider's event/team/template choice is kept, so the row still
-          // exercises the real path, it just points at contacts we own. Empty allowlist =
-          // normal mode and picks keep their own markets.
+          // TEST MODE (send_allowlist, migration 023): while the allowlist is non-empty ONLY
+          // those codes resolve recipients — market_emails / market_phones return zero rows for
+          // every other market, for the cron and for a manual "Send now" alike. The block lives
+          // there, at recipient resolution, so a REAL market in the queue is already unsendable.
+          //
+          // So the picks keep their real market, event and reach: that decision is the whole
+          // point of a test run and rewriting it to the test market threw it away. It also broke
+          // the additive guard — every queued row claimed state_code 'ZZ', so `takenMarkets`
+          // (decidePicks) only ever held 'ZZ' and no real market was blocked from being picked
+          // again while it sat in the queue. Real codes restore that.
           let testMode = null;
           const tmRes = await sb.rpc('send_test_mode');
           const tmRows = tmRes.error ? [] : (tmRes.data || []);
-          if(tmRows.length){
-            const code = tmRows[0].code;
-            const [em, ph] = await Promise.all([
-              sb.rpc('market_emails', { p_code: code }),
-              sb.rpc('market_phones', { p_code: code }),
-            ]);
-            testMode = {
-              code,
-              label: 'Test Market ' + code,
-              emails: em.error ? 0 : (em.data||[]).length,
-              phones: ph.error ? 0 : (ph.data||[]).length,
-            };
-          }
+          if(tmRows.length) testMode = { codes: tmRows.map(r => r.code) };
 
           let queued = [];
           if(sends.length){
@@ -2157,19 +2151,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               const perf = (p.open_rate_w!=null)
                 ? ` ${p.open_rate_w}% open / ${p.ctr_w}% CTR over ${p.n_blasts} prior blast${p.n_blasts==1?'':'s'}.` : '';
               const tmpl = p.best_template ? ` Best template: ${p.best_template}.` : '';
-              // In test mode the reach shown must be the TEST market's, not the picked market's —
-              // otherwise the row advertises thousands of recipients it will never touch.
-              const emails = testMode ? testMode.emails : (Number(p.email_count)||0);
-              const phones = testMode ? testMode.phones : (Number(p.phone_count)||0);
-              const reachNote = (emails||phones) ? ` Reach: ${emails} emails / ${phones} phone numbers.` : '';
+              // The picked market's own reach — what a real send WOULD have reached. Nothing is
+              // sent while the allowlist blocks this code, so this is a projection, not a promise.
+              const emails = Number(p.email_count)||0;
+              const phones = Number(p.phone_count)||0;
+              const reachNote = (emails||phones) ? ` Would reach: ${emails} emails / ${phones} phone numbers.` : '';
               const why = p.reason ? (' ' + p.reason) : (' Decider pick for ' + (p.market_label||'this market') + '.' + tmpl + perf);
-              const retarget = testMode ? ` Retargeted from ${p.market_label||'its market'} to ${testMode.label}.` : '';
-              const note = '[TEST — will NOT send]' + why + retarget + reachNote;
+              const blocked = testMode ? ` Sending is blocked — only ${testMode.codes.join(', ')} resolves recipients.` : '';
+              const note = '[TEST — will NOT send]' + why + blocked + reachNote;
               return {
                 scheduled_for: slotIso(p.slot_date),
-                title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (testMode ? testMode.label : (p.market_label || '')),
-                state_name: testMode ? testMode.label : (p.market_label || null),
-                state_code: testMode ? testMode.code : (p.state_code || null),
+                title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (p.market_label || ''),
+                state_name: p.market_label || null,
+                state_code: p.state_code || null,
                 event_id: p.event_id || null,
                 email: true, sms: true,
                 phone_count: phones, sms_count: phones, email_count: emails,
@@ -2180,26 +2174,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             if(ins.error) throw new Error(ins.error.message);
             queued = ins.data || [];
 
-            // Log each picked market (source='test', counts toward cooldown).
-            const toLog = sends.filter(p => p.market_key).map(p => ({
-              market_key: p.market_key,
-              event_id: p.event_id || null,
-              channel: 'email+sms',
-              template_name: p.best_template || null,
-              source: 'test',
-              notes: (dec.llm ? 'AI-ranked' : 'rule-ranked') + ' — Trigger Blast test, not sent',
-            }));
-            if(toLog.length){
-              const lg = await sb.rpc('log_market_blast', { p_rows: toLog });
-              if(lg.error) throw new Error(lg.error.message);
-            }
+            // NO log_market_blast here. Queueing is not sending: the 14-day cooldown is written
+            // by api/queue-tick.js when a blast actually delivers, and by nothing else. This used
+            // to log every pick with source='test', so a market went on cooldown for a send that
+            // never happened and each test run ate into the next run's candidate pool.
+            //
+            // A queued market is still protected from being picked twice — by the queue itself.
+            // decidePicks drops every event/market held by a live row (takenEvents/takenMarkets,
+            // mirrored server-side in api/trigger-decide.js), and queue_enqueue_test de-dupes
+            // again on insert. Cooldown covers what was SENT; the queue covers what is PENDING.
           }
 
           const skipStr = Object.entries(skipBy).map(([k,v]) => `${v} ${String(k).replace(/_/g,' ')}`).join(' · ') || 'none';
-          // Reach must reflect what was actually queued — in test mode that's the test market
-          // repeated per row, not the picked markets' real counts.
-          const totalEmail = testMode ? testMode.emails * sends.length : sends.reduce((s,p) => s + (Number(p.email_count)||0), 0);
-          const totalPhone = testMode ? testMode.phones * sends.length : sends.reduce((s,p) => s + (Number(p.phone_count)||0), 0);
+          // The picked markets' own reach — what these blasts would have reached if sending
+          // were open. While the allowlist is set they reach nobody.
+          const totalEmail = sends.reduce((s,p) => s + (Number(p.email_count)||0), 0);
+          const totalPhone = sends.reduce((s,p) => s + (Number(p.phone_count)||0), 0);
           const vetoed = dec.vetoed || [];
           // Per-day picture: what was already there vs what this run added. `skipped` is the
           // additive guard firing server-side (queue_enqueue_test found the slot taken).
@@ -2212,8 +2202,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             lines: [
               `Evaluated ${dec.evaluated||0} events · ${dec.llm ? 'ranked by AI' : 'ranked by rules'} · ${perDay}/day through ${dayLabel(through)}.`,
               planStr ? `Queue by day — ${planStr}` : ``,
-              testMode ? `TEST MODE — all picks retargeted to ${testMode.label} (${testMode.emails} email · ${testMode.phones} SMS). Real markets resolve to zero recipients.` : ``,
-              queued.length ? `Reach: ${totalEmail.toLocaleString()} emails · ${totalPhone.toLocaleString()} phone numbers (test only).`
+              testMode ? `TEST MODE — real markets queued, none can send. Only ${testMode.codes.join(', ')} resolves recipients; every other market resolves to zero.` : ``,
+              queued.length ? `Would reach: ${totalEmail.toLocaleString()} emails · ${totalPhone.toLocaleString()} phone numbers (nothing is sent).`
                 : (nothingToDo ? `Queue already full through ${dayLabel(through)} — nothing to add.` : `Nothing added — all markets held back.`),
               skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
