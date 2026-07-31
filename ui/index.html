@@ -180,16 +180,20 @@
 
         <!-- LEFT: campaign agent — white rail, shown on every tab. From lg up it owns the full
              column height and scrolls on its own, so scrolling the content can never pull a
-             blank strip in underneath it. -->
-        <aside id="agent-rail" class="lg:shrink-0 lg:h-full lg:overflow-y-auto bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
-          <div class="agent-header flex items-center justify-between gap-1">
+             blank strip in underneath it.
+             The rail is a flex COLUMN from lg up: header and chat switcher pinned at the top,
+             the transcript takes all remaining height and scrolls by itself, and the composer
+             is pinned to the bottom. It used to be one plain scroll box, so with a short chat
+             the input floated up under the last message and left dead space beneath it. -->
+        <aside id="agent-rail" class="lg:shrink-0 lg:h-full lg:overflow-hidden lg:flex lg:flex-col bg-base-100 border-b lg:border-b-0 lg:border-r border-base-300 px-5 py-5 space-y-3">
+          <div class="agent-header shrink-0 flex items-center justify-between gap-1">
             <div class="agent-label flex items-center gap-1"><span class="text-[#e55608]">&#10022;</span> <span class="agent-label-text">Campaign Agent</span></div>
             <button id="agent-collapse" class="btn btn-ghost btn-xs btn-square" title="Collapse the Campaign Agent" aria-label="Collapse the Campaign Agent">&#10094;</button>
           </div>
 
-          <div class="agent-body space-y-3">
+          <div class="agent-body space-y-3 lg:flex-1 lg:min-h-0 lg:flex lg:flex-col">
             <!-- chat switcher: multiple conversations, each its own memory-backed OpenClaw session -->
-            <div class="flex items-center gap-2">
+            <div class="shrink-0 flex items-center gap-2">
               <div class="dropdown flex-1 min-w-0">
                 <button tabindex="0" role="button" id="chat-switch" class="btn btn-sm btn-ghost w-full justify-between normal-case font-normal border border-base-300">
                   <span id="chat-title" class="truncate">New chat</span><span class="opacity-60 shrink-0">&#9662;</span>
@@ -199,22 +203,25 @@
               <button id="chat-new" class="btn btn-sm btn-primary btn-square" title="New chat" aria-label="New chat">&#65291;</button>
             </div>
 
-            <div id="agent-greeting" class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
+            <!-- Everything above the composer scrolls here, so the composer never moves. -->
+            <div class="agent-scroll space-y-3 lg:flex-1 lg:min-h-0 lg:overflow-y-auto">
+              <div id="agent-greeting" class="agent-bubble">Hi — I'm your campaign agent. Ask what's ready to send, ask about a market by name, or try a suggestion below.</div>
 
-            <div class="flex flex-wrap gap-2" id="agent-chips">
-              <button class="agent-chip">What's ready today?</button>
-              <button class="agent-chip">Suppressed markets?</button>
-              <button class="agent-chip">Load Cleveland</button>
-              <button class="agent-chip">Draft a suite invite</button>
-              <button class="agent-chip">Teammate AI (basketball)</button>
-              <button class="agent-chip">Event waitlist</button>
-              <button class="agent-chip">Show templates</button>
-              <button class="agent-chip">Open the queue</button>
+              <div class="flex flex-wrap gap-2" id="agent-chips">
+                <button class="agent-chip">What's ready today?</button>
+                <button class="agent-chip">Suppressed markets?</button>
+                <button class="agent-chip">Load Cleveland</button>
+                <button class="agent-chip">Draft a suite invite</button>
+                <button class="agent-chip">Teammate AI (basketball)</button>
+                <button class="agent-chip">Event waitlist</button>
+                <button class="agent-chip">Show templates</button>
+                <button class="agent-chip">Open the queue</button>
+              </div>
+
+              <div id="agent-log" class="space-y-2"></div>
             </div>
 
-            <div id="agent-log" class="space-y-2"></div>
-
-            <div class="flex items-center gap-2 pt-1">
+            <div class="shrink-0 lg:mt-auto flex items-center gap-2 pt-1">
               <input id="agent-input" class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
               <button id="agent-send" class="btn btn-circle btn-primary text-lg">&#8594;</button>
             </div>
@@ -714,12 +721,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const { data, error } = await sb.rpc('send_test_mode');
       const rows = error ? [] : (data || []);
       window.__ALLOWED_CODES = new Set(rows.map(r => (r.code||'').toUpperCase()));
+      // Queue rows mark themselves "can't send" from this set, and this call can land after the
+      // queue has already drawn — repaint so no row is left looking armed.
+      if(typeof window.__renderQueue === 'function') window.__renderQueue();
       const banner = document.getElementById('test-mode-banner');
       const detail = document.getElementById('test-mode-detail');
       if(!banner) return;
       if(rows.length){
         banner.classList.remove('hidden');
-        detail.textContent = `Sends are restricted to ${rows.map(r=>r.code).join(', ')} only — every other market is blocked (0 recipients). Nothing you click on a real market will send.`;
+        detail.textContent = `Sends are restricted to ${rows.map(r=>r.code).join(', ')} only — every other market is blocked (0 recipients). The queue holds real markets on purpose, so you can see what the decider picked; every row marked "can't send" resolves to 0 recipients and is safe to click.`;
       } else {
         banner.classList.add('hidden');
       }
@@ -2352,6 +2362,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const t = r.team ? (r.opponent ? `${r.opponent} at ${r.team}` : r.team) : (r.title || 'Blast');
         return (r.is_placeholder && !/^\[TEST/i.test(t)) ? '[TEST] ' + t : t;
       };
+
+      // TEST MODE, per row. The queue now holds REAL markets (the decider's actual picks), and
+      // email_count / phone_count are that market's real size — so a row reads "393 emails" and
+      // looks armed. It is not: while send_allowlist is non-empty, market_emails / market_phones
+      // resolve ZERO rows for any market not on it, and those are the only recipient path for
+      // the hourly tick AND for "Send now". The page banner says this once; a tester looking at
+      // one row needs it said on the row, or they will be afraid to touch it.
+      const sendBlocked = r => {
+        const codes = window.__ALLOWED_CODES;
+        return !!(codes && codes.size && !codes.has((r.state_code || '').toUpperCase()));
+      };
+      const BLOCKED_TIP = 'TEST MODE: this market is not on the send allowlist, so it resolves to 0 recipients. '
+        + 'Neither the hourly auto-send nor "Send now" can deliver it. Safe to click.';
+      // What the market holds, struck through, beside the 0 that will actually resolve.
+      const blockedReachCell = (on, n) => !on
+        ? '<span class="text-base-content/40">&mdash;</span>'
+        : `<span title="${BLOCKED_TIP}"><span class="line-through text-base-content/40">${fmt(Number(n)||0)}</span> <span class="font-semibold text-base-content/60">0</span></span>`;
       function statusCell(r){
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
@@ -2441,14 +2468,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const marketCell = r.state_name
             ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(r.state_name)}${r.country?` <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(r.country)}</span>`:''}</span>${r.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(r.market_key))}</div>`:''}`
             : '<span class="text-base-content/40">—</span>';
+          const blockedRow = sendBlocked(r);
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}</div></td>
+            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td>${marketCell}</td>
-            <td>${reachCell(r.email, r.email_count)}</td>
-            <td>${reachCell(r.sms, r.phone_count)}</td>
+            <td>${blockedRow ? blockedReachCell(r.email, r.email_count) : reachCell(r.email, r.email_count)}</td>
+            <td>${blockedRow ? blockedReachCell(r.sms, r.phone_count) : reachCell(r.sms, r.phone_count)}</td>
             <td><input type="datetime-local" class="input input-bordered input-xs w-52" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
             <td>${emailSel}</td>
@@ -2717,6 +2745,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         await refresh();
       }
       window.__loadQueue = loadQueue;
+      // refreshTestMode() is async and can resolve after the first render, which would leave
+      // every row without its "can't send" mark. It re-renders through this once it knows.
+      window.__renderQueue = render;
       loadQueue();
     })();
 
