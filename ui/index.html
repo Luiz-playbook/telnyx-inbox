@@ -2962,6 +2962,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
       const expanded = new Set();   // ids whose copy drawer is open
+      const SYNC_STAMP = 'bh_last_sync', SYNC_EVERY = 10 * 60 * 1000;   // throttle: 10 minutes
       let page = 1, pageSize = 50;   // 0 = show everything
 
       // Fill a <select> with the distinct values actually present, keeping "All" at the top —
@@ -3072,13 +3073,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(!silent && btn){ btn.disabled=true; btn.textContent='Syncing…'; }
           const r = await fetch('/api/salesmsg-sync', { method:'POST', headers:{'content-type':'application/json','x-inbox-secret':(cfg.REPLY_SECRET||'')}, body:'{}' });
           const d = await r.json().catch(()=>({}));
-          if(r.ok){ if(note) note.textContent = `synced ${d.upserted ?? 0} · fetched ${d.fetched ?? 0}`; await readTable(); }
+          if(r.ok){
+            if(note) note.textContent = `synced ${d.upserted ?? 0} · fetched ${d.fetched ?? 0}`;
+            sessionStorage.setItem(SYNC_STAMP, String(Date.now()));
+            // Only re-read when the sync actually changed something. It used to re-fetch and
+            // re-render the whole history on every run, which for an account with no Salesmsg
+            // broadcasts meant redrawing the table for nothing.
+            if(d.upserted) await readTable();
+          }
           else if(note && !silent){ note.textContent = 'sync failed: ' + (d.error || ('HTTP '+r.status)); }
         }catch(e){ if(note && !silent) note.textContent = 'sync needs the deployed /api'; }
         if(btn){ btn.disabled=false; btn.textContent='Sync now'; }
       }
       el('bh-sync')?.addEventListener('click', ()=>sync(false));
-      window.__loadBlastHistory = async () => { await readTable(); sync(true); };
+      // Opening the tab used to fire a sync every single time — ~3s of Salesmsg round trips
+      // before the view settled. The history itself loads in under a second, so the sync is
+      // now throttled: at most once per SYNC_EVERY, and the button remains the way to force
+      // one. Salesmsg broadcast history changes on the order of days, not seconds.
+      window.__loadBlastHistory = async () => {
+        await readTable();
+        const last = Number(sessionStorage.getItem(SYNC_STAMP) || 0);
+        if(Date.now() - last > SYNC_EVERY) sync(true);
+      };
     })();
 
     // ===== (inert) legacy Campaigns scheduler — its #rows markup was removed, so the
