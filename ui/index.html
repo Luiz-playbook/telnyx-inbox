@@ -2933,6 +2933,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => n==null ? '—' : (Number(n)||0).toLocaleString();
       const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}) : '—';
+      // Defined here, not borrowed: every module in this file is its own IIFE, so the
+      // identically-named helpers in the Campaigns and Queue modules are NOT in scope. Using
+      // one from here threw a ReferenceError mid-render, which left the table showing whatever
+      // it had before — silent, because the throw happened while building the row HTML.
+      const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
       let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
       const expanded = new Set();   // ids whose copy drawer is open
