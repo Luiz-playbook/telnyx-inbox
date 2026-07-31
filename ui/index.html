@@ -508,6 +508,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="confirmed">Confirmed</option>
                   <option value="snoozed">Snoozed</option>
                   <option value="sent">Sent</option>
+                  <option value="archived">Archived</option>
                 </select>
                 <select id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
@@ -2421,7 +2422,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function visibleRows(){
         const f = qFilter.trim().toLowerCase();
         return QUEUE.filter(r => {
-          if(statusF && (r.status||'') !== statusF) return false;
+          // Archived is not a status — it is a flag on top of one — so it filters separately.
+          // Hidden everywhere by default, and 'Archived' shows those and only those; without
+          // that, archiving a sent blast would look identical to deleting it.
+          if(statusF === 'archived'){ if(!r.archived_at) return false; }
+          else if(r.archived_at) return false;
+          else if(statusF && (r.status||'') !== statusF) return false;
           if(sportF  && (r.sport||'')  !== sportF)  return false;
           if(stateF  && (r.state_code||'') !== stateF) return false;
           if(chanF === 'email' && !r.email) return false;
@@ -2460,6 +2466,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         let lastDay = null;
         tb.innerHTML = paged.map(r => {
           const open = expanded.has(r.id), sent = r.status==='sent', stale = gameIsPast(r);
+          const archived = !!r.archived_at;
           const day = String(r.scheduled_for||'').slice(0,10);
           let dayHead = '';
           if(day !== lastDay){
@@ -2501,11 +2508,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
             <td>${emailSel}</td>
             <td>${smsSel}</td>
-            <td class="whitespace-nowrap">${sent?'<span class="text-xs text-base-content/40">—</span>':`<div class="inline-flex gap-1">
+            <td class="whitespace-nowrap"><div class="inline-flex gap-1">${sent?'':`
               <button class="btn btn-xs btn-outline btn-success" data-confirm="${esc(r.id)}">Confirm</button>
               <button class="btn btn-xs btn-warning text-white hover:text-white" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
-              <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>
-            </div>`}</td>
+              <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>`}
+              ${archived
+                ? `<button class="btn btn-xs btn-outline" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">&#8630; Restore</button>`
+                : sent
+                  ? `<button class="btn btn-xs btn-ghost" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">&#128230;</button>`
+                  : `<button class="btn btn-xs btn-ghost text-error" data-del="${esc(r.id)}" title="Delete this blast. It frees its slot and lets the market be picked again.">&#128465;</button>`}
+            </div></td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
           // bubble directly, so the row costs one block per channel instead of a textarea
@@ -2557,6 +2569,46 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }));
         tb.querySelectorAll('[data-sendnow]').forEach(b=>b.addEventListener('click', ()=>{
           const r = QUEUE.find(x => x.id === b.dataset.sendnow); if(r) sendNow(r, b);
+        }));
+        // Delete is unsent-only and permanent, so it asks first and says what it frees up:
+        // the row holds a per-day slot and blocks its market from being re-picked while it
+        // sits there. queue_delete refuses a sent/sending row server-side regardless.
+        tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.del, r = QUEUE.find(x => x.id === id);
+          const ok = await askConfirm({
+            title: 'Delete this blast?',
+            body: `${r ? blastTitle(r) : 'This blast'}\n${(r && (r.state_name || r.state_code)) || ''}\n\n`
+              + 'It is removed for good. Its slot opens up and its market can be picked again on the next run.\n\nNothing has been sent, so no history is lost.',
+            okText: 'Delete',
+          });
+          if(!ok) return;
+          b.disabled = true;
+          const d = await sb.rpc('queue_delete', { p_id: id });
+          if(d.error){ b.disabled = false; toast({ type:'err', title:'Could not delete this blast', lines:[ d.error.message ] }); return; }
+          expanded.delete(id);
+          await refresh();
+        }));
+        // Archive keeps the send record — that is what market_blast_log points at and what
+        // the cooldown and performance model are built on.
+        tb.querySelectorAll('[data-archive]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.archive, r = QUEUE.find(x => x.id === id);
+          const ok = await askConfirm({
+            title: 'Archive this blast?',
+            body: `${r ? blastTitle(r) : 'This blast'}\n\nIt leaves the queue but the send record is kept — find it again under the "Archived" status filter, and Restore puts it back.`,
+            okText: 'Archive',
+          });
+          if(!ok) return;
+          b.disabled = true;
+          const a = await sb.rpc('queue_archive', { p_id: id });
+          if(a.error){ b.disabled = false; toast({ type:'err', title:'Could not archive this blast', lines:[ a.error.message ] }); return; }
+          expanded.delete(id);
+          await refresh();
+        }));
+        tb.querySelectorAll('[data-unarchive]').forEach(b=>b.addEventListener('click', async ()=>{
+          b.disabled = true;
+          const u = await sb.rpc('queue_unarchive', { p_id: b.dataset.unarchive });
+          if(u.error){ b.disabled = false; toast({ type:'err', title:'Could not restore this blast', lines:[ u.error.message ] }); return; }
+          await refresh();
         }));
         tb.querySelectorAll('[data-schedule]').forEach(inp=>inp.addEventListener('change', async ()=>{
           if(!inp.value) return; const iso=new Date(inp.value).toISOString();
@@ -2761,12 +2813,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           await sb.rpc('queue_set_sender', { p_id: r.id, p_email_from: EMAIL_SENDERS[0].v, p_sms_from: null });
           r.email_from = EMAIL_SENDERS[0].v;
         }
-        const pend=QUEUE.filter(r=>r.status==='pending').length, conf=QUEUE.filter(r=>r.status==='confirmed').length;
+        // Counts describe the WORKING queue, so archived rows are excluded — they are still
+        // in QUEUE (get_campaign_queue returns them, and the Archived filter needs them),
+        // but counting them would make "N queued" disagree with the rows on screen.
+        const LIVE = QUEUE.filter(r => !r.archived_at);
+        const pend=LIVE.filter(r=>r.status==='pending').length, conf=LIVE.filter(r=>r.status==='confirmed').length;
         // Just the queue counts. The reach totals that used to sit here restated the Emails and
         // Phone #s columns and made the line hard to read at a glance.
-        const stale = QUEUE.filter(gameIsPast).length;
-        SUMMARY = `${QUEUE.length} queued · ${conf} confirmed · ${pend} pending`
-          + (stale ? ` · ${stale} past game` : '');
+        const stale = LIVE.filter(gameIsPast).length;
+        const arch = QUEUE.length - LIVE.length;
+        SUMMARY = `${LIVE.length} queued · ${conf} confirmed · ${pend} pending`
+          + (stale ? ` · ${stale} past game` : '')
+          + (arch ? ` · ${arch} archived` : '');
         fillQueueFilters();
         render();
       }
