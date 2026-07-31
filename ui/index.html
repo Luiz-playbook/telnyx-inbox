@@ -1612,13 +1612,30 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       renderMessages(); renderChatMenu(); // show the message, hide greeting, update the title
       const bot = agentAppend('bot', loadingBubbleHTML(0));
       const t0 = Date.now();
-      const tick = setInterval(()=>{ if(bot) { bot.innerHTML = loadingBubbleHTML(Math.round((Date.now()-t0)/1000)); bot.scrollIntoView({block:'nearest'}); } }, 1000);
+      // Loading counter runs only until the first token lands; then we render live text instead.
+      let streaming=false, acc='';
+      const paint=()=>{ if(bot){ bot.innerHTML = esc(acc).replace(/\n/g,'<br>'); bot.scrollIntoView({block:'nearest'}); } };
+      const tick = setInterval(()=>{ if(!streaming && bot){ bot.innerHTML = loadingBubbleHTML(Math.round((Date.now()-t0)/1000)); bot.scrollIntoView({block:'nearest'}); } }, 1000);
       try{
         const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
-        const data = await r.json().catch(()=>({}));
-        if(!r.ok){ if(bot) bot.innerHTML = esc(data.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
-        const reply = data.reply || '(no reply)';
+        if(!r.ok || !r.body){ let d={}; try{ d=await r.json(); }catch{} if(bot) bot.innerHTML = esc(d.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
+        // Parse the SSE stream: accumulate delta text live, take the authoritative reply on done.
+        const reader = r.body.getReader(), dec = new TextDecoder(); let sseBuf='', reply=null, errText=null;
+        for(;;){
+          const { value, done } = await reader.read(); if(done) break;
+          sseBuf += dec.decode(value, { stream:true });
+          let nl; while((nl = sseBuf.indexOf('\n\n')) >= 0){
+            const frame = sseBuf.slice(0, nl); sseBuf = sseBuf.slice(nl+2);
+            const line = frame.split('\n').find(l=>l.startsWith('data:')); if(!line) continue;
+            let ev; try{ ev = JSON.parse(line.slice(5).trim()); }catch{ continue; }
+            if(ev.type==='delta'){ streaming=true; acc += ev.text||''; paint(); }
+            else if(ev.type==='done'){ reply = ev.reply || acc || '(no reply)'; }
+            else if(ev.type==='error'){ errText = ev.error || 'The agent is unavailable right now.'; }
+          }
+        }
+        if(errText){ if(bot) bot.innerHTML = esc(errText); return; }
+        reply = reply || acc || '(no reply)';
         if(bot) bot.innerHTML = esc(reply).replace(/\n/g,'<br>');
         pushMessage('assistant', reply); // persist only successful replies
         if(window.__loadQueue) window.__loadQueue(); // the agent may have edited queue rows

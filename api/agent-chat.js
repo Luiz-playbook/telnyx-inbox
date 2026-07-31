@@ -1,6 +1,10 @@
 // Campaign Agent chat → OpenClaw gateway (ticket: wire panel to OpenClaw).
-// POST { message, sessionKey } -> { reply, runId }. Buffered (v1): waits for the full agent
-// turn, then returns. The gateway token / device key stay server-side (lib/openclaw).
+// POST { message, sessionKey } -> Server-Sent Events (v2): the reply streams token-by-token as the
+// agent produces it, so the browser shows text at ~2s instead of a 30–60s blank wait. Events:
+//   data: {"type":"delta","text":"..."}    — incremental reply text
+//   data: {"type":"done","reply":"...","runId":"..."}  — full reply, end of turn
+//   data: {"type":"error","error":"..."}   — safe, generic failure message
+// The gateway token / device key stay server-side (lib/openclaw).
 //
 // AUTH (§4.2): the app has no session auth yet, so this is gated only by an ORIGIN allowlist as
 // an INTERIM measure — it is NOT real auth. ⚠️ Follow-ups before this is safe in prod:
@@ -31,17 +35,32 @@ export default async function handler(req, res) {
   if (!message.trim()) { res.status(400).json({ error: 'message required' }); return; }
   if (!sessionKey.trim()) { res.status(400).json({ error: 'sessionKey required' }); return; }
 
+  // SSE: stream deltas as they arrive. Status is 200 up front (we can't change it mid-stream), so
+  // failures are delivered as an in-band {type:"error"} event, not an HTTP error code.
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no', // defeat proxy buffering so deltas flush immediately
+  });
+  const sse = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch {} };
+
   try {
     // Tool-heavy turns (queue/price lookups) can take a minute+; allow well under maxDuration (300s).
-    const { reply, runId } = await runAgentTurn({ sessionKey, text: message, timeoutMs: 240_000 });
-    res.status(200).json({ reply: reply || '(no reply)', runId });
+    const { reply, runId } = await runAgentTurn({
+      sessionKey, text: message, timeoutMs: 240_000,
+      onDelta: (chunk) => sse({ type: 'delta', text: chunk }),
+    });
+    sse({ type: 'done', reply: reply || '(no reply)', runId });
   } catch (e) {
-    // Do not leak internals (tokens/keys/hosts). Return a generic message + a short code.
+    // Do not leak internals (tokens/keys/hosts). Send a generic message + a short code in-band.
     const msg = String((e && e.message) || e);
     const safe = /device_pending_approval/i.test(msg) ? 'This device is awaiting one-time approval on the gateway.'
       : /not set/i.test(msg) ? 'Agent is not configured yet.'
       : /timeout|too long/i.test(msg) ? 'The agent took too long to respond.'
       : 'The agent is unavailable right now.';
-    res.status(502).json({ error: safe });
+    sse({ type: 'error', error: safe });
+  } finally {
+    res.end();
   }
 }
