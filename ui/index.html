@@ -608,11 +608,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
                 <span class="text-base-content/40">&#128269;</span>
-                <input id="bh-search" type="text" class="grow w-64" placeholder="Search blast name…" autocomplete="off" />
+                <input id="bh-search" type="text" class="grow w-64" placeholder="Search name, market or copy…" autocomplete="off" />
               </label>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="bh-channel" class="select select-bordered select-sm"><option value="">All channels</option></select>
-                <select id="bh-status" class="select select-bordered select-sm"><option value="">All statuses</option></select>
+                <select id="bh-status" class="select select-bordered select-sm" title="Source platform"><option value="">All sources</option></select>
                 <select id="bh-window" class="select select-bordered select-sm" title="Sent within">
                   <option value="">All time</option>
                   <option value="30">Last 30 days</option>
@@ -629,9 +629,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <table class="camp-table w-full min-w-[820px]">
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
-                    <th>Date</th><th>Blast</th><th>Channel</th><th>Status</th><th>Recipients</th><th>Sent</th>
+                    <th class="w-8"></th><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Source</th><th>Recipients</th><th>Sent</th>
                   </tr></thead>
-                  <tbody id="bh-rows"><tr><td colspan="6" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="bh-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -652,7 +652,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 </div>
               </div>
             </div>
-            <p class="text-xs text-base-content/50 leading-relaxed">Every email blast actually sent, synced from Salesmsg &mdash; most recent first (recency is the primary signal). All rows are tagged <strong>Email</strong>; SMS history can be added later. Refreshes on open and on demand.</p>
+            <p class="text-xs text-base-content/50 leading-relaxed">Every blast actually sent &mdash; Textable, CakeMail and Salesmsg together, most recent first (recency is the primary signal). Expand a row to read the copy that went out. Refreshes on open and on demand.</p>
           </div>
 
           <!-- ===== COLE RULES ===== -->
@@ -2923,9 +2923,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       loadQueue();
     })();
 
-    // ===== Blast Send History (salesmsg_broadcasts) — powers the Market History tab =====
-    // Reads the synced Salesmsg email-blast history from Supabase (recency first), and triggers
-    // a background sync (/api/salesmsg-sync) on open + a manual "Sync now". Everything tagged Email.
+    // ===== Blast Send History — powers the Market History tab =====
+    // Reads EVERY blast, from whichever platform sent it, via /api/market-history: the blast log
+    // (Textable/CakeMail history, and the decider's cooldown source) merged with the Salesmsg
+    // broadcast sync. Rows expand to show the copy that was sent. "Sync now" still pulls Salesmsg.
     (function blastHistoryModule(){
       const el = (id) => document.getElementById(id);
       if(!el('bh-rows')) return;
@@ -2934,6 +2935,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}) : '—';
 
       let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
+      const expanded = new Set();   // ids whose copy drawer is open
       let page = 1, pageSize = 50;   // 0 = show everything
 
       // Fill a <select> with the distinct values actually present, keeping "All" at the top —
@@ -2951,14 +2953,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const f = filter.trim().toLowerCase();
         const cut = windowF ? Date.now() - Number(windowF)*86400000 : null;
         const rows = ROWS.filter(r => {
-          if(chanF   && (r.channel||'Email') !== chanF) return false;
-          if(statusF && (r.status||'')       !== statusF) return false;
+          if(chanF   && (r.channel||'')  !== chanF) return false;
+          if(statusF && (r.source||'')   !== statusF) return false;
           if(cut && !(r.sent_at && new Date(r.sent_at).getTime() >= cut)) return false;
-          return !f || (r.name||'').toLowerCase().includes(f);
+          // Search covers the market and the copy too — "what did we send Denver" and
+          // "which blasts mentioned club seats" are the questions this tab is for.
+          return !f || [r.name, r.market, r.state_code, r.message].some(v => (v||'').toLowerCase().includes(f));
         });
         const total = ROWS.length;
         el('bh-summary').textContent = total
-          ? `${total} email blast${total===1?'':'s'}${rows.length===total?'':` · ${rows.length} matching`}`
+          ? `${total} blast${total===1?'':'s'}${rows.length===total?'':` · ${rows.length} matching`}`
           : '';
         // Same pager as the other two tabs — a thousand synced blasts is one scroll otherwise.
         const size  = pageSize > 0 ? pageSize : Math.max(rows.length, 1);
@@ -2972,16 +2976,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : '0 of 0';
         if(el('bh-prev')) el('bh-prev').disabled = page <= 1;
         if(el('bh-next')) el('bh-next').disabled = page >= pages;
-        if(!total){ tb.innerHTML='<tr><td colspan="6" class="text-center text-base-content/50 py-10">No blasts synced yet — they appear here as email blasts are sent via Salesmsg.</td></tr>'; return; }
-        if(!rows.length){ tb.innerHTML='<tr><td colspan="6" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
-        tb.innerHTML = paged.map(r=>`<tr class="camp-row">
-          <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
-          <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
-          <td><span class="badge badge-sm badge-info">${esc(r.channel||'Email')}</span></td>
-          <td class="text-base-content/70">${esc(r.status||'—')}</td>
-          <td>${fmt(r.recipients)}</td>
-          <td>${fmt(r.sent_count)}</td>
-        </tr>`).join('');
+        if(!total){ tb.innerHTML='<tr><td colspan="8" class="text-center text-base-content/50 py-10">No blast history yet.</td></tr>'; return; }
+        if(!rows.length){ tb.innerHTML='<tr><td colspan="8" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
+        // Same accordion as the Queue: the row states WHAT was blasted, the drawer shows the
+        // copy that actually went out. A history you cannot read the copy of only tells you
+        // that something happened, not what — and the copy is the part worth learning from.
+        tb.innerHTML = paged.map(r=>{
+          const open = expanded.has(r.id);
+          const head = `<tr class="camp-row">
+            <td>${r.message ? `<button class="btn btn-ghost btn-xs" data-bhtoggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button>` : ''}</td>
+            <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
+            <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
+            <td class="whitespace-nowrap">${r.market ? `<span class="font-semibold text-[#133b49]">${esc(prettyMetro(r.market))}</span>${r.state_code?` <span class="text-[10px] font-bold uppercase text-base-content/40">${esc(r.state_code)}</span>`:''}` : '<span class="text-base-content/40">—</span>'}</td>
+            <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info':'tb-sms badge'}">${esc(r.channel||'—')}</span></td>
+            <td><span class="seg tb-ph">${esc(r.source||'—')}</span></td>
+            <td>${fmt(r.recipients)}</td>
+            <td>${r.sent_count==null?'<span class="text-base-content/40">—</span>':fmt(r.sent_count)}</td>
+          </tr>`;
+          if(!open || !r.message) return head;
+          return head + `<tr class="bg-base-200/30"><td></td><td colspan="7" class="pb-4">
+            <div class="prev-label mb-1">Copy sent</div>
+            <div class="border border-base-300 rounded-lg bg-white p-4 text-sm whitespace-pre-wrap max-w-3xl">${esc(r.message)}</div>
+            ${r.notes?`<div class="text-xs text-base-content/50 mt-1.5">${esc(r.notes)}</div>`:''}
+          </td></tr>`;
+        }).join('');
+        tb.querySelectorAll('[data-bhtoggle]').forEach(b=>b.addEventListener('click',()=>{
+          const id=b.dataset.bhtoggle; expanded.has(id)?expanded.delete(id):expanded.add(id); render();
+        }));
       }
 
       el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; render(); });
@@ -2992,13 +3013,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('bh-prev')?.addEventListener('click', () => { if(page > 1){ page--; render(); } });
       el('bh-next')?.addEventListener('click', () => { page++; render(); });
 
+      // Read through /api/market-history, not straight off a table. It merges the blast log
+      // (Textable/CakeMail history, and what the decider reads for cooldown) with the
+      // Salesmsg broadcast sync — and the blast log is NOT readable with the anon key, since
+      // RLS returns an empty array rather than an error. Reading it directly from the browser
+      // is how this tab showed "no blasts" while the table held eleven.
       async function readTable(){
-        const tb = el('bh-rows'); if(!sb){ tb.innerHTML='<tr><td colspan="6" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
-        const { data, error } = await sb.from('salesmsg_broadcasts').select('*').order('sent_at',{ascending:false,nullsFirst:false}).limit(1000);
-        if(error){ tb.innerHTML=`<tr><td colspan="6" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
-        ROWS = data || [];
-        fillFilter('bh-channel', r => r.channel || 'Email');
-        fillFilter('bh-status',  r => r.status);
+        const tb = el('bh-rows');
+        try {
+          const r = await fetch('/api/market-history', { headers:{ 'x-inbox-secret': (cfg.REPLY_SECRET||'') } });
+          const d = await r.json().catch(()=>({}));
+          if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+          ROWS = Array.isArray(d.rows) ? d.rows : [];
+        } catch(e){
+          tb.innerHTML=`<tr><td colspan="8" class="text-center text-error py-8">${esc((e&&e.message)||'Could not load history')}</td></tr>`;
+          return;
+        }
+        fillFilter('bh-channel', r => r.channel);
+        fillFilter('bh-status',  r => r.source);      // the Status filter now filters by SOURCE
         render();
       }
       async function sync(silent){
