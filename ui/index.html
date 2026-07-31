@@ -2755,18 +2755,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const orig = btn.innerHTML; btn.disabled = true;
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span>';
         try {
-          // No secret is attached on purpose. /api/queue-tick is a SEND route and now requires
-          // SEND_SECRET, which is server-only — REPLY_SECRET is published in config.js, so
-          // sending it here would just re-open the hole it was removed to close. Until a
-          // session-authenticated send route exists, this call is expected to 401 and the
-          // operator is told exactly that rather than being shown a vague failure.
+          // Authorisation is the operator's IDENTITY, not a shared secret. ui/auth-gate.js
+          // signs the user in with Google against this project's Supabase, and the resulting
+          // access token goes up with the request; api/queue-tick.js hands it to Supabase's
+          // /auth/v1/user and only accepts an @callplaybook.com account. REPLY_SECRET is
+          // deliberately still not sent — it lives in the public config.js, so it would let
+          // any visitor send, which is exactly why 3c5b0ce removed it from this route.
+          let token = null;
+          try { token = (await window.__pbAuth?.auth?.getSession())?.data?.session?.access_token || null; } catch {}
+          if(!token) throw new Error('You are signed out, so this send cannot be authorised. Sign in with your @callplaybook.com Google account and try again. The blast is untouched.');
           const res = await fetch('/api/queue-tick', {
             method:'POST',
-            headers:{ 'content-type':'application/json' },
+            headers:{ 'content-type':'application/json', 'x-sb-access-token': token },
             body: JSON.stringify({ id: r.id }),
           });
           const d = await res.json().catch(()=>({}));
-          if(res.status === 401) throw new Error('Send now is not authorised from the browser. /api/queue-tick requires the server-only SEND_SECRET; a session-authenticated send route is still needed. The blast stays queued and the hourly tick will send it at its slot.');
+          if(res.status === 401) throw new Error('Your session was rejected — it may have expired, or the account is not an @callplaybook.com one. Sign out and back in, then retry. The blast stays queued.');
+          if(res.status === 403) throw new Error(d.error || 'This send was refused.');
           if(!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
           const mine = (d.sent||[]).find(x => x.id === r.id);
           const bad  = (d.errors||[]).find(x => x.id === r.id);

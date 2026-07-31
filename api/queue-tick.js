@@ -31,16 +31,50 @@ const validPhone = p => /^\+\d{10,15}$/.test(p||'');
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
+// Who may press "Send now". The browser cannot hold a shared secret — anything shipped to
+// it is public, which is why REPLY_SECRET was removed from this route in 3c5b0ce — so the
+// operator proves identity instead: the Supabase session created by ui/auth-gate.js.
+//
+// The token is verified BY SUPABASE, not parsed here. We hand it to /auth/v1/user; a
+// forged or expired token simply fails to resolve to a user. That is the difference
+// between this and the old REPLY_SECRET check, which trusted a string the page gave out
+// to every visitor.
+const OPERATOR_DOMAIN = 'callplaybook.com';
+
+async function verifyOperator(token, supaUrl, supaKey) {
+  if (!token) return null;
+  try {
+    const r = await fetch(`${supaUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: supaKey },
+    });
+    if (!r.ok) return null;
+    const u = await r.json().catch(() => null);
+    const email = String((u && u.email) || '').toLowerCase();
+    // Same allowlist the sign-in gate enforces, re-checked here: the gate is UI, this is the
+    // control. A Google account outside the domain can hold a valid Supabase session.
+    return email.endsWith('@' + OPERATOR_DOMAIN) ? email : null;
+  } catch { return null; }
+}
+
 export default async function handler(req, res) {
-  // SEND ROUTE — requires a SERVER-ONLY secret. REPLY_SECRET is published in the public
-  // config.js, so it is intentionally NOT accepted here: the browser must never trigger a send.
+  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
+  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+
+  // SEND ROUTE — three ways in, in descending order of trust:
+  //   1. CRON_SECRET bearer — Vercel Cron, may sweep the whole due queue.
+  //   2. SEND_SECRET header — server-to-server, same reach.
+  //   3. A signed-in @callplaybook.com operator — ONE named row only (see below).
+  // REPLY_SECRET is still not accepted: it is published in config.js.
   const cronSecret = process.env.CRON_SECRET, sendSecret = process.env.SEND_SECRET;
   const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
   const sendOk   = sendSecret && req.headers['x-send-secret'] === sendSecret;
-  if (!bearerOk && !sendOk) { res.status(401).json({ error: 'unauthorized' }); return; }
-
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+  const operator = (bearerOk || sendOk)
+    ? null
+    : await verifyOperator(req.headers['x-sb-access-token'], supaUrl, supaKey);
+  if (!bearerOk && !sendOk && !operator) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn, body) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
 
@@ -75,6 +109,14 @@ export default async function handler(req, res) {
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   const onlyId = body && typeof body.id === 'string' ? body.id : null;
+
+  // A signed-in operator may send ONE named blast — the thing the Queue's "Send now" button
+  // does — and nothing else. Without this, a browser session would be able to POST {} and
+  // sweep every due row in the queue at once, which is the cron's job and no button's.
+  if (operator && !onlyId) {
+    res.status(403).json({ error: 'A signed-in operator may only send one named blast — pass { id }. Queue-wide sends run from the cron.' });
+    return;
+  }
 
   try {
     const q = await (await rpc('get_campaign_queue')).json();
