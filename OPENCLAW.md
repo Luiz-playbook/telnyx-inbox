@@ -6,8 +6,9 @@ agent can do, and how to operate it.
 > **TL;DR** — The chat panel on the site is a thin front end over an OpenClaw AI
 > agent running on our VPS. The browser → a Vercel function → a WebSocket to the
 > gateway (device-authenticated) → the `main` agent. The agent can do everything
-> the site can do to the campaign data **except send** — the cron still owns
-> sending. Each chat is a separate agent session with its own persistent memory.
+> the site can do to the campaign data, including **sending a specific queued blast
+> when a user explicitly asks**; unattended/scheduled sending is still the cron's.
+> Each chat is a separate agent session with its own persistent memory.
 
 ---
 
@@ -185,16 +186,25 @@ send-allowlist, validation) applies automatically.
   `queue_set_channels`, `queue_snooze`, `queue_confirm`, `update_queue_row`.
 - Stage test rows: `queue_enqueue_test` (placeholders; never auto-sent).
 - Tune the decider/Cole rules: `get_decider_rules` / `set_decider_rules`.
+- **Send one queued blast — only on an explicit user request.** `POST /api/queue-tick`
+  with `{ "id": "<row>" }` (manual **Send now**), header `x-send-secret: SEND_SECRET`
+  when out of test mode. Fires exactly that row, never a sweep. See §7 of
+  `docs/OPENCLAW_QUEUE_RULES.md` for the rules (resolve to one row, relay
+  `cooldown_overridden`/past-game, honour the allowlist).
 - Every edit is logged via `log_run_edit`.
 
 **Cannot (by design):**
-- **Send anything.** No `/api/queue-tick`, no CakeMail route, no n8n webhooks.
-- **Mark things sent / write blast history:** `queue_mark_sent`,
-  `log_market_blast`, `upsert_salesmsg_broadcasts` — these are owned by the cron.
-  Faking them corrupts the cooldown history that protects future blasts.
+- **Send on its own initiative.** No sweeping the queue (`POST {}` is refused without
+  a secret), no sending a row nobody asked about, no send as a side effect of queueing.
+  The scheduled cron owns all unattended delivery.
+- **Mark things sent / write blast history by hand:** `queue_mark_sent`,
+  `log_market_blast`, `upsert_salesmsg_broadcasts` — these are written by the send path
+  (`api/queue-tick.js`) itself. Faking them corrupts the cooldown history that protects
+  future blasts.
 
-**The cron does the sending.** The agent's job is to get the right row, copy,
-sender, channel, and date in place; the scheduled tick fires it.
+**The cron does the scheduled sending.** The agent's job is to get the right row, copy,
+sender, channel, and date in place; the scheduled tick fires it — except when a user
+asks the agent to send a specific row now.
 
 ### Queueing decision (the decider)
 

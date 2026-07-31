@@ -7,9 +7,11 @@ This replaces the OpenAI `gpt-4o` re-rank step currently in `api/trigger-decide.
 Everything below is what that endpoint does today, plus the new **Cole directives**
 layer (§4), which does not exist in code yet.
 
-Nothing here sends. The agent only proposes/enqueues **placeholder** rows
-(`is_placeholder = true`). A human confirms; `api/queue-tick.js` never sends a
-placeholder.
+Queueing does not send. The agent proposes/enqueues **placeholder** rows
+(`is_placeholder = true`), and the scheduled **cron** owns delivery. The one
+exception is a **manual send on explicit user request** — see §7: if a user tells
+the agent to send a specific queued blast now, the agent may fire that one row.
+Absent such a request, the agent never sends; the cron does.
 
 ---
 
@@ -285,8 +287,25 @@ skipped and not returned — so the return value is exactly what was **added**.
 
 ## 7. Guardrails
 
-- **Never send.** The agent queues placeholders. A human confirms (`queue_confirm`),
-  and `api/queue-tick.js` refuses to send anything with `is_placeholder = true`.
+- **Do not send on your own initiative.** Queueing a placeholder is the default; the
+  scheduled cron owns delivery. The agent must never sweep the queue, never send a row
+  nobody asked about, and never send as a side effect of a queueing run.
+- **Manual send — only when a user explicitly asks.** If a user tells the agent to send
+  a specific queued blast now ("send the Nashville one", "blast Columbus now"), the agent
+  may fire **that one row** by calling the manual **Send now** path:
+  `POST /api/queue-tick` with body `{ "id": "<queue_row_id>" }` and, when out of test
+  mode, header `x-send-secret: <SEND_SECRET>` (in test mode the `{id}` body alone is
+  accepted). Rules for a manual send:
+  - **One named row per request.** Resolve the user's words to exactly one queue row
+    (use `get_campaign_queue()`; if it's ambiguous, ask — never guess). Never post `{}`
+    (that's a queue-wide sweep, which is the cron's job and is refused without a secret).
+  - It is fine that the row is a placeholder — the manual path sends placeholders
+    deliberately; the user's request *is* the confirmation the cron would otherwise wait for.
+  - The endpoint reports `cooldown_overridden` and a past-game "!" back; **relay that to
+    the user** rather than hiding it, and confirm what was sent (or why it didn't — the
+    response's `held` / `errors`).
+  - It still cannot reach a real market while `send_test_mode()` is non-empty — only the
+    allowlisted market resolves recipients. Say so if the user sends a non-allowlisted market.
 - **Never write blast history.** Do not call `log_market_blast` (either overload),
   `queue_mark_sent`, or `upsert_salesmsg_broadcasts`. Queueing is not sending. The
   14-day cooldown is written by `api/queue-tick.js` when a blast actually delivers, and
