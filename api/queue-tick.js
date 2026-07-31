@@ -32,17 +32,53 @@ const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
-  // SEND ROUTE — requires a SERVER-ONLY secret. REPLY_SECRET is published in the public
-  // config.js, so it is intentionally NOT accepted here: the browser must never trigger a send.
-  const cronSecret = process.env.CRON_SECRET, sendSecret = process.env.SEND_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const sendOk   = sendSecret && req.headers['x-send-secret'] === sendSecret;
-  if (!bearerOk && !sendOk) { res.status(401).json({ error: 'unauthorized' }); return; }
-
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn, body) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
+
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  const onlyId = body && typeof body.id === 'string' ? body.id : null;
+
+  // AUTH. Two server-only credentials have full reach:
+  //   CRON_SECRET bearer  — Vercel Cron, sweeps every due row.
+  //   SEND_SECRET header  — server-to-server, same reach.
+  //
+  // Beyond those, the Queue's "Send now" button posts { id } from the browser with NO
+  // credential, because a browser cannot keep one: config.js is served to every visitor, so
+  // any secret placed there is public (that is why 3c5b0ce removed REPLY_SECRET from this
+  // route). Rather than re-publish a secret or bolt a login onto the app, the open path is
+  // gated on the thing that actually bounds the damage — TEST MODE.
+  //
+  // While send_allowlist is non-empty, market_emails / market_phones resolve to ZERO rows
+  // for every market not on it. An anonymous caller can therefore only ever mail the test
+  // market, whose recipients we own. That is a real limit, enforced in SQL, not a promise.
+  //
+  // The moment the allowlist is emptied — the moment real markets can receive mail — this
+  // path closes and a secret is required again. The button stops working the day the stakes
+  // change, instead of quietly becoming a public send button pointed at real customers.
+  const cronSecret = process.env.CRON_SECRET, sendSecret = process.env.SEND_SECRET;
+  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
+  const sendOk   = sendSecret && req.headers['x-send-secret'] === sendSecret;
+
+  if (!bearerOk && !sendOk) {
+    // No credential. Allowed only for ONE named row, and only in test mode: a sweep is the
+    // cron's job, and { } from a browser must never fan out across the queue.
+    if (!onlyId) {
+      res.status(401).json({ error: 'unauthorized — a queue-wide send needs CRON_SECRET or SEND_SECRET' });
+      return;
+    }
+    const tm = await rpc('send_test_mode').then(r => r.json()).catch(() => null);
+    const testMode = Array.isArray(tm) && tm.length > 0;
+    if (!testMode) {
+      res.status(401).json({
+        error: 'Send now is open only while TEST MODE is on (send_allowlist non-empty). '
+             + 'The allowlist is now empty, so real markets can receive mail and this route needs SEND_SECRET.',
+      });
+      return;
+    }
+  }
 
   const now = Date.now();
   const webhookSecret = process.env.REPLY_SECRET || ''; // outbound gate the n8n workflows expect (unrelated to inbound auth)
@@ -71,10 +107,6 @@ export default async function handler(req, res) {
   // 1679383 is gone from this list with cole@ — the sender still exists in CakeMail, but no
   // option sends from it, and reporting a key for an account nothing uses is just noise.
   const CAKEMAIL_ACCOUNTS = ['1679456', '1761047'].filter(id => !!cakemailKey(id));
-
-  let body = req.body;
-  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
-  const onlyId = body && typeof body.id === 'string' ? body.id : null;
 
   try {
     const q = await (await rpc('get_campaign_queue')).json();
