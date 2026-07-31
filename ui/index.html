@@ -2939,6 +2939,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // it had before — silent, because the throw happened while building the row HTML.
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
 
+      // SMS segment maths, so a sent SMS reads here exactly as it does in the Queue. Declared
+      // locally for the same reason as prettyMetro above — the Queue's copies are inside its
+      // own IIFE. Keep in step with smsInfo/smsCountLabel in queueModule.
+      const GSM7 = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+      const GSM7_EXT = "^{}\\[~]|€";
+      function smsInfo(text){
+        const s = String(text || '');
+        let units = 0, ucs2 = false;
+        for(const ch of s){
+          if(GSM7_EXT.includes(ch)) units += 2;
+          else if(GSM7.includes(ch)) units += 1;
+          else { ucs2 = true; break; }
+        }
+        if(ucs2) units = s.length;              // UCS-2 bills per UTF-16 unit — an emoji is two
+        const single = ucs2 ? 70 : 160, multi = ucs2 ? 67 : 153;
+        const segments = !units ? 0 : (units <= single ? 1 : Math.ceil(units / multi));
+        const cap = segments > 1 ? multi * segments : single;
+        return { chars:[...s].length, units, ucs2, segments, left: cap - units };
+      }
+      const smsCountLabel = i => `${i.chars} character${i.chars===1?'':'s'} · ${i.segments} segment${i.segments===1?'':'s'} · ${i.ucs2?'UCS-2 (70/segment)':'GSM-7 (160/segment)'}`;
+
       let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
       const expanded = new Set();   // ids whose copy drawer is open
       let page = 1, pageSize = 50;   // 0 = show everything
@@ -2999,9 +3020,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${r.sent_count==null?'<span class="text-base-content/40">—</span>':fmt(r.sent_count)}</td>
           </tr>`;
           if(!open || !r.message) return head;
+          // An SMS reads as an SMS: same phone bubble the Queue uses, with the segment count
+          // underneath. Seeing a 494-character blast render as four segments is the point —
+          // it is what the copy actually cost to send. Email keeps the document-style panel.
+          const body = r.channel === 'SMS'
+            ? `<div class="sms-phone max-w-md"><div class="sms-bubble">${esc(r.message)}</div></div>
+               <div class="text-xs text-base-content/50 mt-1.5">${esc(smsCountLabel(smsInfo(r.message)))}</div>`
+            : `<div class="border border-base-300 rounded-lg bg-white p-4 text-sm whitespace-pre-wrap max-w-3xl">${esc(r.message)}</div>`;
           return head + `<tr class="bg-base-200/30"><td></td><td colspan="7" class="pb-4">
-            <div class="prev-label mb-1">Copy sent</div>
-            <div class="border border-base-300 rounded-lg bg-white p-4 text-sm whitespace-pre-wrap max-w-3xl">${esc(r.message)}</div>
+            <div class="prev-label mb-1">${r.channel === 'SMS' ? 'SMS sent' : 'Copy sent'}</div>
+            ${body}
             ${r.notes?`<div class="text-xs text-base-content/50 mt-1.5">${esc(r.notes)}</div>`:''}
           </td></tr>`;
         }).join('');
