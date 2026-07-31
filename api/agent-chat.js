@@ -32,7 +32,8 @@ export default async function handler(req, res) {
   if (!sessionKey.trim()) { res.status(400).json({ error: 'sessionKey required' }); return; }
 
   try {
-    const { reply, runId } = await runAgentTurn({ sessionKey, text: message });
+    // Tool-heavy turns (queue/price lookups) can take a minute+; allow well under maxDuration (300s).
+    const { reply, runId } = await runAgentTurn({ sessionKey, text: message, timeoutMs: 240_000 });
     res.status(200).json({ reply: reply || '(no reply)', runId });
   } catch (e) {
     // Do not leak internals (tokens/keys/hosts). Return a generic message + a short code.
