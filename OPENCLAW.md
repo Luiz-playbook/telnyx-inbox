@@ -212,6 +212,28 @@ A daily gateway cron job **`daily-campaign-queue`** (8am ET, session
 each row before the send cron fires. Manage it on the VPS with
 `openclaw cron list|get|run|disable daily-campaign-queue`.
 
+### Ticket pricing (the decider's price input)
+
+The agent also keeps `events_master.best_price` current, via the VPS
+`campaign-pricing` skill: `price_targets()` (migration 042) returns the games that
+need a price — decider-eligible, inside the price window, stale or never priced —
+each with a **precomputed `listing_url`** (SeatGeek team page). The agent web-searches
+the get-in price (single seat, listed-before-fees, USD, ignore `<=0` or `>250`) and
+writes with `set_event_prices(p_rows)`, then logs with `record_price_run(p)`.
+
+**AI‑845 rule:** the price lookup must never fetch or invent a URL — asking a model
+for a link alongside the price wrecked accuracy. The `listing_url` is built in SQL and
+passed straight through.
+
+A daily gateway cron **`daily-price-refresh`** (7am ET, before the queue run) does
+this unattended. It never sends.
+
+> **Overlap to resolve:** the old Vercel crons `/api/price-refresh` (Gemini, every
+> 12h) and `/api/decide` (gpt-4o re-rank, daily) now duplicate the agent's pricing and
+> queueing. `/api/queue-tick` (hourly) is the **sender** and must stay. Retire the
+> first two (remove from `vercel.json` crons) once the agent runs are trusted, to stop
+> double work + Gemini spend.
+
 To change what the agent can do, edit the `SKILL.md` on the VPS (§8). Introspect
 the live RPC surface with:
 ```sql
