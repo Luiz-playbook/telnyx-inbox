@@ -5,12 +5,13 @@
 // Runs on-demand from the UI (x-inbox-secret: REPLY_SECRET) and/or a cron
 // (Authorization: Bearer CRON_SECRET). Upserts, so it's incremental — safe to call often.
 //
-// Env: SALESMSG_API_KEY (server-side only — never sent to the browser),
+// Auth is OAuth Applications, through lib/salesmsg.js — the integration has no API key and
+// must not grow one. Env: SALESMSG_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN,
 //      SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET / REPLY_SECRET.
 
-export const config = { maxDuration: 60 };
+import { api } from '../lib/salesmsg.js';
 
-const SM_BASE = 'https://api.salesmessage.com/pub/v2.1';
+export const config = { maxDuration: 60 };
 const pick = (o, keys) => { for (const k of keys) { if (o && o[k] != null && o[k] !== '') return o[k]; } return null; };
 
 function mapBroadcast(b) {
@@ -35,24 +36,22 @@ export default async function handler(req, res) {
   const inboxOk  = replySecret && req.headers['x-inbox-secret'] === replySecret;
   if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
-  const key = (process.env.SALESMSG_API_KEY || '').trim();
   const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!key) { res.status(500).json({ error: 'SALESMSG_API_KEY is not set on the server' }); return; }
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
 
-  const smHeaders = { Authorization: `Bearer ${key}`, Accept: 'application/json' };
   const supaHeaders = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   try {
     const all = [];
     let page = 1, lastPage = 1;
     do {
-      const r = await fetch(`${SM_BASE}/broadcasts?page=${page}&per_page=100`, { headers: smHeaders });
-      if (!r.ok) { res.status(502).json({ error: `Salesmsg error HTTP ${r.status}`, page }); return; }
-      const j = await r.json();
-      const rows = Array.isArray(j.data) ? j.data : [];
+      // OAuth via lib/salesmsg.js. This used to send `Bearer $SALESMSG_API_KEY` against
+      // /pub/v2.1 — an auth method this integration does not use — which is why the live
+      // endpoint answered `Salesmsg error HTTP 403` on every run.
+      const j = await api(`/broadcasts?page=${page}&per_page=100`);
+      const rows = Array.isArray(j && j.data) ? j.data : [];
       all.push(...rows);
-      lastPage = (j.meta && j.meta.last_page) || 1;
+      lastPage = (j && j.meta && j.meta.last_page) || 1;
       page += 1;
     } while (page <= lastPage && page <= 50); // safety cap
 

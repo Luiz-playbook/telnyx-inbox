@@ -2343,8 +2343,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
         { v:'cakemail:1761047:l4vuKoFJ5s9eJryDK0sV', method:'CakeMail', label:'josh.marcus@callplaybook.com' },
         { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
-        // No SalesMessage here: it is an SMS product and carries nothing on the email side.
-        // It stays in the "Text from" list, where it is a real (if still unwired) option.
+        // No Salesmsg here: it is an SMS product and carries nothing on the email side.
+        // It lives in the "Text from" list, populated from /api/salesmsg-senders.
       ];
       // 'cakemail:<account_id>:<sender_id>' → { accountId, senderId }; anything else → null.
       const cakemailSender = v => { const m = /^cakemail:([^:]+):(.+)$/.exec(String(v||'')); return m ? { accountId:m[1], senderId:m[2] } : null; };
@@ -2352,7 +2352,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Never show the raw stored value — a CakeMail row stores ids, not an address.
       const emailFromLabel = v => { const s = EMAIL_SENDERS.find(x => x.v === v); if(s) return s.label;
         const cm = cakemailSender(v); return cm ? `sender ${cm.senderId} · account ${cm.accountId}` : (v || '—'); };
-      const smsMethodOf   = v => v === 'salesmessage' ? 'SalesMessage' : (v ? 'Telnyx' : '—');
+      // 'salesmsg:<team_id>:<phone>' → { teamId, phone }; anything else → null.
+      // Mirrors parseSalesmsgFrom in lib/salesmsg.js — keep both in sync.
+      const salesmsgSender = v => { const m = /^salesmsg:([^:]+):(.+)$/.exec(String(v||'')); return m ? { teamId:m[1], phone:m[2] } : null; };
+      const smsMethodOf   = v => salesmsgSender(v) ? 'Salesmsg' : (v ? 'Telnyx' : '—');
+      // Never show the raw stored value — a Salesmsg row stores a team id, not just a number.
+      const smsFromLabel  = v => { const s = SALESMSG_SENDERS.find(x => x.value === v); if(s) return `${s.phone} · ${s.team_name}`;
+        const sm = salesmsgSender(v); return sm ? `${sm.phone} · team ${sm.teamId}` : (v || '—'); };
+      // Filled by loadQueue() from /api/salesmsg-senders. Empty until then, and empty for good
+      // if Salesmsg is unconfigured — in which case the dropdown simply shows Telnyx only,
+      // rather than an option that cannot send.
+      let SALESMSG_SENDERS = [];
       let QUEUE = [], NUMBERS = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
       // Same filter set as Campaigns by Event, minus the ones a queued row can't answer
       // (segment isn't stored per queue row — a row targets a market, not a market×segment),
@@ -2531,7 +2541,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // turns the channel back on. Only a sent row is locked.
           const offOpt = (label, on) => `<option value=""${on?'':' selected'}>&mdash; ${label} &mdash;</option>`;
           const emailSel = `<select class="select select-bordered select-xs mini-select w-56${r.email?'':' text-base-content/50'}" data-qemail="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending email', r.email)}${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}"${(r.email && s.v===curEmail)?' selected':''}>${esc(s.method)} · ${esc(s.label)}</option>`).join('')}</select>`;
-          const smsOpts = [...NUMBERS.map(n=>({ v:n.phone_number, method:'Telnyx', label:(n.label?n.label+' · ':'')+n.phone_number })), { v:'salesmessage', method:'SalesMessage', label:'(placeholder)' }];
+          // Telnyx numbers come from the telnyx_numbers table; Salesmsg numbers come from the
+          // Salesmsg API via /api/salesmsg-senders (OAuth). The Salesmsg entry used to be a
+          // hardcoded '(placeholder)' whose value 'salesmessage' was then handed to the TELNYX
+          // webhook as a From — it named a product but routed nowhere.
+          const smsOpts = [
+            ...NUMBERS.map(n=>({ v:n.phone_number, method:'Telnyx', label:(n.label?n.label+' · ':'')+n.phone_number })),
+            ...SALESMSG_SENDERS.map(s=>({ v:s.value, method:'Salesmsg', label:`${s.phone} · ${s.team_name}` })),
+          ];
           const smsSel = `<select class="select select-bordered select-xs mini-select w-52${r.sms?'':' text-base-content/50'}" data-qsms="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending SMS', r.sms)}${smsOpts.map(o=>`<option value="${esc(o.v)}"${(r.sms && o.v===curSms)?' selected':''}>${esc(o.method)} · ${esc(o.label)}</option>`).join('')}</select>`;
           // Campaign columns, rendered exactly as Campaigns by Event renders them.
           const priceCell = r.ticket_price!=null
@@ -2881,6 +2898,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function loadQueue(){
         if(!sb){ el('q-rows').innerHTML='<tr><td colspan="12" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
+        // Salesmsg numbers, live from the API. A failure here is NOT fatal: the dropdown falls
+        // back to Telnyx only. Better a shorter list than an option that looks real and routes
+        // nowhere, which is what the old hardcoded '(placeholder)' entry did.
+        if(!SALESMSG_SENDERS.length){
+          try {
+            const r = await fetch('/api/salesmsg-senders', { headers:{ 'x-inbox-secret': (cfg.REPLY_SECRET||'') } });
+            const d = await r.json().catch(()=>({}));
+            SALESMSG_SENDERS = Array.isArray(d.senders) ? d.senders : [];
+            if(d.error) console.warn('Salesmsg senders unavailable:', d.error);
+          } catch(e){ console.warn('Salesmsg senders unavailable:', e && e.message); }
+        }
         if(!REGIONS.length){ const g = await sb.rpc('geo_regions'); REGIONS = g.error ? [] : (g.data || []); }
         // Send now warns when a market is off the allowlist, so the allowlist must be current
         // before the button can be pressed — not just whenever the Campaigns tab last loaded.

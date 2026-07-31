@@ -23,6 +23,7 @@
 // Keep this in sync with EMAIL_SENDERS / cakemailSender in ui/index.html.
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
+import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
 
 export const config = { maxDuration: 60 };
 
@@ -155,10 +156,30 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
-      if (r.sms && phones.length && hookOk(smsHook)) {
-        const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
-        const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
-        (rr.ok ? sent : failed).push(rr.ok ? `SMS ${messages.length}` : `SMS failed (HTTP ${rr.status})`);
+      if (r.sms && phones.length) {
+        // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
+        // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
+        // lib/salesmsg.js (OAuth, no API key); anything else is a Telnyx number and goes to
+        // the n8n bulk webhook. Keep in sync with SMS_SENDERS / salesmsgSender in ui/index.html.
+        const sm = parseSalesmsgFrom(r.sms_from);
+        if (sm) {
+          try {
+            // Fan-out, not one call: Salesmsg broadcasts target saved contacts through a
+            // filter, so raw market numbers have to be sent individually. Partial success is
+            // normal and is reported per number rather than collapsing to pass/fail.
+            const out = await sendSmsBulk({ teamId: sm.teamId, to: phones, message: r.sms_copy || '' });
+            if (out.sent) sent.push(`SMS ${out.sent} (Salesmsg ${sm.phone})`);
+            if (out.failed.length) failed.push(`Salesmsg: ${out.failed.length} of ${out.total} failed — ${out.failed[0].error}`);
+          } catch (e) {
+            failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
+          }
+        } else if (hookOk(smsHook)) {
+          const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
+          const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
+          (rr.ok ? sent : failed).push(rr.ok ? `SMS ${messages.length}` : `SMS failed (HTTP ${rr.status})`);
+        } else {
+          failed.push('No SMS route: the row has no Salesmsg sender and BULK_SEND_WEBHOOK_URL is unset');
+        }
       }
       if (r.email && emails.length) {
         const html = nl2br(r.email_copy || '');
