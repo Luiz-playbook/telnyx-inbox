@@ -66,7 +66,11 @@ export default async function handler(req, res) {
   // as cooldown_overridden so the caller can say so.
   // Which sending accounts actually have a key on this deployment. Reported back so a
   // "Forbidden" can be told apart from a key that was never set, without leaking the tokens.
-  const CAKEMAIL_ACCOUNTS = ['1679456', '1679383'].filter(id => !!cakemailKey(id));
+  // The accounts a sender option can actually address: 1761047 is the production Josh
+  // sub-account as of 2026-07-31 (PBSPORTS_CAKEMAIL_*), 1679456 is the test account.
+  // 1679383 is gone from this list with cole@ — the sender still exists in CakeMail, but no
+  // option sends from it, and reporting a key for an account nothing uses is just noise.
+  const CAKEMAIL_ACCOUNTS = ['1679456', '1761047'].filter(id => !!cakemailKey(id));
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }

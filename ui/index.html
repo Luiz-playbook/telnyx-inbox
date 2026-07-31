@@ -2304,17 +2304,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // on the From domain CakeMail signs with its own, which is why links come from
       // playbookemail.com. Do not "fix" this by authenticating the domain.
       //
-      // Sending needs a CONFIRMED sender, not DKIM — every option below is confirmed.
-      // Two brand-new empty sub-accounts (1760519, 1673473) were refused at schedule time with
-      // "Action blocked due to a low account score", but both had zero sending history, so
-      // that is likely account maturity rather than the missing DKIM. Account 1679383 is the
-      // established account and is expected to send; only pbtest@playbookemail.com (1679456)
-      // has actually been proven end to end.
+      // Sending needs a CONFIRMED sender, not DKIM — every option below is confirmed against
+      // GET /brands/default/senders. Two brand-new empty sub-accounts (1760519, 1673473) were
+      // refused at schedule time with "Action blocked due to a low account score", but both had
+      // zero sending history, so that is likely account maturity rather than the missing DKIM.
+      // Only pbtest@playbookemail.com (1679456) has been proven end to end.
+      //
+      // THE PRODUCTION JOSH SENDER MOVED (2026-07-31). It is now account 1761047, sender
+      // l4vuKoFJ5s9eJryDK0sV — the pair PBSPORTS_CAKEMAIL_ACCOUNT_ID / _SENDER_ID point at,
+      // with its own PBSPORTS_CAKEMAIL_AUTHORIZATION. The old Josh sender
+      // (1679383:Bk0SjruxSB2im5kcnhpY) is still confirmed in CakeMail but is no longer what the
+      // environment addresses, so it is removed rather than left as a second Josh option that
+      // would send under a different account's token.
+      //
+      // cole@ (1679383:a0JY63GyFWwXfa6AgN92) is deliberately NOT here. Every Playbook template
+      // is signed "Josh Marcus, CEO of Playbook Sports" (migration 043), so a blast that goes
+      // out FROM cole@ and signs off as Josh contradicts itself in the recipient's inbox. The
+      // sender still exists and is confirmed in CakeMail; it is the option that is retired.
       const EMAIL_SENDERS = [
         { v:'john@callplaybook.com', method:'Mail merge',   label:'john@callplaybook.com' },
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
-        { v:'cakemail:1679383:Bk0SjruxSB2im5kcnhpY', method:'CakeMail', label:'Josh.marcus@callplaybook.com' },
-        { v:'cakemail:1679383:a0JY63GyFWwXfa6AgN92', method:'CakeMail', label:'cole@callplaybook.com' },
+        { v:'cakemail:1761047:l4vuKoFJ5s9eJryDK0sV', method:'CakeMail', label:'josh.marcus@callplaybook.com' },
         { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
         // No SalesMessage here: it is an SMS product and carries nothing on the email side.
         // It stays in the "Text from" list, where it is a real (if still unwired) option.
