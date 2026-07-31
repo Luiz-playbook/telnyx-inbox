@@ -1585,12 +1585,34 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       c.title = name.trim() || c.title; saveChats(CHATS); renderChatMenu();
     }
 
+    // One turn at a time. A turn takes ~30–60s, and OpenClaw can't run two turns in the same
+    // conversation at once (the session file collides → one comes back "(no reply)"). So while a
+    // turn is in flight we lock the input — you physically can't fire an overlapping send.
+    let agentBusy = false;
+    function setAgentBusy(on){
+      agentBusy = on;
+      const input=document.getElementById('agent-input'), send=document.getElementById('agent-send');
+      if(input){ input.disabled = on; input.placeholder = on ? 'Agent is working…' : 'Message the campaign agent…'; }
+      if(send){ send.disabled = on; send.classList.toggle('btn-disabled', on);
+        send.innerHTML = on ? '<span class="loading loading-spinner loading-xs"></span>' : '&#8594;'; }
+    }
+    function loadingBubbleHTML(secs){
+      const dots='<span class="loading loading-dots loading-sm align-middle"></span>';
+      let note='Thinking…';
+      if(secs>=6)  note='Working… '+secs+'s';
+      if(secs>=20) note='Still working… '+secs+'s <span class="opacity-60">— queue &amp; price lookups can take up to a minute</span>';
+      return dots+' <span class="text-sm opacity-70 align-middle">'+note+'</span>';
+    }
+
     async function sendAgent(text){
-      text=(text||'').trim(); if(!text) return;
+      text=(text||'').trim(); if(!text || agentBusy) return; // guard: no overlapping turns
       const input=document.getElementById('agent-input'); if(input) input.value='';
+      setAgentBusy(true);
       pushMessage('user', text);
       renderMessages(); renderChatMenu(); // show the message, hide greeting, update the title
-      const bot = agentAppend('bot', '<span class="loading loading-dots loading-sm"></span>');
+      const bot = agentAppend('bot', loadingBubbleHTML(0));
+      const t0 = Date.now();
+      const tick = setInterval(()=>{ if(bot) { bot.innerHTML = loadingBubbleHTML(Math.round((Date.now()-t0)/1000)); bot.scrollIntoView({block:'nearest'}); } }, 1000);
       try{
         const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
           body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
@@ -1601,6 +1623,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         pushMessage('assistant', reply); // persist only successful replies
         if(window.__loadQueue) window.__loadQueue(); // the agent may have edited queue rows
       }catch(e){ if(bot) bot.textContent = 'Failed to reach the agent: '+e.message; }
+      finally{ clearInterval(tick); setAgentBusy(false); const i=document.getElementById('agent-input'); if(i) i.focus(); }
     }
     (function wireAgent(){
       const input=document.getElementById('agent-input'), send=document.getElementById('agent-send');
