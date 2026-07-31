@@ -2155,20 +2155,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const tmRows = tmRes.error ? [] : (tmRes.data || []);
           if(tmRows.length) testMode = { codes: tmRows.map(r => r.code) };
 
-          let queued = [];
+          let queued = [], drafted = null;
           if(sends.length){
             const rows = sends.map(p => {
-              const perf = (p.open_rate_w!=null)
-                ? ` ${p.open_rate_w}% open / ${p.ctr_w}% CTR over ${p.n_blasts} prior blast${p.n_blasts==1?'':'s'}.` : '';
-              const tmpl = p.best_template ? ` Best template: ${p.best_template}.` : '';
               // The picked market's own reach — what a real send WOULD have reached. Nothing is
               // sent while the allowlist blocks this code, so this is a projection, not a promise.
               const emails = Number(p.email_count)||0;
               const phones = Number(p.phone_count)||0;
-              const reachNote = (emails||phones) ? ` Would reach: ${emails} emails / ${phones} phone numbers.` : '';
-              const why = p.reason ? (' ' + p.reason) : (' Decider pick for ' + (p.market_label||'this market') + '.' + tmpl + perf);
-              const blocked = testMode ? ` Sending is blocked — only ${testMode.codes.join(', ')} resolves recipients.` : '';
-              const note = '[TEST — will NOT send]' + why + blocked + reachNote;
               return {
                 scheduled_for: slotIso(p.slot_date),
                 title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (p.market_label || ''),
@@ -2177,7 +2170,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 event_id: p.event_id || null,
                 email: true, sms: true,
                 phone_count: phones, sms_count: phones, email_count: emails,
-                email_copy: note, sms_copy: note,
+                // email_copy / sms_copy are left NULL on purpose. They used to hold the decider's
+                // note ("[TEST — will NOT send] Decider pick for Los Angeles…"), which is
+                // diagnostics sitting in the two fields api/queue-tick.js sends verbatim. Real
+                // copy is written a few lines below by /api/queue-draft from Cole's templates;
+                // the decider's reasoning stays in the toast and the run summary, where it
+                // belongs. Leaving these null also matches what the OpenClaw cron produces, so
+                // one drafting path serves both.
               };
             });
             const ins = await sb.rpc('queue_enqueue_test', { p_rows: rows });
@@ -2193,6 +2192,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // decidePicks drops every event/market held by a live row (takenEvents/takenMarkets,
             // mirrored server-side in api/trigger-decide.js), and queue_enqueue_test de-dupes
             // again on insert. Cooldown covers what was SENT; the queue covers what is PENDING.
+
+            // Copy, from Cole's templates in message_templates — never authored here. The
+            // endpoint fills [GAME]/[DATE]/[SPORT] from the row and optionally tailors the
+            // result; a rejected tailor falls back to the filled template, so this always
+            // produces sendable copy or none at all. A failure is REPORTED, not thrown: the
+            // rows are queued either way and their copy is editable in the Queue.
+            if(queued.length){
+              try {
+                const dr = await fetch('/api/queue-draft', {
+                  method:'POST',
+                  headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') },
+                  body: JSON.stringify({ ids: queued.map(q => q.id) }),
+                });
+                drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+              } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
+            }
           }
 
           const skipStr = Object.entries(skipBy).map(([k,v]) => `${v} ${String(k).replace(/_/g,' ')}`).join(' · ') || 'none';
@@ -2216,6 +2231,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               queued.length ? `Would reach: ${totalEmail.toLocaleString()} emails · ${totalPhone.toLocaleString()} phone numbers (nothing is sent).`
                 : (nothingToDo ? `Queue already full through ${dayLabel(through)} — nothing to add.` : `Nothing added — all markets held back.`),
               skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
+              // Copy is a separate step from queueing, so it reports separately. Silence here
+              // would leave a row looking finished with an empty body.
+              drafted && !drafted.error
+                ? `Copy drafted for ${(drafted.written||[]).length} of ${queued.length} from Cole's templates${(drafted.written||[]).some(w=>w.tailored) ? ' (AI-tailored)' : ' (template fill)'}.${(drafted.errors||[]).length ? ` ${drafted.errors.length} failed — edit them in the Queue.` : ''}${drafted.sms_over_limit ? ` ${drafted.sms_over_limit} SMS over 480 chars — shorten before confirming.` : ''}`
+                : (drafted ? `Rows are queued, but copy was not drafted: ${esc(drafted.error)}. Write it in the Queue.` : ``),
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
               `Held back by rules: ${skipStr}.`,
             ],
