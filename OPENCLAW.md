@@ -228,6 +228,24 @@ passed straight through.
 A daily gateway cron **`daily-price-refresh`** (7am ET, before the queue run) does
 this unattended. It never sends.
 
+### Event schedule (the game list)
+
+The agent can build/refresh `events_master` via the `campaign-events` skill — but
+**only from official sources, never from memory** (an LLM once hallucinated games,
+including 2027 ones). It runs the deterministic loader deployed on the VPS at
+`~/.openclaw/tools/load-schedule.sh` (a copy of `scripts/load-schedule.js`):
+
+```
+sh ~/.openclaw/tools/load-schedule.sh --league <mlb|nhl|nfl|nba|ncaaf|ncaab> [--start … --end …] [--dry]
+```
+
+It fetches the official schedule (MLB StatsAPI, NHL api-web, NFL nflverse, ESPN for
+the rest) and upserts idempotently via `upsert_events_master` (dedup + market
+resolution). The skill requires a `--dry` preview first, and forbids hand-authoring
+games — a human-named single game may be added only with real, confirmed details plus
+an `external_id`/`source_url`. If you update `scripts/load-schedule.js`, re-copy it to
+the VPS path above.
+
 > **Overlap to resolve:** the old Vercel crons `/api/price-refresh` (Gemini, every
 > 12h) and `/api/decide` (gpt-4o re-rank, daily) now duplicate the agent's pricing and
 > queueing. `/api/queue-tick` (hourly) is the **sender** and must stay. Retire the
