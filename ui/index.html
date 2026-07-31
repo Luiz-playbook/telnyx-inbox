@@ -2516,8 +2516,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <div class="prev-label mb-1">Email &mdash; click the body to edit</div>
             <div class="border border-base-300 rounded-lg overflow-hidden bg-white">
               <div class="px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">
-                <div><span class="inline-block w-14 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(emailFromLabel(curEmail))}</span></div>
-                <div><span class="inline-block w-14 text-base-content/40">Subject</span><span class="font-semibold text-[#133b49]">${esc(r.title||'(no subject)')}</span></div>
+                <div><span class="inline-block w-16 shrink-0 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(emailFromLabel(curEmail))}</span></div>
+                <div class="flex items-baseline"><span class="inline-block w-16 shrink-0 text-base-content/40">Subject</span><span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span></div>
               </div>
               <div class="mail-body p-4 text-sm min-h-28${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>
             </div>
@@ -2584,6 +2584,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // because the copy that sends is the stored one, not what's on screen.
         const markDirty = id => { const st = tb.querySelector(`[data-copystatus="${id}"]`); if(st) st.textContent = 'Unsaved changes'; };
         tb.querySelectorAll('[data-copy-email]').forEach(t=>t.addEventListener('input', ()=> markDirty(t.dataset.copyEmail)));
+        tb.querySelectorAll('[data-subject]').forEach(t=>t.addEventListener('input', ()=> markDirty(t.dataset.subject)));
         tb.querySelectorAll('[data-copy-sms]').forEach(t=>t.addEventListener('input', ()=>{
           const id = t.dataset.copySms;
           const c = tb.querySelector(`[data-smscount="${id}"]`);
@@ -2592,7 +2593,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }));
         // Browsers without plaintext-only would paste styled markup into the editor.
         if(!PLAINTEXT_CE){
-          tb.querySelectorAll('[data-copy-email],[data-copy-sms]').forEach(t=>t.addEventListener('paste', e=>{
+          tb.querySelectorAll('[data-copy-email],[data-copy-sms],[data-subject]').forEach(t=>t.addEventListener('paste', e=>{
             e.preventDefault();
             const text = (e.clipboardData || window.clipboardData).getData('text/plain');
             document.execCommand('insertText', false, text);
@@ -2600,16 +2601,31 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }
         tb.querySelectorAll('[data-savecopy]').forEach(b=>b.addEventListener('click', async ()=>{
           const id=b.dataset.savecopy, em=tb.querySelector(`[data-copy-email="${id}"]`), sm=tb.querySelector(`[data-copy-sms="${id}"]`), st=tb.querySelector(`[data-copystatus="${id}"]`);
+          const sub = tb.querySelector(`[data-subject="${id}"]`);
           const emailCopy = readCopy(em), smsCopy = readCopy(sm);
           b.disabled=true; if(st) st.textContent='Saving…';
           const res = await sb.rpc('queue_set_copy',{p_id:id, p_email: emailCopy, p_sms: smsCopy});
           if(res.error){ if(st) st.textContent = 'Save failed'; toast({ type:'err', title:'Could not save the copy', lines:[ res.error.message ] }); }
           else {
+            // Subject is a separate RPC (migration 044) because queue_set_copy already had
+            // callers and widening its signature would break them mid-deploy. Saved on the
+            // same button so there is one Save for the whole email, not two.
+            const row = QUEUE.find(x => x.id === id);
+            let subjErr = null;
+            if(sub){
+              const subject = readCopy(sub).replace(/\s+/g,' ').trim();
+              // The editor shows `title` as a stand-in when no subject is stored; saving that
+              // back would bake queue bookkeeping in as a real subject line.
+              if(subject && subject !== '(no subject)' && subject !== (row && row.title)){
+                const sres = await sb.rpc('queue_set_email_subject',{p_id:id, p_subject: subject});
+                if(sres.error) subjErr = sres.error.message; else if(row) row.email_subject = subject;
+              }
+            }
             // Keep the in-memory row in step so a re-render (filter, pager, refresh) shows the
             // saved copy rather than reverting the editor to what was last fetched.
-            const row = QUEUE.find(x => x.id === id);
             if(row){ if(em) row.email_copy = emailCopy; if(sm) row.sms_copy = smsCopy; }
-            if(st) st.textContent='Saved';
+            if(subjErr){ if(st) st.textContent='Copy saved, subject failed'; toast({ type:'err', title:'Could not save the subject', lines:[ subjErr ] }); }
+            else if(st) st.textContent='Saved';
           }
           b.disabled=false;
         }));

@@ -250,8 +250,24 @@ export default async function handler(req, res) {
 
       const w = await rpc('queue_set_copy', { p_id: r.id, p_email: copy.email, p_sms: copy.sms });
       if (!w.ok) { errors.push({ id: r.id, title: r.title, error: `queue_set_copy HTTP ${w.status}` }); continue; }
+
+      // Subject, from the template's own tokenized `subject` (migration 011) — not from the
+      // row's title. The title is queue bookkeeping ("[TEST] angels — Anaheim") and used to
+      // be what landed in the recipient's inbox, because there was no column to put a real
+      // subject in until migration 044. Only the email template carries one; a row with no
+      // email template keeps whatever it had, and queue-tick still falls back to the title.
+      let subject = null;
+      if (tEmail && tEmail.subject) {
+        const filled = fillTokens(tEmail.subject, r);
+        if (!LEFTOVER.test(filled) && filled.trim()) {
+          subject = filled.trim();
+          const s = await rpc('queue_set_email_subject', { p_id: r.id, p_subject: subject });
+          if (!s.ok) subject = null;              // copy is written; a failed subject is not fatal
+        }
+      }
       written.push({
         id: r.id, title: r.title, market: r.state_name || r.state_code, variant, tailored,
+        subject: subject || undefined,
         sms_len: copy.sms.length,
         // Only ever true on the fill path — a tailored body over SMS_MAX is rejected outright.
         sms_over_limit: copy.sms.length > SMS_MAX || undefined,

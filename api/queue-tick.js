@@ -126,6 +126,12 @@ export default async function handler(req, res) {
       }
       if (r.email && emails.length) {
         const html = nl2br(r.email_copy || '');
+        // The row's title is queue bookkeeping — "[TEST] angels — Anaheim" — and it used to
+        // be sent as the subject line, so that string reached the recipient's inbox.
+        // api/queue-draft.js now fills email_subject from the template ("Early access
+        // tickets — Angels at Anaheim Ducks"); title remains the fallback for rows queued
+        // before migration 044, or drafted with no email template.
+        const subject = String(r.email_subject || '').trim() || r.title;
         const cm = parseCakemailFrom(r.email_from);
         if (cm) {
           // Straight to the CakeMail API — one campaign for the whole market, five calls
@@ -137,7 +143,9 @@ export default async function handler(req, res) {
             try {
               const out = await sendCampaign({
                 accountId: cm.accountId, senderId: cm.senderId,
-                emails, subject: r.title, html,
+                emails, subject, html,
+                // `name` is CakeMail's internal campaign label, not anything a recipient
+                // sees — the row title is the right thing there, subject is not.
                 name: `${r.title} — ${r.state_code || 'blast'}`,
                 tags: ['telnyx-inbox', r.state_code || 'blast'].filter(Boolean),
               });
@@ -147,7 +155,7 @@ export default async function handler(req, res) {
             }
           }
         } else if (hookOk(emailHook)) {
-          const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject: r.title, html }));
+          const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject, html }));
           const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
           (rr.ok ? sent : failed).push(rr.ok ? `Email ${messages.length}` : `Email failed (HTTP ${rr.status})`);
         } else {
