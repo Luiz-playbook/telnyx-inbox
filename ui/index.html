@@ -2513,10 +2513,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <button class="btn btn-xs btn-warning text-white hover:text-white" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
               <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>`}
               ${archived
-                ? `<button class="btn btn-xs btn-outline" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">&#8630; Restore</button>`
+                ? `<button class="btn btn-xs btn-outline" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">Restore</button>`
                 : sent
-                  ? `<button class="btn btn-xs btn-ghost" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">&#128230;</button>`
-                  : `<button class="btn btn-xs btn-ghost text-error" data-del="${esc(r.id)}" title="Delete this blast. It frees its slot and lets the market be picked again.">&#128465;</button>`}
+                  ? `<button class="btn btn-xs btn-outline" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
+                  : `<button class="btn btn-xs btn-outline btn-error text-error hover:text-white" data-del="${esc(r.id)}" title="Delete this blast. It frees its slot and lets the market be picked again.">Delete</button>`}
             </div></td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
