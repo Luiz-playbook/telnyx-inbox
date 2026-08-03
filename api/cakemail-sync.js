@@ -31,6 +31,7 @@
 //      SUPABASE_SERVICE_ROLE_KEY, optional CRON_SECRET / REPLY_SECRET.
 
 import { listCampaigns, campaignDetail, campaignReport, campaignBody, cakemailTime, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
+import { gate } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 
@@ -121,10 +122,7 @@ function mapCampaign(c, detail, rep, body, accountId) {
 }
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   const accountId = String(req.query?.account_id || COLE_ACCOUNT).trim();
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);

@@ -3,14 +3,16 @@
 // CORS problem (which is what blocked the Claude-artifact approach).
 //
 // Requires env var TELNYX_API_KEY (Vercel > Settings > Environment Variables).
-// Lightly gated by REPLY_SECRET so randoms can't burn lookup credits.
+// Gated by lib/auth.js so randoms can't burn lookup credits — it used to take REPLY_SECRET,
+// which ui/config.js publishes to every visitor.
+
+import { gate } from '../lib/auth.js';
 
 export default async function handler(req, res) {
   const key = process.env.TELNYX_API_KEY;
   if (!key) { res.status(500).json({ error: 'TELNYX_API_KEY is not set on the server' }); return; }
 
-  const secret = process.env.REPLY_SECRET;
-  if (secret && req.headers['x-inbox-secret'] !== secret) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   const number = ((req.query && req.query.number) || '').toString().trim();
   if (!number) { res.status(400).json({ error: 'number required' }); return; }

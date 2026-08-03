@@ -14,6 +14,7 @@
 // Query/body flag `dry` (?dry=1 or {"dry":true}) computes reasons but skips logging.
 
 import { supabaseKey } from '../lib/supabase.js';
+import { gate } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 
@@ -62,12 +63,7 @@ function fallbackReason(r) {
 }
 
 export default async function handler(req, res) {
-  // auth: cron bearer OR UI inbox-secret
-  const cronSecret = process.env.CRON_SECRET;
-  const replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   const key = (process.env.OPENAI_API_KEY || '').trim();
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();

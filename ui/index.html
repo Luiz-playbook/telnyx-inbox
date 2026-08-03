@@ -773,6 +773,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
     })();
 
+    // Headers for a call to our own /api/. The session token replaces the old
+    // 'x-inbox-secret: REPLY_SECRET', which config.js published to every visitor — so that
+    // header proved nothing about who was calling. Async and read per call rather than cached:
+    // the access token refreshes, and a stale one is a 401 in the middle of a working session.
+    //
+    // Only for /api/. The n8n bulk-send webhooks keep sending REPLY_SECRET — that is the gate
+    // those workflows expect, and it is a different thing that happens to share a name.
+    async function apiHeaders(extra){
+      const session = sb ? (await sb.auth.getSession()).data.session : null;
+      return Object.assign(
+        { 'content-type': 'application/json' },
+        session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        extra || {});
+    }
+
     // A refresh token that expires or is revoked mid-session leaves the page holding a dead
     // client and every RPC failing silently. Send them back to the door instead.
     sb?.auth.onAuthStateChange((event, session) => {
@@ -1178,7 +1193,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       try{
         const res = await fetch('/api/draft', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-inbox-secret': cfg.REPLY_SECRET || '' },
+          headers: await apiHeaders(),
           body: JSON.stringify({ draft, instruction }),
         });
         const data = await res.json().catch(() => null);
@@ -1511,7 +1526,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       btn.disabled=true; const label=btn.textContent; btn.textContent='Running…'; note.textContent='';
       try{
         const r=await fetch('/api/decide', { method:'POST',
-          headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') }, body:'{}' });
+          headers: await apiHeaders(), body:'{}' });
         const d=await r.json();
         if(!r.ok) throw new Error(d.error || ('HTTP '+r.status));
         const map={}; (d.decisions||[]).forEach(x=>{ if(x.event_id) map[x.event_id]=x.reason; });
@@ -1682,7 +1697,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const paint=()=>{ if(bot){ bot.innerHTML = esc(acc).replace(/\n/g,'<br>'); bot.scrollIntoView({block:'nearest'}); } };
       const tick = setInterval(()=>{ if(!streaming && bot){ bot.innerHTML = loadingBubbleHTML(Math.round((Date.now()-t0)/1000)); bot.scrollIntoView({block:'nearest'}); } }, 1000);
       try{
-        const r = await fetch('/api/agent-chat', { method:'POST', headers:{'Content-Type':'application/json'},
+        const r = await fetch('/api/agent-chat', { method:'POST', headers: await apiHeaders(),
           body: JSON.stringify({ message: text, sessionKey: agentSessionKey() }) });
         if(!r.ok || !r.body){ let d={}; try{ d=await r.json(); }catch{} if(bot) bot.innerHTML = esc(d.error || ('Agent unavailable (HTTP '+r.status+')')); return; }
         // Parse the SSE stream: accumulate delta text live, take the authoritative reply on done.
@@ -2263,7 +2278,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         try {
           const r = await fetch('/api/trigger-decide', {
             method:'POST',
-            headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') },
+            headers: await apiHeaders(),
             body: JSON.stringify({ per_day: perDay, through }),
           });
           if(r.ok){ const d = await r.json(); if(d && d.ok) return d; }
@@ -2427,7 +2442,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               try {
                 const dr = await fetch('/api/queue-draft', {
                   method:'POST',
-                  headers:{ 'content-type':'application/json', 'x-inbox-secret': (cfg.REPLY_SECRET||'') },
+                  headers: await apiHeaders(),
                   body: JSON.stringify({ ids: queued.map(q => q.id) }),
                 });
                 drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
@@ -3264,7 +3279,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // nowhere, which is what the old hardcoded '(placeholder)' entry did.
         if(!SALESMSG_SENDERS.length){
           try {
-            const r = await fetch('/api/salesmsg-senders', { headers:{ 'x-inbox-secret': (cfg.REPLY_SECRET||'') } });
+            const r = await fetch('/api/salesmsg-senders', { headers: await apiHeaders() });
             const d = await r.json().catch(()=>({}));
             SALESMSG_SENDERS = Array.isArray(d.senders) ? d.senders : [];
             if(d.error) console.warn('Salesmsg senders unavailable:', d.error);
@@ -3441,7 +3456,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function readTable(){
         const tb = el('bh-rows');
         try {
-          const r = await fetch('/api/market-history', { headers:{ 'x-inbox-secret': (cfg.REPLY_SECRET||'') } });
+          const r = await fetch('/api/market-history', { headers: await apiHeaders() });
           const d = await r.json().catch(()=>({}));
           if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
           ROWS = Array.isArray(d.rows) ? d.rows : [];
@@ -3457,7 +3472,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const btn=el('bh-sync'), note=el('bh-note');
         try{
           if(!silent && btn){ btn.disabled=true; btn.textContent='Syncing…'; }
-          const r = await fetch('/api/salesmsg-sync', { method:'POST', headers:{'content-type':'application/json','x-inbox-secret':(cfg.REPLY_SECRET||'')}, body:'{}' });
+          const r = await fetch('/api/salesmsg-sync', { method:'POST', headers: await apiHeaders(), body:'{}' });
           const d = await r.json().catch(()=>({}));
           if(r.ok){
             if(note) note.textContent = `synced ${d.upserted ?? 0} · fetched ${d.fetched ?? 0}`;

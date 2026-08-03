@@ -12,14 +12,12 @@
 // browser-facing endpoints. It sends nothing and exposes no token.
 
 import { listSenders } from '../lib/salesmsg.js';
+import { gate } from '../lib/auth.js';
 
 export const config = { maxDuration: 30 };
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   if (!process.env.SALESMSG_CLIENT_ID) {
     res.status(200).json({ ok: true, senders: [], note: 'Salesmsg is not configured on this deployment.' });

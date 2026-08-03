@@ -14,13 +14,16 @@
 //   ANTHROPIC_API_KEY  (sk-ant-...)  -> Claude. Used only when OPENAI_API_KEY is unset.
 //   OPENAI_MODEL       optional, defaults to gpt-4o (same var api/chat.js uses)
 //   DRAFT_MODEL        optional, overrides OPENAI_MODEL for this endpoint only
-//   REPLY_SECRET       optional shared secret; must match ui/config.js
+// Auth: lib/auth.js — Bearer CRON_SECRET or a signed-in user's Supabase token. It used to be
+// REPLY_SECRET, which ui/config.js publishes to every visitor.
 //
 // Prompts are documented in docs/AI_DRAFT_AGENT.md — edit them there and here together.
 //
 // Raw fetch rather than an SDK: this repo has no package.json and no dependencies
 // (api/lookup.js calls Telnyx the same way). Adding one npm dep for one call isn't
 // worth changing the deploy shape.
+
+import { gate } from '../lib/auth.js';
 
 const SYSTEM_PROMPT = `You are the campaign copy agent for Playbook Sports' Marketing Blaster.
 
@@ -111,8 +114,7 @@ async function callOpenAI(key, model, sys, user) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
 
-  const secret = process.env.REPLY_SECRET;
-  if (secret && req.headers['x-inbox-secret'] !== secret) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
   const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();

@@ -16,11 +16,17 @@
 // Env: OPENCLAW_* (see lib/openclaw/gateway-client.js), OPENCLAW_ALLOWED_ORIGIN (optional).
 
 import { runAgentTurn } from '../lib/openclaw/gateway-client.js';
+import { gate } from '../lib/auth.js';
 
 export const config = { maxDuration: 300 }; // cold start can be ~90s (handoff §7)
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+
+  // Real auth, checked before the origin allowlist below. This route drives the agent, which
+  // can edit the queue and the decider rules — an origin header is a request-shaped hint, not
+  // a credential, and the header note has always said so.
+  if (!await gate(req, res)) return;
 
   // interim origin gate (NOT real auth — see header note)
   const allowed = (process.env.OPENCLAW_ALLOWED_ORIGIN || '').trim();

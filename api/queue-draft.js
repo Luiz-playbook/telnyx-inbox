@@ -21,12 +21,13 @@
 // [GAME] left in the body goes out literally to every recipient. So the validator rejects
 // any output still containing a [TOKEN], and stage 1 asserts the same before writing.
 //
-// Auth: cron bearer (CRON_SECRET) OR UI inbox-secret (REPLY_SECRET) — same as decide.js
-// and trigger-decide.js, so both the browser and the VPS OpenClaw skill can call it.
+// Auth: lib/auth.js — Bearer CRON_SECRET or a signed-in user's Supabase token. The VPS
+// OpenClaw skill calls this too and must send CRON_SECRET, not the old published secret.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), optional
 //      OPENAI_API_KEY (+ OPENAI_MODEL) or ANTHROPIC_API_KEY, optional DRAFT_MODEL.
 
 import { supabaseKey } from '../lib/supabase.js';
+import { gate } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 
@@ -159,10 +160,7 @@ async function callAnthropic(key, model, user) {
 }
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }

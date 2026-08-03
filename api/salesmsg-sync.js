@@ -12,6 +12,7 @@
 
 import { api } from '../lib/salesmsg.js';
 import { supabaseKey } from '../lib/supabase.js';
+import { gate } from '../lib/auth.js';
 
 export const config = { maxDuration: 60 };
 const pick = (o, keys) => { for (const k of keys) { if (o && o[k] != null && o[k] !== '') return o[k]; } return null; };
@@ -33,10 +34,7 @@ function mapBroadcast(b) {
 }
 
 export default async function handler(req, res) {
-  const cronSecret = process.env.CRON_SECRET, replySecret = process.env.REPLY_SECRET;
-  const bearerOk = cronSecret && req.headers.authorization === `Bearer ${cronSecret}`;
-  const inboxOk  = replySecret && req.headers['x-inbox-secret'] === replySecret;
-  if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
+  if (!await gate(req, res)) return;
 
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
