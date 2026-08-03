@@ -25,11 +25,10 @@
 --      service-role key in that file. The agent loses no safety by it: its guardrails
 --      (cooldown, send allowlist, validation) live INSIDE these functions, not in RLS.
 --
---   3. n8n — UNVERIFIED. This Supabase project is literally named "Playbook n8n". Any
---      workflow with a Supabase node or an HTTP Request against
---      snfmggrnyjayuuxafats.supabase.co needs its credential checked. The telnyx-sync-numbers
---      workflow writes public.telnyx_numbers and is the most likely to be hit by the policy
---      drops below.
+--   3. n8n — CLEARED, confirmed 2026-08-04. The workflows authenticate with the secret
+--      (service_role) key, not the anon one. Service role bypasses grants and RLS, so nothing
+--      below reaches them — including the telnyx_numbers policy drop, which is what
+--      telnyx-sync-numbers writes through.
 --
 -- The other project on this instance (the Next.js sales-hub) is NOT at risk: its API routes
 -- run service-role, and its browser client touches a different set of tables.
