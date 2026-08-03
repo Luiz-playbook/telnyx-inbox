@@ -72,7 +72,18 @@ function fillTokens(body, r) {
 }
 
 const LEFTOVER = /\[[A-Z][A-Z_ ]{1,20}\]/;
-const SMS_MAX = 480;
+// 306 characters, not 480 — Marx, 2026-08-03, confirming Josh's cost rule.
+//
+// This is a BILLING boundary, not a technical one. Salesmsg bills per carrier segment: 1-160
+// is one credit, and past 160 a concatenated SMS spends 7 bytes per segment on a header, so
+// each further segment holds 153. 2 x 153 = 306 is therefore the last character that still
+// costs two credits; 307 costs three. Josh said "under 320" on the call, which would have
+// silently bought a third credit on every blast.
+//
+// Caveat this does not capture: one emoji or smart quote flips the whole message to UCS-2,
+// where a segment is 70 characters (67 concatenated) and 306 characters is five credits. The
+// live counter in the Queue does model that — see smsInfo() in ui/index.html.
+const SMS_MAX = 306;
 
 // A tailored body is only accepted if it is at least as safe as the fill it replaces.
 // Anything that fails here is discarded silently in favour of stage 1 — a rejected tailor
@@ -96,7 +107,7 @@ const SYSTEM = [
   '2. Never invent facts. Use only what you are given. No discounts, deadlines, seat counts, prices, stats, links, phone numbers, or calendar URLs that are not already in the copy.',
   '3. The game name and date are already substituted in. Do not change them, and never introduce a bracketed placeholder such as [NAME] or [GAME] — this copy is sent verbatim to every recipient, so a placeholder would be delivered literally.',
   '4. The sender is Josh Marcus, CEO of Playbook Sports. Do not change who is writing or their title.',
-  '5. SMS is a single message: no subject line, no signature block, under 480 characters. Email keeps its greeting, paragraphs, and sign-off.',
+  '5. SMS is a single message: no subject line, no signature block, and AT MOST 306 CHARACTERS INCLUDING THE FIXTURE NAME AND ANY LINK. 306 is a hard billing ceiling, not a style preference — it is the last character that still costs two SMS credits, and 307 costs three. Count as you write and cut adjectives before you cut the offer or the call to action. Never use emoji or curly/smart quotes in an SMS: a single one re-encodes the whole message and roughly halves the character budget. Email keeps its greeting, paragraphs, and sign-off.',
   '6. No fabricated urgency ("last chance", "expires tonight"), no all-caps, no emoji.',
   'Return the tailored copy and nothing else.',
 ].join('\n');
@@ -217,11 +228,14 @@ export default async function handler(req, res) {
         continue;
       }
 
-      // The templates sit 6-40 characters under SMS_MAX before substitution, and [GAME]
-      // (6 chars) becomes a fixture name that can run past 30 — "Nationals at Philadelphia
-      // Phillies" alone puts the playoffs body at 474/480. So the FILL needs the same length
-      // check the tailor gets, or the one path that is supposed to always be safe is the one
-      // that ships an over-length message.
+      // [GAME] is 6 characters and becomes a fixture name that can run past 30, so a template
+      // that fits before substitution can still overrun after it. The FILL therefore needs the
+      // same length check the tailor gets, or the one path that is supposed to always be safe
+      // is the one that ships an over-length message.
+      //
+      // With SMS_MAX at 306 this fires far more often than it did at 480: Cole's templates were
+      // written against the old ceiling, so expect over-limit flags until they are rewritten.
+      // That is the check reporting a real cost, not a regression.
       //
       // It is reported rather than refused: an over-long SMS is a copy edit, while writing
       // nothing would leave the row empty and look finished. The count surfaces in the run

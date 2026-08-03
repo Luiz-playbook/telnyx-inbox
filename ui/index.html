@@ -52,6 +52,12 @@
                color:#2f4858; resize:vertical; box-shadow:0 0 0 1px #e8935a inset; }
     .tpl-badge{ display:inline-flex; align-items:center; border-radius:9999px; padding:1px 7px; font-size:10px; font-weight:800;
                 letter-spacing:.04em; text-transform:uppercase; border:1px solid transparent; }
+    /* Row actions menu. Fixed, so the table's overflow-auto box cannot clip it for the rows
+       near the bottom; JS sets top/left from the trigger button's rect on open. */
+    .q-menu{ position:fixed; z-index:60; display:flex; flex-direction:column; gap:4px;
+             background:#fff; border:1px solid #e3e8ef; border-radius:10px; padding:6px;
+             box-shadow:0 10px 30px rgba(19,59,73,.18); min-width:132px; }
+    .q-menu.hidden{ display:none; }
     .tb-email{ background:#eaf0fe; color:#2f6bff; border-color:#d3def8; }
     .tb-sms{ background:#eaf5ee; color:#067523; border-color:#cfe9d8; }
     .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
@@ -239,17 +245,18 @@
           <div data-view id="view-compose" class="space-y-5">
 
             <!-- Campaigns by event — events_master (MLB StatsAPI load), each resolved to its target market/state -->
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">EVENTS</span>
-              <h1 class="text-2xl font-extrabold text-[#133b49]">Campaigns by Event</h1>
-              <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
-            </div>
-            <!-- Toolbar row 1 — search anchored left, every filter grouped on the right. -->
+            <!-- Toolbar row 1 — search anchored left, every filter grouped on the right.
+                 The EVENTS badge + "Campaigns by Event" heading were removed per Josh
+                 (2026-08-03): the tab bar already says which page this is, so the heading was
+                 a second answer to a question nobody was asking, costing ~60px of the vertical
+                 space the table wants. The COUNT is kept — it is live data, not decoration —
+                 and moved next to the search box. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
                 <span class="text-base-content/40">&#128269;</span>
                 <input id="cbs-search" type="text" class="grow w-64" placeholder="Search event or state…" autocomplete="off" />
               </label>
+              <span class="text-sm text-base-content/50 mr-auto" id="cbs-total">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
@@ -491,16 +498,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                table in a plain rounded panel. The queue-only parts stay — rows are banded by send
                day and every row keeps its blast identifier. -->
           <div data-view id="view-queue" class="hidden space-y-5">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">QUEUE</span>
-              <h1 class="text-2xl font-extrabold text-[#133b49]">Daily Blast Queue</h1>
-              <span class="text-sm text-base-content/50" id="q-summary">Loading&hellip;</span>
-            </div>
+            <!-- Heading removed, count kept beside the search — see the note on Campaigns. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
                 <span class="text-base-content/40">&#128269;</span>
                 <input id="q-search" type="text" class="grow w-64" placeholder="Search blast, market or sport…" autocomplete="off" />
               </label>
+              <span class="text-sm text-base-content/50 mr-auto" id="q-summary">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="q-status" class="select select-bordered select-sm" title="Status">
                   <option value="">All statuses</option>
@@ -529,11 +533,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
-                <table class="camp-table w-full min-w-[1720px]">
+                <!-- ONE VIEW, NO SIDEWAYS SCROLL (Josh, 2026-08-03). This was min-w-[1720px] and
+                     the two sender pickers were a third of it — ~460px of dropdown that nobody
+                     scans, they configure once. Both moved into the expanded row, where the
+                     detail already states which carrier each channel uses. Actions collapsed to
+                     one dropdown, Blast title clipped with the full text on hover. -->
+                <table class="camp-table w-full min-w-[1080px]">
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
                     <th class="w-8"></th>
                     <!-- Columns 2-7 mirror Campaigns by Event so the same blast reads the same on
-                         both tabs; the rest are queue-only (when it goes, who carries it). -->
+                         both tabs; the rest are queue-only (when it goes, how it is doing). -->
                     <th>Blast</th>
                     <th>Cheapest</th>
                     <th>Sport</th>
@@ -544,11 +553,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Phone #s</th>
                     <th>Schedule</th>
                     <th>Status</th>
-                    <th>Send from</th>
-                    <th>Text from</th>
-                    <th>Actions</th>
+                    <th class="w-24">Actions</th>
                   </tr></thead>
-                  <tbody id="q-rows"><tr><td colspan="12" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="q-rows"><tr><td colspan="10" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -607,16 +614,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <!-- Same shell as Campaigns and Queue: title row, search left / filters right, the
                tab's own action on its own right-aligned row, then the table. -->
           <div data-view id="view-history" class="hidden space-y-5">
-            <div class="flex items-center gap-3 flex-wrap">
-              <span class="badge bg-[#133b49] text-white border-0 font-bold tracking-wide text-xs px-3 py-3">HISTORY</span>
-              <h1 class="text-2xl font-extrabold text-[#133b49]">Blast Send History</h1>
-              <span class="text-sm text-base-content/50" id="bh-summary">Loading&hellip;</span>
-            </div>
+            <!-- Heading removed, count kept beside the search — see the note on Campaigns. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
                 <span class="text-base-content/40">&#128269;</span>
                 <input id="bh-search" type="text" class="grow w-64" placeholder="Search name, market or copy…" autocomplete="off" />
               </label>
+              <span class="text-sm text-base-content/50 mr-auto" id="bh-summary">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="bh-channel" class="select select-bordered select-sm"><option value="">All channels</option></select>
                 <select id="bh-status" class="select select-bordered select-sm" title="Source platform"><option value="">All sources</option></select>
@@ -2401,7 +2405,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               // Copy is a separate step from queueing, so it reports separately. Silence here
               // would leave a row looking finished with an empty body.
               drafted && !drafted.error
-                ? `Copy drafted for ${(drafted.written||[]).length} of ${queued.length} from Cole's templates${(drafted.written||[]).some(w=>w.tailored) ? ' (AI-tailored)' : ' (template fill)'}.${(drafted.errors||[]).length ? ` ${drafted.errors.length} failed — edit them in the Queue.` : ''}${drafted.sms_over_limit ? ` ${drafted.sms_over_limit} SMS over 480 chars — shorten before confirming.` : ''}`
+                ? `Copy drafted for ${(drafted.written||[]).length} of ${queued.length} from Cole's templates${(drafted.written||[]).some(w=>w.tailored) ? ' (AI-tailored)' : ' (template fill)'}.${(drafted.errors||[]).length ? ` ${drafted.errors.length} failed — edit them in the Queue.` : ''}${drafted.sms_over_limit ? ` ${drafted.sms_over_limit} SMS over 306 chars (a 3rd credit each) — shorten before confirming.` : ''}`
                 : (drafted ? `Rows are queued, but copy was not drafted: ${esc(drafted.error)}. Write it in the Queue.` : ``),
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
               `Held back by rules: ${skipStr}.`,
@@ -2577,7 +2581,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const cap = segments > 1 ? multi * segments : single;
         return { chars:[...s].length, units, ucs2, segments, left: cap - units };
       }
-      const smsCountLabel = i => `${i.chars} character${i.chars===1?'':'s'} · ${i.segments} segment${i.segments===1?'':'s'} · ${i.ucs2?'UCS-2 (70/segment)':'GSM-7 (160/segment)'} · ${i.left} left before the next segment`;
+      // The billing cap, in credits rather than characters. Marx, 2026-08-03: two credits is the
+      // ceiling, which is 306 GSM-7 characters (2 x 153) — but only 134 once an emoji or a smart
+      // quote flips the message to UCS-2, so the cap is stated in the unit that actually bills
+      // and the character number is left to the counter.
+      const SMS_MAX_SEGMENTS = 2;
+      const smsOverCap = i => i.segments > SMS_MAX_SEGMENTS;
+      const smsCountLabel = i => `${i.chars} character${i.chars===1?'':'s'} · ${i.segments} segment${i.segments===1?'':'s'} · ${i.ucs2?'UCS-2 (70/segment)':'GSM-7 (160/segment)'} · ${i.left} left before the next segment`
+        + (smsOverCap(i) ? `  ⚠ over the ${SMS_MAX_SEGMENTS}-credit cap — this blast bills ${i.segments} credits per recipient` : '');
+      // Applied to the counter element so the warning is visible, not just readable.
+      const smsCountClass = i => 'text-xs mt-1.5 ' + (smsOverCap(i) ? 'text-[#c94d07] font-semibold' : 'text-base-content/50');
 
       // contenteditable="plaintext-only" keeps pasted markup out on its own. Browsers without
       // it fall back to "true" plus a paste handler that inserts the clipboard's text/plain.
@@ -2634,6 +2647,38 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
       }
 
+      // Actions, collapsed into one menu so the row costs ~90px instead of ~280px of buttons.
+      //
+      // The buttons inside are BYTE-FOR-BYTE the ones that used to sit in the cell, with the
+      // same data-* attributes, so every handler in wire() binds to them unchanged whether the
+      // menu is open or not. This is a layout change, not a behaviour change.
+      //
+      // .q-menu is position:fixed and placed by JS on open. The table body lives in an
+      // `overflow-auto` box, which would clip an absolutely-positioned dropdown for any row
+      // near the bottom — fixed escapes that (no ancestor sets transform/filter, which would
+      // re-establish a containing block and bring the clipping back).
+      function actionsMenu(r, { sent, rejected, archived }){
+        const items = [
+          (sent||rejected) ? '' : `
+            <button class="btn btn-xs btn-outline btn-success justify-start" data-confirm="${esc(r.id)}">Confirm</button>
+            <button class="btn btn-xs btn-warning text-white hover:text-white justify-start" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
+            <button class="btn btn-xs btn-outline justify-start" data-snooze="${esc(r.id)}">Snooze</button>`,
+          rejected
+            ? `<button class="btn btn-xs btn-outline justify-start" data-unreject="${esc(r.id)}" title="Put this blast back in the queue and stop suppressing it. The decider may suggest it again.">Restore</button>`
+            : archived
+              ? `<button class="btn btn-xs btn-outline justify-start" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">Restore</button>`
+              : sent
+                ? `<button class="btn btn-xs btn-outline justify-start" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
+                // Reject above Delete, and Delete rendered quietly: refusing a blast is the
+                // decision that teaches the decider, deleting is the one that throws the signal
+                // away. The prominent choice should be the useful one.
+                : `<button class="btn btn-xs btn-outline btn-error text-error hover:text-white justify-start" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
+                   <button class="btn btn-xs btn-ghost text-base-content/50 justify-start" data-del="${esc(r.id)}" title="Delete this blast outright — for mistakes and test rows. Unlike Reject it teaches the decider nothing.">Delete</button>`,
+        ].filter(Boolean).join('');
+        return `<button class="btn btn-xs btn-outline" data-qmenu="${esc(r.id)}">Actions &#9662;</button>
+                <div class="q-menu hidden" data-qmenufor="${esc(r.id)}">${items}</div>`;
+      }
+
       // A row stored with a sender no longer offered (the retired SalesMessage placeholder)
       // would render as option #1 while still holding a value nothing can actually send from,
       // so the fallback is applied on read and written back in refresh().
@@ -2671,7 +2716,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       function render(){
         const tb = el('q-rows');
-        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="12" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
+        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
         const rows = visibleRows();
         // The header states the whole queue; a filtered view says so rather than quietly
         // showing fewer rows than the counts above it.
@@ -2690,7 +2735,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : '0 of 0';
         if(el('q-prev')) el('q-prev').disabled = page <= 1;
         if(el('q-next')) el('q-next').disabled = page >= pages;
-        if(!rows.length){ tb.innerHTML='<tr><td colspan="12" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
+        if(!rows.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
         // Multi-day view: the queue now spans several send days, so rows are banded by the
         // day they go out (get_campaign_queue already orders by scheduled_for).
         let lastDay = null;
@@ -2703,7 +2748,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(day !== lastDay){
             lastDay = day;
             const n = rows.filter(x => String(x.scheduled_for||'').slice(0,10) === day).length;
-            dayHead = `<tr class="bg-base-200/70"><td colspan="12" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
+            dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
               ${esc(sendDateShort(r.scheduled_for))} <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span></td></tr>`;
           }
           const curEmail = emailFromOf(r), curSms = smsFromOf(r);
@@ -2736,7 +2781,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const blockedRow = sendBlocked(r);
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))} ${qSegBadge(r.segment)}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
+            <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td>${marketCell}</td>
@@ -2744,24 +2789,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${blockedRow ? blockedReachCell(r.sms, r.phone_count) : reachCell(r.sms, r.phone_count)}</td>
             <td><input type="datetime-local" class="input input-bordered input-xs w-52" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
-            <td>${emailSel}</td>
-            <td>${smsSel}</td>
-            <td class="whitespace-nowrap"><div class="inline-flex gap-1">${(sent||rejected)?'':`
-              <button class="btn btn-xs btn-outline btn-success" data-confirm="${esc(r.id)}">Confirm</button>
-              <button class="btn btn-xs btn-warning text-white hover:text-white" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
-              <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>`}
-              ${rejected
-                ? `<button class="btn btn-xs btn-outline" data-unreject="${esc(r.id)}" title="Put this blast back in the queue and stop suppressing it. The decider may suggest it again.">Restore</button>`
-                : archived
-                  ? `<button class="btn btn-xs btn-outline" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">Restore</button>`
-                  : sent
-                    ? `<button class="btn btn-xs btn-outline" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
-                    // Reject before Delete, and styled as the ordinary choice: refusing a blast
-                    // is the decision that teaches the decider, and deleting is the one that
-                    // throws that signal away. The prominent button should be the useful one.
-                    : `<button class="btn btn-xs btn-outline btn-error text-error hover:text-white" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
-                       <button class="btn btn-xs btn-ghost text-base-content/50" data-del="${esc(r.id)}" title="Delete this blast outright — for mistakes and test rows. Unlike Reject it teaches the decider nothing.">Delete</button>`}
-            </div></td>
+            <td class="whitespace-nowrap">${actionsMenu(r, { sent, rejected, archived })}</td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
           // bubble directly, so the row costs one block per channel instead of a textarea
@@ -2781,13 +2809,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const smsBlock = r.sms ? `<div>
             <div class="prev-label mb-1">SMS &mdash; click the bubble to edit</div>
             <div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div>
-            <div class="text-xs text-base-content/50 mt-1.5" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>
+            <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>
           </div>` : '';
-          const methodLine = `<div class="flex flex-wrap gap-x-4 gap-y-1 text-xs mb-3">
-            ${r.email?`<span class="text-base-content/70">Email carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(emailMethodOf(curEmail))}</span> <span class="text-base-content/50">${esc(emailFromLabel(curEmail))}</span></span>`:''}
-            ${r.sms?`<span class="text-base-content/70">SMS carried by <span class="badge badge-sm badge-ghost font-semibold">${esc(smsMethodOf(curSms))}</span> <span class="text-base-content/50">${esc(curSms)}</span></span>`:''}
+          // The senders live here now rather than in two wide columns on the row. This block
+          // already said which carrier each channel uses, so the picker belongs beside that
+          // statement — and "not sending" stays an OPTION in each picker, so turning a channel
+          // on or off is still one click, just one level in.
+          const methodLine = `<div class="flex flex-wrap items-end gap-4 mb-3">
+            <label class="text-xs text-base-content/60">Send from
+              <div class="mt-0.5">${emailSel}</div>
+              ${r.email?`<div class="text-[11px] text-base-content/45 mt-0.5">via ${esc(emailMethodOf(curEmail))}</div>`:''}
+            </label>
+            <label class="text-xs text-base-content/60">Text from
+              <div class="mt-0.5">${smsSel}</div>
+              ${r.sms?`<div class="text-[11px] text-base-content/45 mt-0.5">via ${esc(smsMethodOf(curSms))}</div>`:''}
+            </label>
           </div>`;
-          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="11" class="py-3">
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
             ${methodLine}
             <div class="grid grid-cols-1 ${(r.email&&r.sms)?'md:grid-cols-2':''} gap-4">${emailBlock}${smsBlock}</div>
             ${sent?'':`<div class="mt-2"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50 ml-2" data-copystatus="${esc(r.id)}"></span></div>`}
@@ -2797,8 +2835,35 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         wire();
       }
 
+      // Close every open action menu. Called before opening another, on outside click, on
+      // Escape, and on scroll — a fixed menu does not travel with its row, so it has to shut
+      // rather than hang detached over the table.
+      function closeActionMenus(except){
+        document.querySelectorAll('.q-menu:not(.hidden)').forEach(m => { if(m !== except) m.classList.add('hidden'); });
+      }
+      document.addEventListener('click', e => { if(!e.target.closest('[data-qmenu]') && !e.target.closest('.q-menu')) closeActionMenus(); });
+      document.addEventListener('keydown', e => { if(e.key === 'Escape') closeActionMenus(); });
+      // Capture phase: the scroll happens on the table's own overflow box, which does not bubble.
+      document.addEventListener('scroll', () => closeActionMenus(), true);
+
       function wire(){
         const tb = el('q-rows');
+        tb.querySelectorAll('[data-qmenu]').forEach(b=>b.addEventListener('click', e => {
+          e.stopPropagation();
+          const menu = tb.querySelector(`[data-qmenufor="${CSS.escape(b.dataset.qmenu)}"]`);
+          if(!menu) return;
+          const wasOpen = !menu.classList.contains('hidden');
+          closeActionMenus();
+          if(wasOpen) return;
+          menu.classList.remove('hidden');
+          // Placed after unhiding so the menu has a real height to measure. Flips above the
+          // button when it would otherwise run off the bottom of the window, and is pulled
+          // left so a right-edge column does not push it off-screen.
+          const rect = b.getBoundingClientRect(), mh = menu.offsetHeight, mw = menu.offsetWidth;
+          const below = window.innerHeight - rect.bottom;
+          menu.style.top  = (below < mh + 8 ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4) + 'px';
+          menu.style.left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8)) + 'px';
+        }));
         tb.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{
           const id=b.dataset.toggle; expanded.has(id)?expanded.delete(id):expanded.add(id); render();
         }));
@@ -2937,7 +3002,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         tb.querySelectorAll('[data-copy-sms]').forEach(t=>t.addEventListener('input', ()=>{
           const id = t.dataset.copySms;
           const c = tb.querySelector(`[data-smscount="${id}"]`);
-          if(c) c.textContent = smsCountLabel(smsInfo(readCopy(t)));
+          if(c){ const i = smsInfo(readCopy(t)); c.textContent = smsCountLabel(i); c.className = smsCountClass(i); }
           markDirty(id);
         }));
         // Browsers without plaintext-only would paste styled markup into the editor.
@@ -3115,7 +3180,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function refresh(){
         const { data, error } = await sb.rpc('get_campaign_queue');
-        if(error){ el('q-rows').innerHTML=`<tr><td colspan="12" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        if(error){ el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         // Repair rows pointing at a retired sender so the stored value matches what's shown.
         for(const r of QUEUE.filter(r => r.email_from && !validEmailFrom(r.email_from) && r.status !== 'sent')){
@@ -3138,7 +3203,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         render();
       }
       async function loadQueue(){
-        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="12" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
         // Salesmsg numbers, live from the API. A failure here is NOT fatal: the dropdown falls
         // back to Telnyx only. Better a shorter list than an option that looks real and routes
@@ -3256,6 +3321,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Channel badge: badge-info paints a dark blue fill, and daisyUI's default content
         // colour left the label dark-on-dark and barely legible — hence the forced text-white.
         // SMS keeps .tb-sms, which is a light chip and needs no override.
+        //
+        // The override is an INLINE style, not `text-white`. daisyUI's .badge-info sets its own
+        // colour, and whether a utility class beats it depends on the order the Play CDN and
+        // daisyUI stylesheets happen to land in — which is why the class version was still
+        // rendering dark-on-dark. An inline style has nothing to lose that race against.
         tb.innerHTML = paged.map(r=>{
           const open = expanded.has(r.id);
           const head = `<tr class="camp-row">
@@ -3263,7 +3333,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
             <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
             <td class="whitespace-nowrap">${r.market ? `<span class="font-semibold text-[#133b49]">${esc(prettyMetro(r.market))}</span>${r.state_code?` <span class="text-[10px] font-bold uppercase text-base-content/40">${esc(r.state_code)}</span>`:''}` : '<span class="text-base-content/40">—</span>'}</td>
-            <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info text-white':'tb-sms badge'}">${esc(r.channel||'—')}</span></td>
+            <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info':'tb-sms badge'}"${r.channel==='Email'?' style="color:#fff"':''}>${esc(r.channel||'—')}</span></td>
             <td><span class="seg tb-ph">${esc(r.source||'—')}</span></td>
             <td>${fmt(r.recipients)}</td>
             <td>${r.sent_count==null?'<span class="text-base-content/40">—</span>':fmt(r.sent_count)}</td>

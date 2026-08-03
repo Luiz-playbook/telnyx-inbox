@@ -98,7 +98,7 @@ RULES
 2. Never invent facts. Use only what the draft gives you. If the instruction asks for something the draft does not support (a discount, a deadline, a stat), leave it out rather than making it up.
 3. Preserve placeholder tokens exactly as written — [NAME], [GAME], [DATE], [SPORT]. They are filled at send time. Never replace a token with a real value, and never introduce a token the original copy did not have.
 4. Keep the sender identity consistent with the draft. Do not change who is writing or their title.
-5. SMS is a single message with no subject line and no signature block. Keep it under 480 characters. Email keeps its greeting, paragraphs, and sign-off.
+5. SMS is a single message with no subject line and no signature block. Keep it to at most 306 characters — a hard billing ceiling (306 is the last character that still costs two SMS credits; 307 costs three). No emoji or smart quotes: one re-encodes the message and roughly halves the budget. Email keeps its greeting, paragraphs, and sign-off.
 6. Do not add links, phone numbers, prices, or calendar URLs unless they already appear in the copy you were given.
 7. Compliance: no unsubstantiated urgency ("last chance", "expires tonight") unless the draft states a real deadline. No all-caps shouting. No emoji unless the original copy already used them.
 8. Rewrite only the channels marked active in the draft. For an inactive channel, return its original text unchanged.
@@ -197,7 +197,7 @@ with `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) and `REPLY_SECRET` in `.env.local
 - **No cost ceiling.** Every Apply is a model call; nothing rate-limits per user beyond
   the `REPLY_SECRET` gate. Add a per-IP limit before this is exposed beyond the team.
 - **Rules are prompt-level, not enforced.** Nothing server-side verifies that the
-  returned copy kept its `[GAME]` token or stayed under 480 chars for SMS. A validation
+  returned copy kept its `[GAME]` token or stayed within 306 chars for SMS. A validation
   pass on the response (reject and retry once) would make rules 3 and 5 hard guarantees.
 - **Single-shot.** No conversation history, so "make it shorter" after a previous apply
   re-reads the current preview rather than remembering the earlier instruction. That is
