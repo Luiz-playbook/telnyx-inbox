@@ -9,9 +9,11 @@
 //   • Vercel Cron (daily, per vercel.json) — sends Authorization: Bearer CRON_SECRET
 //   • On-demand from the UI — sends x-inbox-secret: <REPLY_SECRET>
 //
-// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL, SUPABASE_ANON_KEY,
-//      optional CRON_SECRET, REPLY_SECRET.
+// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL,
+//      SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), optional CRON_SECRET, REPLY_SECRET.
 // Query/body flag `dry` (?dry=1 or {"dry":true}) computes reasons but skips logging.
+
+import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 60 };
 
@@ -68,8 +70,8 @@ export default async function handler(req, res) {
   if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const key = (process.env.OPENAI_API_KEY || '').trim();
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+  const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
+  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
 
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
   const today = new Date().toISOString().slice(0, 10);

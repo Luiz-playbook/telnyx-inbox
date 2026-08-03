@@ -7,9 +7,10 @@
 // uses — cache-first from events_master, a single grounded call only on a miss.
 //
 // Env: OPENAI_API_KEY (required), OPENAI_MODEL (opt), and for the price tool:
-//      SUPABASE_URL, SUPABASE_ANON_KEY, GEMINI_API_KEY.
+//      SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), GEMINI_API_KEY.
 
 import { callGeminiPrices } from '../lib/price.js';
+import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 30 };
 
@@ -50,7 +51,7 @@ const TOOLS = [{
 
 // --- the price tool: cache-first, one grounded call on a miss, write-back ---
 async function getEventPrice({ team, date }) {
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
+  const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
   const gkey = (process.env.GEMINI_API_KEY || '').trim();
   if (!supaUrl || !supaKey) return { error: 'price lookup not configured (no Supabase creds)' };
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };

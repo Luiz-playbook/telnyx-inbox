@@ -13,6 +13,8 @@
 // Returns blast history: market, channel, recipients, when, and the copy that was sent.
 // No credentials, no recipient addresses — just what was blasted where.
 
+import { supabaseKey } from '../lib/supabase.js';
+
 export const config = { maxDuration: 30 };
 
 const num = v => (v == null || v === '' ? null : Number(v));
@@ -24,8 +26,8 @@ export default async function handler(req, res) {
   if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const url = process.env.SUPABASE_URL;
-  const key = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim() || process.env.SUPABASE_ANON_KEY;
-  if (!url || !key) { res.status(500).json({ error: 'SUPABASE_URL / key not set' }); return; }
+  const key = supabaseKey();
+  if (!url || !key) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const h = { apikey: key, Authorization: `Bearer ${key}` };
 
   const get = async (path) => {

@@ -172,6 +172,12 @@
           <a href="#" data-tab="templates">Templates</a>
           <a href="#" data-tab="rules">Cole Rules</a>
         </nav>
+        <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
+             so a logged-out visitor never sees an empty account chip on the way to /login. -->
+        <div id="acct" class="hidden items-center gap-2 text-xs">
+          <span id="acct-email" class="text-base-content/60"></span>
+          <button id="sign-out" class="btn btn-ghost btn-xs">Sign out</button>
+        </div>
       </div>
     </header>
 
@@ -724,6 +730,54 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // AUTH — the front door. ui/login.html has existed since 9e76d22 but nothing ever routed
+    // to it, so the app has been open to anyone with the URL.
+    //
+    // Be clear about what this is worth. It runs in the browser, so it is a decision the page
+    // makes about itself: anyone can skip the page and call Supabase directly with the anon
+    // key out of config.js, which is served to every visitor. The real gate is RLS plus the
+    // function grants (migration 051). What this DOES buy is the thing 051 needs — every RPC
+    // now carries a signed-in user's JWT for those policies to read, instead of the app
+    // running on the published anon key.
+    //
+    // The domain check is deliberate belt-and-braces. The Google consent screen is Internal,
+    // so Google already refuses non-@callplaybook.com accounts at sign-in. But auth.users is
+    // SHARED with another project on this Supabase instance — a session minted over there is
+    // structurally valid here, and this is what keeps the two doors separate.
+    //
+    // Not awaited by the rest of the page: a logged-out visitor may fire a few RPCs before the
+    // redirect lands. Harmless once 051 is applied — they come back empty.
+    const AUTH_DOMAIN = cfg.ALLOWED_EMAIL_DOMAIN || 'callplaybook.com';
+    (async () => {
+      if(!sb) return;                                  // config.js unfilled — nothing to gate against
+      const { data:{ session } } = await sb.auth.getSession();
+      if(!session){ location.replace('/login'); return; }
+
+      const email = (session.user && session.user.email || '').toLowerCase();
+      if(!email.endsWith('@' + AUTH_DOMAIN)){
+        // Sign out first: leaving the session behind would bounce them straight back here.
+        await sb.auth.signOut();
+        location.replace('/login?denied=1');
+        return;
+      }
+
+      const box = document.getElementById('acct');
+      if(box){
+        document.getElementById('acct-email').textContent = email;
+        box.classList.remove('hidden'); box.classList.add('flex');
+      }
+      document.getElementById('sign-out')?.addEventListener('click', async () => {
+        await sb.auth.signOut();
+        location.replace('/login');
+      });
+    })();
+
+    // A refresh token that expires or is revoked mid-session leaves the page holding a dead
+    // client and every RPC failing silently. Send them back to the door instead.
+    sb?.auth.onAuthStateChange((event, session) => {
+      if(event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) location.replace('/login');
+    });
     // TEST MODE: send_allowlist restricts which markets can actually send. Surface it loudly
     // so a tester never mistakes a 0-recipient send to a real market for a real send.
     // window.__ALLOWED_CODES holds the allowlisted state codes (empty = normal mode).

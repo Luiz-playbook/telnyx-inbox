@@ -13,7 +13,7 @@
 // Reads the queue + recipients via anon RPCs; sends
 // through the same webhooks as the manual Queue "Confirm"; marks rows sent.
 //
-// Env: SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET / REPLY_SECRET,
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), optional CRON_SECRET / REPLY_SECRET,
 //      BULK_SEND_WEBHOOK_URL (SMS), EMAIL_SEND_WEBHOOK_URL (Gmail mail merge),
 //      CAKEMAIL_PAT (CakeMail — sent straight from here, no n8n).
 //
@@ -24,6 +24,7 @@
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
+import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 60 };
 
@@ -33,8 +34,8 @@ const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+  const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
+  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn, body) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
 

@@ -13,9 +13,11 @@
 //   • On-demand UI   — x-inbox-secret: REPLY_SECRET
 // Flags: ?dry=1 (price but don't write), ?limit=N (cap games this run).
 //
-// Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET/REPLY_SECRET.
+// Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js),
+//      optional CRON_SECRET/REPLY_SECRET.
 
 import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, callGeminiPrices } from '../lib/price.js';
+import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };
 
@@ -63,8 +65,8 @@ export default async function handler(req, res) {
   if (priceSecret && !tokenOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
   const gkey = (process.env.GEMINI_API_KEY || '').trim();
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!gkey || !supaUrl || !supaKey) { res.status(500).json({ error: 'GEMINI_API_KEY / SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+  const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
+  if (!gkey || !supaUrl || !supaKey) { res.status(500).json({ error: 'GEMINI_API_KEY / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);

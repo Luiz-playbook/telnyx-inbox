@@ -9,7 +9,8 @@
 // queue_enqueue_test / log_market_blast so nothing here can send.
 //
 // Auth: cron bearer (CRON_SECRET) OR UI inbox-secret (REPLY_SECRET), same as decide.js.
-// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL, SUPABASE_ANON_KEY.
+// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL,
+//      SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js).
 //
 // MULTI-DAY / ADDITIVE (Josh, 2026-07-28). Body {per_day, through} schedules blasts across
 // a window instead of dumping them all on today: `per_day` markets for every day from today
@@ -19,6 +20,8 @@
 // a `slot_date`; the browser enqueues it at that date (queue_enqueue_test also de-dupes
 // server-side, migration 030). Legacy body {cap} with no `through` keeps the old
 // everything-today behaviour.
+
+import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 30 };
 
@@ -95,8 +98,8 @@ export default async function handler(req, res) {
   const inboxOk  = replySecret && req.headers['x-inbox-secret'] === replySecret;
   if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+  const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
+  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
 
   const through = req.body?.through || null;
   const days = windowDays(through);

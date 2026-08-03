@@ -7,9 +7,11 @@
 //
 // Auth is OAuth Applications, through lib/salesmsg.js — the integration has no API key and
 // must not grow one. Env: SALESMSG_CLIENT_ID / _CLIENT_SECRET / _REFRESH_TOKEN,
-//      SUPABASE_URL, SUPABASE_ANON_KEY, optional CRON_SECRET / REPLY_SECRET.
+//      SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js),
+//      optional CRON_SECRET / REPLY_SECRET.
 
 import { api } from '../lib/salesmsg.js';
+import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 60 };
 const pick = (o, keys) => { for (const k of keys) { if (o && o[k] != null && o[k] !== '') return o[k]; } return null; };
@@ -36,8 +38,8 @@ export default async function handler(req, res) {
   const inboxOk  = replySecret && req.headers['x-inbox-secret'] === replySecret;
   if ((cronSecret || replySecret) && !bearerOk && !inboxOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
-  const supaUrl = process.env.SUPABASE_URL, supaKey = process.env.SUPABASE_ANON_KEY;
-  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_ANON_KEY not set' }); return; }
+  const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
+  if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
 
   const supaHeaders = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
