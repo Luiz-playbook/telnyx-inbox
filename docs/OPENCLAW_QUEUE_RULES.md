@@ -49,7 +49,7 @@ Supabase (`SUPABASE_URL`, anon key). All are RPCs — `POST /rest/v1/rpc/<name>`
 | `market_recipient_counts()` | `market_key`, `state_code`, `phone_count`, `email_count` | reach per market |
 | `get_campaign_queue()` | current queue rows | what is already scheduled |
 | `queue_plan(p_from, p_to)` | per-day `queued` count + `event_ids` / `market_codes` already taken | day-by-day gaps |
-| `market_cooldowns()` | last blast date per market, keyed by `market_code` (`CA`) | send-time guard — ⚠ **not** the floor's cooldown, see below |
+| `market_cooldowns()` | last blast date per **market × segment**, keyed by `market_code` + `segment` (`CA` + `ICP`) | send-time guard — ⚠ **not** the floor's cooldown, see below |
 | `send_test_mode()` | allowlisted codes; empty = normal mode | which markets can resolve recipients at all |
 | `queue_enqueue_test(p_rows jsonb)` | inserted rows | **write** — add placeholders |
 
@@ -60,6 +60,16 @@ Supabase (`SUPABASE_URL`, anon key). All are RPCs — `POST /rest/v1/rpc/<name>`
 > e.g. `CA`). Nothing writes both. So `market_cooldowns()` is **not** a way to audit the
 > floor the agent is working under; to see what the floor sees, read `reason_code =
 > 'cooldown'` off `rpc_event_recommendations()` itself. See Open items.
+
+> **Cooldown is per market × segment** (migration 049). Blasting Ontario ICP leaves Ontario
+> SCP and Other open — otherwise ICP, which goes first because it is the primary target,
+> would lock the other two out for the whole cooldown window and they would effectively
+> never send. A log row with `segment = null` was a whole-market send and cools **all three**;
+> that is also what every row written before 049 is. The floor inside
+> `rpc_event_recommendations()` still returns one row per *event*, so it cannot say "ICP is
+> cooled but SCP is not" — it therefore ignores segment-scoped sends entirely and lets
+> `market_cooldowns()` refuse at send time. When that function is rebuilt to return
+> event × segment, the per-segment floor belongs in its `sends` CTE.
 
 Tunable knobs live in one row: `decider_rules` where `id = 1`.
 

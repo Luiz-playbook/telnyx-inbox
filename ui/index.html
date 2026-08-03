@@ -508,7 +508,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="confirmed">Confirmed</option>
                   <option value="snoozed">Snoozed</option>
                   <option value="sent">Sent</option>
+                  <option value="rejected">Rejected</option>
                   <option value="archived">Archived</option>
+                </select>
+                <select id="q-segment" class="select select-bordered select-sm" title="Audience segment">
+                  <option value="">All segments</option>
+                  <option value="ICP">ICP</option>
+                  <option value="SCP">SCP</option>
+                  <option value="Other">Other</option>
                 </select>
                 <select id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
@@ -1922,9 +1929,90 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           ov.querySelector('[data-ok]').focus();
         });
       }
+      // Same modal shell as pbConfirm, but the answer is a VALUE, not a yes/no. Snooze needs
+      // "how long", and a boolean cannot carry that — Josh, 2026-07-31. Resolves to the
+      // selected option's value, or null if the operator backed out.
+      function pbChoose({ title, body, options=[], okText='Continue', cancelText='Cancel' }){
+        return new Promise(resolve => {
+          const def = Math.max(0, options.findIndex(o => o.selected));
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          ov.innerHTML =
+            `<div class="pb-modal-card" role="dialog" aria-modal="true">
+               <div class="flex items-start gap-2 mb-1">
+                 <span class="text-xl leading-none text-[#e55608]">&#9200;</span>
+                 <div class="font-extrabold text-lg text-[#133b49]">${title||''}</div>
+               </div>
+               <div class="text-sm text-base-content/70 whitespace-pre-line mb-3">${body||''}</div>
+               <div class="flex flex-col gap-2 mb-4">
+                 ${options.map((o,i)=>`<label class="flex items-center gap-2 text-sm cursor-pointer">
+                    <input type="radio" name="pb-choose" class="radio radio-sm" value="${o.value}"${i===def?' checked':''}>
+                    <span>${o.label}</span>
+                  </label>`).join('')}
+               </div>
+               <div class="flex justify-end gap-2">
+                 <button class="btn btn-sm btn-ghost" data-cancel>${cancelText}</button>
+                 <button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>${okText}</button>
+               </div>
+             </div>`;
+          const pick = () => { const c = ov.querySelector('input[name="pb-choose"]:checked'); return c ? c.value : null; };
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const onKey = e => { if(e.key==='Escape') done(null); else if(e.key==='Enter') done(pick()); };
+          ov.querySelector('[data-ok]').addEventListener('click', ()=>done(pick()));
+          ov.querySelector('[data-cancel]').addEventListener('click', ()=>done(null));
+          ov.addEventListener('click', e => { if(e.target===ov) done(null); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-ok]').focus();
+        });
+      }
+      // Confirm plus an OPTIONAL free-text reason. Josh, 2026-07-31, on refusing a blast:
+      // "have a little pop-up that's optional that Cole could put additional context in if he
+      // wants and say... why did you not want to send this".
+      //
+      // Optional is load-bearing. The reason is worth a lot — it is what lets the decider
+      // generalise past the one fixture — but a required field turns every refusal into a
+      // prompt to type something, and what gets typed under that pressure is "no" and "n/a".
+      // The OK button is never disabled and Enter always submits. Resolves { note } or null.
+      function pbAsk({ title, body, placeholder='', okText='Continue', cancelText='Cancel', danger=false }){
+        return new Promise(resolve => {
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          ov.innerHTML =
+            `<div class="pb-modal-card" role="dialog" aria-modal="true">
+               <div class="flex items-start gap-2 mb-1">
+                 <span class="text-xl leading-none text-[#e55608]">&#9889;</span>
+                 <div class="font-extrabold text-lg text-[#133b49]">${title||''}</div>
+               </div>
+               <div class="text-sm text-base-content/70 whitespace-pre-line mb-3">${body||''}</div>
+               <label class="block text-xs font-semibold text-base-content/50 mb-1">Reason &mdash; optional</label>
+               <textarea class="textarea textarea-bordered w-full text-sm mb-4" rows="3"
+                 placeholder="${placeholder}" data-note></textarea>
+               <div class="flex justify-end gap-2">
+                 <button class="btn btn-sm btn-ghost" data-cancel>${cancelText}</button>
+                 <button class="btn btn-sm ${danger?'btn-error':'btn-warning'} text-white hover:text-white" data-ok>${okText}</button>
+               </div>
+             </div>`;
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const submit = () => done({ note: (ov.querySelector('[data-note]').value || '').trim() || null });
+          // Enter inside a textarea is a newline, not a submit — a multi-line reason is the
+          // whole point. Ctrl/Cmd+Enter submits for anyone who expects it to.
+          const onKey = e => {
+            if(e.key === 'Escape') done(null);
+            else if(e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+          };
+          ov.querySelector('[data-ok]').addEventListener('click', submit);
+          ov.querySelector('[data-cancel]').addEventListener('click', ()=>done(null));
+          ov.addEventListener('click', e => { if(e.target===ov) done(null); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-note]').focus();
+        });
+      }
       // The Queue's "Send Now" needs the same toast + confirm gate, and both live in this
       // closure, so they're published once rather than duplicated there.
       window.__pbToast = pbToast; window.__pbConfirm = pbConfirm;
+      window.__pbChoose = pbChoose; window.__pbAsk = pbAsk;
 
       // Manual price refresh — the same job the 12-hourly cron runs (/api/price-refresh).
       //
@@ -2124,24 +2212,47 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         } catch { /* fall back to client-only rules below */ }
 
         // Fallback: deterministic, no LLM — same additive + multi-day maths, done here.
-        const [rec, cnt, q] = await Promise.all([
+        const [rec, cnt, q, segc, rej] = await Promise.all([
           sb.rpc('rpc_event_recommendations'), sb.rpc('market_recipient_counts'), sb.rpc('get_campaign_queue'),
+          sb.rpc('market_recipient_counts_by_segment'), sb.rpc('queue_rejections', { p_days: 21 }),
         ]);
         if(rec.error) throw new Error(rec.error.message);
         const all = rec.data || [];
         const reach = {}; (cnt.data || []).forEach(m => { reach[m.market_key] = m; });
+        // Mirrors api/trigger-decide.js. Both paths must agree or the fallback quietly queues a
+        // different shape than the server does, and only on the days the endpoint is down.
+        const SEGS = ['ICP','SCP','Other'];
+        const segReach = {};
+        (segc.error ? [] : (segc.data || [])).forEach(m => {
+          const phone = Number(m.phone_count)||0, email = Number(m.email_count)||0;
+          if(!phone && !email) return;
+          (segReach[m.market_key] = segReach[m.market_key] || {})[m.segment] = { phone, email };
+        });
+        const rejPairs = new Set(), rejEvents = new Set();
+        (rej.error ? [] : (rej.data || [])).forEach(x => {
+          const ev = String(x.event_id||''); if(!ev) return;
+          if(x.segment) rejPairs.add(`${ev}|${x.segment}`); else rejEvents.add(ev);
+        });
+        const isRejected = (ev, s) => rejEvents.has(String(ev)) || (!!s && rejPairs.has(`${ev}|${s}`));
         const skipBy = {}; all.filter(r => r.decision !== 'send').forEach(r => { const k = r.reason_code || 'other'; skipBy[k] = (skipBy[k]||0)+1; });
 
-        const live = (q.error ? [] : (q.data||[])).filter(r => r.status!=='sent' && r.status!=='sending');
+        // Rejected is not live — the row gave its slot and its market back. See migration 048.
+        const live = (q.error ? [] : (q.data||[])).filter(r => r.status!=='sent' && r.status!=='sending' && r.status!=='rejected');
         const takenEvents = new Set(live.map(r => String(r.event_id||'')).filter(Boolean));
         const takenMarkets = new Set(live.map(r => String(r.state_code||'').toUpperCase()).filter(Boolean));
-        const filled = {}; live.forEach(r => { const d = new Date(r.scheduled_for); const k = ymd(d); filled[k] = (filled[k]||0)+1; });
+        // A day holds EVENTS, not rows: one event is up to three segment rows, and counting rows
+        // would let three segments of one game fill a day meant for four different games.
+        const perDaySeen = {}; const filled = {};
+        live.forEach(r => { const k = ymd(new Date(r.scheduled_for));
+          (perDaySeen[k] = perDaySeen[k] || new Set()).add(String(r.event_id||r.id||''));
+          filled[k] = perDaySeen[k].size; });
 
         const days = []; for(let d = new Date(); ymd(d) <= through && days.length < 14; d.setDate(d.getDate()+1)) days.push(ymd(new Date(d)));
         if(!days.length) days.push(ymd(new Date()));
         const plan = days.map(date => ({ date, existing: filled[date]||0, need: Math.max(0, perDay - (filled[date]||0)), added: 0 }));
 
         const eligible = all.filter(r => r.decision === 'send').filter(r => {
+          if(isRejected(r.event_id, null)) return false;
           const code = String((reach[r.market_key]||{}).state_code || '').toUpperCase();
           return !takenEvents.has(String(r.event_id)) && !(code && takenMarkets.has(code));
         });
@@ -2152,12 +2263,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(usedMarkets.has(mk)) continue;
           while(di < plan.length && plan[di].added >= plan[di].need) di++;
           if(di >= plan.length) break;
+          // No LLM here, so every segment with reach gets a row — ICP included by construction.
+          // A segment already refused for this event is skipped; an event with nothing left is
+          // skipped whole and must not consume a day slot on the way out.
+          const sr = segReach[r.market_key] || {};
+          const available = SEGS.filter(s => sr[s]);
+          const segs = available.filter(s => !isRejected(r.event_id, s));
+          const rows = available.length ? segs : [null];
+          if(!rows.length) continue;
+
           usedMarkets.add(mk); plan[di].added++;
           const rc = reach[r.market_key] || {};
-          picks.push({ event_id:r.event_id, team:r.team, market_key:r.market_key, market_label:r.market_label,
+          rows.forEach(s => picks.push({ event_id:r.event_id, team:r.team, market_key:r.market_key, market_label:r.market_label,
             state_code:rc.state_code||null, best_template:r.best_template, open_rate_w:r.open_rate_w, ctr_w:r.ctr_w,
-            n_blasts:r.n_blasts, phone_count:Number(rc.phone_count)||0, email_count:Number(rc.email_count)||0,
-            reason:null, slot_date: plan[di].date });
+            n_blasts:r.n_blasts, segment: s,
+            phone_count: s ? sr[s].phone : (Number(rc.phone_count)||0),
+            email_count: s ? sr[s].email : (Number(rc.email_count)||0),
+            reason:null, slot_date: plan[di].date }));
         }
         return { ok:true, evaluated: all.length, llm:false, picks, vetoed:[], skipBy, plan, per_day: perDay, through };
       }
@@ -2205,10 +2327,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               const phones = Number(p.phone_count)||0;
               return {
                 scheduled_for: slotIso(p.slot_date),
-                title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (p.market_label || ''),
+                // The segment is in the title as well as the column: three rows for one game
+                // are otherwise indistinguishable at a glance, which is exactly what Josh asked
+                // to fix ("make it more clear whether each queue is for ICP, SCP or non-ICP").
+                title: '[TEST] ' + (p.team || 'Blast') + ' — ' + (p.market_label || '') + (p.segment ? ' · ' + p.segment : ''),
                 state_name: p.market_label || null,
                 state_code: p.state_code || null,
                 event_id: p.event_id || null,
+                segment: p.segment || null,
                 email: true, sms: true,
                 phone_count: phones, sms_count: phones, email_count: emails,
                 // email_copy / sms_copy are left NULL on purpose. They used to hold the decider's
@@ -2280,7 +2406,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               vetoed.length ? `AI vetoed ${vetoed.length}: ${esc(vetoed.map(v=>v.market_label||'?').join(', '))}.` : ``,
               `Held back by rules: ${skipStr}.`,
             ],
-            chips: sends.map(p => esc((p.market_label || p.team || 'market') + (p.slot_date ? ` · ${dayLabel(p.slot_date)}` : ''))),
+            chips: sends.map(p => esc((p.market_label || p.team || 'market') + (p.segment ? ` · ${p.segment}` : '') + (p.slot_date ? ` · ${dayLabel(p.slot_date)}` : ''))),
             foot: queued.length ? 'Placeholder rows — nothing sends. Opening the Queue…' : 'Existing rows are kept. Push the "Through" date out or loosen Cole Rules to add more.',
           });
 
@@ -2367,10 +2493,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Same filter set as Campaigns by Event, minus the ones a queued row can't answer
       // (segment isn't stored per queue row — a row targets a market, not a market×segment),
       // plus the two only the queue has: status and send day.
-      let qFilter = '', statusF = '', sportF = '', stateF = '', chanF = '', dayF = '', SUMMARY = '';
+      let qFilter = '', statusF = '', segF = '', sportF = '', stateF = '', chanF = '', dayF = '', SUMMARY = '';
+      // Same pills Campaigns by Event uses, so a segment reads identically on both tabs. A row
+      // with no segment predates migration 050 and targeted the whole market — saying "Other"
+      // there would be a lie, so it says so.
+      const qSegBadge = s => s
+        ? `<span class="seg ${s==='ICP'?'seg-icp':s==='SCP'?'seg-scp':'seg-non'}">${esc(s)}</span>`
+        : `<span class="seg seg-non" title="Queued before segments existed — this blast targets the whole market.">All</span>`;
       let page = 1, pageSize = 25;   // 0 = show everything
       // 14-day per-market cooldown: a market blasted recently is held. Shown per row.
-      const cooldownNote = r => { const c = COOLDOWNS[(r.state_code||'').toUpperCase()]; return (c && c.cooled) ? `<div class="text-[11px] font-semibold text-[#c94d07] mt-0.5">&#9203; cooling &middot; ${c.days_left}d left</div>` : ''; };
+      // Cooldown is per market × segment (migration 049): Ontario ICP going out leaves Ontario
+      // SCP and Other open. A row with no segment targets the whole market, so it is cooling if
+      // ANY segment is — there is no partial version of "send to everyone". Of those, the one
+      // with the most days left is the one that actually holds the row, so that is the one shown.
+      const SEGMENTS = ['ICP', 'SCP', 'Other'];
+      const coolingOf = r => {
+        const code = (r.state_code||'').toUpperCase(); if(!code) return null;
+        if(r.segment) return COOLDOWNS[`${code}|${r.segment}`] || null;
+        return SEGMENTS.map(s => COOLDOWNS[`${code}|${s}`]).filter(c => c && c.cooled)
+          .sort((a,b) => (b.days_left||0) - (a.days_left||0))[0] || null;
+      };
+      const cooldownNote = r => { const c = coolingOf(r); return (c && c.cooled) ? `<div class="text-[11px] font-semibold text-[#c94d07] mt-0.5">&#9203; cooling &middot; ${c.days_left}d left${r.segment?' &middot; '+esc(r.segment):''}</div>` : ''; };
 
       const toLocalInput = iso => { const d=new Date(iso), p=n=>String(n).padStart(2,'0');
         return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
@@ -2391,6 +2534,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // played and the cron would then refuse to send them.
       const todayYmd = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
       const gameIsPast = r => !!(r.event_date && r.status !== 'sent' && String(r.event_date) < todayYmd());
+      // Snooze durations. Seven days used to be the only one, applied silently — so a blast
+      // for a game three days out could be pushed a week past its own fixture with one click
+      // and no warning (Josh, 2026-07-31). Each option now states the date it lands on and
+      // says outright when that date is after the game.
+      const SNOOZE_DAYS = [1, 7, 14];
+      const snoozeOptions = r => SNOOZE_DAYS.map(days => {
+        const at = new Date(Date.now() + days * 864e5);
+        // Compared in US Eastern, the same clock event_date is written in — see todayYmd.
+        const ymd = at.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const past = !!(r && r.event_date && ymd > String(r.event_date));
+        return {
+          value: String(days),
+          selected: days === 7,
+          label: `${days} day${days===1?'':'s'} &mdash; until ${esc(at.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}))}`
+               + (past ? ' <span class="text-[#c94d07] font-semibold">&#9888; after this game</span>' : ''),
+        };
+      });
       const daysAgo = d => Math.round((new Date(todayYmd()) - new Date(d)) / 86400000);
 
       // EXACTLY what api/queue-tick.js does to the body before sending: escape & < >, then turn
@@ -2465,6 +2625,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
         if(r.status==='confirmed')return `<span class="badge badge-success badge-sm text-white">Confirmed</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
         if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] text-base-content/50 mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))}</div>`;
+        // The reason is shown, not just the fact — it is why the row was kept at all, and it is
+        // what the decider is being fed. Seeing it here is how you notice it says "n/a".
+        if(r.status==='rejected') return `<span class="badge badge-error badge-sm text-white">Rejected</span>`
+          + `<div class="text-[11px] text-base-content/50 mt-0.5">${r.reject_note ? esc(clip(r.reject_note, 40)) : 'no reason given'}</div>`;
         // Approval stays optional — an unactioned row still goes at its slot, not 48h after
         // it was queued (a blast scheduled 4 days out must not fire early).
         return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
@@ -2487,7 +2651,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // that, archiving a sent blast would look identical to deleting it.
           if(statusF === 'archived'){ if(!r.archived_at) return false; }
           else if(r.archived_at) return false;
+          // Rejected rows are kept so the decider can read them, but the working queue is what
+          // Cole acts on and a refused blast is not actionable. Hidden unless asked for by name,
+          // the same treatment archived gets and for the same reason.
+          else if(statusF === 'rejected'){ if(r.status !== 'rejected') return false; }
+          else if(r.status === 'rejected') return false;
           else if(statusF && (r.status||'') !== statusF) return false;
+          if(segF    && (r.segment||'') !== segF)   return false;
           if(sportF  && (r.sport||'')  !== sportF)  return false;
           if(stateF  && (r.state_code||'') !== stateF) return false;
           if(chanF === 'email' && !r.email) return false;
@@ -2527,6 +2697,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         tb.innerHTML = paged.map(r => {
           const open = expanded.has(r.id), sent = r.status==='sent', stale = gameIsPast(r);
           const archived = !!r.archived_at;
+          const rejected = r.status === 'rejected';
           const day = String(r.scheduled_for||'').slice(0,10);
           let dayHead = '';
           if(day !== lastDay){
@@ -2565,7 +2736,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const blockedRow = sendBlocked(r);
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
+            <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(blastTitle(r))} ${qSegBadge(r.segment)}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td>${marketCell}</td>
@@ -2575,15 +2746,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
             <td>${emailSel}</td>
             <td>${smsSel}</td>
-            <td class="whitespace-nowrap"><div class="inline-flex gap-1">${sent?'':`
+            <td class="whitespace-nowrap"><div class="inline-flex gap-1">${(sent||rejected)?'':`
               <button class="btn btn-xs btn-outline btn-success" data-confirm="${esc(r.id)}">Confirm</button>
               <button class="btn btn-xs btn-warning text-white hover:text-white" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
               <button class="btn btn-xs btn-outline" data-snooze="${esc(r.id)}">Snooze</button>`}
-              ${archived
-                ? `<button class="btn btn-xs btn-outline" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">Restore</button>`
-                : sent
-                  ? `<button class="btn btn-xs btn-outline" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
-                  : `<button class="btn btn-xs btn-outline btn-error text-error hover:text-white" data-del="${esc(r.id)}" title="Delete this blast. It frees its slot and lets the market be picked again.">Delete</button>`}
+              ${rejected
+                ? `<button class="btn btn-xs btn-outline" data-unreject="${esc(r.id)}" title="Put this blast back in the queue and stop suppressing it. The decider may suggest it again.">Restore</button>`
+                : archived
+                  ? `<button class="btn btn-xs btn-outline" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">Restore</button>`
+                  : sent
+                    ? `<button class="btn btn-xs btn-outline" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
+                    // Reject before Delete, and styled as the ordinary choice: refusing a blast
+                    // is the decision that teaches the decider, and deleting is the one that
+                    // throws that signal away. The prominent button should be the useful one.
+                    : `<button class="btn btn-xs btn-outline btn-error text-error hover:text-white" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
+                       <button class="btn btn-xs btn-ghost text-base-content/50" data-del="${esc(r.id)}" title="Delete this blast outright — for mistakes and test rows. Unlike Reject it teaches the decider nothing.">Delete</button>`}
             </div></td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
@@ -2629,28 +2806,81 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           b.disabled=true; await sb.rpc('queue_confirm',{p_id:b.dataset.confirm}); await refresh();
         }));
         tb.querySelectorAll('[data-snooze]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.snooze, r = QUEUE.find(x => x.id === id);
+          const days = await askChoose({
+            title: 'Snooze this blast',
+            body: `${r ? blastTitle(r) : 'This blast'}\n${(r && (r.state_name || r.state_code)) || ''}\n\n`
+              + 'It stays in the queue and keeps its market held — only the send date moves.',
+            options: snoozeOptions(r),
+            okText: 'Snooze',
+          });
+          if(!days) return;
           b.disabled=true;
-          const s = await sb.rpc('queue_snooze',{p_id:b.dataset.snooze, p_days:7});
+          const s = await sb.rpc('queue_snooze',{p_id:id, p_days:Number(days)});
           if(s.error) toast({ type:'err', title:'Snooze failed', lines:[ s.error.message ] });
           await refresh();
         }));
         tb.querySelectorAll('[data-sendnow]').forEach(b=>b.addEventListener('click', ()=>{
           const r = QUEUE.find(x => x.id === b.dataset.sendnow); if(r) sendNow(r, b);
         }));
-        // Delete is unsent-only and permanent, so it asks first and says what it frees up:
-        // the row holds a per-day slot and blocks its market from being re-picked while it
-        // sits there. queue_delete refuses a sent/sending row server-side regardless.
-        tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
-          const id = b.dataset.del, r = QUEUE.find(x => x.id === id);
+        // REJECT — the considered "not this one". The row leaves the working queue but is kept,
+        // and api/trigger-decide.js reads it back: this game will not be suggested again for
+        // this segment for 21 days. The optional reason is the valuable part — it is fed to the
+        // decider as pattern context, so it can generalise past this one fixture.
+        tb.querySelectorAll('[data-reject]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.reject, r = QUEUE.find(x => x.id === id);
+          const seg = r && r.segment;
+          const ans = await askNote({
+            title: 'Reject this blast?',
+            body: `${r ? blastTitle(r) : 'This blast'}\n${(r && (r.state_name || r.state_code)) || ''}${seg?` · ${seg}`:''}\n\n`
+              + `It leaves the queue and frees its slot. The decider will not suggest this game${seg?` for ${seg}`:''} again for 21 days`
+              + `${seg?' — the other segments for this game are unaffected.':'.'}\n\n`
+              + 'Nothing has been sent. Restore puts it back and clears the suppression.',
+            placeholder: 'Why not this one? e.g. "weak matchup", "priced too high", "already blasted this team"',
+            okText: 'Reject',
+            danger: true,
+          });
+          if(!ans) return;
+          b.disabled = true;
+          const d = await sb.rpc('queue_reject', { p_id: id, p_note: ans.note });
+          if(d.error){ b.disabled = false; toast({ type:'err', title:'Could not reject this blast', lines:[ d.error.message ] }); return; }
+          expanded.delete(id);
+          await refresh();
+        }));
+        tb.querySelectorAll('[data-unreject]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.unreject, r = QUEUE.find(x => x.id === id);
           const ok = await askConfirm({
-            title: 'Delete this blast?',
-            body: `${r ? blastTitle(r) : 'This blast'}\n${(r && (r.state_name || r.state_code)) || ''}\n\n`
-              + 'It is removed for good. Its slot opens up and its market can be picked again on the next run.\n\nNothing has been sent, so no history is lost.',
-            okText: 'Delete',
+            title: 'Restore this blast?',
+            body: `${r ? blastTitle(r) : 'This blast'}\n\nIt goes back in the queue as pending, and the 21-day suppression is cleared — the decider may suggest this game again. The reason you wrote is discarded.`,
+            okText: 'Restore',
           });
           if(!ok) return;
           b.disabled = true;
-          const d = await sb.rpc('queue_delete', { p_id: id });
+          const d = await sb.rpc('queue_unreject', { p_id: id });
+          if(d.error){ b.disabled = false; toast({ type:'err', title:'Could not restore this blast', lines:[ d.error.message ] }); return; }
+          await refresh();
+        }));
+        // Delete is unsent-only and permanent, so it asks first and says what it frees up:
+        // the row holds a per-day slot and blocks its market from being re-picked while it
+        // sits there. queue_delete refuses a sent/sending row server-side regardless.
+        //
+        // It takes a note too (Josh asked for one on delete specifically) and archives it to
+        // queue_deletions for the OpenClaw feed — but a deletion does NOT suppress anything.
+        // Delete is for mistakes and [TEST] rows; teaching the decider from those is teaching
+        // it from noise. Reject is the one that carries a decision.
+        tb.querySelectorAll('[data-del]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.del, r = QUEUE.find(x => x.id === id);
+          const ans = await askNote({
+            title: 'Delete this blast?',
+            body: `${r ? blastTitle(r) : 'This blast'}\n${(r && (r.state_name || r.state_code)) || ''}\n\n`
+              + 'It is removed for good. Its slot opens up and its market can be picked again on the next run — including this same game, because deleting does not suppress it. Use Reject for that.\n\nNothing has been sent, so no history is lost.',
+            placeholder: 'Optional — e.g. "queued by mistake", "test row"',
+            okText: 'Delete',
+            danger: true,
+          });
+          if(!ans) return;
+          b.disabled = true;
+          const d = await sb.rpc('queue_delete', { p_id: id, p_note: ans.note });
           if(d.error){ b.disabled = false; toast({ type:'err', title:'Could not delete this blast', lines:[ d.error.message ] }); return; }
           expanded.delete(id);
           await refresh();
@@ -2754,6 +2984,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // so an action is never silently lost.
       const toast = o => window.__pbToast ? window.__pbToast(o) : alert([o.title, ...(o.lines||[])].filter(Boolean).join('\n'));
       const askConfirm = o => window.__pbConfirm ? window.__pbConfirm(o) : Promise.resolve(confirm(`${o.title}\n\n${o.body}`));
+      // Confirm + optional reason. The fallback keeps the action available with no note rather
+      // than blocking it — a missing modal must not make a blast impossible to refuse.
+      const askNote = o => window.__pbAsk ? window.__pbAsk(o)
+        : Promise.resolve(confirm(`${o.title}\n\n${o.body}`) ? { note: null } : null);
+      // Value-returning sibling of askConfirm. The fallback degrades to the default option so
+      // a missing modal still snoozes by the old fixed amount rather than doing nothing.
+      const askChoose = o => {
+        if(window.__pbChoose) return window.__pbChoose(o);
+        const def = (o.options||[]).find(x => x.selected) || (o.options||[])[0];
+        return Promise.resolve(confirm(`${o.title}\n\n${o.body}`) ? (def ? def.value : null) : null);
+      };
 
       // "Send now" is the only control on this tab that actually puts messages on the wire.
       // Confirm merely records approval and the auto-send tick runs hourly, so there was no way
@@ -2769,7 +3010,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const code = (r.state_code||'').toUpperCase();
         const testOn = window.__ALLOWED_CODES && window.__ALLOWED_CODES.size > 0;
         const blocked = testOn && !window.__ALLOWED_CODES.has(code);
-        const cool = COOLDOWNS[code];
+        const cool = coolingOf(r);
         const notes = [
           gameIsPast(r) ? `This game was played ${daysAgo(r.event_date)} day(s) ago. The auto-send tick refuses these; sending now means mailing an offer for a match that is over.` : '',
           blocked ? `TEST MODE is on and ${code} is not on the send allowlist — this resolves to zero recipients and nothing will actually go out.` : '',
@@ -2863,6 +3104,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       el('q-search')?.addEventListener('input',  e => { qFilter = e.target.value; page = 1; render(); });
       el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
+      el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; render(); });
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; render(); });
       el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
@@ -2913,7 +3155,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Send now warns when a market is off the allowlist, so the allowlist must be current
         // before the button can be pressed — not just whenever the Campaigns tab last loaded.
         if(typeof refreshTestMode === 'function') await refreshTestMode();
-        const cd = await sb.rpc('market_cooldowns'); COOLDOWNS = {}; (cd.error ? [] : (cd.data||[])).forEach(c => { COOLDOWNS[(c.market_code||'').toUpperCase()] = c; });
+        // Keyed on market|segment since migration 049 — market_cooldowns() now returns one row
+        // per pair, so keying on the market alone would keep whichever segment came last.
+        const cd = await sb.rpc('market_cooldowns'); COOLDOWNS = {};
+        (cd.error ? [] : (cd.data||[])).forEach(c => { COOLDOWNS[`${(c.market_code||'').toUpperCase()}|${c.segment||''}`] = c; });
         await refresh();
       }
       window.__loadQueue = loadQueue;

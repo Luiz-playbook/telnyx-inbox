@@ -125,16 +125,25 @@ export default async function handler(req, res) {
       return;
     }
 
-    // 14-day per-market cooldown pre-filter: markets blasted recently never reach the send step.
+    // 14-day cooldown pre-filter: recently blasted markets never reach the send step.
+    //
+    // Keyed on market AND segment since migration 049 — blasting Ontario ICP leaves Ontario SCP
+    // and Other open. A row with no segment targets the whole market, so it is held if ANY
+    // segment is cooling; there is no partial version of "send to everyone".
     const cd = await (await rpc('market_cooldowns')).json();
-    const cooled = new Set((Array.isArray(cd) ? cd : []).filter(c => c.cooled).map(c => (c.market_code || '').toUpperCase()));
+    const cooled = new Set((Array.isArray(cd) ? cd : []).filter(c => c.cooled)
+      .map(c => `${(c.market_code || '').toUpperCase()}|${c.segment || ''}`));
+    const SEGMENTS = ['ICP', 'SCP', 'Other'];
+    const isCooled = (code, segment) => !code ? false
+      : segment ? cooled.has(`${code}|${segment}`)
+                : SEGMENTS.some(s => cooled.has(`${code}|${s}`));
 
     const results = [], held = [], errors = [];
     for (const r of due) {
       const mkt = (r.state_code || '').toUpperCase();
-      const cooling = !!(mkt && cooled.has(mkt));
+      const cooling = isCooled(mkt, r.segment || null);
       // The cron respects the cooldown absolutely; a named row proceeds but says it did.
-      if (cooling && !onlyId) { held.push({ id: r.id, title: r.title, market: mkt, reason: 'cooldown' }); continue; }
+      if (cooling && !onlyId) { held.push({ id: r.id, title: r.title, market: mkt, segment: r.segment || null, reason: 'cooldown' }); continue; }
 
       // A blast sells tickets to ONE game. This endpoint fires on scheduled_for and used to
       // ignore event_date entirely, so a row that sat in the queue too long — or was snoozed
@@ -148,8 +157,11 @@ export default async function handler(req, res) {
       }
       const reason = onlyId ? 'manual-send-now' : (r.status === 'confirmed' ? 'scheduled' : 'scheduled-unactioned');
       let phones = [], emails = [];
-      if (r.sms && r.state_code)   { const d = await (await rpc('market_phones', { p_code: r.state_code })).json(); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
-      if (r.email && r.state_code) { const d = await (await rpc('market_emails', { p_code: r.state_code })).json(); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
+      // p_segment null = the whole market, every segment — which is exactly what a row with no
+      // segment means, and what every row queued before migration 050 is.
+      const seg = r.segment || null;
+      if (r.sms && r.state_code)   { const d = await (await rpc('market_phones', { p_code: r.state_code, p_segment: seg })).json(); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
+      if (r.email && r.state_code) { const d = await (await rpc('market_emails', { p_code: r.state_code, p_segment: seg })).json(); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
 
       // sent = channels that actually delivered; failed = channels that did not. The two were
       // one list, so "CakeMail failed: …" counted as a send: the row was marked sent, the
@@ -232,7 +244,12 @@ export default async function handler(req, res) {
       // Write to the notebook so this market goes on cooldown. Per Josh: an email send
       // counts for both channels, so one row (market + day) cools email AND SMS.
       if (r.state_code && (phones.length || emails.length)) {
-        await rpc('log_market_blast', { p_code: r.state_code, p_name: r.state_name || null, p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id });
+        await rpc('log_market_blast', {
+          p_code: r.state_code, p_name: r.state_name || null,
+          p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id,
+          // Null for a whole-market row, which cools every segment (migration 049).
+          p_segment: r.segment || null,
+        });
       }
       results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined, recipients: summary, cooldown_overridden: cooling || undefined });
     }
