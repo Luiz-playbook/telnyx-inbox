@@ -3008,6 +3008,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Same accordion as the Queue: the row states WHAT was blasted, the drawer shows the
         // copy that actually went out. A history you cannot read the copy of only tells you
         // that something happened, not what — and the copy is the part worth learning from.
+        // Channel badge: badge-info paints a dark blue fill, and daisyUI's default content
+        // colour left the label dark-on-dark and barely legible — hence the forced text-white.
+        // SMS keeps .tb-sms, which is a light chip and needs no override.
         tb.innerHTML = paged.map(r=>{
           const open = expanded.has(r.id);
           const head = `<tr class="camp-row">
@@ -3015,19 +3018,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
             <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
             <td class="whitespace-nowrap">${r.market ? `<span class="font-semibold text-[#133b49]">${esc(prettyMetro(r.market))}</span>${r.state_code?` <span class="text-[10px] font-bold uppercase text-base-content/40">${esc(r.state_code)}</span>`:''}` : '<span class="text-base-content/40">—</span>'}</td>
-            <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info':'tb-sms badge'}">${esc(r.channel||'—')}</span></td>
+            <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info text-white':'tb-sms badge'}">${esc(r.channel||'—')}</span></td>
             <td><span class="seg tb-ph">${esc(r.source||'—')}</span></td>
             <td>${fmt(r.recipients)}</td>
             <td>${r.sent_count==null?'<span class="text-base-content/40">—</span>':fmt(r.sent_count)}</td>
           </tr>`;
           if(!open || !r.message) return head;
-          // An SMS reads as an SMS: same phone bubble the Queue uses, with the segment count
-          // underneath. Seeing a 494-character blast render as four segments is the point —
-          // it is what the copy actually cost to send. Email keeps the document-style panel.
+          // Each channel reads as itself, in the same chrome the Queue uses: an SMS as a phone
+          // bubble with its segment count (seeing a 494-character blast render as four segments
+          // is the point — it is what the copy cost to send), an email as an inbox renders it.
+          //
+          // The From/Subject header rows are printed ONLY when the row actually carries them.
+          // Most history has neither: the 140 seeded CakeMail rows never captured an envelope,
+          // and the Textable/Salesmsg logs have no concept of one. The Queue can fall back to
+          // "(no subject)" because it is an editor and the blank is a prompt to fill it in —
+          // here the send already happened, so an empty label is just noise in a list you are
+          // skimming. No header lines at all means the body panel stands alone.
+          const mailHead = [
+            r.sender  ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(r.sender)}</span></div>` : '',
+            r.subject ? `<div class="flex items-baseline"><span class="inline-block w-16 shrink-0 text-base-content/40">Subject</span><span class="font-semibold text-[#133b49] flex-1">${esc(r.subject)}</span></div>` : '',
+          ].join('');
           const body = r.channel === 'SMS'
             ? `<div class="sms-phone max-w-md"><div class="sms-bubble">${esc(r.message)}</div></div>
                <div class="text-xs text-base-content/50 mt-1.5">${esc(smsCountLabel(smsInfo(r.message)))}</div>`
-            : `<div class="border border-base-300 rounded-lg bg-white p-4 text-sm whitespace-pre-wrap max-w-3xl">${esc(r.message)}</div>`;
+            : `<div class="border border-base-300 rounded-lg overflow-hidden bg-white max-w-3xl">
+                 ${mailHead ? `<div class="px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">${mailHead}</div>` : ''}
+                 <div class="mail-body p-4 text-sm">${nl2br(r.message)}</div>
+               </div>`;
           return head + `<tr class="bg-base-200/30"><td></td><td colspan="7" class="pb-4">
             <div class="prev-label mb-1">${r.channel === 'SMS' ? 'SMS sent' : 'Copy sent'}</div>
             ${body}

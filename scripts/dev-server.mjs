@@ -16,7 +16,14 @@ try {
   for (const line of env.split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)$/i);
     if (!m) continue;
-    let v = m[2].trim().replace(/^["']|["']$/g, '');
+    let v = m[2].trim();
+    // Strip trailing inline comments on UNQUOTED values, matching dotenv. Several keys in
+    // .env are annotated (`ck_pat_… #Cole's`), and without this the comment is part of the
+    // value — which is exactly why the CakeMail PATs answered `401 Invalid token` locally
+    // while the same tokens worked in n8n. Quoted values are left alone: a '#' inside quotes
+    // is data, not a comment.
+    if (!/^["']/.test(v)) v = v.replace(/\s+#.*$/, '').trim();
+    v = v.replace(/^["']|["']$/g, '');
     if (!(m[1] in process.env)) process.env[m[1]] = v;
   }
 } catch { console.warn('no .env found — API keys may be missing'); }
