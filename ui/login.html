@@ -35,6 +35,19 @@
     const params = new URLSearchParams(location.search);
     if (params.get('denied')) { const m=el('msg'); m.classList.remove('hidden'); m.innerHTML=`<span>That account isn't a @${DOMAIN} address. Use your Playbook account.</span>`; }
 
+    // Google returns here, not to '/', so the last leg of a successful sign-in is
+    // /login -> (SDK exchanges the code) -> replace('/'). For that moment the page was
+    // offering to sign you in when you had just signed in — which reads as a failed login.
+    // The URL says which visit this is: an auth code or an implicit-flow token means this is
+    // the return leg, so show progress instead of the button. There is no session to check
+    // yet at this point; the exchange is what creates it.
+    const returning = params.has('code') || params.has('error_description')
+      || /(?:^|[#&])(access_token|error)=/.test(location.hash);
+    if (returning) {
+      el('google').classList.add('hidden');
+      el('foot').innerHTML = '<span class="loading loading-spinner loading-xs align-middle"></span> Signing you in…';
+    }
+
     sb.auth.onAuthStateChange((_e, session) => { if (session) location.replace('/'); });
     (async () => { const { data:{ session } } = await sb.auth.getSession(); if (session) location.replace('/'); })();
 

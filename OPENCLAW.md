@@ -12,6 +12,39 @@ agent can do, and how to operate it.
 
 ---
 
+## ⚠ ACTION REQUIRED ON THE VPS (2026-08-04)
+
+The app moved off the published anon key. **Two files on the VPS have to change**, and
+one of them is already causing failures. Nothing in this repo can fix either — they
+live on the box.
+
+**1. `/api/*` calls — send `Authorization: Bearer <CRON_SECRET>`.**
+**BROKEN AS OF NOW.** Every route used to accept `x-inbox-secret: <REPLY_SECRET>`, but
+`REPLY_SECRET` is written into `ui/config.js` and served to every visitor, so it proved
+nothing about the caller. `lib/auth.js` now takes either a real `CRON_SECRET` bearer or a
+signed-in user's Supabase token. The agent has neither, so its `/api/queue-draft` calls
+return **401** until the skill sends the bearer. Wherever the skill posts to `/api/`,
+replace the `x-inbox-secret` header with `Authorization: Bearer <CRON_SECRET>` (same
+value as the Vercel env var).
+
+Exception: `/api/queue-tick` is unchanged — it still takes `x-send-secret: <SEND_SECRET>`
+and has its own auth, described in that file.
+
+**2. `~/.openclaw/supabase.env` — swap `SUPABASE_ANON_KEY` for the service-role key.**
+Not broken yet, and it is the prerequisite for **migration 052**, which revokes `anon`'s
+execute on all 43 of this app's RPCs. Apply 052 before this change and the agent loses
+its entire capability set at once: `daily-campaign-queue`, `daily-price-refresh`, and
+every queue edit it makes.
+
+The agent gives up no safety by holding the service-role key. Its guardrails — cooldown,
+the send allowlist, validation — live **inside the RPC bodies**, not in RLS, so they
+apply to any caller. The api/ routes in this repo made the same move in `7c17ca8`.
+
+Once both are done, tell whoever is running the migrations that 052 is unblocked.
+Background: `migrations/052_auth_revoke_anon.sql` header, and §9 below.
+
+---
+
 ## Contents
 1. [Architecture](#1-architecture)
 2. [Components](#2-components)
@@ -155,7 +188,8 @@ Set on **Vercel** (server-side; a change requires a redeploy to take effect):
 | `OPENCLAW_GATEWAY_TOKEN` | Shared gateway token (authenticates the connection). |
 | `OPENCLAW_DEVICE_KEY` | **base64 of the approved device's PKCS8 Ed25519 private-key PEM.** The write credential. Never in the browser bundle. |
 | `OPENCLAW_AGENT_ID` | Agent to talk to. Default `main`. |
-| `OPENCLAW_ALLOWED_ORIGIN` | Optional. Interim origin allowlist for `/api/agent-chat` (**not** real auth). |
+| `OPENCLAW_ALLOWED_ORIGIN` | Optional. Origin allowlist for `/api/agent-chat`. Never was real auth; since `1c22734` that route also runs `lib/auth.js`, which is. |
+| `CRON_SECRET` | Server-to-server credential for `/api/*`. What the VPS must now send as `Authorization: Bearer …` — see the action block at the top. |
 
 On the **VPS** (`~/.openclaw/`):
 
@@ -164,7 +198,7 @@ On the **VPS** (`~/.openclaw/`):
 | `openclaw.json` | Gateway + agent config (`gateway.auth.token`, model, etc.). |
 | `identity/device.json` | The gateway's own device identity. |
 | `devices/paired.json` | Approved devices + their scopes. |
-| `supabase.env` | `SUPABASE_URL` + `SUPABASE_ANON_KEY` the agent uses for RPCs. |
+| `supabase.env` | `SUPABASE_URL` + the key the agent uses for RPCs. Holds `SUPABASE_ANON_KEY` today; **must become the service-role key** before migration 052 — see the action block at the top. |
 | `workspace/skills/campaign-queue/SKILL.md` | The campaign skill (see §6). |
 
 > Actual secret values are **not** recorded here. They live in Vercel and on the
@@ -175,9 +209,15 @@ On the **VPS** (`~/.openclaw/`):
 ## 6. What the agent can and cannot do
 
 The agent's reach is defined by the **`campaign-queue` skill**, which points it at
-the **same Supabase RPCs the website uses** (same anon key). So its capability set
-equals the site's — and every guardrail already baked into those RPCs (cooldown,
-send-allowlist, validation) applies automatically.
+the **same Supabase RPCs the website uses**. So its capability set equals the site's —
+and every guardrail already baked into those RPCs (cooldown, send-allowlist, validation)
+applies automatically.
+
+> **Key note.** The skill has always used the anon key, and the website no longer does:
+> the browser now calls those RPCs as a signed-in user, and migration 052 revokes anon's
+> execute entirely. The agent must move to the service-role key — see the action block at
+> the top of this file. The guardrails above are unaffected, because they are enforced
+> inside the functions rather than by RLS.
 
 **Can (read + choose + edit):**
 - Read the queue, events, markets, cooldowns, audience counts, send history.
