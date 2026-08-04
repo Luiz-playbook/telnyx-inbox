@@ -129,8 +129,14 @@
     /* An expanded queue row used to be as tall as its longest copy, so opening one pushed the
        rest of the table off-screen and reading the SMS meant scrolling past the whole email
        (Cole, 2026-08-04). Each pane now scrolls inside itself: the open row is bounded, both
-       channels stay side by side and visible at once, and the table around it never moves. */
-    .copy-pane{ min-height:7rem; max-height:42vh; overflow-y:auto; overscroll-behavior:contain; }
+       channels stay side by side and visible at once, and the table around it never moves.
+
+       The height is FIXED, not a max: matching the panels by stretching the short one to the
+       tall one just moved the dead space from the email to the SMS, since a two-line text will
+       never fill the height of a six-paragraph email. Both panes are the same modest height
+       whatever they hold — long copy scrolls, short copy leaves a bounded gap instead of one
+       that grows with the other channel. */
+    .copy-pane{ height:clamp(170px, 26vh, 300px); overflow-y:auto; overscroll-behavior:contain; }
     .copy-pane::-webkit-scrollbar{ width:9px; }
     .copy-pane::-webkit-scrollbar-thumb{ background:#cdd7e1; border-radius:9999px; border:2px solid transparent; background-clip:content-box; }
     .copy-pane::-webkit-scrollbar-thumb:hover{ background:#b3c0cd; background-clip:content-box; }
@@ -2982,7 +2988,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <span class="inline-block w-14 shrink-0 text-base-content/40">Subject</span>
                 <span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span>
               </div>
-              <div class="mail-body copy-pane flex-1 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
+              <div class="mail-body copy-pane p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
           </section>`;
           // h-full on the phone: the bubble sits at the top of it, so without this a tall row
@@ -2990,7 +2996,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // ragged look one level in.
           const smsPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
             ${panelHead('SMS', smsSel, r.sms ? smsMethodOf(curSms) : '')}
-            ${r.sms ? `<div class="copy-pane flex-1 p-3"><div class="sms-phone h-full"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
+            ${r.sms ? `<div class="copy-pane p-3"><div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
               <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>`
               : offNote('SMS')}
           </section>`;
