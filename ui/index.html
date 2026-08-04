@@ -58,6 +58,8 @@
              background:#fff; border:1px solid #e3e8ef; border-radius:10px; padding:6px;
              box-shadow:0 10px 30px rgba(19,59,73,.18); min-width:132px; }
     .q-menu.hidden{ display:none; }
+    .price-info{ cursor:help; color:#94a3b8; font-size:11px; vertical-align:super; }
+    .price-info:hover{ color:#133b49; }
     .tb-email{ background:#eaf0fe; color:#2f6bff; border-color:#d3def8; }
     .tb-sms{ background:#eaf5ee; color:#067523; border-color:#cfe9d8; }
     .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
@@ -2716,6 +2718,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
       }
 
+      // Where a price came from, shown on the price itself (Vhea, 2026-08-03). The field that
+      // matters most is the seat count: a get-in read off a lone single is often a restricted-view
+      // seat nobody buying for two people can use, so "$18" backed by a pair and "$18" backed by
+      // a single are not the same claim, and until now the row showed them identically.
+      //
+      // Native `title`, not the daisyUI .tooltip used in the toolbar: this sits inside the
+      // table's overflow-auto box, which clips a CSS tooltip on any row near an edge. The
+      // browser's own tooltip renders above everything and cannot be clipped.
+      const priceBasis = r => r.price_seats === 2 ? 'a listing for 2 seats together'
+        : r.price_seats === 1 ? 'a single-seat listing — no pair was available'
+        : 'a listing whose seat count was not reported';
+      const priceInfo = r => {
+        // A row carrying its own overridden ticket_price is not what events_master's sourcing
+        // describes. Showing nothing beats attaching someone else's provenance to a hand-typed
+        // number — see the note on get_campaign_queue in migration 052.
+        if(r.ticket_price == null || !r.priced_at) return '';
+        const when = new Date(r.priced_at);
+        const lines = [
+          'Per-ticket get-in price, before taxes and fees.',
+          `Based on ${priceBasis(r)}.`,
+          r.price_source ? `Source: ${r.price_source}` : '',
+          `Checked: ${when.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`,
+          (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
+        ].filter(Boolean).join('\n');
+        return ` <span class="price-info" title="${esc(lines)}">&#9432;</span>`;
+      };
+
       // Actions, collapsed into one menu so the row costs ~90px instead of ~280px of buttons.
       //
       // The buttons inside are BYTE-FOR-BYTE the ones that used to sit in the cell, with the
@@ -2839,7 +2868,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const priceCell = r.ticket_price!=null
             ? `${r.ticket_url
                 ? `<a href="${esc(r.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold">$${fmt(r.ticket_price)}</a>`
-                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}<div class="text-[10px] text-base-content/40">get-in</div>`
+                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${priceInfo(r)}<div class="text-[10px] text-base-content/40">get-in</div>`
             : '<span class="text-base-content/40">—</span>';
           const sportCell = r.sport
             ? `<span class="sport-pill">${esc(r.sport)}</span>${r.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(r.league)}</div>`:''}`
