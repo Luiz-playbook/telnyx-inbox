@@ -130,7 +130,7 @@
        rest of the table off-screen and reading the SMS meant scrolling past the whole email
        (Cole, 2026-08-04). Each pane now scrolls inside itself: the open row is bounded, both
        channels stay side by side and visible at once, and the table around it never moves. */
-    .copy-pane{ max-height:42vh; overflow-y:auto; overscroll-behavior:contain; }
+    .copy-pane{ min-height:7rem; max-height:42vh; overflow-y:auto; overscroll-behavior:contain; }
     .copy-pane::-webkit-scrollbar{ width:9px; }
     .copy-pane::-webkit-scrollbar-thumb{ background:#cdd7e1; border-radius:9999px; border:2px solid transparent; background-clip:content-box; }
     .copy-pane::-webkit-scrollbar-thumb:hover{ background:#b3c0cd; background-clip:content-box; }
@@ -526,8 +526,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <span class="text-base-content/40">&#128269;</span>
                 <input id="q-search" type="text" class="grow w-64" placeholder="Search blast, market or sport…" autocomplete="off" />
               </label>
-              <span class="text-sm text-base-content/50 mr-auto" id="q-summary">Loading&hellip;</span>
-              <div class="flex items-center gap-2 flex-wrap justify-end">
+              <!-- The "N queued · N confirmed · N pending · N archived" line that sat here is
+                   gone (Cole, 2026-08-04): every number in it was a count of one status, and the
+                   status dropdown below now carries each count on its own option, where you are
+                   already looking when you want it. Past-game rows keep their per-row badge. -->
+              <div class="flex items-center gap-2 flex-wrap justify-end ml-auto">
                 <select id="q-status" class="select select-bordered select-sm" title="Status">
                   <option value="">All statuses</option>
                   <option value="pending">Pending</option>
@@ -2587,7 +2590,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Same filter set as Campaigns by Event, minus the ones a queued row can't answer
       // (segment isn't stored per queue row — a row targets a market, not a market×segment),
       // plus the two only the queue has: status and send day.
-      let qFilter = '', statusF = '', segF = '', sportF = '', stateF = '', chanF = '', dayF = '', SUMMARY = '';
+      let qFilter = '', statusF = '', segF = '', sportF = '', stateF = '', chanF = '', dayF = '';
       // Same pills Campaigns by Event uses, so a segment reads identically on both tabs. A row
       // with no segment predates migration 050 and targeted the whole market — saying "Other"
       // there would be a lie, so it says so.
@@ -2682,7 +2685,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Applied to the counter element so the warning is visible, not just readable. It carries
       // the counter's layout classes too: the live update assigns className outright, so any
       // padding left on the element in the template would be wiped on the first keystroke.
-      const smsCountClass = i => 'text-xs px-3 pb-2 ' + (smsOverCap(i) ? 'text-[#c94d07] font-semibold' : 'text-base-content/50');
+      const smsCountClass = i => 'text-xs px-3 pb-2 shrink-0 ' + (smsOverCap(i) ? 'text-[#c94d07] font-semibold' : 'text-base-content/50');
 
       // contenteditable="plaintext-only" keeps pasted markup out on its own. Browsers without
       // it fall back to "true" plus a paste handler that inserts the clipboard's text/plain.
@@ -2805,42 +2808,61 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const emailFromOf = r => (validEmailFrom(r.email_from) ? r.email_from : EMAIL_SENDERS[0].v);
       const smsFromOf   = r => r.sms_from   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
 
-      // Rows the current filters leave visible. Day bands and the "showing" note are both
-      // computed from this, so a filtered view never claims counts it isn't rendering.
-      function visibleRows(){
+      // The status test is split out from the rest so the status dropdown can count what each
+      // of its own options would show — the same predicate the filter applies, asked once per
+      // option instead of restated in a summary line above the table.
+      function matchesStatus(r, s){
+        // Archived is not a status — it is a flag on top of one — so it filters separately.
+        // Hidden everywhere by default, and 'Archived' shows those and only those; without
+        // that, archiving a sent blast would look identical to deleting it.
+        if(s === 'archived') return !!r.archived_at;
+        if(r.archived_at) return false;
+        // Rejected rows are kept so the decider can read them, but the working queue is what
+        // Cole acts on and a refused blast is not actionable. Hidden unless asked for by name,
+        // the same treatment archived gets and for the same reason.
+        if(s === 'rejected') return r.status === 'rejected';
+        if(r.status === 'rejected') return false;
+        return !s || (r.status||'') === s;
+      }
+      // Every filter EXCEPT status. Counting a status against the other filters is what makes
+      // the numbers in the dropdown mean "what I would get if I picked this", rather than a
+      // fixed tally that disagrees with the rows on screen.
+      function matchesRest(r){
+        if(segF    && (r.segment||'') !== segF)   return false;
+        if(sportF  && (r.sport||'')  !== sportF)  return false;
+        if(stateF  && (r.state_code||'') !== stateF) return false;
+        if(chanF === 'email' && !r.email) return false;
+        if(chanF === 'sms'   && !r.sms)   return false;
+        if(dayF && String(r.scheduled_for||'').slice(0,10) !== dayF) return false;
         const f = qFilter.trim().toLowerCase();
-        return QUEUE.filter(r => {
-          // Archived is not a status — it is a flag on top of one — so it filters separately.
-          // Hidden everywhere by default, and 'Archived' shows those and only those; without
-          // that, archiving a sent blast would look identical to deleting it.
-          if(statusF === 'archived'){ if(!r.archived_at) return false; }
-          else if(r.archived_at) return false;
-          // Rejected rows are kept so the decider can read them, but the working queue is what
-          // Cole acts on and a refused blast is not actionable. Hidden unless asked for by name,
-          // the same treatment archived gets and for the same reason.
-          else if(statusF === 'rejected'){ if(r.status !== 'rejected') return false; }
-          else if(r.status === 'rejected') return false;
-          else if(statusF && (r.status||'') !== statusF) return false;
-          if(segF    && (r.segment||'') !== segF)   return false;
-          if(sportF  && (r.sport||'')  !== sportF)  return false;
-          if(stateF  && (r.state_code||'') !== stateF) return false;
-          if(chanF === 'email' && !r.email) return false;
-          if(chanF === 'sms'   && !r.sms)   return false;
-          if(dayF && String(r.scheduled_for||'').slice(0,10) !== dayF) return false;
-          if(!f) return true;
-          return [blastTitle(r), r.title, r.state_name, r.state_code, r.sport, r.league, prettyMetro(r.market_key)]
-            .some(v => (v||'').toString().toLowerCase().includes(f));
+        if(!f) return true;
+        return [blastTitle(r), r.title, r.state_name, r.state_code, r.sport, r.league, prettyMetro(r.market_key)]
+          .some(v => (v||'').toString().toLowerCase().includes(f));
+      }
+      // Rows the current filters leave visible. Day bands and the pager are both computed from
+      // this, so a filtered view never claims counts it isn't rendering.
+      function visibleRows(){ return QUEUE.filter(r => matchesStatus(r, statusF) && matchesRest(r)); }
+
+      // The counts live on the status options themselves ("Pending (3)"), which is where you
+      // are already looking when you want to know how many there are. The base label is stashed
+      // on first pass so re-rendering never appends a second number to it.
+      function paintStatusCounts(){
+        const sel = el('q-status');
+        if(!sel) return;
+        [...sel.options].forEach(o => {
+          if(o.dataset.base === undefined) o.dataset.base = o.textContent;
+          const n = QUEUE.filter(r => matchesStatus(r, o.value) && matchesRest(r)).length;
+          o.textContent = `${o.dataset.base} (${n})`;
         });
       }
 
       function render(){
         const tb = el('q-rows');
+        // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
+        // keeps advertising counts from the last load.
+        paintStatusCounts();
         if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
         const rows = visibleRows();
-        // The header states the whole queue; a filtered view says so rather than quietly
-        // showing fewer rows than the counts above it.
-        const sum = el('q-summary');
-        if(sum) sum.textContent = SUMMARY + (rows.length === QUEUE.length ? '' : ` · ${rows.length} matching`);
         // Pager, same maths as Campaigns by Event. Day bands are drawn per page, so the first
         // row of a page always states which day it belongs to.
         const size  = pageSize > 0 ? pageSize : Math.max(rows.length, 1);
@@ -2942,27 +2964,38 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           //   3. Both panels always render, side by side. A channel that is off shows its picker
           //      and a one-line note instead of an editor — turning it back on is still one
           //      click, which is why the pickers can never be conditional on the channel.
-          const offNote = what => `<div class="p-4 text-xs text-base-content/45 leading-relaxed">
+          //
+          // EQUAL HEIGHTS (Cole, 2026-08-04). The two panels used to be sized by their own copy
+          // and top-aligned, so an email six paragraphs long sat beside a two-line SMS and the
+          // pair read as broken rather than as two views of one blast. The grid row now stretches
+          // both to the same height and each panel is a flex column whose copy area takes the
+          // slack (flex-1), so the shorter channel fills its panel instead of leaving a stub with
+          // dead space under it. The header, the subject line and the segment counter stay
+          // shrink-0 — only the copy grows.
+          const offNote = what => `<div class="flex-1 p-4 text-xs text-base-content/45 leading-relaxed">
             ${sent ? `No ${what} went out with this blast.` : `Not sending ${what} on this blast. Choose a sender above to turn it back on.`}</div>`;
-          const panelHead = (label, sel, via) => `<div class="flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
+          const panelHead = (label, sel, via) => `<div class="shrink-0 flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
             <span class="prev-label">${label}</span>${sel}${via?`<span class="text-[11px] text-base-content/45">via ${esc(via)}</span>`:''}</div>`;
-          const emailPanel = `<section class="min-w-0 border border-base-300 rounded-lg overflow-hidden bg-white">
+          const emailPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
             ${panelHead('Email', emailSel, r.email ? emailMethodOf(curEmail) : '')}
-            ${r.email ? `<div class="px-3.5 py-2 border-b border-base-300 text-xs flex items-baseline bg-base-200/20">
+            ${r.email ? `<div class="shrink-0 px-3.5 py-2 border-b border-base-300 text-xs flex items-baseline bg-base-200/20">
                 <span class="inline-block w-14 shrink-0 text-base-content/40">Subject</span>
                 <span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span>
               </div>
-              <div class="mail-body copy-pane p-4 text-sm min-h-28${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
+              <div class="mail-body copy-pane flex-1 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
           </section>`;
-          const smsPanel = `<section class="min-w-0 border border-base-300 rounded-lg overflow-hidden bg-white">
+          // h-full on the phone: the bubble sits at the top of it, so without this a tall row
+          // leaves the panel's own background showing under a short phone frame — the same
+          // ragged look one level in.
+          const smsPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
             ${panelHead('SMS', smsSel, r.sms ? smsMethodOf(curSms) : '')}
-            ${r.sms ? `<div class="copy-pane p-3"><div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
+            ${r.sms ? `<div class="copy-pane flex-1 p-3"><div class="sms-phone h-full"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
               <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>`
               : offNote('SMS')}
           </section>`;
           const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3 items-start">${emailPanel}${smsPanel}</div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${emailPanel}${smsPanel}</div>
             ${sent?'':`<div class="mt-2 flex items-center gap-2 flex-wrap"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50" data-copystatus="${esc(r.id)}"></span><span class="text-xs text-base-content/40 ml-auto">Click the subject, the body or the bubble to edit.</span></div>`}
           </td></tr>`;
           return dayHead + main + detail;
@@ -3331,18 +3364,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           await sb.rpc('queue_set_sender', { p_id: r.id, p_email_from: EMAIL_SENDERS[0].v, p_sms_from: null });
           r.email_from = EMAIL_SENDERS[0].v;
         }
-        // Counts describe the WORKING queue, so archived rows are excluded — they are still
-        // in QUEUE (get_campaign_queue returns them, and the Archived filter needs them),
-        // but counting them would make "N queued" disagree with the rows on screen.
-        const LIVE = QUEUE.filter(r => !r.archived_at);
-        const pend=LIVE.filter(r=>r.status==='pending').length, conf=LIVE.filter(r=>r.status==='confirmed').length;
-        // Just the queue counts. The reach totals that used to sit here restated the Emails and
-        // Phone #s columns and made the line hard to read at a glance.
-        const stale = LIVE.filter(gameIsPast).length;
-        const arch = QUEUE.length - LIVE.length;
-        SUMMARY = `${LIVE.length} queued · ${conf} confirmed · ${pend} pending`
-          + (stale ? ` · ${stale} past game` : '')
-          + (arch ? ` · ${arch} archived` : '');
+        // No summary string is built here any more. Every count it held is now painted onto the
+        // status dropdown by render() -> paintStatusCounts(), against the live filters, so there
+        // is nothing to precompute at load time.
         fillQueueFilters();
         render();
       }
