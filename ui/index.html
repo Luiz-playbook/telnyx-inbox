@@ -131,12 +131,16 @@
        (Cole, 2026-08-04). Each pane now scrolls inside itself: the open row is bounded, both
        channels stay side by side and visible at once, and the table around it never moves.
 
-       The height is FIXED, not a max: matching the panels by stretching the short one to the
-       tall one just moved the dead space from the email to the SMS, since a two-line text will
-       never fill the height of a six-paragraph email. Both panes are the same modest height
-       whatever they hold — long copy scrolls, short copy leaves a bounded gap instead of one
-       that grows with the other channel. */
-    .copy-pane{ height:clamp(170px, 26vh, 300px); overflow-y:auto; overscroll-behavior:contain; }
+       THE SMS SETS THE FLOOR, THE EMAIL ADJUSTS (Cole, 2026-08-04). The SMS panel is sized by
+       its own bubble and never padded out; it is `self-start` in the grid, so the row's height
+       is whichever panel is genuinely taller. The email panel stretches to that row, and its
+       body takes the slack (flex-1). Short email: the row is the SMS's height and the email
+       fills it, so the two read as matched. Long email: the row is the email's height, the SMS
+       stays exactly as tall as its bubble, and the email scrolls at the ceiling. Two earlier
+       tries were worse — stretching both put a six-paragraph email's worth of white under a
+       two-line bubble, and one fixed height for both did the same to whichever channel was
+       shorter. Unequal panels are fine when the copy is genuinely unequal; dead space is not. */
+    .copy-pane{ max-height:32vh; overflow-y:auto; overscroll-behavior:contain; }
     .copy-pane::-webkit-scrollbar{ width:9px; }
     .copy-pane::-webkit-scrollbar-thumb{ background:#cdd7e1; border-radius:9999px; border:2px solid transparent; background-clip:content-box; }
     .copy-pane::-webkit-scrollbar-thumb:hover{ background:#b3c0cd; background-clip:content-box; }
@@ -2971,13 +2975,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           //      and a one-line note instead of an editor — turning it back on is still one
           //      click, which is why the pickers can never be conditional on the channel.
           //
-          // EQUAL HEIGHTS (Cole, 2026-08-04). The two panels used to be sized by their own copy
-          // and top-aligned, so an email six paragraphs long sat beside a two-line SMS and the
-          // pair read as broken rather than as two views of one blast. The grid row now stretches
-          // both to the same height and each panel is a flex column whose copy area takes the
-          // slack (flex-1), so the shorter channel fills its panel instead of leaving a stub with
-          // dead space under it. The header, the subject line and the segment counter stay
-          // shrink-0 — only the copy grows.
+          // THE SMS SETS THE HEIGHT, THE EMAIL ADJUSTS (Cole, 2026-08-04). The SMS panel is
+          // `self-start`: it is as tall as its bubble and is never padded out to keep up with the
+          // email. The email panel takes the grid's default stretch and its body has flex-1, so
+          // it fills whatever the row turns out to be. Short email — the row is the SMS's height
+          // and the email grows to match it. Long email — the row is the email's own height, the
+          // SMS is left alone, and the body scrolls once it hits the .copy-pane ceiling. Header,
+          // subject line and segment counter stay shrink-0; only the copy moves.
           const offNote = what => `<div class="flex-1 p-4 text-xs text-base-content/45 leading-relaxed">
             ${sent ? `No ${what} went out with this blast.` : `Not sending ${what} on this blast. Choose a sender above to turn it back on.`}</div>`;
           const panelHead = (label, sel, via) => `<div class="shrink-0 flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
@@ -2988,13 +2992,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <span class="inline-block w-14 shrink-0 text-base-content/40">Subject</span>
                 <span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span>
               </div>
-              <div class="mail-body copy-pane p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
+              <div class="mail-body copy-pane flex-1 min-h-20 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
           </section>`;
-          // h-full on the phone: the bubble sits at the top of it, so without this a tall row
-          // leaves the panel's own background showing under a short phone frame — the same
-          // ragged look one level in.
-          const smsPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
+          const smsPanel = `<section class="min-w-0 self-start flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
             ${panelHead('SMS', smsSel, r.sms ? smsMethodOf(curSms) : '')}
             ${r.sms ? `<div class="copy-pane p-3"><div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
               <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>`
