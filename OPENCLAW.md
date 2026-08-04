@@ -167,7 +167,10 @@ WebSocket v4, JSON frames. One `runAgentTurn` call = one fresh socket = one turn
   new run streams. So we filter reply events by **our** `runId`. But the server's
   runId is only known from the `chat.send` ack, which under real latency can land
   *after* the first reply events. Fix: **buffer reply events until the ack, then
-  replay them filtered by runId.**
+  replay them filtered by runId.** The filter **fails closed**: an event with a
+  missing or mismatched runId is dropped. Waving unstamped events through is what
+  caused the `(no reply)` bug — and, worse, could have returned the *previous*
+  turn's text as the current answer.
 - **Premature completion:** the parallel `agent` lifecycle `end` event fires
   *before* the last `chat` delta + the `chat` `final`. Finishing on it truncated
   replies. Fix: **finish only on the `chat` `final`**; ignore the `agent.*` stream
@@ -393,7 +396,7 @@ Known gaps to close (flagged in code headers too):
 | "This device is awaiting one-time approval…" | The device isn't approved (or the key changed). | `openclaw devices approve --latest` on the VPS (§8). |
 | "The agent took too long to respond." | Cold start / long turn exceeded the timeout. | Retry; cold starts can be ~90s. |
 | "The agent is unavailable right now." | Connect/socket error, bad device key, or the gateway is down. | Check the Funnel URL is reachable; check `OPENCLAW_DEVICE_KEY` decodes; check the gateway is running on the VPS. |
-| Empty reply `(no reply)` | (Historical bug, fixed.) Reply-event/runId race. | Ensure `lib/openclaw/gateway-client.js` buffers events until the ack — see §4. |
+| Empty reply `(no reply)` | (Fixed.) A replayed-history `chat` `final` carrying **no** runId slipped past the runId filter and ended the turn before the real reply streamed. | The filter now fails closed — once our runId is known, an event counts as ours only if it says so; unstamped events are dropped (§4). Plus: never resolve on an empty `final`. If it recurs, confirm the fix is actually **deployed** — an uncommitted local change does nothing to the live agent. |
 | Truncated reply | (Historical bug, fixed.) Finished on `agent` lifecycle `end`. | Finish only on `chat` `final` — see §4. |
 
 **Manual end-to-end test (from a machine with the env vars set):**

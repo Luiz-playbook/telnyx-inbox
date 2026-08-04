@@ -57,6 +57,9 @@ export default async function handler(req, res) {
       sessionKey, text: message, timeoutMs: 240_000,
       onDelta: (chunk) => sse({ type: 'delta', text: chunk }),
     });
+    // One-line breadcrumb so an empty/odd reply is visible in `vercel logs` after the fact
+    // (turns aren't otherwise persisted). Truncated + no message body, so it stays low-noise.
+    console.log(`[agent-chat] runId=${runId || '-'} session=${sessionKey} replyLen=${(reply || '').length} preview=${JSON.stringify((reply || '').slice(0, 80))}`);
     sse({ type: 'done', reply: reply || '(no reply)', runId });
   } catch (e) {
     // Do not leak internals (tokens/keys/hosts). Send a generic message + a short code in-band.
