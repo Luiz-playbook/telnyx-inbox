@@ -64,7 +64,10 @@ export default async function handler(req, res) {
   } catch (e) {
     // Do not leak internals (tokens/keys/hosts). Send a generic message + a short code in-band.
     const msg = String((e && e.message) || e);
-    const safe = /device_pending_approval/i.test(msg) ? 'This device is awaiting one-time approval on the gateway.'
+    // Log the real reason server-side before flattening it to a safe user-facing string — a timeout
+    // otherwise leaves no trace at all, which is what made the last one impossible to diagnose.
+    console.log(`[agent-chat] session=${sessionKey} failed: ${msg}`);
+    const safe =/device_pending_approval/i.test(msg) ? 'This device is awaiting one-time approval on the gateway.'
       : /not set/i.test(msg) ? 'Agent is not configured yet.'
       : /timeout|too long/i.test(msg) ? 'The agent took too long to respond.'
       : 'The agent is unavailable right now.';
