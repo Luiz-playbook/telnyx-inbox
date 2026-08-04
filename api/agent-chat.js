@@ -52,9 +52,11 @@ export default async function handler(req, res) {
   const sse = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch {} };
 
   try {
-    // Tool-heavy turns (queue/price lookups) can take a minute+; allow well under maxDuration (300s).
+    // Tool-heavy turns (queue/price lookups) can take several minutes. A long wait is acceptable; a
+    // truncated answer is not — so give the turn nearly the whole maxDuration (300s), leaving a
+    // margin to still write the error frame if it does time out.
     const { reply, runId } = await runAgentTurn({
-      sessionKey, text: message, timeoutMs: 240_000,
+      sessionKey, text: message, timeoutMs: 280_000,
       onDelta: (chunk) => sse({ type: 'delta', text: chunk }),
     });
     // One-line breadcrumb so an empty/odd reply is visible in `vercel logs` after the fact

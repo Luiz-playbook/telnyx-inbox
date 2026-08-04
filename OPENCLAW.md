@@ -179,7 +179,16 @@ WebSocket v4, JSON frames. One `runAgentTurn` call = one fresh socket = one turn
   replies. Fix: **finish only on the `chat` `final`**; ignore the `agent.*` stream
   (it just repeats the same text).
 
-The client also has fallbacks: an 8s quiet-timer and socket-close both resolve
+**Completeness beats latency.** A slow reply is fine; a truncated one that reads
+as finished is not. Every fallback is sized accordingly: the quiet-timer is 45s
+(it must clear the longest mid-turn tool pause, not merely a network hiccup) and
+the per-turn hard timeout is 280s against a 300s `maxDuration`. Don't shrink
+these to make the UI feel snappier — the only correct end-of-turn signal is the
+`chat` `final`. When a turn ends on the quiet timer instead, the client logs
+`turn ended on quiet timer … may be incomplete`; treat that line as a bug to
+chase, not as normal operation.
+
+The client also has fallbacks: the quiet-timer and socket-close both resolve
 with whatever text accumulated, and a hard `timeoutMs`.
 
 ---
