@@ -2580,10 +2580,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // It lives in the "Text from" list, populated from /api/salesmsg-senders.
       ];
       const emailMethodOf = v => (EMAIL_SENDERS.find(s => s.v === v) || {}).method || 'Mail merge';
+      // What a row sends from when it has never been given a sender. Both defaults name the
+      // production channel, not whatever happens to sit first in a list: a queued blast is a
+      // real market blast, so the safe default is the one we actually send real blasts with.
+      //   Email — the production CakeMail sender (josh.marcus@, account 1761047). Was
+      //   EMAIL_SENDERS[0], i.e. the john@ Gmail mail merge, purely because it was first.
+      const DEFAULT_EMAIL_FROM = 'cakemail:1761047:l4vuKoFJ5s9eJryDK0sV';
+      //   SMS — Josh Marcus' Salesmsg inbox. Salesmsg senders are fetched at runtime from
+      //   /api/salesmsg-senders, so this pins the TEAM id (the inbox a message goes out from,
+      //   and what the send call actually takes) rather than a phone number that could be
+      //   swapped underneath it. If Salesmsg is unreachable the option does not exist at all,
+      //   and the default falls back to the first Telnyx number as before.
+      const DEFAULT_SMS_TEAM_ID = '2341';    // Josh Marcus · +16468591775
       // emailFromLabel (and the cakemail id parser behind it) rendered a read-only "From" line
       // above the email preview. The sender picker now sits in the panel header and states the
       // same thing as a control rather than as text, so both are gone. A stored value that is
-      // not in EMAIL_SENDERS was already coerced to EMAIL_SENDERS[0] on read (emailFromOf), so
+      // not in EMAIL_SENDERS was already coerced to the default on read (emailFromOf), so
       // nothing reaches the UI needing the raw-id fallback those two provided.
       // 'salesmsg:<team_id>:<phone>' → { teamId, phone }; anything else → null.
       // Mirrors parseSalesmsgFrom in lib/salesmsg.js — keep both in sync.
@@ -2812,11 +2824,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
 
       // A row stored with a sender no longer offered (the retired SalesMessage placeholder)
-      // would render as option #1 while still holding a value nothing can actually send from,
+      // would render as the default option while still holding a value nothing can send from,
       // so the fallback is applied on read and written back in refresh().
       const validEmailFrom = v => EMAIL_SENDERS.some(s => s.v === v);
-      const emailFromOf = r => (validEmailFrom(r.email_from) ? r.email_from : EMAIL_SENDERS[0].v);
-      const smsFromOf   = r => r.sms_from   || (NUMBERS[0] && NUMBERS[0].phone_number) || '';
+      const emailFromOf = r => (validEmailFrom(r.email_from) ? r.email_from : DEFAULT_EMAIL_FROM);
+      // Resolved against the live Salesmsg list, not stored: DEFAULT_SMS_TEAM_ID names an
+      // inbox, and only the list knows which number that inbox currently sends from. A value
+      // not in the dropdown would select nothing, so an absent team falls through to Telnyx.
+      const defaultSmsFrom = () => {
+        const s = SALESMSG_SENDERS.find(x => String(x.team_id) === DEFAULT_SMS_TEAM_ID);
+        return s ? s.value : ((NUMBERS[0] && NUMBERS[0].phone_number) || '');
+      };
+      const smsFromOf   = r => r.sms_from   || defaultSmsFrom();
 
       // The status test is split out from the rest so the status dropdown can count what each
       // of its own options would show — the same predicate the filter applies, asked once per
@@ -3366,11 +3385,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const { data, error } = await sb.rpc('get_campaign_queue');
         if(error){ el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
-        // Repair rows pointing at a retired sender so the stored value matches what's shown.
-        for(const r of QUEUE.filter(r => r.email_from && !validEmailFrom(r.email_from) && r.status !== 'sent')){
-          await sb.rpc('queue_set_sender', { p_id: r.id, p_email_from: EMAIL_SENDERS[0].v, p_sms_from: null });
-          r.email_from = EMAIL_SENDERS[0].v;
-        }
+        // Make the stored sender match the one the row is shown with — for a retired value
+        // (the old SalesMessage placeholder, the moved Josh CakeMail sender) and equally for
+        // NO value at all.
+        //
+        // The empty case matters as much as the wrong one: api/queue-tick.js routes on the
+        // stored string, and a null email_from falls through to the Gmail mail-merge webhook
+        // while a null sms_from falls through to Telnyx. So a row left untouched would send
+        // by mail merge no matter that its picker reads "CakeMail · josh.marcus@". Writing the
+        // default down closes that gap. One RPC per row, once — after this pass they are all
+        // non-null, so every later refresh() finds nothing to write. Fired together rather
+        // than awaited one at a time: on the first load of a full queue that is the difference
+        // between one round trip and one per row before anything renders.
+        const repairs = QUEUE.filter(r => r.status !== 'sent')
+          .map(r => ({ r, email: validEmailFrom(r.email_from) ? null : DEFAULT_EMAIL_FROM,
+                          sms: r.sms_from ? null : (defaultSmsFrom() || null) }))
+          .filter(x => x.email || x.sms);
+        await Promise.all(repairs.map(async ({ r, email, sms }) => {
+          await sb.rpc('queue_set_sender', { p_id: r.id, p_email_from: email, p_sms_from: sms });
+          if(email) r.email_from = email;
+          if(sms)   r.sms_from   = sms;
+        }));
         // No summary string is built here any more. Every count it held is now painted onto the
         // status dropdown by render() -> paintStatusCounts(), against the live filters, so there
         // is nothing to precompute at load time.
