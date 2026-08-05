@@ -60,6 +60,26 @@
     .q-menu.hidden{ display:none; }
     .price-info{ cursor:help; color:#94a3b8; font-size:11px; vertical-align:super; }
     .price-info:hover{ color:#133b49; }
+    /* Price editor. The pencil is a SEPARATE control from the price itself, which is already an
+       <a> to the listing — making the figure do double duty would mean an operator trying to
+       check a price against the marketplace opens an edit box instead. */
+    .price-edit{ cursor:pointer; color:#b6c2cf; font-size:10px; vertical-align:super; margin-left:2px;
+                 background:none; border:0; padding:0; line-height:1; }
+    .price-edit:hover{ color:#e8935a; }
+    .price-manual{ display:inline-block; font-size:9px; font-weight:800; letter-spacing:.04em;
+                   text-transform:uppercase; color:#8a5a2b; background:#fdf1e4; border:1px solid #f3ddc4;
+                   border-radius:9999px; padding:0 5px; margin-left:4px; vertical-align:middle; }
+    /* Fixed for the same reason .q-menu is: both tables scroll inside an overflow-auto box that
+       would clip an absolutely-positioned panel on any row near an edge. */
+    .price-pop{ position:fixed; z-index:70; width:250px; background:#fff; border:1px solid #e3e8ef;
+                border-radius:10px; padding:10px; box-shadow:0 10px 30px rgba(19,59,73,.18); }
+    .price-pop.hidden{ display:none; }
+    .price-pop label{ display:block; font-size:10px; font-weight:800; letter-spacing:.04em;
+                      text-transform:uppercase; color:#8695a7; margin-bottom:2px; }
+    .price-pop input{ width:100%; border:1px solid #d8e2ef; border-radius:7px; padding:4px 7px;
+                      font-size:13px; color:#2f4858; background:#fff; }
+    .price-pop input:focus{ outline:none; box-shadow:0 0 0 2px #e8935a33; border-color:#e8935a; }
+    .price-pop .pp-err{ color:#c0392b; font-size:11px; font-weight:600; }
     .tb-email{ background:#eaf0fe; color:#2f6bff; border-color:#d3def8; }
     .tb-sms{ background:#eaf5ee; color:#067523; border-color:#cfe9d8; }
     .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
@@ -1774,6 +1794,170 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       renderChatMenu(); renderMessages();
     })();
 
+    // ===== Manual price editor — shared by Campaigns by Event and the Queue =====
+    //
+    // The get-in price has only ever been written by Gemini, and the Cheapest cell exists so an
+    // operator can click through and check it. Until now checking was all they could do. This is
+    // the write path: a pencil beside the figure opens a two-field popover (price + listing link)
+    // that calls set_event_price_manual (migration 055).
+    //
+    // ONE EDIT, EVERY SURFACE. The RPC writes events_master, which both tables join live —
+    // event_targets() and get_campaign_queue() each read em.best_price and em.price_url. So a
+    // price fixed on the Campaigns tab is already fixed on all three of that event's segment
+    // rows and on every queued blast for the game. Nothing here fans the value out.
+    //
+    // Lives outside both modules because both need it and each has its own private el/esc/fmt.
+    (function priceEditorModule(){
+      const esc2 = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      let pop = null, current = null;
+
+      // The pencil markup a table drops next to its price. Kept here rather than in each render
+      // so the two tables cannot drift into offering different edit affordances for one field.
+      //
+      // `scope` names which table asked, and decides what gets reloaded after a save. Reloading
+      // both would be correct but wasteful: fetchAllEvents pages ~6,800 rows and only the tab
+      // you are looking at can show the change.
+      //
+      // No event_id, no pencil. Placeholder queue rows carry none, and there is nothing on
+      // events_master to write without one.
+      function priceEditBtn(r, scope){
+        if(!r || !r.event_id) return '';
+        return ` <button class="price-edit" title="Edit the get-in price and listing link"
+          data-priceedit="${esc2(r.event_id)}" data-pricescope="${esc2(scope)}"
+          data-priceval="${r.ticket_price != null ? esc2(r.ticket_price) : ''}"
+          data-priceurl="${esc2(r.ticket_url || '')}">&#9998;</button>`;
+      }
+
+      // A hand-typed figure and a model's are the same number on screen and very different
+      // claims. The badge says which without making the operator open the info panel.
+      const priceManualBadge = r => (r && r.price_source === 'manual')
+        ? ' <span class="price-manual" title="Set by hand by an operator, not by the price lookup.">manual</span>' : '';
+
+      function ensurePop(){
+        if(pop) return pop;
+        pop = document.createElement('div');
+        pop.className = 'price-pop hidden';
+        pop.innerHTML = `
+          <div class="mb-2">
+            <label for="pp-price">Get-in price (per ticket)</label>
+            <input id="pp-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 20">
+          </div>
+          <div class="mb-2">
+            <label for="pp-url">Listing link</label>
+            <input id="pp-url" type="url" placeholder="https://…">
+          </div>
+          <div class="pp-err mb-2 hidden"></div>
+          <div class="flex items-center gap-1">
+            <button class="btn btn-xs btn-primary flex-1" data-pp="save">Save</button>
+            <button class="btn btn-xs btn-ghost" data-pp="reset" title="Clear the price so the next refresh looks it up again">Reset</button>
+            <button class="btn btn-xs btn-ghost" data-pp="cancel">Cancel</button>
+          </div>
+          <div class="text-[10px] text-base-content/50 mt-2 leading-snug">
+            Updates this game everywhere — Campaigns, ICP/SCP and every queued blast.
+            A refresh will replace it.
+          </div>`;
+        document.body.appendChild(pop);
+
+        pop.addEventListener('click', e => {
+          const act = e.target.closest('[data-pp]')?.dataset.pp;
+          if(!act) return;
+          if(act === 'cancel') return close();
+          save(act === 'reset');
+        });
+        // Enter saves, Escape closes — a two-field box where reaching for the mouse is the
+        // slowest part of correcting one number.
+        pop.addEventListener('keydown', e => {
+          if(e.key === 'Enter'){ e.preventDefault(); save(false); }
+          if(e.key === 'Escape'){ e.preventDefault(); close(); }
+        });
+        return pop;
+      }
+
+      function close(){ if(pop){ pop.classList.add('hidden'); } current = null; }
+
+      function showErr(msg){
+        const box = pop.querySelector('.pp-err');
+        box.textContent = msg || '';
+        box.classList.toggle('hidden', !msg);
+      }
+
+      function open(btn){
+        const p = ensurePop();
+        current = { id: btn.dataset.priceedit, scope: btn.dataset.pricescope };
+        p.querySelector('#pp-price').value = btn.dataset.priceval || '';
+        p.querySelector('#pp-url').value   = btn.dataset.priceurl || '';
+        showErr('');
+        p.classList.remove('hidden');
+        // Placed from the trigger's rect, then pulled back inside the viewport — the pencil sits
+        // in the second column of a wide table, so the right edge is the one that overflows.
+        const r = btn.getBoundingClientRect();
+        const w = p.offsetWidth, h = p.offsetHeight;
+        p.style.left = Math.max(8, Math.min(r.left, window.innerWidth  - w - 8)) + 'px';
+        p.style.top  = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - h - 8)) + 'px';
+        p.querySelector('#pp-price').focus();
+        p.querySelector('#pp-price').select();
+      }
+
+      async function save(isReset){
+        if(!current || !sb) { close(); return; }
+        const priceRaw = pop.querySelector('#pp-price').value.trim();
+        const urlRaw   = pop.querySelector('#pp-url').value.trim();
+
+        // Reset sends a null price, which the RPC reads as "forget this and look it up again".
+        let price = null;
+        if(!isReset){
+          if(priceRaw === ''){
+            showErr('Enter a price, or use Reset to clear it.'); return;
+          }
+          price = Number(priceRaw);
+          if(!isFinite(price) || price <= 0){ showErr('Price must be a number above 0.'); return; }
+        }
+        // A link that does not parse is worse than none: it invites a click that goes nowhere.
+        if(!isReset && urlRaw){
+          try {
+            const u = new URL(urlRaw);
+            if(u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('scheme');
+          } catch { showErr('Listing link must be a full http(s) address.'); return; }
+        }
+
+        const btns = pop.querySelectorAll('[data-pp]');
+        btns.forEach(b => b.disabled = true);
+        const { error } = await sb.rpc('set_event_price_manual', {
+          p_event_id: current.id, p_price: price, p_url: isReset ? null : (urlRaw || null) });
+        btns.forEach(b => b.disabled = false);
+
+        if(error){ showErr(error.message || 'Save failed.'); return; }
+
+        const scope = current.scope;
+        close();
+        window.__pbToast?.({
+          type:'ok',
+          title: isReset ? 'Price cleared' : 'Price updated',
+          lines: [ isReset
+            ? 'The next refresh will look this game up again.'
+            : 'Applied to Campaigns, ICP/SCP and every queued blast for this game.' ],
+        });
+        if(scope === 'queue') await window.__loadQueue?.();
+        else await window.__loadEvents?.();
+      }
+
+      // Deliberately NOT stopPropagation: the Queue closes its row-actions menu from its own
+      // document listener, and swallowing the event here would leave a .q-menu hanging open
+      // behind the popover. Neither table has a row-level click handler to interfere with.
+      document.addEventListener('click', e => {
+        const btn = e.target.closest('[data-priceedit]');
+        if(btn){ e.preventDefault(); open(btn); return; }
+        if(pop && !pop.classList.contains('hidden') && !e.target.closest('.price-pop')) close();
+      });
+      // The tables scroll inside their own box and the popover is fixed, so it would otherwise
+      // sit still while the row it belongs to slides away.
+      window.addEventListener('scroll', () => { if(pop && !pop.classList.contains('hidden')) close(); }, true);
+      window.addEventListener('resize', () => { if(pop && !pop.classList.contains('hidden')) close(); });
+
+      window.__priceEditBtn = priceEditBtn;
+      window.__priceManualBadge = priceManualBadge;
+    })();
+
     // ===== Campaigns by Event (ticketblaster.sports_ticket) — powers the Campaigns tab =====
     // One row per event, resolved to the market/state it targets (home team → state), with that
     // state's audience (companies / phones / ICP-SCP-Other). Senders live in the Queue, not here.
@@ -1874,7 +2058,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}</div></td>
-          <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}<div class="text-[10px] text-base-content/40">get-in</div>`:'<span class="text-base-content/40">—</span>'}</td>
+          <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}${window.__priceManualBadge?.(e)||''}${window.__priceEditBtn?.(e,'campaign')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+            // A game with no price is the one MOST worth an edit, not the least: price-refresh
+            // drops every price whose listing link the model failed to return (~40% of what it
+            // pays for), so a dash here often means a real price nobody could store.
+            :`<span class="text-base-content/40">—</span>${window.__priceEditBtn?.(e,'campaign')||''}`}</td>
           <td>${sport}</td>
           <td>${market}</td>
           <td>${segBadge(e.segment)}</td>
@@ -1949,6 +2137,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return { data: all, error: null };
       }
 
+      // Exposed for the price editor, which sits outside this module (it is shared with the
+      // Queue) and has to re-read the table after a save — the price it wrote is on
+      // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
         if(!sb){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
@@ -1966,6 +2157,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         await refreshTestMode();   // populate window.__ALLOWED_CODES before first render (test-mode cues)
         render();
       }
+
+      window.__loadEvents = load;
 
       // Any filter change puts you back on page 1 — page 7 of the old result set means nothing
       // once the set changes.
@@ -2210,11 +2403,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             pbToast({ type:'ok', title:'Nothing to price', lines:['No games are send-eligible right now, so there is nothing to refresh.'] });
             return;
           }
+          // A hand-set price is deliberately NOT locked (migration 055) — a refresh replaces it
+          // like any other. That is the agreed behaviour, but it must not be a surprise: someone
+          // who opened a listing and typed the real number is the one person here who has
+          // actually checked, and this button quietly discards that work.
+          //
+          // Counted from ROWS, which is event x segment, so events are deduplicated. Scoped to
+          // the same forward window the server quoted rather than the whole board, because a
+          // manual price on a game two months out is not in this run's reach.
+          const winEnd = dateCutoff(est.window_days || 20);
+          const manualIds = new Set(ROWS
+            .filter(e => e.price_source === 'manual' && e.event_date && e.event_date <= winEnd)
+            .map(e => e.event_id));
+          const manualWarn = manualIds.size
+            ? `\n\n⚠ ${manualIds.size} price${manualIds.size===1?'':'s'} in this window ${manualIds.size===1?'was':'were'} set by hand. Refreshing replaces ${manualIds.size===1?'it':'them'} with a fresh lookup.`
+            : '';
           const go = await pbConfirm({
             title: `Refresh prices for ${est.would_price} game${est.would_price===1?'':'s'}?`,
             // "22 lookups" is meaningless on its own — say why the cost is not 127 x the
             // per-call price. Billing is per grounded request, so games are priced in batches.
-            body: `Every game playing in the next ${est.window_days || 20} days is repriced, including ones priced recently.\n\nCost: roughly $${Number(est.est_cost_usd||0).toFixed(2)} — the AI is billed per search, not per game, so these are looked up in ${est.batches} batch${est.batches===1?'':'es'} of 6.\n\nGames further out are not priced: the price would move before the blast goes out, and they are not sendable yet.\n\nThis can take a minute or two.`,
+            body: `Every game playing in the next ${est.window_days || 20} days is repriced, including ones priced recently.\n\nCost: roughly $${Number(est.est_cost_usd||0).toFixed(2)} — the AI is billed per search, not per game, so these are looked up in ${est.batches} batch${est.batches===1?'':'es'} of 6.\n\nGames further out are not priced: the price would move before the blast goes out, and they are not sendable yet.${manualWarn}\n\nThis can take a minute or two.`,
             okText: 'Refresh all',
           });
           if(!go) return;
@@ -2781,11 +2989,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // number — see the note on get_campaign_queue in migration 052.
         if(r.ticket_price == null || !r.priced_at) return '';
         const when = new Date(r.priced_at);
+        // A hand-typed price has no listing basis to describe. price_seats is NULL on it by
+        // design (migration 055), and the generic NULL wording — "a listing whose seat count was
+        // not reported" — would describe a lookup that never happened. Say what it actually is.
+        const manual = r.price_source === 'manual';
         const lines = [
           'Per-ticket get-in price, before taxes and fees.',
-          `Based on ${priceBasis(r)}.`,
-          r.price_source ? `Source: ${r.price_source}` : '',
-          `Checked: ${when.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`,
+          manual ? 'Set by hand by an operator.' : `Based on ${priceBasis(r)}.`,
+          manual ? 'A price refresh will replace it.' : '',
+          (r.price_source && !manual) ? `Source: ${r.price_source}` : '',
+          `${manual ? 'Set' : 'Checked'}: ${when.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`,
           (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
         ].filter(Boolean).join('\n');
         return ` <span class="price-info" title="${esc(lines)}">&#9432;</span>`;
@@ -2940,8 +3153,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const priceCell = r.ticket_price!=null
             ? `${r.ticket_url
                 ? `<a href="${esc(r.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold">$${fmt(r.ticket_price)}</a>`
-                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${priceInfo(r)}<div class="text-[10px] text-base-content/40">get-in</div>`
-            : '<span class="text-base-content/40">—</span>';
+                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${priceInfo(r)}${window.__priceManualBadge?.(r)||''}${sent?'':window.__priceEditBtn?.(r,'queue')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+            // A sent blast is a record of what went out. Editing the price behind it would
+            // rewrite that record without changing anything a recipient saw.
+            : `<span class="text-base-content/40">—</span>${sent?'':window.__priceEditBtn?.(r,'queue')||''}`;
           const sportCell = r.sport
             ? `<span class="sport-pill">${esc(r.sport)}</span>${r.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(r.league)}</div>`:''}`
             : '<span class="text-base-content/40">—</span>';
