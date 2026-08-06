@@ -58,6 +58,25 @@
              background:#fff; border:1px solid #e3e8ef; border-radius:10px; padding:6px;
              box-shadow:0 10px 30px rgba(19,59,73,.18); min-width:132px; }
     .q-menu.hidden{ display:none; }
+    /* Hover states for the action buttons, stated outright instead of inherited.
+       daisyUI hovers an outline button to `color: var(--<colour>-content)`, and in its light
+       theme --suc / --erc / --wac are all `0% 0 0` — PURE BLACK. So Confirm and Reject filled
+       with a darkened saturated colour and then put black text on top of it: dark on dark.
+       The Reject button already carried a `hover:text-white` meant to prevent exactly this. It
+       never applied — a Tailwind `.hover\:text-white:hover` is specificity (0,2,0) and
+       daisyUI's `.btn-outline.btn-error:hover` is (0,3,0), so daisyUI won every time. These
+       selectors are (0,4,0) or better and scoped to the menu, which beats it without changing
+       buttons anywhere else on the page. Each pair is a solid brand fill with white on top. */
+    .q-menu .btn.btn-outline:hover{ background-color:#133b49; border-color:#133b49; color:#fff; }
+    .q-menu .btn.btn-outline.btn-success:hover{ background-color:#067523; border-color:#067523; color:#fff; }
+    .q-menu .btn.btn-outline.btn-error:hover{ background-color:#c0341a; border-color:#c0341a; color:#fff; }
+    .q-menu .btn.btn-warning:hover{ background-color:#c94d07; border-color:#c94d07; color:#fff; }
+    /* Delete is deliberately the quiet one — it hovers to a pale fill, so it keeps DARK text.
+       Forcing white here would have swapped one unreadable pairing for another. */
+    .q-menu .btn.btn-ghost:hover{ background-color:#f1f4f7; color:#5e6e82; }
+    /* The trigger sits outside .q-menu. daisyUI already gives it white-on-dark, but it is
+       pinned here too so the menu and the button that opens it hover as one thing. */
+    .btn.btn-outline[data-qmenu]:hover{ background-color:#133b49; border-color:#133b49; color:#fff; }
     .price-info{ cursor:help; color:#94a3b8; font-size:11px; vertical-align:super; }
     .price-info:hover{ color:#133b49; }
     /* Price editor. The pencil is a SEPARATE control from the price itself, which is already an
@@ -3108,7 +3127,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 // Reject above Delete, and Delete rendered quietly: refusing a blast is the
                 // decision that teaches the decider, deleting is the one that throws the signal
                 // away. The prominent choice should be the useful one.
-                : `<button class="btn btn-xs btn-outline btn-error text-error hover:text-white justify-start" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
+                // `text-error hover:text-white` used to sit on this button. Both were dead —
+                // daisyUI's own `.btn-outline.btn-error` rules outrank a bare Tailwind colour
+                // utility at rest AND on hover, so neither ever painted a pixel. The hover
+                // colour is set in the stylesheet now, at a specificity that actually wins.
+                : `<button class="btn btn-xs btn-outline btn-error justify-start" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
                    <button class="btn btn-xs btn-ghost text-base-content/50 justify-start" data-del="${esc(r.id)}" title="Delete this blast outright — for mistakes and test rows. Unlike Reject it teaches the decider nothing.">Delete</button>`,
         ].filter(Boolean).join('');
         return `<button class="btn btn-xs btn-outline" data-qmenu="${esc(r.id)}">Actions &#9662;</button>
