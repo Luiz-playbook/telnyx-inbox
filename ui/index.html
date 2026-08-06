@@ -611,7 +611,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Phone #s</th>
                     <!-- Sized to the datetime-local control itself (date + time + picker icon),
                          not to spare table width. -->
-                    <th class="col-tight w-[196px]">Schedule</th>
+                    <th class="col-tight w-[196px]">Schedule <span class="font-normal normal-case text-base-content/50">(ET)</span></th>
                     <th>Status</th>
                     <th class="w-24">Actions</th>
                   </tr></thead>
@@ -784,6 +784,59 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // ===== US EASTERN, EVERYWHERE =====
+    // Every fixture this app sells is North American and every send slot is set in US Eastern,
+    // so ET is the house clock — not the operator's. These are global (not per-module) because
+    // the bug they close was exactly the same formatter written four times, three of which
+    // forgot the timeZone: an operator in Europe saw the queue in CEST (Josh, 2026-08-07).
+    //
+    // Reading a time in the wrong zone is the harmless half. The dangerous half was WRITING
+    // one: the send slot was built with `new Date(y, m-1, d, 10, 0)`, which is 10:00 in the
+    // BROWSER's zone. Queued from Europe that stored 04:00 Texas, and api/queue-tick.js
+    // compares the stored instant directly — so the blast really would have gone out at 4am.
+    // etInstant() is the fix: it builds the instant at which the ET wall clock reads what the
+    // operator meant. Anything that turns operator input into a timestamp must go through it.
+    //
+    // Locale is pinned to en-US alongside the zone. A de-DE browser renders `hour:'numeric'`
+    // as 24-hour "14" and dates as d/m/y, which is a second way for the same operator to
+    // misread a US send time. One clock, one reading.
+    const ET_TZ = 'America/New_York';
+    const ET_PARTS = new Intl.DateTimeFormat('en-US', { timeZone: ET_TZ, hour12: false,
+      year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    function etFields(ts){
+      const p = {};
+      for(const x of ET_PARTS.formatToParts(new Date(ts))) if(x.type !== 'literal') p[x.type] = Number(x.value);
+      if(p.hour === 24) p.hour = 0;            // hour12:false renders midnight as 24 on some engines
+      return p;
+    }
+    // Milliseconds to ADD to a UTC instant to get the ET wall clock read as though it were UTC.
+    // Negative year-round here (ET is behind UTC); the magnitude changes across a DST switch.
+    function etOffset(ts){
+      const p = etFields(ts);
+      return Date.UTC(p.year, p.month-1, p.day, p.hour, p.minute, p.second) - Math.floor(ts/1000)*1000;
+    }
+    // The instant at which the ET wall clock reads y-m-d hh:mm. Two passes: the first guesses
+    // the offset from the wall time, the second re-reads it at the instant that guess lands on,
+    // so a time near a DST boundary resolves against the offset actually in force then.
+    function etInstant(y, m, d, hh = 0, mm = 0){
+      const wall = Date.UTC(y, m-1, d, hh, mm, 0);
+      const ts = wall - etOffset(wall);
+      return wall - etOffset(ts);
+    }
+    const etDate = (v, o) => new Date(v).toLocaleDateString('en-US', { timeZone: ET_TZ, ...(o||{}) });
+    const etTime = (v, o) => new Date(v).toLocaleTimeString('en-US', { timeZone: ET_TZ, ...(o||{}) });
+    // YYYY-MM-DD in ET. en-CA gives that ordering directly. This is the form events_master
+    // .event_date is written in and the form api/queue-tick.js compares against.
+    const etYmd = (v) => new Date(v == null ? Date.now() : v).toLocaleDateString('en-CA', { timeZone: ET_TZ });
+    // Value for <input type="datetime-local">, which has no zone of its own — it shows whatever
+    // string you hand it, so the string has to already be ET.
+    const etInputValue = (v) => { const p = etFields(new Date(v).getTime()), z = n => String(n).padStart(2,'0');
+      return `${p.year}-${z(p.month)}-${z(p.day)}T${z(p.hour)}:${z(p.minute)}`; };
+    // ...and the way back. new Date('2026-08-08T10:00') parses as browser-local, which is the
+    // write-side bug all over again, so the string is destructured and rebuilt through etInstant.
+    const etInputToIso = (s) => { const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(s||'');
+      return m ? new Date(etInstant(+m[1], +m[2], +m[3], +m[4], +m[5])).toISOString() : null; };
 
     // AUTH — the front door. ui/login.html has existed since 9e76d22 but nothing ever routed
     // to it, so the app has been open to anyone with the URL.
@@ -1570,7 +1623,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(error) throw error;
         note.textContent = '— saved · recomputing…';
         await loadHistory();            // recompute the decider with the new rules
-        note.textContent = '— saved & recomputed ' + new Date().toLocaleTimeString();
+        note.textContent = '— saved & recomputed ' + etTime(Date.now()) + ' ET';
       }catch(e){ note.textContent = '— failed: '+e.message; }
       btn.disabled=false; btn.textContent=label;
     });
@@ -1976,7 +2029,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       let sortDir = '';              // '' = the RPC's own order (event date), else 'asc' / 'desc' on price
       const SEG_CLASS = { ICP:'seg-icp', SCP:'seg-scp' };   // anything else renders as the neutral pill
       const segBadge = s => `<span class="seg ${SEG_CLASS[s] || 'seg-non'}">${esc(s || 'Other')}</span>`;
-      const dateCutoff = n => { const d=new Date(); d.setDate(d.getDate()+Number(n)); return d.toISOString().slice(0,10); };
+      // Compared against event_date, which is a US local date — so the cutoff has to be one
+      // too. toISOString() gave the UTC day, which is already tomorrow for the last hours of
+      // every US evening: the "next 7 days" window quietly dropped that day's own fixtures.
+      const dateCutoff = n => { const d=new Date(); d.setDate(d.getDate()+Number(n)); return etYmd(d); };
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const clip = (s, n = 17) => { s = (s||'').toString(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
       // events_master.team is the HOME side and `opponent` visits — the venue and market_code
@@ -1987,9 +2043,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // "Today" means today WHERE THE GAME IS, not in the viewer's timezone. The server filters
       // on its own date and every fixture is North American, so a browser in Manila — a day
       // ahead of US Eastern — would call tonight's games yesterday's and flag them wrongly.
-      // en-CA gives YYYY-MM-DD directly.
-      const todayYmd = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-      const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
+      const todayYmd = () => etYmd();
+      // event_date is a plain YYYY-MM-DD with no time, so it carries no zone to convert: it is
+      // parsed and read back through the same local calendar and always names the day it says.
+      // Only the locale is pinned, so the weekday reads en-US like every other date on the page.
+      const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString('en-US',{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
 
       function render(){
         const f = filter.trim().toLowerCase();
@@ -2490,7 +2548,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // again. So triggering twice adds nothing the second time instead of rewriting the queue.
       const PER_DAY_DEFAULT = 4, DAYS_DEFAULT = 4;
 
-      const ymd = d => { const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+      // ET, not the browser: this names the DAY a send slot belongs to, and it is compared
+      // against todayYmd() and against scheduled_for below. Built on the browser clock it
+      // disagreed with todayYmd by a day for any operator east of ET after their evening —
+      // enough to plan a slot for a day the queue already considers gone.
+      const ymd = d => etYmd(d);
       const perDayInput = () => Math.max(1, Math.min(10, Number(el('tb-perday')?.value) || PER_DAY_DEFAULT));
       const defaultThrough = () => { const d = new Date(); d.setDate(d.getDate() + DAYS_DEFAULT - 1); return ymd(d); };
       // The date is fixed but today moves toward it, so an untouched field gives a window that
@@ -2505,11 +2567,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(inp) inp.value = floor;
         return floor;
       };
-      // Send slot: 10:00 local on the assigned day, so a day's blasts group together.
+      // Send slot: 10:00 US EASTERN on the assigned day, so a day's blasts group together.
+      // This used to read `new Date(y, m-1, d, 10, 0, 0)` — 10:00 in the BROWSER's zone. The
+      // stored value is an absolute instant and api/queue-tick.js fires on it directly, so the
+      // same button produced a different send hour per operator: queued from Europe, a Texas
+      // blast landed at 04:00 local. etInstant pins it to the house clock. See the ET block.
       const slotIso = day => { const [y,m,d] = String(day||'').split('-').map(Number);
-        return (y && m && d) ? new Date(y, m-1, d, 10, 0, 0).toISOString() : new Date().toISOString(); };
+        return (y && m && d) ? new Date(etInstant(y, m, d, 10, 0)).toISOString() : new Date().toISOString(); };
       const dayLabel = day => { const [y,m,d] = String(day||'').split('-').map(Number);
-        return new Date(y, m-1, d).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); };
+        return new Date(y, m-1, d).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}); };
 
       // Seed the picker (today + DAYS_DEFAULT-1) and forbid picking a day already gone.
       if(el('tb-through')){ el('tb-through').min = ymd(new Date()); throughInput(); }
@@ -2842,16 +2908,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       };
       const cooldownNote = r => { const c = coolingOf(r); return (c && c.cooled) ? `<div class="text-[11px] font-semibold text-[#c94d07] mt-0.5">&#9203; cooling &middot; ${c.days_left}d left${r.segment?' &middot; '+esc(r.segment):''}</div>` : ''; };
 
-      const toLocalInput = iso => { const d=new Date(iso), p=n=>String(n).padStart(2,'0');
-        return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
-      const whenLabel = iso => { const d=new Date(iso);
-        return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'})+' '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}); };
+      // The Schedule column, both directions, in ET. The <input type="datetime-local"> has no
+      // zone of its own — it renders the string it is given and hands back a string in the same
+      // shape — so BOTH ends have to be converted or the operator edits one clock and stores
+      // another. The column header says (ET) for the same reason the label does.
+      const toEtInput = iso => etInputValue(iso);
+      const whenLabel = iso => etDate(iso,{weekday:'short',month:'short',day:'numeric'})
+        + ' ' + etTime(iso,{hour:'numeric',minute:'2-digit'}) + ' ET';
       const chan = r => [r.email?'Email':'', r.sms?'SMS':''].filter(Boolean).join(' + ') || '—';
       // Same two formatters Campaigns by Event uses, so a metro and a game date read identically
       // on both tabs.
       const prettyMetro = k => (k||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       const clip = (s, n = 17) => { s = (s||'').toString(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
-      const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString(undefined,{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
+      const shortDate = d => { if(!d) return ''; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString('en-US',{weekday:'short'})+' '+(dt.getMonth()+1)+'/'+dt.getDate()+'/'+String(dt.getFullYear()).slice(2); };
       // A queued blast sells tickets to a specific game. The auto-send tick fires on
       // scheduled_for and never looks at the game date, so a row that sat in the queue too
       // long (or was snoozed past its own game) would still go out advertising a match that
@@ -2859,7 +2928,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // US Eastern, not the viewer's clock — see the note on the Campaigns copy of this. A
       // browser a day ahead of the game's timezone would mark tonight's fixtures as already
       // played and the cron would then refuse to send them.
-      const todayYmd = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const todayYmd = () => etYmd();
       const gameIsPast = r => !!(r.event_date && r.status !== 'sent' && String(r.event_date) < todayYmd());
       // Snooze durations. Seven days used to be the only one, applied silently — so a blast
       // for a game three days out could be pushed a week past its own fixture with one click
@@ -2869,12 +2938,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const snoozeOptions = r => SNOOZE_DAYS.map(days => {
         const at = new Date(Date.now() + days * 864e5);
         // Compared in US Eastern, the same clock event_date is written in — see todayYmd.
-        const ymd = at.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const ymd = etYmd(at);
         const past = !!(r && r.event_date && ymd > String(r.event_date));
         return {
           value: String(days),
           selected: days === 7,
-          label: `${days} day${days===1?'':'s'} &mdash; until ${esc(at.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}))}`
+          // Labelled in ET too, or the date the option NAMES could disagree with the date it is
+          // CHECKED against one option out of three, for an operator whose evening is ET's day.
+          label: `${days} day${days===1?'':'s'} &mdash; until ${esc(etDate(at,{weekday:'short',month:'short',day:'numeric'}))}`
                + (past ? ' <span class="text-[#c94d07] font-semibold">&#9888; after this game</span>' : ''),
         };
       });
@@ -2931,7 +3002,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const reachCell = (on, n) => !on
         ? '<span class="text-base-content/40">—</span>'
         : ((Number(n)||0) ? fmt(n) : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market">0</span>');
-      const sendDateShort = iso => { try{ return new Date(iso).toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
+      // ET: this is the day band the queue groups rows under. Formatted on the browser clock
+      // the band could read one day while the rows under it were slotted for another.
+      const sendDateShort = iso => { try{ return etDate(iso,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
+      // The day a queued blast belongs to. scheduled_for comes back as a UTC timestamptz, so
+      // slicing its first ten characters — what this used to do in four places — gave the UTC
+      // day. That agrees with ET for the default 10:00 slot and stops agreeing the moment an
+      // operator drags one past 8pm ET, which lands the row under tomorrow's band and hides it
+      // from today's day filter. etYmd names the day the operator actually chose.
+      const sendYmd = v => v ? etYmd(v) : '';
       // Identical to Campaigns by Event's title: "<opponent> at <team>", because `team` is the
       // HOME side — the venue and market belong to it — so the visitor is named first. The send
       // date used to be jammed into the title, which duplicated the day band right above the row.
@@ -2998,7 +3077,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           manual ? 'Set by hand by an operator.' : `Based on ${priceBasis(r)}.`,
           manual ? 'A price refresh will replace it.' : '',
           (r.price_source && !manual) ? `Source: ${r.price_source}` : '',
-          `${manual ? 'Set' : 'Checked'}: ${when.toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})}`,
+          `${manual ? 'Set' : 'Checked'}: ${etDate(when,{month:'short',day:'numeric'})} ${etTime(when,{hour:'numeric',minute:'2-digit'})} ET`,
           (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
         ].filter(Boolean).join('\n');
         return ` <span class="price-info" title="${esc(lines)}">&#9432;</span>`;
@@ -3075,7 +3154,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(stateF  && (r.state_code||'') !== stateF) return false;
         if(chanF === 'email' && !r.email) return false;
         if(chanF === 'sms'   && !r.sms)   return false;
-        if(dayF && String(r.scheduled_for||'').slice(0,10) !== dayF) return false;
+        if(dayF && sendYmd(r.scheduled_for) !== dayF) return false;
         const f = qFilter.trim().toLowerCase();
         if(!f) return true;
         return [blastTitle(r), r.title, r.state_name, r.state_code, r.sport, r.league, prettyMetro(r.market_key)]
@@ -3126,11 +3205,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const open = expanded.has(r.id), sent = r.status==='sent', stale = gameIsPast(r);
           const archived = !!r.archived_at;
           const rejected = r.status === 'rejected';
-          const day = String(r.scheduled_for||'').slice(0,10);
+          const day = sendYmd(r.scheduled_for);
           let dayHead = '';
           if(day !== lastDay){
             lastDay = day;
-            const n = rows.filter(x => String(x.scheduled_for||'').slice(0,10) === day).length;
+            const n = rows.filter(x => sendYmd(x.scheduled_for) === day).length;
             dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
               ${esc(sendDateShort(r.scheduled_for))} <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span></td></tr>`;
           }
@@ -3187,7 +3266,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="col-tight">${marketCell}</td>
             <td>${blockedRow ? blockedReachCell(r.email, r.email_count) : reachCell(r.email, r.email_count)}</td>
             <td>${blockedRow ? blockedReachCell(r.sms, r.phone_count) : reachCell(r.sms, r.phone_count)}</td>
-            <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toLocalInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''}></td>
+            <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toEtInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''} title="US Eastern"></td>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
             <td class="whitespace-nowrap">${actionsMenu(r, { sent, rejected, archived })}</td>
           </tr>`;
@@ -3391,7 +3470,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           await refresh();
         }));
         tb.querySelectorAll('[data-schedule]').forEach(inp=>inp.addEventListener('change', async ()=>{
-          if(!inp.value) return; const iso=new Date(inp.value).toISOString();
+          // The control hands back a bare 'YYYY-MM-DDTHH:MM' with no zone. new Date() on that
+          // reads it as browser-local, so an operator in Europe typing 10:00 — the time the
+          // field had just shown them in ET — stored 04:00 ET. Read it back as the ET it was
+          // rendered as. A malformed value yields null and is left alone rather than stored.
+          if(!inp.value) return; const iso = etInputToIso(inp.value);
+          if(!iso) return;
           await sb.rpc('queue_set_schedule',{p_id:inp.dataset.schedule, p_when:iso}); await refresh();
         }));
         // Empty value = the "not sending" option: turn the channel off. Anything else stores
@@ -3559,8 +3643,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const daySel = el('q-day');
         if(daySel){
           const cur = daySel.value, head = daySel.options[0].outerHTML;
-          const days = [...new Set(QUEUE.map(r => String(r.scheduled_for||'').slice(0,10)).filter(Boolean))].sort();
-          daySel.innerHTML = head + days.map(d=>`<option value="${esc(d)}">${esc(sendDateShort(d+'T12:00:00'))}</option>`).join('');
+          // Option VALUES are ET days, because that is what the day filter compares against.
+          // The label needs an instant that lands on day d in ET: 'T12:00:00Z' is 7–8am ET, so
+          // it can never spill either side. A bare 'T12:00:00' would have been parsed as noon
+          // in the BROWSER's zone, which is the previous ET day from anywhere past UTC+12.
+          const days = [...new Set(QUEUE.map(r => sendYmd(r.scheduled_for)).filter(Boolean))].sort();
+          daySel.innerHTML = head + days.map(d=>`<option value="${esc(d)}">${esc(sendDateShort(d+'T12:00:00Z'))}</option>`).join('');
           daySel.value = days.includes(cur) ? cur : '';
         }
         const stateSel = el('q-state');
@@ -3667,7 +3755,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!el('bh-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => n==null ? '—' : (Number(n)||0).toLocaleString();
-      const fmtDate = d => d ? new Date(d).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}) : '—';
+      // sent_at is a real instant, so it gets the house clock like every other one on the page.
+      const fmtDate = d => d ? etDate(d,{year:'numeric',month:'short',day:'numeric'}) : '—';
       // Defined here, not borrowed: every module in this file is its own IIFE, so the
       // identically-named helpers in the Campaigns and Queue modules are NOT in scope. Using
       // one from here threw a ReferenceError mid-render, which left the table showing whatever
