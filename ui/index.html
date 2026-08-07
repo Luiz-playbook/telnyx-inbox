@@ -200,9 +200,16 @@
        trigger and both pseudo-elements — above it. */
     .tooltip{ z-index:60; }
     .tooltip:before, .tooltip:after{ z-index:60; }
-    /* Long explanatory tips need to wrap and read left-aligned, not as one squeezed line. */
-    .tooltip-wide:before{ width:max-content; max-width:min(24rem, 90vw); white-space:normal;
+    /* Long explanatory tips need to wrap and read left-aligned, not as one squeezed line.
+       pre-line, not normal: these tips carry blank-line paragraph breaks, and `normal` collapses
+       them into one wall of text. */
+    .tooltip-wide:before{ width:max-content; max-width:min(24rem, 90vw); white-space:pre-line;
                           text-align:left; line-height:1.5; padding:9px 12px; }
+    /* Toolbar tips. Smaller than body text — a tooltip is an aside, and at 14px these two read
+       as loud as the page behind them. Narrower too: 24rem of explanatory text centred under a
+       button near the right edge pushed past the viewport and made the whole PAGE scroll
+       sideways, which is why both open leftward (.tooltip-left) rather than downward. */
+    .tooltip-sm:before{ font-size:11px; line-height:1.45; max-width:min(19rem, 78vw); padding:7px 10px; }
     .today-warn{ display:inline-flex; align-items:center; gap:3px; margin-left:6px; padding:1px 7px; border-radius:9999px;
                  background:#fdeee4; color:#c94d07; border:1px solid #f5d3bd; font-size:10px; font-weight:800;
                  letter-spacing:.03em; text-transform:uppercase; vertical-align:middle; cursor:help; }
@@ -381,15 +388,13 @@
                      as page furniture rather than as something belonging to this control.
                      A daisyUI tooltip is a wrapper with CSS pseudo-elements — it does not
                      intercept the click, so the button inside stays fully pressable. -->
-                <span id="refresh-prices-tip" class="tooltip tooltip-bottom tooltip-wide" data-tip="Look up current get-in prices for send-eligible games.">
+                <span id="refresh-prices-tip" class="tooltip tooltip-left tooltip-wide tooltip-sm" data-tip="Look up current get-in prices for send-eligible games.">
                   <button id="refresh-prices" class="btn btn-outline btn-sm gap-1">&#8635; Refresh prices</button>
                 </span>
                 <!-- Same tooltip treatment as Refresh prices beside it. A native title= renders
                      OS-styled and on a delay, so two adjacent buttons explained two different
                      ways read as two different kinds of control. -->
-                <span id="rescan-schedules-tip" class="tooltip tooltip-bottom tooltip-wide" data-tip="Re-check every upcoming fixture against its league's schedule feed — moved, cancelled or missing games.
-
-Free: these are public schedule feeds, not the AI price lookup. Nothing is changed until you confirm.">
+                <span id="rescan-schedules-tip" class="tooltip tooltip-left tooltip-wide tooltip-sm" data-tip="Re-check every upcoming fixture against its league's schedule feed">
                   <button id="rescan-schedules" class="btn btn-outline btn-sm gap-1">&#128197; Rescan schedules</button>
                 </span>
               </div>
