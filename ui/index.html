@@ -3002,11 +3002,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // and no warning (Josh, 2026-07-31). Each option now states the date it lands on and
       // says outright when that date is after the game.
       const SNOOZE_DAYS = [1, 7, 14];
+      // Does snoozing by this many days land AFTER the game? Compared in US Eastern, the same
+      // clock event_date is written in — see todayYmd. No event_date means nothing to overshoot.
+      const snoozeOvershoots = (r, days) =>
+        !!(r && r.event_date && etYmd(new Date(Date.now() + days * 864e5)) > String(r.event_date));
+      // Can this row be snoozed at all? Only if at least ONE option still lands on or before
+      // game day.
+      //
+      // Warning every option was the previous behaviour, and on game day it produced a modal
+      // offering three choices with all three flagged "after this game" — a decision with no
+      // right answer, which is not a decision (Vhea, 2026-08-07). Note this is NOT the same
+      // test as gameIsPast: the reported case was a game still to be played that evening, where
+      // even the 1-day minimum already overshot. A finished game satisfies this too, since
+      // nothing lands before it, so both cases are covered by the one rule.
+      const canSnooze = r => SNOOZE_DAYS.some(days => !snoozeOvershoots(r, days));
       const snoozeOptions = r => SNOOZE_DAYS.map(days => {
         const at = new Date(Date.now() + days * 864e5);
-        // Compared in US Eastern, the same clock event_date is written in — see todayYmd.
-        const ymd = etYmd(at);
-        const past = !!(r && r.event_date && ymd > String(r.event_date));
+        const past = snoozeOvershoots(r, days);
         return {
           value: String(days),
           selected: days === 7,
@@ -3199,12 +3211,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // `overflow-auto` box, which would clip an absolutely-positioned dropdown for any row
       // near the bottom — fixed escapes that (no ancestor sets transform/filter, which would
       // re-establish a containing block and bring the clipping back).
+      // Snooze, disabled once no option can help. The two ways to get there read differently to
+      // an operator — "the game already happened" vs "the game is tonight" — so the tooltip says
+      // which, rather than one generic string that explains neither.
+      function snoozeBtn(r){
+        if(canSnooze(r)) return `<button class="btn btn-xs btn-outline justify-start" data-snooze="${esc(r.id)}">Snooze</button>`;
+        const why = gameIsPast(r)
+          ? `This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago. Snoozing would only move the send further past it.`
+          : `This game is ${r.event_date === todayYmd() ? 'today' : 'too close'} — even the shortest snooze (1 day) lands after it. Send it now or reject it.`;
+        return `<button class="btn btn-xs btn-outline justify-start" disabled title="${esc(why)}">Snooze</button>`;
+      }
+
       function actionsMenu(r, { sent, rejected, archived }){
         const items = [
           (sent||rejected) ? '' : `
             <button class="btn btn-xs btn-outline btn-success justify-start" data-confirm="${esc(r.id)}">Confirm</button>
             <button class="btn btn-xs btn-warning text-white hover:text-white justify-start" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
-            <button class="btn btn-xs btn-outline justify-start" data-snooze="${esc(r.id)}">Snooze</button>`,
+            ${snoozeBtn(r)}`,
           rejected
             ? `<button class="btn btn-xs btn-outline justify-start" data-unreject="${esc(r.id)}" title="Put this blast back in the queue and stop suppressing it. The decider may suggest it again.">Restore</button>`
             : archived
