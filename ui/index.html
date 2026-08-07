@@ -384,7 +384,14 @@
                 <span id="refresh-prices-tip" class="tooltip tooltip-bottom tooltip-wide" data-tip="Look up current get-in prices for send-eligible games.">
                   <button id="refresh-prices" class="btn btn-outline btn-sm gap-1">&#8635; Refresh prices</button>
                 </span>
-                <button id="rescan-schedules" class="btn btn-outline btn-sm gap-1" title="Re-check every upcoming fixture against its league's schedule feed — moved, cancelled or missing games">&#128197; Rescan schedules</button>
+                <!-- Same tooltip treatment as Refresh prices beside it. A native title= renders
+                     OS-styled and on a delay, so two adjacent buttons explained two different
+                     ways read as two different kinds of control. -->
+                <span id="rescan-schedules-tip" class="tooltip tooltip-bottom tooltip-wide" data-tip="Re-check every upcoming fixture against its league's schedule feed — moved, cancelled or missing games.
+
+Free: these are public schedule feeds, not the AI price lookup. Nothing is changed until you confirm.">
+                  <button id="rescan-schedules" class="btn btn-outline btn-sm gap-1">&#128197; Rescan schedules</button>
+                </span>
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
@@ -2311,6 +2318,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         btn.addEventListener('click', async () => {
           const orig = btn.innerHTML;
+          // Tooltip swapped for the duration and restored in the finally, the same way the price
+          // button does it — leaving "nothing is changed until you confirm" on screen while a
+          // pass is mid-flight describes the wrong moment.
+          const tip = el('rescan-schedules-tip');
+          const origTip = tip ? tip.dataset.tip : null;
+          if(tip) tip.dataset.tip = 'Reading the league schedule feeds. NHL walks 32 club schedules, so this takes a few seconds.';
           btn.disabled = true;
           const reports = [];
           try {
@@ -2378,6 +2391,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             await load();
           } finally {
             btn.disabled = false; btn.innerHTML = orig;
+            if(tip && origTip != null) tip.dataset.tip = origTip;
           }
         });
       })();
