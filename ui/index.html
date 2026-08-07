@@ -3063,12 +3063,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // into real newlines, which is what the stored copy holds. NBSPs (typed spaces at the
       // end of a line) become ordinary spaces or the SMS count would be off by a character.
       const readCopy = node => node ? node.innerText.replace(/\u00a0/g, ' ').replace(/\n+$/, '') : null;
+      // How many people a row actually reaches, per channel.
+      //
+      // A blast targets a market AND a segment, but this column read market_counts, which is
+      // keyed on market code alone — so a TX/ICP row displayed the whole of Texas. Not merely
+      // imprecise: it pointed the wrong way. Live examples when this was written — MO/SCP showed
+      // 211 emails against 3 real; OH/SCP 772 against 19; and one ZZ/ICP row advertised 121
+      // phone numbers for a segment holding none. api/queue-tick.js has always resolved
+      // recipients WITH the segment, so only the screen was wrong, never the send.
+      //
+      // Migration 056 adds segment_* alongside the market pair rather than replacing it: a row
+      // with no segment targets every segment, has no single segment figure, and correctly gets
+      // NULL. Those rows keep using the market count, which for them is the true answer.
+      const reachOf = (r, channel) => {
+        const seg = channel === 'email' ? r.segment_email_count : r.segment_phone_count;
+        const mkt = channel === 'email' ? r.email_count         : r.phone_count;
+        return Number((r.segment && seg != null) ? seg : mkt) || 0;
+      };
+      // Is there anyone at all to send to? Only enabled channels count — a row with SMS off and
+      // 400 emails is fine, and a row with SMS ON and no numbers is not. A row with both
+      // channels off has nothing to say either way, so it is not called empty.
+      const hasAudience = r => (r.email && reachOf(r, 'email') > 0) || (r.sms && reachOf(r, 'sms') > 0);
       // Reach, one column per channel: emails carry the email blast, phone numbers carry SMS.
       // A channel that's off reads '—'; a channel that's ON but resolves to nobody is the case
       // worth catching before send, so the zero is flagged rather than blending in.
       const reachCell = (on, n) => !on
         ? '<span class="text-base-content/40">—</span>'
-        : ((Number(n)||0) ? fmt(n) : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market">0</span>');
+        : ((Number(n)||0) ? fmt(n) : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market and segment">0</span>');
       // ET: this is the day band the queue groups rows under. Formatted on the browser clock
       // the band could read one day while the rows under it were slotted for another.
       const sendDateShort = iso => { try{ return etDate(iso,{weekday:'short',month:'short',day:'numeric'}); }catch{ return ''; } };
@@ -3104,18 +3125,36 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const blockedReachCell = (on, n) => !on
         ? '<span class="text-base-content/40">&mdash;</span>'
         : `<span title="${BLOCKED_TIP}"><span class="line-through text-base-content/40">${fmt(Number(n)||0)}</span> <span class="font-semibold text-base-content/60">0</span></span>`;
+      // When the slot is behind us, "sends <date>" is a lie in the future tense — and it is the
+      // ONLY thing the row said, so a blast that quietly reached nobody looked identical to one
+      // still waiting its turn. Every unsent branch below asks this and changes tense.
+      const slotPassed = r => !!r.scheduled_for && new Date(r.scheduled_for).getTime() < Date.now();
+      const slotLine = r => slotPassed(r)
+        ? `<div class="text-[11px] text-[#c94d07] font-semibold mt-0.5">was due ${esc(whenLabel(r.scheduled_for))}</div>`
+        : `<div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
+
       function statusCell(r){
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
-        if(r.status==='confirmed')return `<span class="badge badge-success badge-sm text-white">Confirmed</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
-        if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] text-base-content/50 mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))}</div>`;
+        // No audience OUTRANKS Pending/Confirmed/Snoozed, because it is the fact that decides
+        // what happens at the slot: queue-tick resolves nobody, sends nothing, and leaves the
+        // row exactly as it was — then retries every hour, forever, saying nothing. The row is
+        // not waiting to send; it cannot send. Deliberately not shown for rejected or archived
+        // rows, whose own status is the more useful thing to say.
+        if(r.status!=='rejected' && !r.archived_at && !hasAudience(r)){
+          const which = [ r.email && reachOf(r,'email')===0 ? 'email' : '', r.sms && reachOf(r,'sms')===0 ? 'SMS' : '' ].filter(Boolean).join(' and ');
+          return `<span class="badge badge-error badge-sm text-white" title="No ${esc(which||'recipients')} resolve for ${esc(r.state_code||'this market')}${r.segment?' · '+esc(r.segment):''}. The hourly send will find nobody, deliver nothing, and leave this row untouched — it will not be marked sent.">No audience</span>`
+               + slotLine(r);
+        }
+        if(r.status==='confirmed')return `<span class="badge badge-success badge-sm text-white">Confirmed</span>${slotLine(r)}`;
+        if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] ${slotPassed(r)?'text-[#c94d07] font-semibold':'text-base-content/50'} mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))}</div>`;
         // The reason is shown, not just the fact — it is why the row was kept at all, and it is
         // what the decider is being fed. Seeing it here is how you notice it says "n/a".
         if(r.status==='rejected') return `<span class="badge badge-error badge-sm text-white">Rejected</span>`
           + `<div class="text-[11px] text-base-content/50 mt-0.5">${r.reject_note ? esc(clip(r.reject_note, 40)) : 'no reason given'}</div>`;
         // Approval stays optional — an unactioned row still goes at its slot, not 48h after
         // it was queued (a blast scheduled 4 days out must not fire early).
-        return `<span class="badge badge-warning badge-sm">Pending</span><div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
+        return `<span class="badge badge-warning badge-sm">Pending</span>${slotLine(r)}`;
       }
 
       // Where a price came from, shown on the price itself (Vhea, 2026-08-03). The field that
@@ -3335,8 +3374,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td class="col-tight">${marketCell}</td>
-            <td>${blockedRow ? blockedReachCell(r.email, r.email_count) : reachCell(r.email, r.email_count)}</td>
-            <td>${blockedRow ? blockedReachCell(r.sms, r.phone_count) : reachCell(r.sms, r.phone_count)}</td>
+            <td>${blockedRow ? blockedReachCell(r.email, reachOf(r,'email')) : reachCell(r.email, reachOf(r,'email'))}</td>
+            <td>${blockedRow ? blockedReachCell(r.sms, reachOf(r,'sms')) : reachCell(r.sms, reachOf(r,'sms'))}</td>
             <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toEtInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''} title="US Eastern"></td>
             <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
             <td class="whitespace-nowrap">${actionsMenu(r, { sent, rejected, archived })}</td>
