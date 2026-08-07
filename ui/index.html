@@ -3211,6 +3211,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // `overflow-auto` box, which would clip an absolutely-positioned dropdown for any row
       // near the bottom — fixed escapes that (no ancestor sets transform/filter, which would
       // re-establish a containing block and bring the clipping back).
+
+      // Re-read this game from the source it came from (Marx, 2026-08-07). No event_id means
+      // no external_id to look up — placeholder rows carry none — so there is nothing to ask.
+      // Hidden on sent rows too: the mail is gone, and what the schedule says now cannot
+      // change that.
+      function rescanBtn(r, sent){
+        if(!r || !r.event_id || sent) return '';
+        return `<button class="btn btn-xs btn-outline justify-start" data-rescan="${esc(r.id)}" data-rescanevent="${esc(r.event_id)}"
+          title="Check this game against the league's schedule feed — has it moved, or been cancelled?">Rescan game</button>`;
+      }
+
       // Snooze, disabled once no option can help. The two ways to get there read differently to
       // an operator — "the game already happened" vs "the game is tonight" — so the tooltip says
       // which, rather than one generic string that explains neither.
@@ -3228,6 +3239,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <button class="btn btn-xs btn-outline btn-success justify-start" data-confirm="${esc(r.id)}">Confirm</button>
             <button class="btn btn-xs btn-warning text-white hover:text-white justify-start" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
             ${snoozeBtn(r)}`,
+          rescanBtn(r, sent),
           rejected
             ? `<button class="btn btn-xs btn-outline justify-start" data-unreject="${esc(r.id)}" title="Put this blast back in the queue and stop suppressing it. The decider may suggest it again.">Restore</button>`
             : archived
@@ -3484,6 +3496,69 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const below = window.innerHeight - rect.bottom;
           menu.style.top  = (below < mh + 8 ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4) + 'px';
           menu.style.left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8)) + 'px';
+        }));
+        // Rescan: LOOK first, then ask. A schedule change is never applied silently, because
+        // correcting event_date does not correct the copy — the SMS has the date typed into it
+        // ("tickets to the Blue Jays at New York Yankees on Aug 21"). Applying quietly would
+        // leave the row looking healthy while the message names the wrong day, which is a
+        // quieter failure than the one being fixed. The operator sees the change, is told how
+        // many queued blasts carry the stale wording, and decides.
+        tb.querySelectorAll('[data-rescan]').forEach(b=>b.addEventListener('click', async ()=>{
+          const orig = b.innerHTML;
+          b.disabled = true; b.innerHTML = 'Checking…';
+          const ask = async (apply) => {
+            const r = await fetch('/api/rescan-event', {
+              method:'POST', headers:{'content-type':'application/json'},
+              body: JSON.stringify({ event_id: b.dataset.rescanevent, apply: !!apply }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+            return j;
+          };
+          try {
+            const look = await ask(false);
+            const where = `${look.fixture || 'This game'} · ${String(look.league||'').toUpperCase()}`;
+
+            // Nothing was learned. Deliberately NOT phrased as "no changes" — the source was
+            // never reached, so silence here means ignorance, not confirmation.
+            if(look.outcome === 'unreachable' || look.outcome === 'unsupported'){
+              toast({ type:'err', title:'Could not check this game', lines:[ where, look.detail || 'The schedule source did not answer.', 'Nothing was changed. This is not a sign the game is off.' ] });
+              return;
+            }
+            if(look.outcome === 'unchanged'){
+              toast({ type:'ok', title:'Game unchanged', lines:[ where, `Still ${look.stored?.event_date || 'as recorded'}${look.state ? ` · ${look.state}` : ''}.` ] });
+              return;
+            }
+            // Absent from the feed. Suggestive, never conclusive — ids get reissued and feeds
+            // get rebuilt, so this is reported as a prompt to check by hand, not a verdict.
+            if(look.outcome === 'missing'){
+              toast({ type:'err', title:'Game not found at source', lines:[ where,
+                `We have it as ${look.stored?.event_date}. The league feed no longer lists it.`,
+                'That often means cancelled or rescheduled — but it can also mean the feed reissued the id. Confirm before sending.' ] });
+              return;
+            }
+
+            const lines = (look.changes||[]).map(c => `${c.field.replace('event_','').replace('_',' ')}: ${c.before || '—'} → ${c.after}`);
+            const ok = await window.__pbConfirm?.({
+              title: look.outcome === 'cancelled' ? 'This game is cancelled at source' : 'This game has moved',
+              body: [ where, '', ...lines, '',
+                'Apply this to the game record?',
+                'The blast copy is NOT rewritten — it still names the old date, so any queued blast for this game needs its wording redone before it sends.' ].join('\n'),
+              okText: 'Apply',
+            });
+            if(!ok) return;
+
+            const done = await ask(true);
+            const n = done.affected_queue_rows;
+            toast({ type:'ok', title: done.outcome === 'cancelled' ? 'Recorded as cancelled' : 'Game record updated',
+              lines:[ where, ...lines,
+                n ? `${n} queued blast${n===1?'':'s'} point${n===1?'s':''} at this game — ${n===1?'its':'their'} copy still names the old date.` : 'No live queued blasts point at this game.' ] });
+            await refresh();
+          } catch(e){
+            toast({ type:'err', title:'Rescan failed', lines:[ String((e && e.message) || e), 'Nothing was changed.' ] });
+          } finally {
+            b.disabled = false; b.innerHTML = orig;
+          }
         }));
         tb.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{
           const id = b.dataset.toggle, opening = !expanded.has(id);
