@@ -1994,11 +1994,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         const btns = pop.querySelectorAll('[data-pp]');
         btns.forEach(b => b.disabled = true);
+
+        // Paint the new price BEFORE the write, then reconcile. The tables re-render from
+        // memory, so this is instant; the reload afterwards is what makes it true.
+        //
+        // The patch mirrors set_event_price_manual exactly: a save sets price_source='manual',
+        // clears price_seats (a hand-typed figure describes no listing) and stamps priced_at;
+        // a reset nulls all five. Getting this wrong would flash a state the DB never enters —
+        // the "manual" badge and the info tooltip both read these fields.
+        //
+        // price_currency is deliberately left out: the RPC defaults it to USD only when unset,
+        // and the tooltip mentions it only when it is NOT USD, so guessing here could flash a
+        // currency line that then disappears. The reload settles it.
+        const nowIso = new Date().toISOString();
+        const patch = isReset
+          ? { ticket_price: null, ticket_url: null, price_source: null, price_seats: null, priced_at: null }
+          : { ticket_price: price, ticket_url: urlRaw || null, price_source: 'manual', price_seats: null, priced_at: nowIso };
+        // Both tabs, not just the one in front of you — one events_master row feeds both, which
+        // is exactly what the success toast claims. Patching only the active tab would leave
+        // the other holding a stale number until it happened to reload.
+        const undo = [
+          window.__patchEventPriceCampaigns?.(current.id, patch),
+          window.__patchEventPriceQueue?.(current.id, patch),
+        ].filter(Boolean);
+
         const { error } = await sb.rpc('set_event_price_manual', {
           p_event_id: current.id, p_price: price, p_url: isReset ? null : (urlRaw || null) });
         btns.forEach(b => b.disabled = false);
 
-        if(error){ showErr(error.message || 'Save failed.'); return; }
+        // Put every row back exactly as it was. The popover stays open with the operator's
+        // input intact, so a failed save can be retried without retyping.
+        if(error){ undo.forEach(fn => fn()); showErr(error.message || 'Save failed.'); return; }
 
         const scope = current.scope;
         close();
@@ -2009,8 +2035,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             ? 'The next refresh will look this game up again.'
             : 'Applied to Campaigns, ICP/SCP and every queued blast for this game.' ],
         });
-        if(scope === 'queue') await window.__loadQueue?.();
-        else await window.__loadEvents?.();
+        // Reconcile in the background. The screen is already correct, so this is not awaited —
+        // awaiting it is what made a save feel slow, since __loadEvents pages the whole event
+        // table. If it disagrees with the patch (a concurrent price refresh, say), it wins.
+        if(scope === 'queue') window.__loadQueue?.();
+        else window.__loadEvents?.();
       }
 
       // Deliberately NOT stopPropagation: the Queue closes its row-actions menu from its own
@@ -2236,6 +2265,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
 
       window.__loadEvents = load;
+
+      // Optimistic price patch. A save used to await the RPC and then re-run load(), which pages
+      // ~6,800 rows a thousand at a time — so the number the operator just typed sat unchanged
+      // on screen for the whole round trip and looked like it had not taken.
+      //
+      // One event is SEVERAL rows here (event × segment, up to three), so every row for the
+      // event is patched, not the one that was clicked. Returns an undo that restores exactly
+      // what each row held, for the caller to invoke if the write fails.
+      window.__patchEventPriceCampaigns = (eventId, patch) => {
+        const id = String(eventId || '');
+        const hits = ROWS.filter(r => String(r.event_id || '') === id);
+        if(!hits.length) return () => {};
+        const before = hits.map(row => {
+          const prev = {}; for(const k in patch) prev[k] = row[k];
+          Object.assign(row, patch); return { row, prev };
+        });
+        render();
+        return () => { before.forEach(({ row, prev }) => Object.assign(row, prev)); render(); };
+      };
 
       // Any filter change puts you back on page 1 — page 7 of the old result set means nothing
       // once the set changes.
@@ -3763,6 +3811,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         await refresh();
       }
       window.__loadQueue = loadQueue;
+      // The Queue's half of the optimistic price patch — see the Campaigns copy for why.
+      //
+      // One event can hold several queued blasts (one per segment), so all of them move
+      // together. CAVEAT: get_campaign_queue resolves the price as
+      // `coalesce(q.ticket_price, em.best_price)`, so a row carrying its OWN snapshotted price
+      // ignores the events_master value this patch writes. Those rows are patched anyway and
+      // then corrected by the reconciling reload — showing the operator's number for a moment
+      // is better than showing a stale one, and the reload has the last word either way.
+      window.__patchEventPriceQueue = (eventId, patch) => {
+        const id = String(eventId || '');
+        const hits = QUEUE.filter(r => String(r.event_id || '') === id);
+        if(!hits.length) return () => {};
+        const before = hits.map(row => {
+          const prev = {}; for(const k in patch) prev[k] = row[k];
+          Object.assign(row, patch); return { row, prev };
+        });
+        render();
+        return () => { before.forEach(({ row, prev }) => Object.assign(row, prev)); render(); };
+      };
       // refreshTestMode() is async and can resolve after the first render, which would leave
       // every row without its "can't send" mark. It re-renders through this once it knows.
       window.__renderQueue = render;
