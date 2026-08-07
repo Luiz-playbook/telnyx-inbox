@@ -376,14 +376,15 @@
                 <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast <span class="opacity-80 font-normal">[Temp btn]</span></button>
                 <!-- Runs the same job as the 12-hourly cron. It costs money per run, so the
                      endpoint's own 6h cooldown is respected rather than forced by default. -->
-                <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
-                <button id="rescan-schedules" class="btn btn-outline btn-sm gap-1" title="Re-check every upcoming fixture against its league's schedule feed — moved, cancelled or missing games">&#128197; Rescan schedules</button>
-                <!-- This button spends money, so it says so before it is pressed, not after. The
-                     note carries the last run's real cost, read from events_master_price_runs. -->
-                <span id="refresh-prices-info" class="tooltip tooltip-left tooltip-wide cursor-help" data-tip="Only games in the near horizon are priced — a price for a game months away will have moved long before the blast goes out, and those games are not sendable yet anyway. An AI model looks up the live get-in price for each one, so every run costs money; you are shown the game count and the estimated cost before anything is spent, and the actual cost of the last run is shown here.">
-                  <span class="inline-flex items-center justify-center w-4 h-4 rounded-full border border-base-content/30 text-base-content/50 text-[10px] font-bold">i</span>
+                <!-- The explanation and the last run's cost now hang off the button itself. They
+                     used to sit beside it as a separate "i" plus a run of grey text, which read
+                     as page furniture rather than as something belonging to this control.
+                     A daisyUI tooltip is a wrapper with CSS pseudo-elements — it does not
+                     intercept the click, so the button inside stays fully pressable. -->
+                <span id="refresh-prices-tip" class="tooltip tooltip-bottom tooltip-wide" data-tip="Look up current get-in prices for send-eligible games.">
+                  <button id="refresh-prices" class="btn btn-outline btn-sm gap-1">&#8635; Refresh prices</button>
                 </span>
-                <span id="refresh-prices-note" class="text-xs text-base-content/50"></span>
+                <button id="rescan-schedules" class="btn btn-outline btn-sm gap-1" title="Re-check every upcoming fixture against its league's schedule feed — moved, cancelled or missing games">&#128197; Rescan schedules</button>
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
@@ -2074,6 +2075,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!el('cbs-rows')) return;
       const esc = s => (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       const fmt = n => (Number(n)||0).toLocaleString();
+      // Money, always two decimals. The price-run cost used to print four ($0.0000), which read
+      // as a machine dumping a float rather than a figure meant for a person.
+      //
+      // A run really can cost a fraction of a cent, and rounding that to "$0.00" would say the
+      // run was free. Anything above zero but under a cent is shown as "<$0.01" instead — two
+      // decimals, and still true.
+      const usd = n => {
+        const v = Number(n) || 0;
+        return (v > 0 && v < 0.005) ? '<$0.01' : `$${v.toFixed(2)}`;
+      };
       // A market with no contacts of that kind can't be blasted on that channel, so the zero
       // is flagged rather than sitting quietly among real counts.
       const reachCell = n => (Number(n)||0)
@@ -2646,24 +2657,36 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // anon-readable; a failure here is silent because it is decoration, not function.
       // The horizon is a DB knob (decider_rules.price_window_days), so the tooltip states the
       // real number rather than a hardcoded "20 days" that silently drifts when it is tuned.
+      // Both halves of the button's tooltip — what it does, and what the last run cost — are
+      // composed here and written once. They used to be two separate elements beside the
+      // button (an "i" and a run of grey text); each still loads independently and either may
+      // fail, so the parts are held and re-joined rather than appended to whatever is there.
+      const priceTip = { what: 'Look up current get-in prices for send-eligible games.', last: '' };
+      function paintPriceTip(){
+        const tip = el('refresh-prices-tip'); if(!tip) return;
+        tip.dataset.tip = [priceTip.what, priceTip.last].filter(Boolean).join('\n\n');
+      }
+
       async function showPriceWindow(){
-        const info = el('refresh-prices-info'); if(!info || !sb) return;
+        if(!sb) return;
         const { data, error } = await sb.from('decider_rules').select('price_window_days').eq('id', 1).limit(1);
         const days = !error && data && data[0] && data[0].price_window_days;
         if(!days) return;
-        info.dataset.tip = `Only games in the next ${days} days are priced — a price for a game further out will have moved long before the blast goes out, and those games are not sendable yet anyway. An AI model looks up the live get-in price for each one, so every run costs money; you are shown the game count and the estimated cost before anything is spent, and the actual cost of the last run is shown here.`;
+        priceTip.what = `Only games in the next ${days} days are priced — a price for a game further out will have moved long before the blast goes out, and those games are not sendable yet anyway. An AI model looks up the live get-in price for each one, so every run costs money; you are shown the game count and the estimated cost before anything is spent.`;
+        paintPriceTip();
       }
 
       async function showLastPriceRun(){
-        const note = el('refresh-prices-note'); if(!note || !sb) return;
+        if(!sb) return;
         const { data, error } = await sb.from('events_master_price_runs')
           .select('started_at,priced,cost_usd,dry_run').eq('dry_run', false)
           .order('started_at', { ascending:false }).limit(1);
         const run = !error && data && data[0];
-        if(!run){ note.textContent = 'never run'; return; }
+        if(!run){ priceTip.last = 'Never run.'; paintPriceTip(); return; }
         const hrs = Math.round((Date.now() - new Date(run.started_at)) / 3600e3);
         const when = hrs < 1 ? 'just now' : hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs/24)}d ago`;
-        note.textContent = `last run ${when} · ${run.priced} priced · $${Number(run.cost_usd||0).toFixed(4)}`;
+        priceTip.last = `Last run ${when} · ${run.priced} priced · ${usd(run.cost_usd)}`;
+        paintPriceTip();
       }
 
       // One call. Kept separate from the button state below so the estimate and the run can
@@ -2679,22 +2702,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Elapsed-time ticker: a 60-second wait with a static label looks like a hang, and the
       // operator has no other signal that a paid job is in flight.
       function priceBusy(on, startedAt){
-        const btn = el('refresh-prices'), note = el('refresh-prices-note');
+        const btn = el('refresh-prices'), tip = el('refresh-prices-tip');
         if(!btn) return;
         if(on){
           btn.disabled = true;
-          btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Pricing…';
-          if(note) note.textContent = 'this usually takes about a minute';
-          clearInterval(priceBusy._t);
-          // mm:ss — a run can pass a minute, and "97s elapsed" is harder to read at a glance.
+          // The elapsed time lives IN the label now. It used to sit in a note element beside the
+          // button, which this commit folded into the tooltip — and a progress readout that only
+          // appears on hover is no readout at all, for the one thing on this page that is
+          // actively spending money while you watch.
           const mmss = ms => { const s = Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
-          priceBusy._t = setInterval(() => {
-            if(note) note.textContent = `pricing… ${mmss(Date.now() - startedAt)} elapsed`;
-          }, 1000);
+          const paint = () => { btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Pricing… ${mmss(Date.now() - startedAt)}`; };
+          paint();
+          if(tip) tip.dataset.tip = 'A priced run is in flight. This usually takes about a minute.';
+          clearInterval(priceBusy._t);
+          priceBusy._t = setInterval(paint, 1000);
         } else {
           clearInterval(priceBusy._t);
           btn.disabled = false;
           btn.innerHTML = '&#8635; Refresh prices';   // fixed label, never a captured snapshot
+          paintPriceTip();                            // restore the tooltip the run overwrote
           showLastPriceRun();
         }
       }
@@ -2772,7 +2798,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               d.timed_out ? `Ran out of time before ~${d.not_reached} games — everything priced so far was saved. Run again to finish the rest.` : '',
               leagues ? `Leagues: ${leagues}` : '',
               lost && !d.write_error ? 'Prices were paid for but did not match a stored event — check the write path before running again.' : '',
-              `Cost $${(d.cost_usd ?? 0).toFixed(4)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
+              `Cost ${usd(d.cost_usd)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
             ].filter(Boolean),
           });
           await load();   // pull the new prices into the table
