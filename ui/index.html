@@ -377,6 +377,7 @@
                 <!-- Runs the same job as the 12-hourly cron. It costs money per run, so the
                      endpoint's own 6h cooldown is respected rather than forced by default. -->
                 <button id="refresh-prices" class="btn btn-outline btn-sm gap-1" title="Look up current get-in prices for send-eligible games">&#8635; Refresh prices</button>
+                <button id="rescan-schedules" class="btn btn-outline btn-sm gap-1" title="Re-check every upcoming fixture against its league's schedule feed — moved, cancelled or missing games">&#128197; Rescan schedules</button>
                 <!-- This button spends money, so it says so before it is pressed, not after. The
                      note carries the last run's real cost, read from events_master_price_runs. -->
                 <span id="refresh-prices-info" class="tooltip tooltip-left tooltip-wide cursor-help" data-tip="Only games in the near horizon are priced — a price for a game months away will have moved long before the blast goes out, and those games are not sendable yet anyway. An AI model looks up the live get-in price for each one, so every run costs money; you are shown the game count and the estimated cost before anything is spent, and the actual cost of the last run is shown here.">
@@ -2273,6 +2274,100 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         tb.addEventListener('click', ev => {
           const b = ev.target.closest('[data-rescan]');
           if(b && !b.disabled) rescanEvent(b);
+        });
+      })();
+
+      // ===== BULK RESCAN =====
+      // One request per league, not per game: these feeds publish whole-season endpoints, so a
+      // single call answers for all 694 upcoming MLB fixtures. Leagues run in sequence rather
+      // than in parallel — NHL alone walks 32 club schedules, and three concurrent bulk pulls
+      // is a good way to get rate-limited by all three sources at once.
+      const RESCAN_LEAGUES = ['mlb', 'nhl', 'nfl'];
+
+      (function wireBulkRescan(){
+        const btn = el('rescan-schedules');
+        if(!btn) return;
+        const toast = o => window.__pbToast ? window.__pbToast(o) : alert([o.title, ...(o.lines||[])].filter(Boolean).join('\n'));
+
+        const call = (league, apply) => fetch('/api/rescan-events', {
+          method:'POST', headers:{'content-type':'application/json'},
+          body: JSON.stringify({ league, apply: !!apply }),
+        }).then(async r => {
+          const j = await r.json().catch(() => ({}));
+          if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+          return j;
+        });
+
+        btn.addEventListener('click', async () => {
+          const orig = btn.innerHTML;
+          btn.disabled = true;
+          const reports = [];
+          try {
+            for(const lg of RESCAN_LEAGUES){
+              btn.innerHTML = `Checking ${lg.toUpperCase()}…`;
+              try { reports.push(await call(lg, false)); }
+              catch(e){ reports.push({ league: lg, outcome: 'unreachable', detail: String(e.message || e), checked: 0, summary: {} }); }
+            }
+
+            const tally = k => reports.reduce((n, r) => n + (r.summary?.[k] || 0), 0);
+            const checked = reports.reduce((n, r) => n + (r.checked || 0), 0);
+            const moved = tally('moved'), cancelled = tally('cancelled');
+            const details = tally('details-changed'), missing = tally('missing');
+            // Leagues we could not read. Counted and named separately from "nothing changed",
+            // because a league that failed was NOT checked — reporting it as clean is the one
+            // outcome this button must never produce.
+            const blind = reports.filter(r => r.outcome === 'unreachable' || r.outcome === 'unsupported');
+
+            const lines = [];
+            for(const r of reports){
+              if(r.outcome === 'unreachable' || r.outcome === 'unsupported'){
+                lines.push(`${String(r.league).toUpperCase()}: NOT CHECKED — ${r.detail || 'source unavailable'}`);
+              } else {
+                const s = r.summary || {};
+                lines.push(`${String(r.league).toUpperCase()}: ${r.checked} checked · ${s.moved||0} moved · ${s.cancelled||0} cancelled · ${s['details-changed']||0} time/venue · ${s.missing||0} not found`);
+              }
+            }
+            // The interesting rows, named. A count alone tells you something is wrong without
+            // telling you which game, which is where the operator's next action actually is.
+            const notable = reports.flatMap(r => (r.results||[])
+              .filter(x => x.outcome === 'moved' || x.outcome === 'cancelled' || x.outcome === 'details-changed')
+              .map(x => `  ${x.fixture} (${x.stored_date}) — ${x.outcome}${(x.changes||[]).length ? ': ' + x.changes.map(c => `${c.field.replace('event_','')} ${c.before} → ${c.after}`).join(', ') : ''}`));
+
+            const changes = moved + cancelled + details;
+            if(!changes){
+              toast({ type: blind.length ? 'err' : 'ok',
+                title: blind.length ? 'Checked what we could' : 'All fixtures match their source',
+                lines: [ ...lines, missing ? `${missing} game${missing===1?'':'s'} not found at source — check by hand.` : '' ].filter(Boolean) });
+              return;
+            }
+
+            const ok = await window.__pbConfirm?.({
+              title: `${changes} fixture${changes===1?'':'s'} differ from the source`,
+              body: [ ...lines, '', ...notable.slice(0, 12),
+                notable.length > 12 ? `  …and ${notable.length - 12} more` : '', '',
+                'Apply these corrections to the game records?',
+                'Blast copy is NOT rewritten — any queued blast for a moved game still names the old date and needs its wording redone before it sends.',
+                missing ? `\n${missing} game(s) were not found at the source. Those are NOT applied — a feed can reissue ids, so they need checking by hand.` : '',
+              ].filter(Boolean).join('\n'),
+              okText: `Apply ${changes} correction${changes===1?'':'s'}`,
+            });
+            if(!ok) return;
+
+            let applied = 0;
+            for(const lg of RESCAN_LEAGUES){
+              const r = reports.find(x => x.league === lg);
+              if(!r || r.outcome === 'unreachable' || r.outcome === 'unsupported') continue;
+              if(!((r.summary?.moved||0) + (r.summary?.cancelled||0) + (r.summary?.['details-changed']||0))) continue;
+              btn.innerHTML = `Applying ${lg.toUpperCase()}…`;
+              try { applied += (await call(lg, true)).applied || 0; }
+              catch(e){ toast({ type:'err', title:`${lg.toUpperCase()} apply failed`, lines:[ String(e.message || e) ] }); }
+            }
+            toast({ type:'ok', title:`${applied} game record${applied===1?'':'s'} updated`,
+              lines:[ ...lines, 'Queued blasts for any moved game still name the old date — their copy needs redoing.' ] });
+            await load();
+          } finally {
+            btn.disabled = false; btn.innerHTML = orig;
+          }
         });
       })();
 

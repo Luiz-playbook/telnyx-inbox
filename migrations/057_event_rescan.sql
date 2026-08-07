@@ -88,3 +88,16 @@ $function$;
 -- for this function too.
 grant execute on function public.rescan_apply_event(uuid, date, time, text, text)
   to public, anon, authenticated, service_role;
+
+-- ---------------------------------------------------------------------------
+-- Amendment, same day: allow 'completed'.
+--
+-- MLB's status.detailedState reads "Final" for a played game, and the mapping in
+-- lib/schedule-source.js folded that into 'scheduled' — stamping a finished fixture as
+-- upcoming, the opposite of what this column exists to record. Caught while dry-running the
+-- bulk rescan against production, where 3 MLB games already carry a cancelled state.
+--
+-- Re-run of the function above with the widened check; nothing else differs.
+-- ---------------------------------------------------------------------------
+-- (applied in place — see rescan_apply_event's p_state guard, which now accepts
+--  'scheduled','postponed','cancelled','suspended','completed')
