@@ -101,7 +101,10 @@ export default async function handler(req, res) {
     const winCut = new Date(Date.now() + rules.price_window_days * 864e5).toISOString().slice(0, 10);
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
-      `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}` +
+      // status=eq.scheduled: never pay the model to look up a price for a cancelled or postponed
+      // game (migration 053). The decider already skips them, but this endpoint spends money and
+      // should not depend on an upstream filter staying correct to avoid spending it.
+      `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}&status=eq.scheduled` +
       // team_full feeds the SeatGeek /<team>-tickets fallback slug — "guardians" is not one.
       `&select=id,external_id,league,team,team_full,opponent,event_date,venue,state_code,best_price,priced_at,price_url`, { headers: sh });
     let games = await evR.json();

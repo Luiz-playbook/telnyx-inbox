@@ -654,7 +654,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Status</th>
                     <th class="w-24">Actions</th>
                   </tr></thead>
-                  <tbody id="q-rows"><tr><td colspan="10" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="q-rows"><tr class="border-0"><td colspan="10" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -3188,6 +3188,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // rather than an option that cannot send.
       let SALESMSG_SENDERS = [];
       let QUEUE = [], NUMBERS = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
+      // False until the first get_campaign_queue call comes back. render() can run before that
+      // (refreshTestMode resolving, a filter change), and an empty QUEUE at that point means
+      // "not loaded yet", not "nothing queued" — without this the table flashes "Queue is empty."
+      // while the rows are still in flight.
+      let LOADED = false;
       // Same filter set as Campaigns by Event, minus the ones a queued row can't answer
       // (segment isn't stored per queue row — a row targets a market, not a market×segment),
       // plus the two only the queue has: status and send day.
@@ -3549,8 +3554,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         });
       }
 
+      // Shown while the queue is in flight: an indeterminate bar so the wait reads as work in
+      // progress, over skeleton rows so the table keeps its height instead of collapsing and
+      // shoving the pager up the page when the real rows land.
+      function loadingRows(){
+        const skeleton = Array.from({length:6}, () =>
+          '<tr class="border-0"><td colspan="10" class="py-2"><div class="skeleton h-6 w-full"></div></td></tr>').join('');
+        return `<tr class="border-0"><td colspan="10" class="pt-6 pb-3">
+            <progress class="progress progress-primary w-full"></progress>
+            <div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div>
+          </td></tr>${skeleton}`;
+      }
+
       function render(){
         const tb = el('q-rows');
+        // Ahead of paintStatusCounts(): counts off an unloaded QUEUE would all read (0).
+        if(!LOADED){ tb.innerHTML = loadingRows(); return; }
         // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
         // keeps advertising counts from the last load.
         paintStatusCounts();
@@ -3575,6 +3594,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         let lastDay = null;
         tb.innerHTML = paged.map(r => {
           const open = expanded.has(r.id), sent = r.status==='sent', stale = gameIsPast(r);
+          // Game called off upstream (migration 053). Ranks ABOVE the already-played flag: a
+          // cancelled game is a harder fact than a late blast, and "cancelled" is what the
+          // operator needs to read first when both are true.
+          const off = !sent && r.event_status && r.event_status !== 'scheduled' ? r.event_status : null;
           const archived = !!r.archived_at;
           const rejected = r.status === 'rejected';
           const day = sendYmd(r.scheduled_for);
@@ -3632,7 +3655,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const blockedRow = sendBlocked(r);
           const main = `<tr class="camp-row">
             <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
-            <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
+            <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td class="col-tight">${marketCell}</td>
@@ -3944,7 +3967,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // non-empty only allowlisted markets resolve to recipients, and every other market
       // resolves to zero. The modal states which case this row is before anything happens.
       async function sendNow(r, btn){
-        const reach = [ r.email ? `${fmt(r.email_count)} emails` : '', r.sms ? `${fmt(r.phone_count)} phone numbers` : '' ]
+        // A cancelled game is refused outright, not warned about (migration 053). Every other note
+        // below describes a send that is merely unwise; this one describes a send that cannot be
+        // correct. The server refuses it too — this is here so the operator gets a sentence instead
+        // of a 409. Postponed is NOT refused: it gets a warning like game-already-played, since a
+        // rescheduled game is still a real game somebody may have a reason to blast early.
+        if(r.event_status === 'cancelled'){
+          await askConfirm({
+            title: 'This game has been cancelled',
+            body: `${blastTitle(r)}\n\nThe league has cancelled this fixture, so there is no ticket to sell and this blast cannot be sent. If the game is back on, refresh the schedule and the row will unlock on its own.`,
+            okText: 'OK',
+          });
+          return;
+        }
+        const reach =[ r.email ? `${fmt(r.email_count)} emails` : '', r.sms ? `${fmt(r.phone_count)} phone numbers` : '' ]
           .filter(Boolean).join(' · ') || 'no channel is on';
         const code = (r.state_code||'').toUpperCase();
         const testOn = window.__ALLOWED_CODES && window.__ALLOWED_CODES.size > 0;
@@ -3952,6 +3988,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const cool = coolingOf(r);
         const notes = [
           gameIsPast(r) ? `This game was played ${daysAgo(r.event_date)} day(s) ago. The auto-send tick refuses these; sending now means mailing an offer for a match that is over.` : '',
+          r.event_status === 'postponed' ? 'This game has been POSTPONED and has no new date yet. The auto-send tick holds these; sending now means mailing an offer for a fixture that is not currently scheduled.' : '',
           blocked ? `TEST MODE is on and ${code} is not on the send allowlist — this resolves to zero recipients and nothing will actually go out.` : '',
           cool && cool.cooled ? `This market is cooling down (${cool.days_left}d left). Sending now overrides that.` : '',
           r.is_placeholder ? 'This is a [TEST] row: its copy is the decider note, not real outreach. Check the copy before sending.' : '',
@@ -4058,8 +4095,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function refresh(){
         const { data, error } = await sb.rpc('get_campaign_queue');
-        if(error){ el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
+        LOADED = true;
         // Make the stored sender match the one the row is shown with — for a retired value
         // (the old SalesMessage placeholder, the moved Josh CakeMail sender) and equally for
         // NO value at all.

@@ -13,11 +13,23 @@
 // ESPN's hidden scoreboard API, walked day by day. All map to the same row shape and go
 // through upsert_events_master (dedup + market resolution).
 //
-// Env: SUPABASE_URL, SUPABASE_ANON_KEY.
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+//
+// SERVICE ROLE, NOT ANON: migration 052 revoked upsert_events_master from `anon`, so the anon key
+// this script used to carry can no longer write and every run fails on the first batch. This is a
+// server-side script run by hand or by cron — it is never shipped to a browser — so the service
+// role is the correct credential rather than a privilege escalation. The anon key is still
+// accepted for --dry, which reads nothing and writes nothing.
 
 const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const SUPA_KEY = process.env.SUPABASE_ANON_KEY;
-if (!SUPA_URL || !SUPA_KEY) { console.error('Missing SUPABASE_URL / SUPABASE_ANON_KEY'); process.exit(1); }
+const DRY_ARG = process.argv.includes('--dry');
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || (DRY_ARG ? process.env.SUPABASE_ANON_KEY : '');
+if (!SUPA_URL || !SUPA_KEY) {
+  console.error(process.env.SUPABASE_ANON_KEY && !process.env.SUPABASE_SERVICE_ROLE_KEY
+    ? 'Missing SUPABASE_SERVICE_ROLE_KEY. The anon key cannot write to events_master since migration 052 — a run with it would fail on the first batch.'
+    : 'Missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
+}
 
 const args = process.argv.slice(2);
 const flag = (f, d) => { const i = args.indexOf(f); return i >= 0 ? args[i + 1] : d; };
@@ -41,6 +53,23 @@ async function getJson(url) {
   return res.json();
 }
 
+// Game status (migration 053). Every loader maps its source's own status field onto
+// scheduled | postponed | cancelled; anything unrecognised stays 'scheduled'.
+//
+// The rule is: only an EXPLICIT upstream status takes a game out of circulation. A game simply
+// missing from a response is not a cancellation — feeds truncate, windows shift, and some sources
+// drop games once they're played. Guessing from absence would silently kill live blasts.
+
+// MLB StatsAPI: status.detailedState is the human string ('Postponed', 'Cancelled'), and
+// codedGameState 'D'/'C' the machine one. Read both — detailedState carries qualifiers
+// ('Postponed - Rain') that an equality check would miss.
+function mlbStatus(g) {
+  const s = `${g.status?.detailedState || ''} ${g.status?.codedGameState || ''}`.toLowerCase();
+  if (/cancel/.test(s)) return 'cancelled';
+  if (/postpon|suspend/.test(s)) return 'postponed';
+  return 'scheduled';
+}
+
 // ---- MLB: StatsAPI, one call for the whole range ----
 async function loadMLB() {
   const teamsUrl = `https://statsapi.mlb.com/api/v1/teams?sportId=1&season=${YEAR}`;
@@ -57,7 +86,7 @@ async function loadMLB() {
       team_full: home.full, opponent: away.nick || g.teams?.away?.team?.name,
       event_date: day.date, event_time: g.gameDate ? g.gameDate.slice(11, 19) : null,
       venue: g.venue?.name || null, home_away: 'home', external_id: String(g.gamePk),
-      source_url: url, source_note: 'MLB StatsAPI; event_time UTC', season: SEASON,
+      status: mlbStatus(g), source_url: url, source_note: 'MLB StatsAPI; event_time UTC', season: SEASON,
     });
   }
   return { rows, source: url };
@@ -89,6 +118,9 @@ async function loadNHL() {
         event_time: g.startTimeUTC ? g.startTimeUTC.slice(11, 19) : null,
         venue: g.venue?.default || null,
         home_away: 'home', external_id: String(g.id),
+        // NHL keeps schedule state separate from play state: gameScheduleState is OK | PPD
+        // (postponed) | CNCL (cancelled) | SUSP (suspended). gameState is about the puck.
+        status: ({ PPD: 'postponed', SUSP: 'postponed', CNCL: 'cancelled' })[g.gameScheduleState] || 'scheduled',
         source_url: url, source_note: 'NHL api-web; event_time UTC', season: SEASON,
       });
     }
@@ -133,6 +165,10 @@ async function loadNFL() {
     const home = NFL_TEAMS[c[ix.home_team]] || [c[ix.home_team]?.toLowerCase(), c[ix.home_team]];
     const away = NFL_TEAMS[c[ix.away_team]] || [c[ix.away_team]?.toLowerCase(), c[ix.away_team]];
     rows.push({
+      // No status mapped: the nflverse CSV has no cancellation/postponement column, so every NFL
+      // row loads as 'scheduled' and a cancelled NFL game must be flagged by hand until this
+      // source is replaced. Leaving `status` off entirely is deliberate — the RPC defaults it —
+      // rather than sending a 'scheduled' we cannot actually stand behind.
       league: 'nfl', team: home[0], team_full: home[1], opponent: away[0],
       event_date: c[ix.gameday], event_time: (c[ix.gametime] || '') ? c[ix.gametime] + ':00' : null,
       venue: c[ix.stadium] || null, home_away: 'home', external_id: c[ix.game_id],
@@ -140,6 +176,14 @@ async function loadNFL() {
     });
   }
   return { rows, source: url };
+}
+
+// ESPN spells it CANCELED (one L). Match on the stem so both spellings land.
+function espnStatus(name) {
+  const s = (name || '').toLowerCase();
+  if (/cancel/.test(s)) return 'cancelled';
+  if (/postpon|suspend/.test(s)) return 'postponed';
+  return 'scheduled';
 }
 
 // ---- ESPN: scoreboard walked day by day across [START, END] ----
@@ -165,6 +209,8 @@ async function loadESPN() {
         team_full: home.team?.displayName, opponent: (away.team?.name || away.team?.shortDisplayName || '').toLowerCase(),
         event_date: (ev.date || '').slice(0, 10), event_time: (ev.date || '').slice(11, 19) || null,
         venue: comp.venue?.fullName || null, home_away: 'home', external_id: String(ev.id),
+        // ESPN: status.type.name is STATUS_SCHEDULED / STATUS_POSTPONED / STATUS_CANCELED.
+        status: espnStatus(comp.status?.type?.name || ev.status?.type?.name),
         source_url: url, source_note: 'ESPN scoreboard; event_time UTC', season: SEASON,
       });
     }
@@ -195,12 +241,24 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 
   const addedIds = [];
   let fetched = 0;
+  // Status changes and reschedules are the whole point of migration 053, and they are invisible in
+  // the "added" count (they update existing rows). Collect them so the run says what it did.
+  const changes = [];
   for (const batch of chunk(rows, 200)) {
     const out = await rpc('upsert_events_master', { p_rows: batch });
-    for (const r of out) { fetched++; if (r.out_inserted && r.out_id) addedIds.push(r.out_id); }
+    for (const r of out) {
+      fetched++;
+      if (r.out_inserted && r.out_id) addedIds.push(r.out_id);
+      else if (r.out_outcome && r.out_outcome !== 'unchanged') changes.push(r);
+    }
   }
+  const notes = changes.length
+    ? changes.map(c => `${c.out_team} v ${c.out_opponent} ${c.out_date}: ${c.out_outcome}`).join('; ').slice(0, 2000)
+    : null;
   const runId = await rpc('record_schedule_run', { p: {
     league: LEAGUE, season: SEASON, source_url: source, fetched, added: addedIds.length, added_ids: addedIds,
+    notes,
   } });
-  console.log(`\nDone. ${fetched} processed, ${addedIds.length} newly added. Change-log run ${runId}.`);
+  console.log(`\nDone. ${fetched} processed, ${addedIds.length} newly added, ${changes.length} status/date changes. Change-log run ${runId}.`);
+  for (const c of changes) console.log(`  ${c.out_outcome.padEnd(18)} ${c.out_team} v ${c.out_opponent} ${c.out_date}`);
 })().catch(e => { console.error(e); process.exit(1); });

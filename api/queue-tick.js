@@ -156,6 +156,27 @@ export default async function handler(req, res) {
         held.push({ id: r.id, title: r.title, market: mkt, reason: 'game-already-played', event_date: r.event_date });
         continue;
       }
+
+      // Cancelled / postponed game (migration 053). Held for the cron exactly like gamePast, but
+      // a CANCELLED game also refuses "Send now" — and that asymmetry is the point. "The game was
+      // played" is a judgement an operator can reasonably overrule (a late blast for a series, a
+      // timezone edge). "The game does not exist" cannot be overruled by anyone: there is no
+      // ticket to sell, so the send is wrong no matter who asks for it.
+      //
+      // Postponed is the softer case and holds indefinitely rather than cancelling the row: most
+      // postponements get a new date within days, and because the queue joins events_master, the
+      // row picks that date up on its own and becomes sendable again with no operator action.
+      const off = r.event_status && r.event_status !== 'scheduled' ? r.event_status : null;
+      if (off === 'cancelled') {
+        const msg = { id: r.id, title: r.title, market: mkt, reason: 'game-cancelled', event_date: r.event_date };
+        if (onlyId) { res.status(409).json({ error: 'This game has been cancelled — the blast cannot be sent.', ...msg }); return; }
+        held.push(msg);
+        continue;
+      }
+      if (off && !onlyId) {
+        held.push({ id: r.id, title: r.title, market: mkt, reason: `game-${off}`, event_date: r.event_date });
+        continue;
+      }
       const reason = onlyId ? 'manual-send-now' : (r.status === 'confirmed' ? 'scheduled' : 'scheduled-unactioned');
       let phones = [], emails = [];
       // p_segment null = the whole market, every segment — which is exactly what a row with no
