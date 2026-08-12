@@ -85,3 +85,125 @@ This build is a **testing spike** (dummy numbers, no login). Before real use:
 | Supabase **anon** key | `ui/config.js` (safe — RLS governs it) | — |
 | Telnyx public key | inbound Config node (public by nature) | — |
 | Reply shared secret | reply Config node + `ui/config.js` (spike only) | git if you fork this public |
+
+# AI-896 — Reusable spam and template quality check via Mailpit + SpamAssassin
+# Run instructions
+
+## How to spam-check a blast template
+
+Anyone on the team can run this. Takes about five minutes. You need SSH access
+to the harness box — ask JL. This repo is public, so the host address is
+written as `<harness-host>` below; substitute the real one.
+
+### 1. Connect and open the UI
+
+Two terminal windows. First one, for running commands:
+
+```bash
+ssh root@<harness-host>
+```
+
+Second one, for the web UI. The Mailpit UI is deliberately bound to localhost
+on the server, so it is not reachable directly — tunnel to it:
+
+```bash
+ssh -L 8025:localhost:8025 root@<harness-host>
+```
+
+Leave that window open and browse to **http://localhost:8025**.
+
+### 2. Get the message into Mailpit
+
+**Which message you test matters more than anything else here.** Production
+blasts go out through Cakemail, which adds an HTML part, an unsubscribe link
+and a physical address footer. Scoring the raw template tells you about the
+copy; it does not tell you what recipients receive. Prefer Option A.
+
+#### Option A — score a real Cakemail send (recommended)
+
+1. Send a Cakemail test campaign to yourself.
+2. In Gmail, open it → three-dot menu → **Show original** → **Download
+   Original**. That gives you a `.eml` with every header intact.
+3. From a local terminal (not an SSH session), copy it up:
+
+   ```bash
+   scp "C:\path\to\your message.eml" root@<harness-host>:/root/campaign.eml
+   ```
+
+4. On the server, replay it into Mailpit:
+
+   ```bash
+   python3 -c "
+   import smtplib
+   raw = open('/root/campaign.eml','rb').read()
+   s = smtplib.SMTP('localhost', 1025)
+   s.sendmail('test@example.test', ['spamcheck@example.test'], raw)
+   print('sent')
+   "
+   ```
+
+   The envelope recipient satisfies the allowlist while the original headers
+   stay untouched.
+
+#### Option B — score raw template copy
+
+Only for checking wording before it goes into Cakemail. On the server, run
+`nano /root/send_template.py` and paste:
+
+```python
+import smtplib
+from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
+
+BODY = """paste the template copy here"""
+
+m = EmailMessage()
+m['From'] = 'Sender Name <sender@callplaybook.com>'
+m['To'] = 'spamcheck@example.test'
+m['Subject'] = 'the real subject line'
+m.set_content(BODY)
+
+# Required. Without these you pick up ~3 points of penalties that are
+# artifacts of this script, not of the template.
+m['Date'] = formatdate(localtime=True)
+m['Message-ID'] = make_msgid(domain='callplaybook.com')
+
+smtplib.SMTP('localhost', 1025).send_message(m)
+print('sent')
+```
+
+Save with `Ctrl+O`, Enter, then `Ctrl+X`. Run it:
+
+```bash
+python3 /root/send_template.py
+```
+
+Use the real From address and subject — both feed scoring rules.
+
+### 3. Read the results
+
+Refresh http://localhost:8025, open the newest message, and work through the
+tabs:
+
+| Tab | Record |
+|---|---|
+| **Spam Analysis** | The total, and every rule name with its points. The rule list is the actionable part — a bare total tells nobody what to fix. |
+| **HTML Check** | The support percentage and each warning, with the affected clients. |
+| **Link Check** | Any link or image that fails to resolve. |
+| **Headers** | Whether `List-Unsubscribe` is present. |
+
+**Pass threshold: 3.0.** Below that, ship it. Above, look at which rules fired
+before sending.
+
+### Gotchas
+
+- **Recipients must match `@example\.test$`** or Mailpit rejects the message
+  and it looks like the harness is broken. Use `spamcheck@example.test`.
+- **A near-empty test body will trigger `HTML_IMAGE_ONLY_08`** on an image
+  ratio that a real campaign would not have. Test with realistic copy.
+- **`ALL_TRUSTED` (-1) is a harness artifact**, not something a real send gets.
+  Read scores as roughly a point optimistic where it appears.
+- **Do not use "Delete all"** — the mailbox is shared with the AI-895 volume
+  test data.
+- **`MISSING_DATE` / `MSGID_FROM_MTA_HEADER`** mean you skipped the `Date` and
+  `Message-ID` lines in Option B. Fix the script, not the template.
