@@ -1,4 +1,4 @@
--- Trigger Blast [Temp btn]: enqueue AI-decided blasts into the queue as TEST rows.
+-- Trigger Blast: enqueue AI-decided blasts into the queue as TEST rows.
 --
 -- The Compose & Send "Trigger Blast" button runs the deterministic decider
 -- (rpc_event_recommendations) client-side, takes the top few decision='send'
