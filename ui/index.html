@@ -126,8 +126,14 @@
     #agent-resize::before{ content:""; position:absolute; inset:0 -3px; }
     body.agent-resizing{ cursor:col-resize; user-select:none; }
     /* Trigger Blast result toast */
-    #pb-toast{ position:fixed; z-index:9999; right:1rem; bottom:1rem; display:flex; flex-direction:column; gap:.5rem; max-width:min(92vw,420px); }
-    .pb-toast-card{ background:#fff; border:1px solid #e5ebf1; border-left-width:4px; border-radius:12px; box-shadow:0 12px 34px rgba(19,59,73,.18); padding:14px 16px; transition:opacity .18s ease, transform .18s ease; animation:pbToastIn .22s ease-out; }
+    /* Bottom-anchored, so a tall stack grows upward: cap it to the viewport and scroll the
+       stack instead of letting the top card run off the screen. */
+    #pb-toast{ position:fixed; z-index:9999; right:1rem; bottom:1rem; display:flex; flex-direction:column; gap:.5rem; max-width:min(92vw,420px); max-height:calc(100vh - 2rem); overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; }
+    .pb-toast-card{ background:#fff; border:1px solid #e5ebf1; border-left-width:4px; border-radius:12px; box-shadow:0 12px 34px rgba(19,59,73,.18); padding:14px 16px; transition:opacity .18s ease, transform .18s ease; animation:pbToastIn .22s ease-out; flex:0 0 auto; overflow-wrap:anywhere; word-break:break-word; }
+    /* A Trigger Blast result can carry a dozen lines and a chip per market. Scroll the text
+       block, not the card, so the dismiss button stays reachable. */
+    .pb-toast-body{ max-height:min(60vh,420px); overflow-y:auto; overscroll-behavior:contain; }
+    .pb-toast-card .badge{ white-space:normal; height:auto; max-width:100%; }
     .pb-toast-card.ok{ border-left-color:#2fae7a; }
     .pb-toast-card.err{ border-left-color:#e5484d; }
     @keyframes pbToastIn{ from{ opacity:0; transform:translateY(10px);} to{ opacity:1; transform:none;} }
@@ -2536,7 +2542,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         card.innerHTML =
           `<div class="flex items-start gap-2">
              <span class="text-lg leading-none ${type==='err'?'text-error':'text-success'}">${icon}</span>
-             <div class="flex-1 min-w-0">
+             <div class="flex-1 min-w-0 pb-toast-body">
                <div class="font-bold text-[#133b49]">${title||''}</div>
                ${lines.filter(Boolean).map(l=>`<div class="text-sm text-base-content/70 mt-0.5">${l}</div>`).join('')}
                ${chips.length?`<div class="flex flex-wrap gap-1 mt-2">${chips.map(c=>`<span class="badge badge-sm bg-[#eaf5ee] text-[#067523] border-[#cfe9d8]">${c}</span>`).join('')}</div>`:''}
