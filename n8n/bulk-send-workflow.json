@@ -46,7 +46,7 @@
         "nodeCredentialType": "httpBearerAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ from: \"+16158050766\", to: $json.to, text: $json.text }) }}",
+        "jsonBody": "={{ JSON.stringify({ from: \"+16158050766\", to: $json.to, text: $json.text, webhook_url: \"https://playbooksports.app.n8n.cloud/webhook/telnyx-inbound\" }) }}",
         "options": {
           "batching": { "batch": { "batchSize": 5, "batchInterval": 1100 } }
         }
@@ -55,6 +55,10 @@
       "name": "Send via Telnyx",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
       "position": [1040, -48],
       "credentials": {
         "httpBearerAuth": { "id": "XsVobK6mWdzUGA7e", "name": "Telnyx" }

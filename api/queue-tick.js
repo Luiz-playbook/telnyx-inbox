@@ -210,7 +210,22 @@ export default async function handler(req, res) {
         } else if (hookOk(smsHook)) {
           const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
           const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
-          (rr.ok ? sent : failed).push(rr.ok ? `SMS ${messages.length}` : `SMS failed (HTTP ${rr.status})`);
+          // HANDED OFF, NOT DELIVERED — and the wording matters. The n8n webhook answers
+          // `responseMode: onReceived`, so this 200 means n8n accepted the payload. It does not
+          // mean Telnyx accepted one message, and certainly not that a handset received one. The
+          // old string ("SMS 1200") read as a delivery count, and on the strength of it the row
+          // was marked sent and the market locked out for 14 days — a blast that Telnyx rejected
+          // in full looked identical to one that worked.
+          //
+          // The true outcome arrives later and out-of-band, as Telnyx delivery receipts
+          // (message.finalized -> telnyx_update_status via the inbound workflow). Those receipts
+          // were never arriving because the send request did not ask for them; it now carries an
+          // explicit webhook_url. Turning those receipts back into a per-blast delivered figure
+          // additionally needs telnyx_messages to carry the queue row id, which it does not yet —
+          // see GAPS.md. Until that exists, this string is a claim about OUR side only, and says so.
+          (rr.ok ? sent : failed).push(rr.ok
+            ? `SMS ${messages.length} handed off (delivery unconfirmed)`
+            : `SMS failed (HTTP ${rr.status})`);
         } else {
           failed.push('No SMS route: the row has no Salesmsg sender and BULK_SEND_WEBHOOK_URL is unset');
         }
