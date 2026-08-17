@@ -1931,6 +1931,44 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const priceManualBadge = r => (r && r.price_source === 'manual')
         ? ' <span class="price-manual" title="Set by hand by an operator, not by the price lookup.">manual</span>' : '';
 
+      // Where a price came from, shown on the price itself (Vhea, 2026-08-03). The field that
+      // matters most is the seat count: a get-in read off a lone single is often a restricted-view
+      // seat nobody buying for two people can use, so "$18" backed by a pair and "$18" backed by
+      // a single are not the same claim, and until now the row showed them identically.
+      //
+      // Lives here beside the pencil rather than in the Queue module, where it started: the
+      // pencil is a write affordance and carries no provenance at all — price and link, nothing
+      // about when the figure was checked or what listing backed it. That left Campaigns with no
+      // way to reach any of it, since event_targets has returned priced_at/price_seats/
+      // price_currency since migration 055 and only the render was missing.
+      //
+      // Native `title`, not the daisyUI .tooltip used in the toolbar: this sits inside the
+      // table's overflow-auto box, which clips a CSS tooltip on any row near an edge. The
+      // browser's own tooltip renders above everything and cannot be clipped.
+      const priceBasis = r => r.price_seats === 2 ? 'a listing for 2 seats together'
+        : r.price_seats === 1 ? 'a single-seat listing — no pair was available'
+        : 'a listing whose seat count was not reported';
+      function priceInfo(r){
+        // A row carrying its own overridden ticket_price is not what events_master's sourcing
+        // describes. Showing nothing beats attaching someone else's provenance to a hand-typed
+        // number — see the note on get_campaign_queue in migration 052.
+        if(!r || r.ticket_price == null || !r.priced_at) return '';
+        const when = new Date(r.priced_at);
+        // A hand-typed price has no listing basis to describe. price_seats is NULL on it by
+        // design (migration 055), and the generic NULL wording — "a listing whose seat count was
+        // not reported" — would describe a lookup that never happened. Say what it actually is.
+        const manual = r.price_source === 'manual';
+        const lines = [
+          'Per-ticket get-in price, before taxes and fees.',
+          manual ? 'Set by hand by an operator.' : `Based on ${priceBasis(r)}.`,
+          manual ? 'A price refresh will replace it.' : '',
+          (r.price_source && !manual) ? `Source: ${r.price_source}` : '',
+          `${manual ? 'Set' : 'Checked'}: ${etDate(when,{month:'short',day:'numeric'})} ${etTime(when,{hour:'numeric',minute:'2-digit'})} ET`,
+          (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
+        ].filter(Boolean).join('\n');
+        return ` <span class="price-info" title="${esc2(lines)}">&#9432;</span>`;
+      }
+
       function ensurePop(){
         if(pop) return pop;
         pop = document.createElement('div');
@@ -2083,6 +2121,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       window.__priceEditBtn = priceEditBtn;
       window.__priceManualBadge = priceManualBadge;
+      window.__priceInfo = priceInfo;
     })();
 
     // ===== Campaigns by Event (ticketblaster.sports_ticket) — powers the Campaigns tab =====
@@ -2200,7 +2239,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}${rescanBtn(e)}</div></td>
-          <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}${window.__priceManualBadge?.(e)||''}${window.__priceEditBtn?.(e,'campaign')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+          <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}${window.__priceInfo?.(e)||''}${window.__priceManualBadge?.(e)||''}${window.__priceEditBtn?.(e,'campaign')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A game with no price is the one MOST worth an edit, not the least: price-refresh
             // drops every price whose listing link the model failed to return (~40% of what it
             // pays for), so a dash here often means a real price nobody could store.
@@ -3418,38 +3457,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span>${slotLine(r)}`;
       }
 
-      // Where a price came from, shown on the price itself (Vhea, 2026-08-03). The field that
-      // matters most is the seat count: a get-in read off a lone single is often a restricted-view
-      // seat nobody buying for two people can use, so "$18" backed by a pair and "$18" backed by
-      // a single are not the same claim, and until now the row showed them identically.
-      //
-      // Native `title`, not the daisyUI .tooltip used in the toolbar: this sits inside the
-      // table's overflow-auto box, which clips a CSS tooltip on any row near an edge. The
-      // browser's own tooltip renders above everything and cannot be clipped.
-      const priceBasis = r => r.price_seats === 2 ? 'a listing for 2 seats together'
-        : r.price_seats === 1 ? 'a single-seat listing — no pair was available'
-        : 'a listing whose seat count was not reported';
-      const priceInfo = r => {
-        // A row carrying its own overridden ticket_price is not what events_master's sourcing
-        // describes. Showing nothing beats attaching someone else's provenance to a hand-typed
-        // number — see the note on get_campaign_queue in migration 052.
-        if(r.ticket_price == null || !r.priced_at) return '';
-        const when = new Date(r.priced_at);
-        // A hand-typed price has no listing basis to describe. price_seats is NULL on it by
-        // design (migration 055), and the generic NULL wording — "a listing whose seat count was
-        // not reported" — would describe a lookup that never happened. Say what it actually is.
-        const manual = r.price_source === 'manual';
-        const lines = [
-          'Per-ticket get-in price, before taxes and fees.',
-          manual ? 'Set by hand by an operator.' : `Based on ${priceBasis(r)}.`,
-          manual ? 'A price refresh will replace it.' : '',
-          (r.price_source && !manual) ? `Source: ${r.price_source}` : '',
-          `${manual ? 'Set' : 'Checked'}: ${etDate(when,{month:'short',day:'numeric'})} ${etTime(when,{hour:'numeric',minute:'2-digit'})} ET`,
-          (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
-        ].filter(Boolean).join('\n');
-        return ` <span class="price-info" title="${esc(lines)}">&#9432;</span>`;
-      };
-
       // Actions, collapsed into one menu so the row costs ~90px instead of ~280px of buttons.
       //
       // The buttons inside are BYTE-FOR-BYTE the ones that used to sit in the cell, with the
@@ -3633,7 +3640,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const priceCell = r.ticket_price!=null
             ? `${r.ticket_url
                 ? `<a href="${esc(r.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold">$${fmt(r.ticket_price)}</a>`
-                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${priceInfo(r)}${window.__priceManualBadge?.(r)||''}${sent?'':window.__priceEditBtn?.(r,'queue')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__priceInfo?.(r)||''}${window.__priceManualBadge?.(r)||''}${sent?'':window.__priceEditBtn?.(r,'queue')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A sent blast is a record of what went out. Editing the price behind it would
             // rewrite that record without changing anything a recipient saw.
             : `<span class="text-base-content/40">—</span>${sent?'':window.__priceEditBtn?.(r,'queue')||''}`;
