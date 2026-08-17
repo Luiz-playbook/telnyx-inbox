@@ -3233,6 +3233,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // rather than an option that cannot send.
       let SALESMSG_SENDERS = [];
       let QUEUE = [], NUMBERS = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
+      // ===== DEMO KILL SWITCH — "Send now" is disabled =====
+      //
+      // Set 2026-08-12, when test mode was turned OFF so the UI would read as live. That removed
+      // the thing that used to make this button safe: while send_allowlist was non-empty, every
+      // non-allowlisted market resolved to zero recipients, so a stray click delivered nothing.
+      // With the allowlist empty, EVERY market resolves for real — CA alone is 2,713 addresses,
+      // and the 1,000-row cap came off in migration 054 — so one click is a full live blast.
+      //
+      // The hourly cron is separately disabled (queue-tick removed from vercel.json), and every
+      // queued row is a placeholder, which the cron skips regardless. This flag closes the only
+      // remaining path to the wire: a person clicking.
+      //
+      // TO RE-ENABLE: set to false. Do that only alongside a decision about whether real sends
+      // should be possible from a browser at all — and note that GAPS.md gap 2 still applies,
+      // so a blast that fails entirely will still record as sent and cool the market 14 days.
+      const SEND_NOW_DISABLED = true;
+      const SEND_NOW_DISABLED_TIP = 'Send now is disabled. Test mode is off, so every market now '
+        + 'resolves to real recipients and a click here would be a live blast. Re-enable via '
+        + 'SEND_NOW_DISABLED in ui/index.html.';
+
       // False until the first get_campaign_queue call comes back. render() can run before that
       // (refreshTestMode resolving, a filter change), and an empty QUEUE at that point means
       // "not loaded yet", not "nothing queued" — without this the table flashes "Queue is empty."
@@ -3483,7 +3503,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const items = [
           (sent||rejected) ? '' : `
             <button class="btn btn-xs btn-outline btn-success justify-start" data-confirm="${esc(r.id)}">Confirm</button>
-            <button class="btn btn-xs btn-warning text-white hover:text-white justify-start" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Only allowlisted markets resolve to recipients.">Send now</button>
+            ${SEND_NOW_DISABLED
+              ? `<button class="btn btn-xs btn-warning text-white justify-start btn-disabled opacity-50" disabled title="${esc(SEND_NOW_DISABLED_TIP)}">Send now <span class="text-[10px] font-normal">(disabled)</span></button>`
+              : `<button class="btn btn-xs btn-warning text-white hover:text-white justify-start" data-sendnow="${esc(r.id)}" title="Sends this blast immediately. Test mode is OFF — every market resolves to real recipients.">Send now</button>`}
             ${snoozeBtn(r)}`,
           rejected
             ? `<button class="btn btn-xs btn-outline justify-start" data-unreject="${esc(r.id)}" title="Put this blast back in the queue and stop suppressing it. The decider may suggest it again.">Restore</button>`
@@ -3986,6 +4008,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // non-empty only allowlisted markets resolve to recipients, and every other market
       // resolves to zero. The modal states which case this row is before anything happens.
       async function sendNow(r, btn){
+        // Belt and braces. The button is not rendered with a data-sendnow handle while the kill
+        // switch is on, so this should be unreachable — but this function is the only door to the
+        // wire, and a guard on the door costs nothing. Anything that reaches it (a console call, a
+        // stale listener on a row rendered before the flag was read) stops here.
+        if(SEND_NOW_DISABLED){
+          await askConfirm({ title: 'Send now is disabled', body: SEND_NOW_DISABLED_TIP, okText: 'OK' });
+          return;
+        }
         // A cancelled game is refused outright, not warned about (migration 053). Every other note
         // below describes a send that is merely unwise; this one describes a send that cannot be
         // correct. The server refuses it too — this is here so the operator gets a sentence instead
