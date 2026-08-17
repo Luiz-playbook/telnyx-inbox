@@ -3637,13 +3637,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           ];
           const smsSel = `<select class="select select-bordered select-xs mini-select w-52${r.sms?'':' text-base-content/50'}" data-qsms="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending SMS', r.sms)}${smsOpts.map(o=>`<option value="${esc(o.v)}"${(r.sms && o.v===curSms)?' selected':''}>${esc(o.method)} · ${esc(o.label)}</option>`).join('')}</select>`;
           // Campaign columns, rendered exactly as Campaigns by Event renders them.
+          //
+          // READ-ONLY HERE, ON PURPOSE (Vhea, 2026-08-17). The pencil belongs to Campaigns by
+          // Event and nowhere else. Nothing is lost by leaving it out: the edit writes
+          // events_master, and this table joins em.best_price live, so a price fixed on
+          // Campaigns already shows on every queued blast for that game. A pencil here would
+          // have been a second door onto the same row — the price is a property of the game,
+          // and the Queue is where you decide when a blast goes, not what the game costs.
+          // The info tooltip stays: reading the provenance is the reason the column is here.
           const priceCell = r.ticket_price!=null
             ? `${r.ticket_url
                 ? `<a href="${esc(r.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold">$${fmt(r.ticket_price)}</a>`
-                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__priceInfo?.(r)||''}${window.__priceManualBadge?.(r)||''}${sent?'':window.__priceEditBtn?.(r,'queue')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
-            // A sent blast is a record of what went out. Editing the price behind it would
-            // rewrite that record without changing anything a recipient saw.
-            : `<span class="text-base-content/40">—</span>${sent?'':window.__priceEditBtn?.(r,'queue')||''}`;
+                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__priceInfo?.(r)||''}${window.__priceManualBadge?.(r)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+            : `<span class="text-base-content/40">—</span>`;
           const sportCell = r.sport
             ? `<span class="sport-pill">${esc(r.sport)}</span>${r.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(r.league)}</div>`:''}`
             : '<span class="text-base-content/40">—</span>';
