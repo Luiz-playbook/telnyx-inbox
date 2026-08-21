@@ -70,6 +70,21 @@ to fix.
 `retryOnFail` (3 tries, 2s apart) and `onError: continueRegularOutput`, so a single failed
 message no longer risks halting the run and abandoning the rest of the batch.
 
+**DEMONSTRATED LIVE, 2026-08-18.** A QA send was rejected outright by Telnyx —
+`400 Source and destination cannot be the same number` — and the failure was completely
+invisible from our side:
+
+| What happened | What we saw |
+| --- | --- |
+| Telnyx refused the message with a hard 400 | `HTTP 200 {"message":"Workflow was started"}` |
+| Workflow halted at the failing node | nothing |
+| No message sent | no row in `telnyx_messages` |
+| — | no error anywhere |
+
+This is the easiest class of failure there is: an explicit, immediate vendor rejection. It
+still vanished without trace. Had it come from `queue-tick` on a real blast, the row would
+have been marked **sent** and the market locked for 14 days with nothing delivered.
+
 **Still open — the important half.** The row is still marked sent and the market still cools
 for 14 days on the strength of that handoff. Closing that properly needs the reconciliation
 described in gap 1, then a rule for what to do when delivered ≪ handed off. That is a
@@ -109,16 +124,42 @@ emptying the table changes two security properties at once.
 **Worth adding:** a guard that refuses to empty the allowlist without an explicit override, or
 a scheduled check that alerts if it ever becomes empty unexpectedly.
 
-## 4. The site is public — **Read** (from `BACKLOG.md`, not re-verified)
+## 4. The site is public and leaks 25,425 prospect records — **VERIFIED 2026-08-18**
 
-`BACKLOG.md` item 8 states the site is fully public: anyone with the URL can read the inbox and
-~22k `enriched_prospects`, and trigger sends. The n8n bulk-send workflow's shared secret is the
-literal string `playbook`, hardcoded in the workflow's Auth node and also present in the
-browser.
+Confirmed end to end during the QA sweep. This is the most serious finding in this document
+and it outranks everything above it.
 
-Not re-verified this session, and migration 052 (`052_auth_revoke_anon.sql`) suggests some of
-this has since been tightened. **Needs confirming against current state** — if still true it
-outranks everything above it.
+The full chain, each step verified:
+
+1. `https://telnyx-inbox.vercel.app/` serves **HTTP 200 with no authentication**
+2. `/config.js` is served publicly and **hands the Supabase anon key to any visitor**
+3. That key, used from an unrelated machine, reads production tables directly
+
+What an anonymous caller can read today, with exact row counts measured:
+
+| Table | Rows exposed |
+| --- | --- |
+| `enriched_prospects` | **25,425** |
+| `events_master` | 2,449 |
+| `blast_templates` | 140 |
+| `telnyx_messages` | 22 (SMS bodies) |
+| `telnyx_conversations` | 3 |
+
+`enriched_prospects` carries a `contacts` column containing `contacts_list` — this is the
+prospect database, including contact details. 25,425 records of business contact data
+readable by anyone who views source on the page.
+
+Migration 052 did work, partially: `market_contacts` now returns **401**, and
+`campaign_queue`, `send_allowlist` and `contact_intel` return zero rows to anon. The lockdown
+was real but incomplete — `enriched_prospects` was missed, and it is the largest dataset here.
+
+**Sending is NOT exposed.** With test mode off, `api/queue-tick.js` requires `SEND_SECRET`
+for the no-credential path, so an anonymous visitor cannot trigger a blast. The exposure is
+read-only — which is the lesser half, but 25,425 contact records is not a small lesser half.
+
+**Fix:** RLS on `enriched_prospects` (and re-audit every other table against anon), then move
+the site behind real authentication. Note that revoking anon on `enriched_prospects` may break
+UI features that read it — check before applying.
 
 ## 5. Recipient counts shrink silently — **Verified (partially fixed)**
 
@@ -134,6 +175,15 @@ A blast reaching 39% of a market looked flawless on every screen.
 
 The remaining two are smaller but the same shape — resolved count and submitted count can
 still disagree with nobody told. **Worth reporting both numbers on the blast record.**
+
+**Measured 2026-08-18.** The display-vs-resolve gap is genuinely closed: across all 31
+distinct market codes, `market_recipient_counts()` now matches what `market_emails()` actually
+returns. Removing the cap fixed that half completely.
+
+The JS-side shrinkage is still real and still unreported. On `ZZ`: **6 addresses resolve, 5
+survive deduplication** — one silently lost, and nothing anywhere reports it. Phones were
+clean (121 in, 121 out). The equivalent measurement on `CA` (2,713 addresses) timed out when
+paging through the REST API and remains **unmeasured** — worth running directly in SQL.
 
 ## 6. The Telnyx sender is hardcoded — **Verified**
 
@@ -164,7 +214,22 @@ numbers.
 Raising it should wait for gap 1: exceed the registered rate and Telnyx queues or rejects the
 overflow, and right now nothing would tell us.
 
-## 8. No retries, and a possible halt-on-error — **Read**
+## 8. No retries, and it DOES halt on error — **VERIFIED LIVE 2026-08-18**
+
+Confirmed by a QA send. Telnyx rejected one message with
+`400 Source and destination cannot be the same number`, and the "Record Outbound (RPC)"
+node never ran — no row was written to `telnyx_messages` at all. The workflow stopped at the
+failing node, exactly as n8n's default `stopWorkflow` behaviour implies.
+
+**Consequence at scale:** in a 1,200-message batch, one rejection at message 200 abandons the
+remaining 1,000 — and, per gap 2, reports success while doing it. Undelivered messages leave
+no record, so there is nothing to retry from either.
+
+Fixed in the repo copy (`retryOnFail`, 3 tries, 2s apart, plus
+`onError: continueRegularOutput`) but **NOT YET LIVE** — the workflow must be re-imported into
+n8n Cloud before any of that applies.
+
+## 8b. Original diagnosis — **Read**
 
 The Telnyx node has no `retryOnFail` and no `onError` configured, so a transient failure loses
 that message permanently. n8n's default behaviour on a node error is to stop the execution,
