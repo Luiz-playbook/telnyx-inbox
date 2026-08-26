@@ -1,0 +1,267 @@
+{
+  "name": "Pricing Sheet Sync (AI-940)",
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 12
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        460
+      ],
+      "id": "cron",
+      "name": "Every 12 hours (safety net)",
+      "notes": "Fallback only. The real trigger is the webhook below, fired by api/price-refresh.js at the end of a run so the sheet moves on exactly the AI-828 cadence rather than near it. This exists so the sheet still refreshes if that call is ever removed or fails."
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "pricing-sheet-sync",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        220,
+        280
+      ],
+      "id": "wh",
+      "webhookId": "pricing-sheet-sync",
+      "name": "Pricing Sheet Webhook",
+      "notes": "Called by api/price-refresh.js after each run. Set PRICING_SHEET_WEBHOOK_URL in Vercel to this node's Production URL."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Same shared secret every other inbound webhook in this project uses (REPLY_SECRET).\n// The sheet is output-only, but the endpoint still reads the whole priced event table, so it\n// is not left open.\nconst SECRET = 'playbook';\nif ((($json.headers || {})['x-inbox-secret'] || '') !== SECRET) {\n  throw new Error('401 Unauthorized: bad or missing x-inbox-secret');\n}\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        430,
+        280
+      ],
+      "id": "auth",
+      "name": "Auth"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/rpc/get_decider_rules",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        370
+      ],
+      "id": "rules",
+      "name": "Get Freshness Rules",
+      "credentials": {
+        "supabaseApi": {
+          "id": "B45ZZ2nGKOeatNYB",
+          "name": "Supabase | John"
+        }
+      },
+      "notes": "Thresholds read live, not hardcoded, so the sheet cannot disagree with the Ticket Prices tab. Amber is the refresh cutoff, red is twice it (a cycle genuinely missed).\n\nRPC, NOT the table. Reading /rest/v1/decider_rules directly returns [] under the anon key — RLS filters it silently, HTTP 200, no error — so the sheet would have been built on default thresholds without anything failing. get_decider_rules is security definer and works for either key."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://snfmggrnyjayuuxafats.supabase.co/rest/v1/events_master",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,external_id,league,team,team_full,opponent,event_date,event_time,venue,market_code,state_code,best_price,price_source,priced_at,price_url,price_seats"
+            },
+            {
+              "name": "order",
+              "value": "event_date.asc,id.asc"
+            },
+            {
+              "name": "limit",
+              "value": "1000"
+            },
+            {
+              "name": "offset",
+              "value": "0"
+            }
+          ]
+        },
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "offset",
+                    "value": "={{ $pageCount * 1000 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.length < 1000 }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 20
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        190
+      ],
+      "id": "events",
+      "name": "Get Events",
+      "credentials": {
+        "supabaseApi": {
+          "id": "B45ZZ2nGKOeatNYB",
+          "name": "Supabase | John"
+        }
+      },
+      "notes": "PAGED ON PURPOSE. PostgREST caps a response at 1,000 rows and events_master holds ~2,449, so an unpaged read would silently write under half the table and look complete. Stops when a short page comes back.\n\nORDERED BY A UNIQUE KEY. event_date alone is not unique — hundreds of games share a date — and offset paging over a non-deterministic sort returns some rows twice and skips others. Measured: ordering by event_date alone produced 2,449 rows containing only 2,448 distinct events. id.asc breaks the tie so every page is stable."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build the sheet rows. ONE ROW PER EVENT — the sheet is written with appendOrUpdate keyed\n// on event_id, so re-running can never produce a duplicate row for a game.\n//\n// Freshness mirrors the Ticket Prices tab exactly (see ui/index.html, thresholdsFor/freshness):\n// amber at the refresh cutoff for the tier, red at twice it. Both come from decider_rules, read\n// above, so tuning the cadence tunes the sheet with it.\nconst r = $('Get Freshness Rules').first().json;\n// Fail loudly rather than defaulting. Silently falling back to 3/48/12 would mislabel every\n// row in the sheet if the rules read ever breaks, and nothing downstream would notice.\nif (!r || r.price_near_days == null) {\n  throw new Error('decider_rules unavailable — refusing to build the sheet on assumed thresholds');\n}\nconst NEAR_DAYS   = Number(r.price_near_days ?? 3);\nconst AMBER_NEAR  = Number(r.price_stale_hours_near ?? 12);\nconst AMBER_FAR   = Number(r.price_stale_hours ?? 48);\nconst RED_MULT    = 2;\n\nconst SOURCE_NAMES = [\n  [/stub\\s*hub/i, 'StubHub'], [/seat\\s*geek/i, 'SeatGeek'], [/vivid\\s*seats/i, 'Vivid Seats'],\n  [/ticket\\s*master/i, 'Ticketmaster'], [/game\\s*time/i, 'Gametime'], [/tick\\s*pick/i, 'TickPick'],\n  [/ticket\\s*liquidator/i, 'Ticket Liquidator'], [/event\\s*tickets\\s*center/i, 'Event Tickets Center'],\n  [/hello\\s*tickets/i, 'Hellotickets'], [/cbs\\s*sports/i, 'CBS Sports'], [/mlb\\.com/i, 'MLB.com'],\n];\n// 'gemini' / 'openrouter' are the lookup route, not a marketplace — written when the model\n// returned a price without naming where it read it. Calling that a source claims a provenance\n// nobody has.\nconst UNNAMED = /^(gemini|openrouter|perplexity|sonar[-a-z.]*)$/i;\nfunction sourceLabel(raw) {\n  const t = String(raw || '').replace(/\\s+/g, ' ').trim();\n  if (!t) return '';\n  if (t.toLowerCase() === 'manual') return 'Set by hand';\n  if (UNNAMED.test(t)) return '';\n  for (const [re, name] of SOURCE_NAMES) if (re.test(t)) return name;\n  return t;\n}\n\nconst SPORT = { mlb: 'Baseball', nfl: 'Football', nba: 'Basketball', nhl: 'Ice Hockey' };\nconst now = Date.now();\nconst today = new Date(); today.setHours(0, 0, 0, 0);\nconst syncedAt = new Date().toISOString();\n\nfunction etString(iso) {\n  if (!iso) return '';\n  try {\n    return new Date(iso).toLocaleString('en-US', { timeZone: 'America/New_York',\n      year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });\n  } catch { return ''; }\n}\n\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json;\n  if (!e || !e.id) continue;\n\n  const daysUntil = e.event_date\n    ? Math.round((new Date(e.event_date + 'T00:00:00') - today) / 864000000 / 1)\n    : null;\n\n  const amber = (daysUntil != null && daysUntil <= NEAR_DAYS) ? AMBER_NEAR : AMBER_FAR;\n  const red = amber * RED_MULT;\n\n  let hours = '';\n  let freshness;\n  if (daysUntil != null && daysUntil < 0)      freshness = 'past';\n  else if (e.best_price == null || !e.priced_at) freshness = 'never priced';\n  else {\n    hours = (now - new Date(e.priced_at).getTime()) / 3600000;\n    freshness = hours >= red ? 'stale' : hours >= amber ? 'ageing' : 'fresh';\n    hours = Math.round(hours);\n  }\n\n  // Kick-off is stored UTC (MLB gameDate is UTC); shown in ET like every clock in the app.\n  let kickoff = '';\n  if (e.event_date && e.event_time) {\n    const dt = new Date(e.event_date + 'T' + e.event_time + 'Z');\n    if (!isNaN(dt)) kickoff = dt.toLocaleTimeString('en-US',\n      { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }) + ' ET';\n  }\n\n  out.push({ json: {\n    event_id: e.id,\n    external_id: e.external_id || '',\n    event_date: e.event_date || '',\n    kickoff_et: kickoff,\n    matchup: e.opponent ? `${e.opponent} at ${e.team_full || e.team}` : (e.team_full || e.team || ''),\n    sport: SPORT[String(e.league || '').toLowerCase()] || '',\n    league: String(e.league || '').toUpperCase(),\n    market: e.market_code || '',\n    state_code: e.state_code || '',\n    venue: e.venue || '',\n    get_in_price_usd: e.best_price == null ? '' : Number(e.best_price),\n    seats_basis: e.price_seats == null ? '' : e.price_seats,\n    source: sourceLabel(e.price_source),\n    source_raw: e.price_source || '',\n    listing_url: e.price_url || '',\n    last_refreshed_et: etString(e.priced_at),\n    hours_since_refresh: hours,\n    freshness,\n    amber_after_hours: amber,\n    red_after_hours: red,\n    days_until: daysUntil == null ? '' : daysUntil,\n    synced_at_utc: syncedAt,\n  } });\n}\n\nif (!out.length) throw new Error('No events built — refusing to write an empty sheet.');\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        930,
+        280
+      ],
+      "id": "build",
+      "name": "Build Sheet Rows",
+      "notes": "Throws rather than writing nothing: an empty result means the read failed, and silently clearing the sheet would look like 'there are no prices'."
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "PUT_THE_PRICING_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Prices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": [
+            "event_id"
+          ],
+          "value": {},
+          "schema": []
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1180,
+        280
+      ],
+      "id": "sheet",
+      "name": "Write Pricing Sheet",
+      "notes": "appendOrUpdate matched on event_id — that is what makes \"no duplicate event rows\" structural\nrather than something the sync has to police. Output only: nothing here ever reads the sheet\nback, so a human edit is overwritten on the next run rather than flowing anywhere.\n\nTWO THINGS THE IMPORT DOES NOT CARRY, both of which silently produce an EMPTY sheet:\n\n1. Column to Match On must be set to event_id. n8n dropped matchingColumns on import; with\n   none set, appendOrUpdate cannot decide update-vs-append and writes nothing.\n\n2. The sheet needs a header row before the first run. autoMapInputData maps incoming field\n   names onto EXISTING columns by name, so a blank sheet has nothing to map onto. Paste these\n   22 headers into row 1 of the Pricing Tab:\n   event_id, external_id, event_date, kickoff_et, matchup, sport, league, market, state_code,\n   venue, get_in_price_usd, seats_basis, source, source_raw, listing_url, last_refreshed_et,\n   hours_since_refresh, freshness, amber_after_hours, red_after_hours, days_until, synced_at_utc"
+    }
+  ],
+  "connections": {
+    "Pricing Sheet Webhook": {
+      "main": [
+        [
+          {
+            "node": "Auth",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auth": {
+      "main": [
+        [
+          {
+            "node": "Get Freshness Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 12 hours (safety net)": {
+      "main": [
+        [
+          {
+            "node": "Get Freshness Rules",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Freshness Rules": {
+      "main": [
+        [
+          {
+            "node": "Get Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Events": {
+      "main": [
+        [
+          {
+            "node": "Build Sheet Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Sheet Rows": {
+      "main": [
+        [
+          {
+            "node": "Write Pricing Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

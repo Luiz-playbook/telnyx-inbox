@@ -235,6 +235,23 @@ export default async function handler(req, res) {
     };
     if (!dry) await fetch(`${supaUrl}/rest/v1/rpc/record_price_run`, { method: 'POST', headers: sh, body: JSON.stringify({ p: runLog }) }).catch(() => {});
 
+    // Nudge the pricing sheet (AI-940). The sheet has to move on THIS cadence, not near it, so
+    // it is triggered by the run rather than by a clock of its own — n8n keeps a 12h schedule
+    // as a safety net for when this call is missing.
+    //
+    // Fire and forget, and deliberately not awaited: the sheet is a mirror of events_master,
+    // and a run that actually priced games must not report failure because a downstream sync
+    // was unreachable. n8n re-reads the table itself, so no prices are carried in this request
+    // — it is a nudge, not a payload, and nothing is lost if one is dropped.
+    const sheetHook = (process.env.PRICING_SHEET_WEBHOOK_URL || '').trim();
+    if (!dry && sheetHook) {
+      fetch(sheetHook, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-inbox-secret': process.env.REPLY_SECRET || '' },
+        body: JSON.stringify({ source: 'price-refresh', priced: priceRows.length, at: new Date().toISOString() }),
+      }).catch(() => {});
+    }
+
     // ok:false when prices were found but could not be stored — the caller must not report a
     // run that cost money and changed nothing as a success.
     //

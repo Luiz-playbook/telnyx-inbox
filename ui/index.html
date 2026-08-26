@@ -4536,7 +4536,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const out = new Map();
         if(!sb) return out;
         for(let from = 0; from < 60000; from += 1000){
-          const res = await sb.from('events_master').select('id,event_time').range(from, from + 999);
+          // ORDERED BY id, NOT UNORDERED. Offset paging over a non-deterministic sort returns
+          // some rows twice and skips others — measured on this table: ordering by event_date
+          // alone yielded 2,449 rows holding 2,448 distinct events. Unordered is worse, and the
+          // symptom would be a handful of events silently missing their kick-off time.
+          const res = await sb.from('events_master').select('id,event_time')
+            .order('id', { ascending: true }).range(from, from + 999);
           if(res.error || !Array.isArray(res.data)) break;
           for(const r of res.data){ if(r.event_time) out.set(String(r.id), r.event_time); }
           if(res.data.length < 1000) break;
