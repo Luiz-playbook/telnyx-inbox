@@ -252,6 +252,7 @@
         <nav class="flex items-center">
           <a href="#" data-tab="compose" class="active">Campaigns</a>
           <a href="#" data-tab="queue">Queue</a>
+          <a href="#" data-tab="prices">Ticket Prices</a>
           <a href="#" data-tab="history">Market History</a>
           <a href="#" data-tab="templates">Templates</a>
           <a href="#" data-tab="rules">Cole Rules</a>
@@ -424,7 +425,7 @@
                       <th>Phone #s</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0"><td colspan="8" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading events&hellip;</div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -747,7 +748,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
                     <th class="w-8"></th><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Source</th><th>Recipients</th><th>Sent</th>
                   </tr></thead>
-                  <tbody id="bh-rows"><tr><td colspan="8" class="text-center text-base-content/50 py-10">Loading&hellip;</td></tr></tbody>
+                  <tbody id="bh-rows"><tr class="border-0"><td colspan="8" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading blast history&hellip;</div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -811,6 +812,63 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
           </div>
 
+          <!-- ===== Ticket Prices (AI-940) =====
+               Every event in events_master on one screen, so a price can be sanity-checked
+               before a blast is approved instead of across a pile of external tabs. The outbound
+               listing link lives HERE and nowhere else — the Queue and Campaigns prices now
+               deep-link into this table rather than leaving the app.
+
+               Laid out as Campaigns and Queue are: toolbar row outside the frame, then one
+               bordered table box with a sticky head. It was a daisyUI card with its own heading,
+               which is the Templates/Cole Rules shape — right for a settings pane, wrong for the
+               third big data table in the app. -->
+          <div data-view id="view-prices" class="hidden space-y-5">
+            <!-- No heading, count beside the search — same as Campaigns and Queue. -->
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
+                <span class="text-base-content/40">&#128269;</span>
+                <input id="tp-q" type="text" class="grow w-64" placeholder="Search event, venue or market…" autocomplete="off" />
+              </label>
+              <span class="text-sm text-base-content/50 mr-auto" id="tp-total">Loading&hellip;</span>
+              <div class="flex items-center gap-2 flex-wrap justify-end">
+                <select id="tp-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select id="tp-market" class="select select-bordered select-sm w-40"><option value="">All markets</option></select>
+                <select id="tp-fresh" class="select select-bordered select-sm" title="Price freshness">
+                  <option value="">Any freshness</option>
+                  <option value="red">Stale</option>
+                  <option value="amber">Ageing</option>
+                  <option value="fresh">Fresh</option>
+                  <option value="none">Never priced</option>
+                </select>
+                <input id="tp-from" type="date" class="input input-bordered input-sm w-36" title="Events from">
+                <input id="tp-to" type="date" class="input input-bordered input-sm w-36" title="Events to">
+                <button id="tp-clear" class="btn btn-ghost btn-sm">Clear</button>
+                <button id="tp-reload" class="btn btn-outline btn-sm gap-1">&#8635; Reload</button>
+              </div>
+            </div>
+            <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
+                 They are read live from Cole Rules, so this line changes when the knobs do. -->
+            <div id="tp-thresholds" class="text-xs text-base-content/50 -mt-2"></div>
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-330px)]">
+                <table class="camp-table w-full min-w-[1180px]">
+                  <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
+                    <th id="tp-sort-date" class="sortable" title="Sort by event date">Event <span class="sort-ind">&#9650;&#9660;</span></th>
+                    <th id="tp-sort-price" class="sortable" title="Sort by get-in price">Get-in <span class="sort-ind">&#9650;&#9660;</span></th>
+                    <th>Source</th>
+                    <th id="tp-sort-fresh" class="sortable" title="Sort by how stale the price is">Last refreshed <span class="sort-ind">&#9650;&#9660;</span></th>
+                    <th class="col-tight w-[120px]">Freshness</th>
+                    <th>Sport</th>
+                    <th class="col-tight w-[156px]">Market / State</th>
+                    <th>Venue</th>
+                    <th class="col-tight w-[150px]">Eligibility</th>
+                  </tr></thead>
+                  <tbody id="tp-rows"><tr class="border-0"><td colspan="9" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading ticket prices&hellip;</div></td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <!-- ===== placeholder for tabs not built yet ===== -->
           <div data-view id="view-soon" class="hidden">
             <div class="card bg-base-100 border border-base-300"><div class="card-body p-8 text-center text-base-content/50">
@@ -869,6 +927,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const ts = wall - etOffset(wall);
       return wall - etOffset(ts);
     }
+    // One loading state for every data table — a full-width progress bar over a caption. The
+    // tables used to disagree (Queue had this, Campaigns and Market History had bare text), which
+    // made the same wait look like three different kinds of slow.
+    window.__tableLoading = (cols, what) =>
+      '<tr class="border-0"><td colspan="' + cols + '" class="pt-6 pb-3">'
+      + '<progress class="progress progress-primary w-full"></progress>'
+      + '<div class="text-center text-base-content/50 text-sm mt-2">Loading ' + what + '&hellip;</div></td></tr>';
+
     const etDate = (v, o) => new Date(v).toLocaleDateString('en-US', { timeZone: ET_TZ, ...(o||{}) });
     const etTime = (v, o) => new Date(v).toLocaleTimeString('en-US', { timeZone: ET_TZ, ...(o||{}) });
     // YYYY-MM-DD in ET. en-CA gives that ordering directly. This is the form events_master
@@ -1558,7 +1624,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     });
 
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', templates:'view-templates', history:'view-history', rules:'view-rules' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', rules:'view-rules' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -1567,9 +1633,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'rules') loadRules();
       if(tab === 'queue' && window.__loadQueue) window.__loadQueue();
       if(tab === 'history' && window.__loadBlastHistory) window.__loadBlastHistory();
+      if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
-    (function(){ const t=(location.hash||'').replace('#',''); showTab(VIEW[t]?t:'compose'); })();
+    // A hash is either a bare tab ("#queue") or a tab with a target ("#prices:<event_id>"),
+    // the second form being how a price link deep-links to one row. Both are handled here, and
+    // a hashchange listener is required because those links are ordinary anchors: they change
+    // the hash without going through the tab click handler above.
+    function routeHash(){
+      const raw = (location.hash || '').replace('#','');
+      const [tab, target] = raw.split(':');
+      showTab(VIEW[tab] ? tab : 'compose');
+      if(tab === 'prices' && target && window.__focusPrice) window.__focusPrice(target);
+    }
+    window.addEventListener('hashchange', routeHash);
+    routeHash();
 
     // Market dropdown → phone numbers for the selected market.
     const marketSel = document.getElementById('market-select');
@@ -1913,8 +1991,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // so the two tables cannot drift into offering different edit affordances for one field.
       //
       // `scope` names which table asked, and decides what gets reloaded after a save. Reloading
-      // both would be correct but wasteful: fetchAllEvents pages ~6,800 rows and only the tab
-      // you are looking at can show the change.
+      // all of them would be correct but wasteful: fetchAllEvents pages ~6,800 rows and only the
+      // tab you are looking at can show the change.
+      //
+      // Only 'prices' is reachable today — AI-940 moved the pencil to Ticket Prices and removed
+      // it from Campaigns. The 'campaign' and 'queue' branches are kept because the editor is
+      // generic and the patch/reload wiring for those tables still has to run: an edit made on
+      // Ticket Prices repaints their in-memory rows so they do not sit on a stale number.
       //
       // No event_id, no pencil. Placeholder queue rows carry none, and there is nothing on
       // events_master to write without one.
@@ -2074,12 +2157,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const patch = isReset
           ? { ticket_price: null, ticket_url: null, price_source: null, price_seats: null, priced_at: null }
           : { ticket_price: price, ticket_url: urlRaw || null, price_source: 'manual', price_seats: null, priced_at: nowIso };
-        // Both tabs, not just the one in front of you — one events_master row feeds both, which
-        // is exactly what the success toast claims. Patching only the active tab would leave
-        // the other holding a stale number until it happened to reload.
+        // Every tab, not just the one in front of you — one events_master row feeds all three,
+        // which is exactly what the success toast claims. Patching only the active tab would
+        // leave the others holding a stale number until they happened to reload.
         const undo = [
           window.__patchEventPriceCampaigns?.(current.id, patch),
           window.__patchEventPriceQueue?.(current.id, patch),
+          window.__patchEventPricePrices?.(current.id, patch),
         ].filter(Boolean);
 
         const { error } = await sb.rpc('set_event_price_manual', {
@@ -2103,6 +2187,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // awaiting it is what made a save feel slow, since __loadEvents pages the whole event
         // table. If it disagrees with the patch (a concurrent price refresh, say), it wins.
         if(scope === 'queue') window.__loadQueue?.();
+        else if(scope === 'prices') window.__reloadPrices?.();
         else window.__loadEvents?.();
       }
 
@@ -2239,11 +2324,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}${rescanBtn(e)}</div></td>
-          <td>${e.ticket_price!=null?`${e.ticket_url?`<a href="${esc(e.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold" title="View ${esc(e.price_source||'listing')} listing">$${fmt(e.ticket_price)}</a>`:`<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}${window.__priceInfo?.(e)||''}${window.__priceManualBadge?.(e)||''}${window.__priceEditBtn?.(e,'campaign')||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+          <td>${e.ticket_price!=null?`${window.__priceLink ? window.__priceLink(e) : `<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}`+`${window.__staleTag?.(e)||''}`+`${window.__priceManualBadge?.(e)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A game with no price is the one MOST worth an edit, not the least: price-refresh
             // drops every price whose listing link the model failed to return (~40% of what it
             // pays for), so a dash here often means a real price nobody could store.
-            :`<span class="text-base-content/40">—</span>${window.__priceEditBtn?.(e,'campaign')||''}`}</td>
+            :`${window.__priceLink ? window.__priceLink(e) : '<span class="text-base-content/40">—</span>'}`}</td>
           <td>${sport}</td>
           <td>${market}</td>
           <td>${segBadge(e.segment)}</td>
@@ -3660,17 +3745,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const smsSel = `<select class="select select-bordered select-xs mini-select w-52${r.sms?'':' text-base-content/50'}" data-qsms="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending SMS', r.sms)}${smsOpts.map(o=>`<option value="${esc(o.v)}"${(r.sms && o.v===curSms)?' selected':''}>${esc(o.method)} · ${esc(o.label)}</option>`).join('')}</select>`;
           // Campaign columns, rendered exactly as Campaigns by Event renders them.
           //
-          // READ-ONLY HERE, ON PURPOSE (Vhea, 2026-08-17). The pencil belongs to Campaigns by
-          // Event and nowhere else. Nothing is lost by leaving it out: the edit writes
-          // events_master, and this table joins em.best_price live, so a price fixed on
-          // Campaigns already shows on every queued blast for that game. A pencil here would
-          // have been a second door onto the same row — the price is a property of the game,
-          // and the Queue is where you decide when a blast goes, not what the game costs.
-          // The info tooltip stays: reading the provenance is the reason the column is here.
+          // READ-ONLY HERE, ON PURPOSE (Vhea, 2026-08-17, extended 2026-08-27). The pencil
+          // belonged to Campaigns by Event; since AI-940 it belongs to Ticket Prices, and to
+          // nowhere else. Nothing is lost by leaving it out: the edit writes events_master, and
+          // this table joins em.best_price live, so a price fixed there already shows on every
+          // queued blast for that game. The price is a property of the GAME, and the Queue is
+          // where you decide when a blast goes, not what the game costs.
+          //
+          // The info tooltip has gone the same way. It used to be here because there was nowhere
+          // else to read provenance from; now the price itself is a link to the row that carries
+          // the source, the listing, the seat basis and the refresh time in full. Two truncated
+          // copies of that in a hover was the reason to consolidate, not a reason to keep it.
+          //
+          // What DOES stay is the stale badge: it is a warning, not provenance, and the Queue is
+          // exactly where a blast gets approved.
+          // AI-940: the price no longer leaves the app. It deep-links into Ticket Prices, where
+          // the outbound listing link lives alongside provenance and freshness — the things you
+          // actually need in order to judge the number before approving a blast.
           const priceCell = r.ticket_price!=null
-            ? `${r.ticket_url
-                ? `<a href="${esc(r.ticket_url)}" target="_blank" rel="noopener" class="link link-primary font-semibold">$${fmt(r.ticket_price)}</a>`
-                : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__priceInfo?.(r)||''}${window.__priceManualBadge?.(r)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
+            ? `${window.__priceLink ? window.__priceLink(r) : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__staleTag?.(r)||''}${window.__priceManualBadge?.(r)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             : `<span class="text-base-content/40">—</span>`;
           const sportCell = r.sport
             ? `<span class="sport-pill">${esc(r.sport)}</span>${r.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(r.league)}</div>`:''}`
@@ -4222,6 +4315,555 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // every row without its "can't send" mark. It re-renders through this once it knows.
       window.__renderQueue = render;
       loadQueue();
+    })();
+
+    // ===== Ticket Prices tab (AI-940) =====
+    // One row per event in the master table, with the price, where it came from, when it was
+    // last checked, and whether the market is queueable. The point is that a price can be
+    // sanity-checked in one place before a blast is approved — AI-845 found stored prices
+    // running 20-25% high and traced it to staleness, so "when was this last checked" has to be
+    // as visible as the number itself.
+    //
+    // PRESENTATION ONLY. Nothing here writes, and no refresh is triggered from this tab: price
+    // sourcing and its cadence belong to AI-827/AI-828 and are deliberately untouched.
+    (function(){
+      const fmt = n => (Number(n)||0).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:2});
+      const esc2 = v => (v??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const el = id => document.getElementById(id);
+
+      let ROWS = [];            // one row per event, enriched
+      let LOADED = false, LOADING = null;
+      let sortKey = 'date', sortDir = 1;
+      let focusId = null;       // event_id to scroll to once rendered
+
+      // ---- freshness thresholds -------------------------------------------------------
+      // Read from decider_rules — the same knobs the refresh job targets on (migration 030) — so
+      // tuning the cadence tunes the flag with it and there is nothing to keep in sync. That is
+      // also what satisfies "configurable without a code change" without inventing a second
+      // source of truth for the same question.
+      //
+      // Those knobs define ONE cutoff per tier: the point at which the refresh job considers a
+      // price stale. That is the amber line. Red means a refresh cycle was genuinely missed, so
+      // it is that cutoff doubled. Change RED_MULT if a different multiple is wanted — the
+      // effective hours are printed under the filters so the current numbers are never a guess.
+      const RED_MULT = 2;
+      const RULE_FALLBACK = { price_near_days: 3, price_stale_hours: 48, price_stale_hours_near: 12 };
+      let RULES = null;
+
+      function thresholdsFor(days){
+        const r = RULES || RULE_FALLBACK;
+        const near = Number(r.price_near_days != null ? r.price_near_days : 3);
+        const amber = (days != null && days <= near)
+          ? Number(r.price_stale_hours_near != null ? r.price_stale_hours_near : 12)
+          : Number(r.price_stale_hours != null ? r.price_stale_hours : 48);
+        return { amber: amber, red: amber * RED_MULT, near: near };
+      }
+
+      function daysUntil(ymd){
+        if(!ymd) return null;
+        const d = new Date(ymd + 'T00:00:00');
+        if(isNaN(d)) return null;
+        const today = new Date(); today.setHours(0,0,0,0);
+        return Math.round((d - today) / 864e5);
+      }
+
+      // fresh | amber | red | none (never priced) | past (event has been and gone)
+      function freshness(row){
+        const days = daysUntil(row.event_date);
+        if(days != null && days < 0) return { state:'past', label:'—', hours:null };
+        if(row.ticket_price == null || !row.priced_at) return { state:'none', label:'never priced', hours:null };
+        const hours = (Date.now() - new Date(row.priced_at).getTime()) / 36e5;
+        const t = thresholdsFor(days);
+        if(hours >= t.red)   return { state:'red',   label:'stale',  hours:hours, t:t };
+        if(hours >= t.amber) return { state:'amber', label:'ageing', hours:hours, t:t };
+        return { state:'fresh', label:'fresh', hours:hours, t:t };
+      }
+
+      function agoLabel(h){
+        if(h == null) return '';
+        if(h < 1) return Math.max(1, Math.round(h*60)) + 'm ago';
+        if(h < 48) return Math.round(h) + 'h ago';
+        return Math.round(h/24) + 'd ago';
+      }
+
+      // ---- source names ---------------------------------------------------------------
+      // events_master holds whatever the model called the marketplace, and it is not
+      // consistent: a scan of the live table found 14 distinct values across 549 priced rows,
+      // including "Vivid Seats" (114) and "vividseats" (56) as separate spellings of one site.
+      // Sorting or scanning the column treats those as two sources, which they are not.
+      //
+      // normalizeSource() in lib/price.js now cleans this at WRITE time, so new prices land
+      // canonical. It cannot fix rows already stored, and this table shows all of them — hence
+      // a second pass here. The two lists are deliberately the same set; if a marketplace is
+      // added to one, add it to the other.
+      //
+      // The stored value is left alone. This is presentation, and rewriting 56 production rows
+      // is a migration, not a UI change.
+      const SOURCE_NAMES = [
+        [/stub\s*hub/i, 'StubHub'], [/seat\s*geek/i, 'SeatGeek'], [/vivid\s*seats/i, 'Vivid Seats'],
+        [/ticket\s*master/i, 'Ticketmaster'], [/game\s*time/i, 'Gametime'], [/tick\s*pick/i, 'TickPick'],
+        [/ticket\s*liquidator/i, 'Ticket Liquidator'], [/event\s*tickets\s*center/i, 'Event Tickets Center'],
+        [/hello\s*tickets/i, 'Hellotickets'], [/cbs\s*sports/i, 'CBS Sports'], [/mlb\.com/i, 'MLB.com'],
+      ];
+      // Not marketplaces: 'gemini' / 'openrouter' are the lookup route, written when the model
+      // returned a price without naming where it read it. Showing that in a column headed
+      // "Source" claims a provenance nobody has — it is the absence of one.
+      const SOURCE_UNNAMED = /^(gemini|openrouter|perplexity|sonar[-a-z.]*)$/i;
+
+      function sourceLabel(raw){
+        const t = String(raw || '').replace(/\s+/g, ' ').trim();
+        if(!t) return null;
+        if(t.toLowerCase() === 'manual') return 'Set by hand';
+        if(SOURCE_UNNAMED.test(t)) return null;
+        for(const pair of SOURCE_NAMES) if(pair[0].test(t)) return pair[1];
+        return t.length > 28 ? t.slice(0, 25).trimEnd() + '…' : t;
+      }
+
+      const DOT = { fresh:'#16a34a', amber:'#d97706', red:'#dc2626', none:'#9ca3af', past:'#d1d5db' };
+      function freshBadge(f){
+        if(f.state === 'past') return '<span class="text-base-content/30">—</span>';
+        const title = f.t
+          ? 'Amber after ' + f.t.amber + 'h, red after ' + f.t.red + 'h for an event this far out.'
+          : 'This event has no stored price.';
+        const tone = f.state === 'red' ? 'font-semibold text-[#dc2626]'
+                   : f.state === 'amber' ? 'font-semibold text-[#b45309]' : 'text-base-content/60';
+        return '<span class="whitespace-nowrap" title="' + esc2(title) + '">'
+          + '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + DOT[f.state] + ';margin-right:6px"></span>'
+          + '<span class="text-xs ' + tone + '">' + esc(f.label) + '</span></span>';
+      }
+
+      // ---- eligibility ---------------------------------------------------------------
+      // rpc_event_recommendations only covers events the decider is currently considering, so
+      // most rows have no entry. That absence is meaningful and is shown as such rather than
+      // left blank: an event outside the forward window is not "unknown", it is "not yet in
+      // scope", and those are different answers to "why can't I queue this".
+      const REASON = {
+        ok:          ['Queueable',        'Passes every rule — safe to blast.'],
+        nearly_full: ['Skip — near full', 'The event is already close to sold out.'],
+        no_history:  ['Skip — no history','No comparable blast in this market to learn from.'],
+        too_early:   ['Hold — too early', 'Beyond the forward-looking send window.'],
+        cooldown:    ['Hold — cooldown',  'This market was blasted inside the cooldown floor.'],
+      };
+      function eligCell(row){
+        const rec = row.__rec;
+        if(!rec) return '<span class="text-base-content/30" title="Not currently in the decider&#39;s forward window.">not in window</span>';
+        const m = REASON[rec.reason_code] || [rec.decision || rec.reason_code || '—', ''];
+        const tone = rec.decision === 'send' ? 'text-[#16a34a] font-semibold'
+                   : rec.decision === 'skip' ? 'text-base-content/60' : 'text-[#b45309]';
+        const warn = [rec.optout_warning ? 'opt-outs running hot' : '', rec.fatigue_warning ? 'recent-send fatigue' : ''].filter(Boolean);
+        const tip = [m[1]].concat(warn).filter(Boolean).join('\n');
+        return '<span class="' + tone + ' text-xs whitespace-nowrap" title="' + esc2(tip) + '">' + esc(m[0]) + '</span>'
+          + (warn.length ? '<div class="text-[10px] text-[#b45309]">&#9888; ' + esc(warn.join(', ')) + '</div>' : '');
+      }
+
+      // ---- data ----------------------------------------------------------------------
+      // event_targets is one row per event x segment (~6,800), so it is paged past PostgREST's
+      // 1,000-row cap and then collapsed to one row per event. Same cap, same fix, same reason
+      // as the Campaigns table — see fetchAllEvents() there.
+      //
+      // Paged in small concurrent batches rather than one page at a time: a page costs ~2s, and
+      // seven of them in series is a 14s wait before the tab shows anything. Batched, not fully
+      // parallel — the function is a heavy join and firing every page at once earned a
+      // "canceling statement due to statement timeout" (57014) during testing. One retry per
+      // page covers that, since it is intermittent rather than a hard failure.
+      async function fetchPage(url, headers, offset, PAGE){
+        let last = 'event_targets failed';
+        for(let attempt = 0; attempt < 3; attempt++){
+          try {
+            const r = await fetch(url + '?limit=' + PAGE + '&offset=' + offset, { method:'POST', headers: headers, body:'{}' });
+            if(r.ok){
+              const page = await r.json();
+              if(Array.isArray(page)) return page;
+              last = 'event_targets returned no rows';
+            } else {
+              // 57014 is a statement timeout on this join — intermittent, and a retry clears it.
+              last = 'event_targets HTTP ' + r.status;
+            }
+          } catch(e){
+            // A dropped connection surfaces as a TypeError ("Failed to fetch"), NOT as a bad
+            // status, so it has to be caught here or one blip kills the whole tab.
+            last = ((e && e.message) || String(e)) + ' (offset ' + offset + ')';
+          }
+          if(attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)));
+        }
+        throw new Error(last);
+      }
+
+      async function fetchEvents(){
+        const PAGE = 1000, BATCH = 2, MAX_PAGES = 60;
+        const url = cfg.SUPABASE_URL + '/rest/v1/rpc/event_targets';
+        const headers = { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY, 'content-type':'application/json' };
+        const seen = new Map();
+        let done = false;
+        for(let start = 0; start < MAX_PAGES && !done; start += BATCH){
+          const offsets = [];
+          for(let i = 0; i < BATCH; i++) offsets.push((start + i) * PAGE);
+          const pages = await Promise.all(offsets.map(o => fetchPage(url, headers, o, PAGE)));
+          for(const page of pages){
+            for(const e of page){ const k = String(e.event_id); if(!seen.has(k)) seen.set(k, e); }
+            // A short page means the end of the data. Later pages in the same batch are already
+            // fetched and merged above, so stopping here loses nothing.
+            if(page.length < PAGE) done = true;
+          }
+        }
+        return Array.from(seen.values());
+      }
+
+      // rpc_event_recommendations is subject to the same 1,000-row cap, and it is NOT a small
+      // result: it returned 2,045 rows against 2,045 events during testing, so an unpaged call
+      // silently covered only half of them. Every event past the first page would have rendered
+      // as "not in window" — a wrong answer that looks like a real one, on the column whose
+      // whole job is explaining why something cannot be queued.
+      async function fetchRecs(){
+        const PAGE = 1000;
+        const url = cfg.SUPABASE_URL + '/rest/v1/rpc/rpc_event_recommendations';
+        const headers = { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY, 'content-type':'application/json' };
+        const out = [];
+        for(let offset = 0; offset < 60000; offset += PAGE){
+          const r = await fetch(url + '?limit=' + PAGE + '&offset=' + offset, { method:'POST', headers: headers, body:'{}' });
+          if(!r.ok) break;                       // eligibility is an enrichment, not the point of the tab
+          const page = await r.json();
+          if(!Array.isArray(page)) break;
+          out.push.apply(out, page);
+          if(page.length < PAGE) break;
+        }
+        return out;
+      }
+
+      // event_targets does not carry event_time and the ticket asks for date AND time. Read it
+      // straight off events_master rather than widening the RPC — this tab is presentation only.
+      async function fetchTimes(){
+        const out = new Map();
+        if(!sb) return out;
+        for(let from = 0; from < 60000; from += 1000){
+          const res = await sb.from('events_master').select('id,event_time').range(from, from + 999);
+          if(res.error || !Array.isArray(res.data)) break;
+          for(const r of res.data){ if(r.event_time) out.set(String(r.id), r.event_time); }
+          if(res.data.length < 1000) break;
+        }
+        return out;
+      }
+
+      // PHASED, NOT PARALLEL. This first fired all four sources at once, and with event_targets
+      // itself paged three-wide that is six concurrent queries against a heavy join — enough to
+      // get connections dropped, which the browser reports as "Failed to fetch" and which then
+      // took out the entire tab including the parts that had already arrived.
+      //
+      // Phase 1 is the table itself: rules (cheap, and the freshness flag is wrong without them)
+      // then the events. Render as soon as that lands. Phase 2 enriches — event_time and
+      // eligibility — and re-renders. Both are optional columns, so a failure there costs those
+      // two cells and nothing else.
+      async function loadAll(){
+        const tb = el('tp-rows');
+        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        tb.innerHTML = window.__tableLoading(9, 'ticket prices');
+        try {
+          const rulesRes = await sb.rpc('get_decider_rules').then(r => r, function(){ return { data:null }; });
+          const ruleRows = rulesRes && rulesRes.data;
+          RULES = Array.isArray(ruleRows) ? ruleRows[0] : (ruleRows || null);
+
+          const events = await fetchEvents();
+          ROWS = events.map(e => Object.assign({}, e, { event_time: null, __rec: null }));
+          LOADED = true;
+          buildFilters();
+          render();
+        } catch(err){
+          // Log the real object too — a bare "Failed to fetch" on screen says nothing about
+          // WHICH request died, and the console keeps the stack and the network entry.
+          console.error('[Ticket Prices] load failed', err);
+          tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">'
+            + esc(String((err && err.message) || err))
+            + '<div class="text-xs text-base-content/50 mt-2">Reading <code>' + esc(cfg.SUPABASE_URL || '(no SUPABASE_URL)') + '/rest/v1/rpc/event_targets</code>'
+            + ' &middot; see the browser console for detail &middot; use Reload to retry.</div></td></tr>';
+          return;
+        }
+
+        // Phase 2 — enrichment. Failures here are swallowed on purpose: losing the kick-off time
+        // or the eligibility label must not blank a table full of prices that already loaded.
+        try {
+          const times = await fetchTimes();
+          if(times.size) for(const r of ROWS) r.event_time = times.get(String(r.event_id)) || null;
+        } catch(e){ /* time column stays blank */ }
+        try {
+          const recRows = await fetchRecs();
+          if(Array.isArray(recRows) && recRows.length){
+            const recs = new Map();
+            for(const r of recRows) recs.set(String(r.event_id), r);
+            for(const r of ROWS) r.__rec = recs.get(String(r.event_id)) || null;
+          }
+        } catch(e){ /* eligibility column stays "not in window" */ }
+        render();
+      }
+
+      // ---- filters -------------------------------------------------------------------
+      function buildFilters(){
+        const sports = Array.from(new Set(ROWS.map(r => r.sport).filter(Boolean))).sort();
+        const markets = Array.from(new Set(ROWS.map(r => r.state_name || r.state_code).filter(Boolean))).sort();
+        const fill = (id, vals) => {
+          const sel = el(id); if(!sel) return;
+          const cur = sel.value;
+          sel.innerHTML = '<option value="">All</option>' + vals.map(v => '<option value="' + esc2(v) + '">' + esc(v) + '</option>').join('');
+          if(vals.indexOf(cur) >= 0) sel.value = cur;
+        };
+        fill('tp-sport', sports);
+        fill('tp-market', markets);
+        const far = thresholdsFor(999), near = thresholdsFor(0);
+        el('tp-thresholds').innerHTML =
+          'Freshness thresholds, read live from Cole Rules: more than ' + far.near + ' days out flags amber after <strong>'
+          + far.amber + 'h</strong>, red after <strong>' + far.red + 'h</strong>. Inside ' + far.near
+          + ' days, amber after <strong>' + near.amber + 'h</strong>, red after <strong>' + near.red + 'h</strong>.';
+      }
+
+      function visible(){
+        const q = (el('tp-q').value || '').trim().toLowerCase();
+        const sport = el('tp-sport').value, market = el('tp-market').value;
+        const from = el('tp-from').value, to = el('tp-to').value;
+        const fresh = el('tp-fresh').value;
+        return ROWS.filter(r => {
+          if(sport && r.sport !== sport) return false;
+          if(market && (r.state_name || r.state_code) !== market) return false;
+          if(from && (r.event_date || '') < from) return false;
+          if(to   && (r.event_date || '') > to)   return false;
+          if(fresh && freshness(r).state !== fresh) return false;
+          if(q){
+            // Both the stored spelling and the displayed one — searching "vivid seats" should
+            // find a row stored as "vividseats", and vice versa.
+            const hay = [r.team, r.opponent, r.venue, r.state_name, r.state_code, r.market_key,
+                         r.sport, r.league, r.price_source, sourceLabel(r.price_source)]
+              .filter(Boolean).join(' ').toLowerCase();
+            if(hay.indexOf(q) < 0) return false;
+          }
+          return true;
+        });
+      }
+
+      const RANK = { red:0, amber:1, none:2, fresh:3, past:4 };
+      function sorted(rows){
+        const c = rows.slice();
+        c.sort((a,b) => {
+          let v = 0;
+          if(sortKey === 'price'){
+            const pa = a.ticket_price, pb = b.ticket_price;
+            // Unpriced rows sort last in BOTH directions. An absent price is absence, not a low
+            // number, and burying those rows under a flip of the arrow would hide exactly the
+            // ones worth chasing.
+            if(pa == null && pb == null) v = 0;
+            else if(pa == null) return 1;
+            else if(pb == null) return -1;
+            else v = Number(pa) - Number(pb);
+          } else if(sortKey === 'fresh'){
+            const fa = freshness(a), fb = freshness(b);
+            v = (RANK[fa.state] - RANK[fb.state]) || ((fb.hours||0) - (fa.hours||0));
+          } else {
+            v = String(a.event_date||'').localeCompare(String(b.event_date||''));
+          }
+          return (v * sortDir) || String(a.team||'').localeCompare(String(b.team||''));
+        });
+        return c;
+      }
+
+      // ---- render --------------------------------------------------------------------
+      function evTitle(e){ return e.opponent ? (e.opponent + ' at ' + e.team) : (e.team || 'Untitled event'); }
+
+      function whenCell(r){
+        const d = r.event_date ? new Date(r.event_date + 'T00:00:00') : null;
+        const date = (d && !isNaN(d))
+          ? d.toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric'})
+          : (r.event_date || '—');
+        // event_time is UTC in events_master (MLB gameDate is UTC). Shown in ET, like every
+        // other clock in this app.
+        let time = '';
+        if(r.event_time && r.event_date){
+          const dt = new Date(r.event_date + 'T' + r.event_time + 'Z');
+          if(!isNaN(dt)) time = ' · ' + etTime(dt, { hour:'numeric', minute:'2-digit' }) + ' ET';
+        }
+        return '<div class="font-bold text-[#133b49] whitespace-nowrap">' + esc(evTitle(r)) + '</div>'
+             + '<div class="text-xs text-base-content/50 whitespace-nowrap">' + esc(date) + esc(time) + '</div>';
+      }
+
+      function render(){
+        const tb = el('tp-rows'); if(!tb) return;
+        const rows = sorted(visible());
+        // Same affordance as the Cheapest column on Campaigns: the head lights up and the
+        // double arrow collapses to the direction in force.
+        [['date','tp-sort-date'],['price','tp-sort-price'],['fresh','tp-sort-fresh']].forEach(function(pair){
+          const th = el(pair[1]); if(!th) return;
+          const on = sortKey === pair[0];
+          th.classList.toggle('on', on);
+          const ind = th.querySelector('.sort-ind');
+          if(ind) ind.innerHTML = on ? (sortDir > 0 ? '&#9650;' : '&#9660;') : '&#9650;&#9660;';
+        });
+        if(!rows.length){
+          tb.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match these filters.</td></tr>';
+        } else {
+          tb.innerHTML = rows.map(r => {
+            const f = freshness(r);
+            // The pencil belongs here for the same reason the outbound link does: this is the
+            // table ABOUT prices. Campaigns keeps its own — one events_master row feeds both, and
+            // a save from either patches every open table (see priceEditorModule).
+            //
+            // Rendered on unpriced rows too. An event with no price is the one MOST worth an
+            // edit, not the least — price-refresh only covers the price_window_days horizon, so
+            // most of this table is a dash that nobody has been able to fill in from the app.
+            const editBtn = (window.__priceEditBtn && window.__priceEditBtn(r, 'prices')) || '';
+            const price = r.ticket_price != null
+              ? '<span class="font-semibold text-[#133b49]">$' + fmt(r.ticket_price) + '</span>'
+                + ((window.__priceInfo && window.__priceInfo(r)) || '')
+                + ((window.__priceManualBadge && window.__priceManualBadge(r)) || '')
+                + editBtn
+                + '<div class="text-[10px] text-base-content/40">get-in</div>'
+              : '<span class="text-base-content/40">—</span>' + editBtn;
+            // The outbound listing link lives here and ONLY here. This is the row the Queue and
+            // Campaigns prices now route to, so this is where leaving the app belongs.
+            // A row whose stored source is not a marketplace still has a working listing link,
+            // so the link survives and only the name it is labelled with changes.
+            const srcName = sourceLabel(r.price_source);
+            const srcTitle = (srcName && r.price_source && srcName !== r.price_source)
+              ? ' title="Stored as &quot;' + esc(r.price_source) + '&quot;"' : '';
+            const src = r.ticket_url
+              ? '<a href="' + esc(r.ticket_url) + '" target="_blank" rel="noopener" class="link link-primary text-xs"' + srcTitle + '>'
+                + (srcName ? esc(srcName) : '<span class="text-base-content/50">view listing</span>') + ' &#8599;</a>'
+              : (srcName
+                  ? '<span class="text-xs text-base-content/60"' + srcTitle + '>' + esc(srcName) + '</span>'
+                  : '<span class="text-base-content/30">—</span>');
+            const refreshed = r.priced_at
+              ? '<div class="text-xs whitespace-nowrap">' + esc(etDate(new Date(r.priced_at),{month:'short',day:'numeric'})) + ' '
+                + esc(etTime(new Date(r.priced_at),{hour:'numeric',minute:'2-digit'})) + ' ET</div>'
+                + '<div class="text-[10px] text-base-content/40">' + esc(agoLabel(f.hours)) + '</div>'
+              : '<span class="text-base-content/30">—</span>';
+            const market = r.state_name
+              ? '<span class="font-semibold text-[#133b49] whitespace-nowrap">' + esc(r.state_name) + '</span>'
+                + (r.state_code ? '<div class="text-[10px] text-base-content/40">' + esc(r.state_code) + '</div>' : '')
+              : '<span class="text-base-content/40">Unassigned</span>';
+            return '<tr data-tpid="' + esc2(String(r.event_id)) + '"' + (f.state === 'red' ? ' style="background:rgba(220,38,38,.04)"' : '') + '>'
+              + '<td>' + whenCell(r) + '</td>'
+              + '<td>' + price + '</td>'
+              + '<td>' + src + '</td>'
+              + '<td>' + refreshed + '</td>'
+              + '<td>' + freshBadge(f) + '</td>'
+              + '<td>' + (r.sport ? '<span class="sport-pill">' + esc(r.sport) + '</span>' : '<span class="text-base-content/40">—</span>') + '</td>'
+              + '<td>' + market + '</td>'
+              + '<td class="text-xs text-base-content/70">' + (r.venue ? esc(r.venue) : '<span class="text-base-content/30">—</span>') + '</td>'
+              + '<td>' + eligCell(r) + '</td>'
+              + '</tr>';
+          }).join('');
+        }
+        const counts = {};
+        for(const r of ROWS){ const st = freshness(r).state; counts[st] = (counts[st]||0) + 1; }
+        const total = el('tp-total');
+        if(total) total.innerHTML =
+          rows.length + ' of ' + ROWS.length + ' events'
+          + ' · <span class="text-[#dc2626] font-semibold">' + (counts.red||0) + ' stale</span>'
+          + ' · <span class="text-[#b45309] font-semibold">' + (counts.amber||0) + ' ageing</span>'
+          + ' · ' + (counts.fresh||0) + ' fresh'
+          + ' · <span class="text-base-content/40">' + (counts.none||0) + ' unpriced</span>';
+        if(focusId) applyFocus();
+      }
+
+      // ---- deep link ------------------------------------------------------------------
+      // A price link from Queue/Campaigns lands here. If the target row is filtered out, the
+      // filters are cleared rather than showing an empty table: arriving at "no results" after
+      // clicking a price reads as a broken link.
+      function applyFocus(){
+        const want = String(focusId);
+        const sel = 'tr[data-tpid="' + want.replace(/"/g,'\\"') + '"]';
+        let tr = document.querySelector('#tp-rows ' + sel);
+        if(!tr && ROWS.some(r => String(r.event_id) === want)){
+          clearFilters(false);
+          render();
+          tr = document.querySelector('#tp-rows ' + sel);
+        }
+        focusId = null;
+        if(!tr) return;
+        tr.scrollIntoView({ block:'center', behavior:'smooth' });
+        const prev = tr.style.background;
+        tr.style.transition = 'background-color .4s';
+        tr.style.background = 'rgba(201,77,7,.18)';
+        setTimeout(function(){ tr.style.background = prev; }, 1800);
+      }
+
+      function clearFilters(rerender){
+        ['tp-q','tp-from','tp-to','tp-sport','tp-market','tp-fresh'].forEach(id => { const e = el(id); if(e) e.value = ''; });
+        if(rerender !== false) render();
+      }
+
+      // ---- wiring ---------------------------------------------------------------------
+      ['tp-q','tp-sport','tp-market','tp-from','tp-to','tp-fresh'].forEach(id => {
+        const e = el(id); if(!e) return;
+        e.addEventListener(id === 'tp-q' ? 'input' : 'change', function(){ if(LOADED) render(); });
+      });
+      const clearBtn = el('tp-clear'); if(clearBtn) clearBtn.addEventListener('click', function(){ clearFilters(); });
+      const reloadBtn = el('tp-reload'); if(reloadBtn) reloadBtn.addEventListener('click', function(){ LOADED = false; LOADING = null; window.__loadPrices(); });
+      [['date','tp-sort-date'],['price','tp-sort-price'],['fresh','tp-sort-fresh']].forEach(function(pair){
+        const th = el(pair[1]); if(!th) return;
+        th.addEventListener('click', function(){
+          if(sortKey === pair[0]) sortDir = -sortDir; else { sortKey = pair[0]; sortDir = 1; }
+          render();
+        });
+      });
+
+      // Loaded once per visit rather than per tab switch — this is four round trips and ~6,800
+      // rows before dedupe.
+      window.__loadPrices = function(){
+        if(LOADED){ render(); return Promise.resolve(); }
+        if(!LOADING) LOADING = loadAll().then(function(){ LOADING = null; }, function(){ LOADING = null; });
+        return LOADING;
+      };
+
+      window.__focusPrice = function(eventId){
+        focusId = eventId;
+        Promise.resolve(window.__loadPrices()).then(function(){ if(focusId) applyFocus(); });
+      };
+
+      // Applied by priceEditorModule the instant a save is submitted, before the write lands,
+      // so the row repaints without waiting. Returns an undo the editor calls if the write
+      // fails. Mirrors __patchEventPriceCampaigns — one event is one row here, but the same
+      // shape is kept so the three patchers cannot drift.
+      window.__patchEventPricePrices = function(eventId, patch){
+        const id = String(eventId || '');
+        const hits = ROWS.filter(r => String(r.event_id || '') === id);
+        if(!hits.length) return function(){};
+        const before = hits.map(function(row){
+          const prev = {}; for(const k in patch) prev[k] = row[k];
+          Object.assign(row, patch); return { row: row, prev: prev };
+        });
+        render();
+        return function(){ before.forEach(function(b){ Object.assign(b.row, b.prev); }); render(); };
+      };
+
+      // Re-read after a save, so a concurrent price refresh wins over the optimistic patch.
+      // Not awaited by the editor — the screen is already correct.
+      window.__reloadPrices = function(){ LOADED = false; LOADING = null; return window.__loadPrices(); };
+
+      // ---- helpers used by the Queue and Campaigns tabs --------------------------------
+      // The price stops being an outbound link and becomes a route into this table. Defined here
+      // so there is ONE definition of what a price link is, rather than a third copy of it.
+      // Handles the unpriced case too. Campaigns renders this in place of the bare dash it used
+      // to show beside a pencil: with the edit moved to Ticket Prices, a dash with no affordance
+      // would have removed the only route to setting a price on a game that has none — and those
+      // are most of the table, since price-refresh only covers the price_window_days horizon.
+      window.__priceLink = function(row){
+        const id = row && row.event_id;
+        const priced = row && row.ticket_price != null;
+        const label = priced ? '$' + fmt(row.ticket_price) : '&mdash;';
+        const cls = priced ? 'link link-primary font-semibold' : 'link text-base-content/40';
+        if(!id) return '<span class="' + (priced ? 'font-semibold text-[#133b49]' : 'text-base-content/40') + '">' + label + '</span>';
+        const tip = priced ? 'Open this event in Ticket Prices' : 'No price yet — open in Ticket Prices to set one';
+        return '<a href="#prices:' + esc2(String(id)) + '" class="' + cls + '"'
+          + ' title="' + tip + '">' + label + '</a>';
+      };
+
+      // A stale price has to say so where the decision is actually made, not only in the price
+      // table — the Queue is where a blast gets approved.
+      window.__staleTag = function(row){
+        if(!row || row.ticket_price == null || !row.priced_at) return '';
+        const f = freshness(row);
+        if(f.state !== 'red') return '';
+        const tip = 'Last checked ' + agoLabel(f.hours) + ' — past the ' + (f.t ? f.t.red : '') + 'h limit for an event this close. '
+          + 'Open Ticket Prices to check the listing before approving.';
+        return ' <span class="badge badge-sm align-middle" style="background:#fee2e2;color:#b91c1c;border-color:#fecaca"'
+          + ' title="' + esc2(tip) + '">price may be stale</span>';
+      };
     })();
 
     // ===== Blast Send History — powers the Market History tab =====

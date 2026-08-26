@@ -54,6 +54,35 @@ npx serve .        # or:  python -m http.server 8080
 # open the printed URL
 ```
 
+That serves the static bundle only. To run the API routes too — and to sign in — use the
+dev server, **on port 3005**:
+
+```bash
+node --env-file=.env scripts/gen-config.js   # writes ui/config.js from .env (git-ignored)
+PORT=3005 node --env-file=.env scripts/dev-server.js
+```
+
+### The port is not arbitrary — use 3005
+
+Google sign-in round-trips through Supabase, which only honours a `redirectTo` that is on its
+allow-list. An unlisted one is **silently replaced by the project Site URL** — no error, no
+warning, you just land on whatever happens to be running there. Site URL is
+`http://localhost:3000`, which on a typical machine here is a different Next.js project. So a
+login started on any other port finishes in the wrong app, and it reads as this one being
+broken rather than as a redirect problem.
+
+`ui/login.html` does the right thing (`redirectTo: location.origin + '/login'`) — the
+substitution happens on Supabase's side, at the callback, which is why the port has to match
+the allow-list rather than just being consistent.
+
+3005 is on the allow-list. To use a different port, add `http://localhost:<port>/login` under
+Authentication → URL Configuration → Redirect URLs first:
+
+<https://supabase.com/dashboard/project/snfmggrnyjayuuxafats/auth/url-configuration>
+
+`PORT` is the only knob — `scripts/dev-server.js` reads it and defaults to 3000, which is the
+wrong default for exactly the reason above.
+
 There's one dummy conversation seeded in the DB so the list isn't empty on first open;
 delete it whenever (`delete from telnyx_conversations where contact_number='+15557774444';`).
 
