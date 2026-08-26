@@ -9,7 +9,7 @@
 // queue_enqueue_test / log_market_blast so nothing here can send.
 //
 // Auth: lib/auth.js — Bearer CRON_SECRET (cron, VPS) or a signed-in user's Supabase token.
-// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL,
+// Env: OPENROUTER_OPENAI or OPENAI_API_KEY (+ optional OPENAI_MODEL — see lib/llm.js), SUPABASE_URL,
 //      SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js).
 //
 // MULTI-DAY / ADDITIVE (Josh, 2026-07-28). Body {per_day, through} schedules blasts across
@@ -23,6 +23,7 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
+import { openaiTarget } from '../lib/llm.js';
 
 export const config = { maxDuration: 30 };
 
@@ -236,9 +237,9 @@ export default async function handler(req, res) {
     const byId = Object.fromEntries(candidates.map(c => [String(c.event_id), c]));
 
     let picks = [], vetoed = [], llm = false;
-    const key = (process.env.OPENAI_API_KEY || '').trim();
+    const target = openaiTarget(MODEL);
 
-    if (key && candidates.length && need) {
+    if (target.ok && candidates.length && need) {
       try {
         const payload = candidates.map(c => ({
           event_id: c.event_id, team: c.team, market: c.market_label,
@@ -250,11 +251,11 @@ export default async function handler(req, res) {
           // rather than a guess. Segments missing from this object have nobody to send to.
           segment_reach: c.seg_reach,
         }));
-        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        const aiRes = await fetch(target.url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+          headers: target.headers,
           body: JSON.stringify({
-            model: MODEL, max_tokens: 2000,
+            model: target.model, ...target.body, max_tokens: 2000,
             messages: [
               { role: 'system', content: SYSTEM },
               { role: 'user', content: `Choose up to ${need} markets to blast across the next ${days.length} day(s) — ${perDay} per day, best-first. Candidates:\n`

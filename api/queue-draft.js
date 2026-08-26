@@ -24,10 +24,12 @@
 // Auth: lib/auth.js — Bearer CRON_SECRET or a signed-in user's Supabase token. The VPS
 // OpenClaw skill calls this too and must send CRON_SECRET, not the old published secret.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), optional
-//      OPENAI_API_KEY (+ OPENAI_MODEL) or ANTHROPIC_API_KEY, optional DRAFT_MODEL.
+//      OPENROUTER_OPENAI or OPENAI_API_KEY (+ OPENAI_MODEL — see lib/llm.js) or
+//      ANTHROPIC_API_KEY, optional DRAFT_MODEL.
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
+import { openaiTarget } from '../lib/llm.js';
 
 export const config = { maxDuration: 60 };
 
@@ -125,17 +127,17 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
-async function callOpenAI(key, model, user) {
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callOpenAI(target, user) {
+  const r = await fetch(target.url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    headers: target.headers,
     body: JSON.stringify({
-      model, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }],
+      model: target.model, ...target.body, messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: user }],
       response_format: { type: 'json_schema', json_schema: { name: 'blast_copy', strict: true, schema: SCHEMA } },
     }),
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((d.error && d.error.message) || `OpenAI HTTP ${r.status}`);
+  if (!r.ok) throw new Error((d.error && d.error.message) || target.label + ` HTTP ${r.status}`);
   const c = (d.choices || [])[0] || {};
   if (c.finish_reason === 'content_filter') throw new Error('model declined');
   return JSON.parse((c.message && c.message.content) || '{}');
@@ -201,9 +203,9 @@ export default async function handler(req, res) {
     const blasted = new Set(
       queue.filter(r => r.status === 'sent').map(r => String(r.state_code || '').toUpperCase()).filter(Boolean));
 
-    const key = (process.env.OPENAI_API_KEY || '').trim();
-    const anthKey = (process.env.ANTHROPIC_API_KEY || '').trim();
     const model = (process.env.DRAFT_MODEL || '').trim();
+    const target = openaiTarget(model || (process.env.OPENAI_MODEL || 'gpt-4o').trim());
+    const anthKey = (process.env.ANTHROPIC_API_KEY || '').trim();
 
     const written = [], skipped = [], errors = [];
 
@@ -244,7 +246,7 @@ export default async function handler(req, res) {
 
       // Stage 2 — tailor. Every failure path lands on `base`, never on an error.
       let copy = base, tailored = false;
-      if (tailor && (key || anthKey)) {
+      if (tailor && (target.ok || anthKey)) {
         const user = [
           `## This blast`, `- Market: ${r.state_name || r.state_code || 'unspecified'}`,
           `- Game: ${gameLabel(r)}`, `- Date: ${prettyDate(r.event_date) || 'unspecified'}`,
@@ -255,8 +257,8 @@ export default async function handler(req, res) {
           ``, `Tailor both to this market, following every rule in your instructions.`,
         ].filter(Boolean).join('\n');
         try {
-          const out = key
-            ? await callOpenAI(key, model || (process.env.OPENAI_MODEL || 'gpt-4o').trim(), user)
+          const out = target.ok
+            ? await callOpenAI(target, user)
             : await callAnthropic(anthKey, model || 'claude-opus-4-8', user);
           if (tailorIsSafe(out, base)) { copy = { email: out.email, sms: out.sms }; tailored = true; }
         } catch { /* keep the filled template */ }

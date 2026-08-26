@@ -7,11 +7,16 @@
 // goes near gen-config.js.
 //
 // Env vars (Vercel > Settings > Environment Variables):
-//   OPENAI_API_KEY     (sk-proj-...) -> OpenAI. The house default: api/chat.js and
+//   OPENROUTER_OPENAI  (sk-or-v1-...) -> OpenRouter, and the model id gets namespaced to
+//                                       openai/<model>. Wins when set. See lib/llm.js.
+//   OPENAI_API_KEY     (sk-proj-...) -> OpenAI direct. The house default: api/chat.js and
 //                                       api/decide.js both run on it, so this endpoint
 //                                       prefers it too rather than silently splitting
 //                                       providers across the app.
-//   ANTHROPIC_API_KEY  (sk-ant-...)  -> Claude. Used only when OPENAI_API_KEY is unset.
+//   ANTHROPIC_API_KEY  (sk-ant-...)  -> Claude. Used only when NEITHER of the two above is
+//                                       set. Dormant today (the key is commented out in
+//                                       .env) but still a live branch, so unsetting the
+//                                       OpenAI-side vars routes here rather than erroring.
 //   OPENAI_MODEL       optional, defaults to gpt-4o (same var api/chat.js uses)
 //   DRAFT_MODEL        optional, overrides OPENAI_MODEL for this endpoint only
 // Auth: lib/auth.js — Bearer CRON_SECRET or a signed-in user's Supabase token. It used to be
@@ -24,6 +29,7 @@
 // worth changing the deploy shape.
 
 import { gate } from '../lib/auth.js';
+import { openaiTarget } from '../lib/llm.js';
 
 const SYSTEM_PROMPT = `You are the campaign copy agent for Playbook Sports' Marketing Blaster.
 
@@ -91,12 +97,12 @@ async function callAnthropic(key, model, sys, user) {
   return { text, model: data.model || model };
 }
 
-async function callOpenAI(key, model, sys, user) {
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callOpenAI(target, sys, user) {
+  const r = await fetch(target.url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    headers: target.headers,
     body: JSON.stringify({
-      model,
+      model: target.model, ...target.body,
       messages: [{ role: 'system', content: sys }, { role: 'user', content: user }],
       response_format: {
         type: 'json_schema',
@@ -105,10 +111,10 @@ async function callOpenAI(key, model, sys, user) {
     }),
   });
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((data.error && data.error.message) || `OpenAI HTTP ${r.status}`);
+  if (!r.ok) throw new Error((data.error && data.error.message) || target.label + ` HTTP ${r.status}`);
   const choice = (data.choices || [])[0] || {};
   if (choice.finish_reason === 'content_filter') throw new Error('The model declined this rewrite request.');
-  return { text: (choice.message && choice.message.content) || '', model: data.model || model };
+  return { text: (choice.message && choice.message.content) || '', model: data.model || target.model };
 }
 
 export default async function handler(req, res) {
@@ -116,10 +122,11 @@ export default async function handler(req, res) {
 
   if (!await gate(req, res)) return;
 
-  const openaiKey = (process.env.OPENAI_API_KEY || '').trim();
+  const draftModel = (process.env.DRAFT_MODEL || '').trim();
+  const target = openaiTarget(draftModel || (process.env.OPENAI_MODEL || 'gpt-4o').trim());
   const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
-  if (!openaiKey && !anthropicKey) {
-    res.status(500).json({ error: 'OPENAI_API_KEY is not set on the server' });
+  if (!target.ok && !anthropicKey) {
+    res.status(500).json({ error: 'No model key on the server — set OPENROUTER_OPENAI, OPENAI_API_KEY or ANTHROPIC_API_KEY' });
     return;
   }
 
@@ -132,10 +139,9 @@ export default async function handler(req, res) {
   const user = userPrompt(draft, String(instruction).trim());
 
   try {
-    const model = (process.env.DRAFT_MODEL || '').trim();
-    const out = openaiKey
-      ? await callOpenAI(openaiKey, model || (process.env.OPENAI_MODEL || 'gpt-4o').trim(), SYSTEM_PROMPT, user)
-      : await callAnthropic(anthropicKey, model || 'claude-opus-4-8', SYSTEM_PROMPT, user);
+    const out = target.ok
+      ? await callOpenAI(target, SYSTEM_PROMPT, user)
+      : await callAnthropic(anthropicKey, draftModel || 'claude-opus-4-8', SYSTEM_PROMPT, user);
 
     let parsed;
     try { parsed = JSON.parse(out.text); }

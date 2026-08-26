@@ -9,12 +9,13 @@
 //   • Vercel Cron (daily, per vercel.json) — sends Authorization: Bearer CRON_SECRET
 //   • On-demand from the UI — sends x-inbox-secret: <REPLY_SECRET>
 //
-// Env: OPENAI_API_KEY (+ optional OPENAI_MODEL), SUPABASE_URL,
+// Env: OPENROUTER_OPENAI or OPENAI_API_KEY (+ optional OPENAI_MODEL — see lib/llm.js), SUPABASE_URL,
 //      SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), optional CRON_SECRET, REPLY_SECRET.
 // Query/body flag `dry` (?dry=1 or {"dry":true}) computes reasons but skips logging.
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
+import { openaiTarget } from '../lib/llm.js';
 
 export const config = { maxDuration: 60 };
 
@@ -65,7 +66,7 @@ function fallbackReason(r) {
 export default async function handler(req, res) {
   if (!await gate(req, res)) return;
 
-  const key = (process.env.OPENAI_API_KEY || '').trim();
+  const target = openaiTarget(MODEL);
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
 
@@ -81,7 +82,7 @@ export default async function handler(req, res) {
 
     // 2. LLM writes a one-line rationale per event (grounded in the numbers). Optional.
     let reasonMap = {};
-    if (key && recs.length) {
+    if (target.ok && recs.length) {
       const payload = recs.map(r => ({
         event_id: r.event_id, team: r.team, opponent: r.opponent, market: r.market_label,
         matched: r.matched, decision: r.decision, reason_code: r.reason_code,
@@ -91,11 +92,11 @@ export default async function handler(req, res) {
         optout_warning: r.optout_warning, fatigue_warning: r.fatigue_warning,
       }));
       try {
-        const aiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        const aiRes = await fetch(target.url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+          headers: target.headers,
           body: JSON.stringify({
-            model: MODEL, max_tokens: 3000,
+            model: target.model, ...target.body, max_tokens: 3000,
             messages: [{ role: 'system', content: SYSTEM }, { role: 'user', content: 'Events:\n' + JSON.stringify(payload) }],
             response_format: { type: 'json_schema', json_schema: { name: 'reasons', strict: true, schema: SCHEMA } },
           }),

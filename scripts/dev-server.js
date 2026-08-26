@@ -108,5 +108,9 @@ server.listen(PORT, () => {
   console.log(`dev server  http://localhost:${PORT}`);
   console.log(`  ui/           ${UI}`);
   console.log(`  functions     ${fs.readdirSync(API).filter(f => f.endsWith('.js')).map(f => '/api/' + f.replace(/\.js$/, '')).join(', ')}`);
-  console.log(`  env           ANTHROPIC_API_KEY=${has('ANTHROPIC_API_KEY')}  OPENAI_API_KEY=${has('OPENAI_API_KEY')}  REPLY_SECRET=${has('REPLY_SECRET')}  TELNYX_API_KEY=${has('TELNYX_API_KEY')}`);
+  // Which way the OpenAI-shaped endpoints are routing. Getting this wrong is invisible
+  // otherwise — both paths answer identically until the bill or a refusal shows up.
+  const route = process.env.OPENROUTER_OPENAI ? 'OpenRouter (openai/*)' : (process.env.OPENAI_API_KEY ? 'OpenAI direct' : 'none -> Anthropic fallback');
+  console.log(`  llm route     ${route}`);
+  console.log(`  env           OPENROUTER_OPENAI=${has('OPENROUTER_OPENAI')}  OPENAI_API_KEY=${has('OPENAI_API_KEY')}  ANTHROPIC_API_KEY=${has('ANTHROPIC_API_KEY')}  GEMINI_API_KEY=${has('GEMINI_API_KEY')}  REPLY_SECRET=${has('REPLY_SECRET')}  TELNYX_API_KEY=${has('TELNYX_API_KEY')}`);
 });
