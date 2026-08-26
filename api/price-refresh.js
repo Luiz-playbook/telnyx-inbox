@@ -143,7 +143,15 @@ export default async function handler(req, res) {
       const batchCount = Math.ceil(wouldPrice / BATCH);
       res.status(200).json({
         ok: true, estimate: true, eligible: eligibleTotal, would_price: wouldPrice,
-        batches: batchCount, est_cost_usd: Number((batchCount * GROUNDING_PER_REQ).toFixed(4)),
+        // Which provider this deployment will actually use. Free to ask, and it is the only
+        // way to confirm from outside that an env change (OPENROUTER_GEMINI) reached the
+        // running build — the run log only shows a route AFTER a paid run has happened.
+        route: route.via, model: route.model, grounded: route.grounded,
+        batches: batchCount,
+        // The per-request grounding rate describes the GOOGLE route only. On OpenRouter the
+        // charge is per token and reported exactly per response, so an estimate here would be
+        // a guess dressed as a number — the run log records the real figure instead.
+        est_cost_usd: route.grounded ? Number((batchCount * GROUNDING_PER_REQ).toFixed(4)) : null,
         window_days: Number(rules.price_window_days),   // so the UI never hardcodes the horizon
       });
       return;
@@ -165,6 +173,12 @@ export default async function handler(req, res) {
     let skippedBatches = p1.skipped.length;
     // Only retry if there is real time left — a retry that overruns costs the whole run.
     if (p1.failedBatches.length && Date.now() < deadline - 30e3) {
+      // Pause first. The retry used to fire immediately, which is useless against the failure
+      // that actually happens: on 2026-08-22..26 the Gemini project sat past its monthly spend
+      // cap and every call returned 429 in ~300ms, so both attempts burned inside two seconds
+      // and the run logged "0 priced" as though the games simply had no listings. A short gap
+      // costs nothing on a healthy run and gives a rate limit a chance to clear on a sick one.
+      await new Promise(r => setTimeout(r, 2000));
       retriedBatches = p1.failedBatches.length;
       const p2 = await pricePass(p1.failedBatches, acc, deadline);
       allPriced = allPriced.concat(p2.priced);
