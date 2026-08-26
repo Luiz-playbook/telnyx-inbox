@@ -6,10 +6,12 @@
 // shared grounded path (lib/price.js, Gemini flash-lite + search) that the AI-828 job
 // uses — cache-first from events_master, a single grounded call only on a miss.
 //
-// Env: OPENAI_API_KEY (required), OPENAI_MODEL (opt), and for the price tool:
+// Env: OPENROUTER_OPENAI or OPENAI_API_KEY (one required — see lib/llm.js), OPENAI_MODEL
+//      (opt), and for the price tool:
 //      SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), GEMINI_API_KEY.
 
-import { callGeminiPrices } from '../lib/price.js';
+import { priceRoute, callPrices } from '../lib/price.js';
+import { openaiTarget } from '../lib/llm.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 30 };
@@ -52,7 +54,7 @@ const TOOLS = [{
 // --- the price tool: cache-first, one grounded call on a miss, write-back ---
 async function getEventPrice({ team, date }) {
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
-  const gkey = (process.env.GEMINI_API_KEY || '').trim();
+  const route = priceRoute();
   if (!supaUrl || !supaKey) return { error: 'price lookup not configured (no Supabase creds)' };
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
@@ -79,11 +81,11 @@ async function getEventPrice({ team, date }) {
   }
 
   // miss / stale: one grounded live lookup, then warm the cache
-  if (!gkey) {
-    if (g.best_price != null) return { ...base, price_usd: Number(g.best_price), source: g.price_source, as_of: g.priced_at, cached: true, note: 'stale; live refresh unavailable (no Gemini key)' };
-    return { ...base, price_usd: null, note: 'not yet priced; live lookup unavailable (no Gemini key)' };
+  if (!route.ok) {
+    if (g.best_price != null) return { ...base, price_usd: Number(g.best_price), source: g.price_source, as_of: g.priced_at, cached: true, note: 'stale; live refresh unavailable (no price key)' };
+    return { ...base, price_usd: null, note: 'not yet priced; live lookup unavailable (no price key)' };
   }
-  const r = await callGeminiPrices(gkey, [g]);
+  const r = await callPrices([g]);
   const hit = r.priced?.[0];
   if (!hit) return { ...base, price_usd: g.best_price != null ? Number(g.best_price) : null, source: g.price_source, cached: g.best_price != null, note: 'live lookup found no price' };
 
@@ -92,19 +94,19 @@ async function getEventPrice({ team, date }) {
   return { ...base, price_usd: hit.price_usd, source: hit.source, as_of: new Date().toISOString(), cached: false };
 }
 
-async function callOpenAI(key, messages) {
-  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+async function callOpenAI(target, messages) {
+  const r = await fetch(target.url, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
-    body: JSON.stringify({ model: MODEL, max_tokens: 1024, messages, tools: TOOLS }),
+    headers: target.headers,
+    body: JSON.stringify({ model: target.model, ...target.body, max_tokens: 1024, messages, tools: TOOLS }),
   });
   const data = await r.json();
   return { ok: r.ok, status: r.status, data };
 }
 
 export default async function handler(req, res) {
-  const key = (process.env.OPENAI_API_KEY || '').trim();
-  if (!key) { res.status(500).json({ error: 'OPENAI_API_KEY is not set on the server' }); return; }
+  const target = openaiTarget(MODEL);
+  if (!target.ok) { res.status(500).json({ error: 'No chat model key on the server — set OPENROUTER_OPENAI or OPENAI_API_KEY' }); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
 
   const messages = (req.body && Array.isArray(req.body.messages)) ? req.body.messages : null;
@@ -123,10 +125,10 @@ export default async function handler(req, res) {
 
     // tool loop: let the model call get_event_price (bounded rounds)
     for (let round = 0; round < 3; round++) {
-      const { ok, status, data } = await callOpenAI(key, convo);
+      const { ok, status, data } = await callOpenAI(target, convo);
       if (!ok) {
         const e = (data && data.error) || {};
-        res.status(502).json({ error: 'OpenAI error: ' + (e.message || `HTTP ${status}`), type: e.type || e.code || null });
+        res.status(502).json({ error: target.label + ' error: ' + (e.message || `HTTP ${status}`), type: e.type || e.code || null });
         return;
       }
       const msg = data.choices?.[0]?.message;

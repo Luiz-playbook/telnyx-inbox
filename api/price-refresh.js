@@ -16,7 +16,7 @@
 // Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js),
 //      optional CRON_SECRET/REPLY_SECRET.
 
-import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, callGeminiPrices } from '../lib/price.js';
+import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };
@@ -36,7 +36,7 @@ const CONCURRENCY = 5;
 // One grounded pass over the batches; returns priced rows, batches that came back empty, and
 // any that were never attempted because the deadline arrived. Nothing is thrown on timeout:
 // a partial result that gets written beats a 504 that discards work already billed for.
-async function pricePass(gkey, batches, acc, deadline) {
+async function pricePass(batches, acc, deadline) {
   const priced = [], failedBatches = [], skipped = [];
   let next = 0;
   async function worker() {
@@ -45,9 +45,12 @@ async function pricePass(gkey, batches, acc, deadline) {
       if (idx >= batches.length) return;
       const b = batches[idx];
       if (Date.now() > deadline) { skipped.push(b); continue; }   // drain, don't start
-      const r = await callGeminiPrices(gkey, b);
+      const r = await callPrices(b);
       if (!r.ok) { failedBatches.push(b); continue; }
       acc.inTok += r.inTok; acc.outTok += r.outTok; acc.groundedCalls++;
+      // OpenRouter reports the exact charge per request; Google does not, so that route
+      // still falls back to the estimate below. Mixing the two would double-count.
+      if (typeof r.costUsd === 'number') { acc.exactCost += r.costUsd; acc.exactCalls++; }
       priced.push(...r.priced);
       if (r.priced.length === 0) failedBatches.push(b); // whole-batch miss -> retry candidate
     }
@@ -64,9 +67,9 @@ export default async function handler(req, res) {
   const tokenOk = priceSecret && (req.query?.token === priceSecret || req.headers.authorization === `Bearer ${priceSecret}`);
   if (priceSecret && !tokenOk) { res.status(401).json({ error: 'unauthorized' }); return; }
 
-  const gkey = (process.env.GEMINI_API_KEY || '').trim();
+  const route = priceRoute();
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
-  if (!gkey || !supaUrl || !supaKey) { res.status(500).json({ error: 'GEMINI_API_KEY / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
+  if (!route.ok || !supaUrl || !supaKey) { res.status(500).json({ error: 'No price key (OPENROUTER_GEMINI or GEMINI_API_KEY) / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
@@ -146,7 +149,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    const acc = { inTok: 0, outTok: 0, groundedCalls: 0 };
+    const acc = { inTok: 0, outTok: 0, groundedCalls: 0, exactCost: 0, exactCalls: 0 };
     const batches = chunk(games, BATCH);
 
     // Stop starting new work with enough margin to still write, log and respond inside the
@@ -156,14 +159,14 @@ export default async function handler(req, res) {
     const deadline = started + BUDGET_MS;
 
     // pass 1, then one retry pass over the batches that came back empty
-    const p1 = await pricePass(gkey, batches, acc, deadline);
+    const p1 = await pricePass(batches, acc, deadline);
     let retriedBatches = 0;
     let allPriced = p1.priced;
     let skippedBatches = p1.skipped.length;
     // Only retry if there is real time left — a retry that overruns costs the whole run.
     if (p1.failedBatches.length && Date.now() < deadline - 30e3) {
       retriedBatches = p1.failedBatches.length;
-      const p2 = await pricePass(gkey, p1.failedBatches, acc, deadline);
+      const p2 = await pricePass(p1.failedBatches, acc, deadline);
       allPriced = allPriced.concat(p2.priced);
       skippedBatches += p2.skipped.length;
     }
@@ -202,10 +205,15 @@ export default async function handler(req, res) {
       byLeague[lg] = (byLeague[lg] || 0) + 1;
     }
 
-    const cost = acc.inTok * IN_COST + acc.outTok * OUT_COST + acc.groundedCalls * GROUNDING_PER_REQ;
+    // Exact when every call reported a charge (the OpenRouter route). Otherwise the old
+    // token + per-request-grounding estimate, which only describes the Google route.
+    const cost = (acc.exactCalls && acc.exactCalls === acc.groundedCalls)
+      ? acc.exactCost
+      : acc.inTok * IN_COST + acc.outTok * OUT_COST + acc.groundedCalls * GROUNDING_PER_REQ;
     const durationMs = Date.now() - started;
     const runLog = {
-      model: MODEL, eligible: eligibleTotal, attempted: games.length,
+      model: route.model, route: route.via, cost_exact: !!(acc.exactCalls && acc.exactCalls === acc.groundedCalls),
+      eligible: eligibleTotal, attempted: games.length,
       priced: priceRows.length, missing: games.length - priceRows.length,   // includes the unverified drops
       batches: batches.length, retried_batches: retriedBatches,
       in_tokens: acc.inTok, out_tokens: acc.outTok, cost_usd: Number(cost.toFixed(4)),
@@ -215,8 +223,17 @@ export default async function handler(req, res) {
 
     // ok:false when prices were found but could not be stored — the caller must not report a
     // run that cost money and changed nothing as a success.
+    //
+    // ZERO-COVERAGE GUARD. A run that attempted games and priced none used to return ok:true,
+    // because nothing errored — every batch just came back with null prices. That is exactly
+    // what a silently-dropped grounding flag looks like, and it would have gone unnoticed
+    // while best_price went stale under the Queue, the agent and the blast copy. Treat it as
+    // a failed run: the model answering "no price" for EVERY game is a broken route, not a
+    // quiet market.
+    const zeroCoverage = games.length > 0 && priceRows.length === 0;
     res.status(200).json({
-      ok: !writeError, dry, written, by_league: byLeague, unverified,
+      ok: !writeError && !zeroCoverage, dry, written, by_league: byLeague, unverified,
+      zero_coverage: zeroCoverage || undefined,
       // Games left unpriced because time ran out — the caller can just run again to pick them up.
       timed_out: skippedBatches > 0 || undefined,
       not_reached: skippedBatches ? skippedBatches * BATCH : undefined,
