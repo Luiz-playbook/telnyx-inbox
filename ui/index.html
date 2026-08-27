@@ -612,6 +612,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="pending">Pending</option>
                   <option value="confirmed">Confirmed</option>
                   <option value="snoozed">Snoozed</option>
+                  <option value="partial">Partly sent</option>
                   <option value="sent">Sent</option>
                   <option value="rejected">Rejected</option>
                   <option value="archived">Archived</option>
@@ -3053,7 +3054,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const skipBy = {}; all.filter(r => r.decision !== 'send').forEach(r => { const k = r.reason_code || 'other'; skipBy[k] = (skipBy[k]||0)+1; });
 
         // Rejected is not live — the row gave its slot and its market back. See migration 048.
-        const live = (q.error ? [] : (q.data||[])).filter(r => r.status!=='sent' && r.status!=='sending' && r.status!=='rejected');
+        // 'partial' joins 'sent' here: the event was already blasted, however badly, so the
+        // Campaigns tab must not recommend it again as though nothing had gone out.
+        const live = (q.error ? [] : (q.data||[])).filter(r => r.status!=='sent' && r.status!=='partial' && r.status!=='sending' && r.status!=='rejected');
         const takenEvents = new Set(live.map(r => String(r.event_id||'')).filter(Boolean));
         const takenMarkets = new Set(live.map(r => String(r.state_code||'').toUpperCase()).filter(Boolean));
         // A day holds EVENTS, not rows: one event is up to three segment rows, and counting rows
@@ -3389,7 +3392,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // browser a day ahead of the game's timezone would mark tonight's fixtures as already
       // played and the cron would then refuse to send them.
       const todayYmd = () => etYmd();
-      const gameIsPast = r => !!(r.event_date && r.status !== 'sent' && String(r.event_date) < todayYmd());
+      // 'partial' counts as sent here for the same reason 'sent' does: the blast already went
+      // out, so warning that the game is in the past says nothing useful about it.
+      const gameIsPast = r => !!(r.event_date && r.status !== 'sent' && r.status !== 'partial' && String(r.event_date) < todayYmd());
       // Snooze durations. Seven days used to be the only one, applied silently — so a blast
       // for a game three days out could be pushed a week past its own fixture with one click
       // and no warning (Josh, 2026-07-31). Each option now states the date it lands on and
@@ -3540,6 +3545,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       function statusCell(r){
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
+        // Partly sent (migration 058): at least one channel delivered, at least one failed. It
+        // stays in the Queue on purpose — see matchesStatus. The failure text is the whole point
+        // of the state, so it goes in the tooltip rather than being left in a log nobody reads.
+        if(r.status==='partial'){
+          const why = (r.send_failures||'').trim();
+          return `<span class="badge badge-warning badge-sm text-white" title="${esc(why || 'Some channels delivered and others failed.')}\n\nThis blast is NOT complete. Market History records only the channel that worked, so this row is the only place the failure is visible.">Partly sent</span>`
+               + (why ? `<div class="text-[11px] text-[#c94d07] mt-0.5 max-w-[260px] truncate" title="${esc(why)}">${esc(why)}</div>` : '');
+        }
         if(r.status==='sending')  return '<span class="loading loading-spinner loading-xs align-middle"></span> Sending…';
         // No audience OUTRANKS Pending/Confirmed/Snoozed, because it is the fact that decides
         // what happens at the slot: queue-tick resolves nobody, sends nothing, and leaves the
@@ -3640,6 +3653,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // the same treatment archived gets and for the same reason.
         if(s === 'rejected') return r.status === 'rejected';
         if(r.status === 'rejected') return false;
+        // The Queue is the working list of what has NOT gone out. A sent blast is done, and it
+        // belongs in Market History — so it gets the same treatment as archived and rejected:
+        // hidden unless asked for by name, never deleted.
+        //
+        // 'partial' is deliberately NOT hidden. It means some channels delivered and others
+        // failed outright (migration 058), which is exactly the case that must not vanish
+        // quietly: Market History logs only the channel that worked, so the Queue is the one
+        // place the failure is visible. It stays until someone deals with it.
+        if(s === 'sent') return r.status === 'sent';
+        if(r.status === 'sent') return false;
         return !s || (r.status||'') === s;
       }
       // Every filter EXCEPT status. Counting a status against the other filters is what makes
@@ -3713,7 +3736,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // day they go out (get_campaign_queue already orders by scheduled_for).
         let lastDay = null;
         tb.innerHTML = paged.map(r => {
-          const open = expanded.has(r.id), sent = r.status==='sent', stale = gameIsPast(r);
+          // `sent` gates the row's spent/done presentation. A partly-sent blast counts here:
+          // it already reached people, so it must not be dressed up as still-pending work.
+          // It stays IN the queue (matchesStatus) but reads as a send that happened badly,
+          // not as one waiting to happen.
+          const open = expanded.has(r.id), sent = r.status==='sent' || r.status==='partial', stale = gameIsPast(r);
           // Game called off upstream (migration 053). Ranks ABOVE the already-played flag: a
           // cancelled game is a harder fact than a late blast, and "cancelled" is what the
           // operator needs to read first when both are true.
@@ -4252,7 +4279,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // non-null, so every later refresh() finds nothing to write. Fired together rather
         // than awaited one at a time: on the first load of a full queue that is the difference
         // between one round trip and one per row before anything renders.
-        const repairs = QUEUE.filter(r => r.status !== 'sent')
+        // 'partial' is excluded alongside 'sent': the send already happened, and rewriting the
+        // sender on a row after the fact would misreport which account it actually went from.
+        const repairs = QUEUE.filter(r => r.status !== 'sent' && r.status !== 'partial')
           .map(r => ({ r, email: validEmailFrom(r.email_from) ? null : DEFAULT_EMAIL_FROM,
                           sms: r.sms_from ? null : (defaultSmsFrom() || null) }))
           .filter(x => x.email || x.sms);

@@ -278,6 +278,25 @@ export default async function handler(req, res) {
       }
 
       await rpc('queue_mark_sent', { p_id: r.id, p_recipients: summary });
+      // PARTLY SENT (migration 058). Reaching here means at least one channel delivered — the
+      // all-failed case returned above with the row untouched. But `sent` and `failed` are not
+      // exclusive: SMS can go out while CakeMail throws, and until now that was recorded as a
+      // plain 'sent' with the failure text discarded into the HTTP response.
+      //
+      // That only ever worked because sent rows stayed on screen in the Queue. The Queue now
+      // hides them, so a half-failed blast would disappear while Market History logged just the
+      // channel that worked — the failure would be invisible to everyone.
+      //
+      // Layered on top of queue_mark_sent rather than folded into it: that function is not
+      // defined in this repo (live-DB only) and rewriting it blind would risk dropping whatever
+      // else it does. This runs after it and only touches the two fields 058 owns.
+      if (failed.length) {
+        await rpc('queue_set_failures', {
+          p_id: r.id,
+          p_failures: failed.join(' | '),
+          p_status: 'partial',
+        });
+      }
       // Write to the notebook so this market goes on cooldown. Per Josh: an email send
       // counts for both channels, so one row (market + day) cools email AND SMS.
       if (r.state_code && (phones.length || emails.length)) {
