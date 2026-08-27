@@ -630,7 +630,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="email">Email</option>
                   <option value="sms">SMS</option>
                 </select>
-                <select id="q-day" class="select select-bordered select-sm" title="Send day"><option value="">All send days</option></select>
+                <!-- Scheduled-date range. Replaces the old single "send day" select, which could
+                     only ever name one day that already existed in the queue — reviewing "this
+                     week" meant picking days one at a time. Two inclusive bounds, either of
+                     which may stand alone: FROM alone is "on or after", TO alone is "on or
+                     before", both is a closed range, and FROM = TO is a single day. The day-band
+                     headers in the table are clickable and set both to that day, which is the
+                     fast path for the common case. -->
+                <div class="join" title="Scheduled send date — set either end, or both">
+                  <input id="q-date-from" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Scheduled from">
+                  <span class="join-item flex items-center px-2 bg-base-200 border border-base-300 text-xs text-base-content/60">to</span>
+                  <input id="q-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Scheduled to">
+                  <button id="q-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
+                </div>
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
@@ -3349,7 +3361,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Same filter set as Campaigns by Event, minus the ones a queued row can't answer
       // (segment isn't stored per queue row — a row targets a market, not a market×segment),
       // plus the two only the queue has: status and send day.
-      let qFilter = '', statusF = '', segF = '', sportF = '', stateF = '', chanF = '', dayF = '';
+      // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
+      // may be blank. They replace the old single-day `dayF`.
+      let qFilter = '', statusF = '', segF = '', sportF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
       // Same pills Campaigns by Event uses, so a segment reads identically on both tabs. A row
       // with no segment predates migration 050 and targeted the whole market — saying "Other"
       // there would be a lie, so it says so.
@@ -3674,7 +3688,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(stateF  && (r.state_code||'') !== stateF) return false;
         if(chanF === 'email' && !r.email) return false;
         if(chanF === 'sms'   && !r.sms)   return false;
-        if(dayF && sendYmd(r.scheduled_for) !== dayF) return false;
+        // Scheduled-date range. Compared as ET day strings, which sort lexicographically
+        // because they are zero-padded YYYY-MM-DD — no Date parsing, so no timezone drift
+        // between the bound the operator picked and the day the row is banded under. Both
+        // bounds are inclusive, and each stands alone: a blank end is simply unbounded.
+        //
+        // A row with no scheduled_for has no day to compare, so it drops out the moment any
+        // bound is set — it cannot honestly be said to fall inside a date range.
+        if(dateFrom || dateTo){
+          const d = sendYmd(r.scheduled_for);
+          if(!d) return false;
+          if(dateFrom && d < dateFrom) return false;
+          if(dateTo   && d > dateTo)   return false;
+        }
         const f = qFilter.trim().toLowerCase();
         if(!f) return true;
         return [blastTitle(r), r.title, r.state_name, r.state_code, r.sport, r.league, prettyMetro(r.market_key)]
@@ -3731,7 +3757,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : '0 of 0';
         if(el('q-prev')) el('q-prev').disabled = page <= 1;
         if(el('q-next')) el('q-next').disabled = page >= pages;
-        if(!rows.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
+        if(!rows.length){
+          // An inverted range (from after to) matches nothing by definition, and "no blasts
+          // match these filters" would send the operator hunting through the other five filters
+          // for a fault that is sitting in the two boxes they just typed into.
+          const inverted = dateFrom && dateTo && dateFrom > dateTo;
+          const msg = inverted
+            ? `The date range runs backwards — ${esc(dateFrom)} is after ${esc(dateTo)}, so nothing can fall inside it.`
+            : 'No blasts match these filters.';
+          const clear = (dateFrom || dateTo)
+            ? ' <button data-dateclear class="link link-primary">Clear the date filter</button>' : '';
+          tb.innerHTML = `<tr><td colspan="10" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
+          tb.querySelector('[data-dateclear]')?.addEventListener('click', clearDateFilter);
+          return;
+        }
         // Multi-day view: the queue now spans several send days, so rows are banded by the
         // day they go out (get_campaign_queue already orders by scheduled_for).
         let lastDay = null;
@@ -3751,9 +3790,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           let dayHead = '';
           if(day !== lastDay){
             lastDay = day;
+            // Counted from `rows` — the FILTERED set — so a band never claims a total it is not
+            // rendering. That is what makes the headers respect the active filter for free.
             const n = rows.filter(x => sendYmd(x.scheduled_for) === day).length;
+            const isOnly = dateFrom === day && dateTo === day;
             dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
-              ${esc(sendDateShort(r.scheduled_for))} <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span></td></tr>`;
+              <button data-dayjump="${esc(day)}" class="hover:underline decoration-dotted underline-offset-2 uppercase tracking-wide" title="${isOnly ? 'Showing this day only — click to clear the date filter' : 'Show only this day'}">${esc(sendDateShort(r.scheduled_for))}</button>
+              <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span>${isOnly?' <span class="badge badge-xs badge-ghost font-normal normal-case">only this day</span>':''}</td></tr>`;
           }
           const curEmail = emailFromOf(r), curSms = smsFromOf(r);
           // A channel that's off is an OPTION in the picker, not a disabled control: "not
@@ -3907,6 +3950,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const below = window.innerHeight - rect.bottom;
           menu.style.top  = (below < mh + 8 ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4) + 'px';
           menu.style.left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8)) + 'px';
+        }));
+        // Day-band headers narrow to that single day (and clicking the active one clears it).
+        tb.querySelectorAll('[data-dayjump]').forEach(b=>b.addEventListener('click', e => {
+          e.stopPropagation();
+          window.__queueFilterDay(b.dataset.dayjump);
         }));
         tb.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{
           const id = b.dataset.toggle, opening = !expanded.has(id);
@@ -4218,17 +4266,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           sportSel.innerHTML = head + vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
           sportSel.value = vals.includes(cur) ? cur : '';
         }
-        const daySel = el('q-day');
-        if(daySel){
-          const cur = daySel.value, head = daySel.options[0].outerHTML;
-          // Option VALUES are ET days, because that is what the day filter compares against.
-          // The label needs an instant that lands on day d in ET: 'T12:00:00Z' is 7–8am ET, so
-          // it can never spill either side. A bare 'T12:00:00' would have been parsed as noon
-          // in the BROWSER's zone, which is the previous ET day from anywhere past UTC+12.
-          const days = [...new Set(QUEUE.map(r => sendYmd(r.scheduled_for)).filter(Boolean))].sort();
-          daySel.innerHTML = head + days.map(d=>`<option value="${esc(d)}">${esc(sendDateShort(d+'T12:00:00Z'))}</option>`).join('');
-          daySel.value = days.includes(cur) ? cur : '';
+        // Date pickers: bound them to the days the queue actually spans. The filter still works
+        // outside that window — the min/max are a hint, not a constraint on the comparison — but
+        // it stops the operator wandering into months with nothing in them. Values are ET days,
+        // matching what sendYmd() produces and what matchesRest() compares against.
+        const days = [...new Set(QUEUE.map(r => sendYmd(r.scheduled_for)).filter(Boolean))].sort();
+        const fromEl = el('q-date-from'), toEl = el('q-date-to');
+        if(fromEl && toEl && days.length){
+          [fromEl, toEl].forEach(inp => { inp.min = days[0]; inp.max = days[days.length-1]; });
         }
+        syncDateClear();
         const stateSel = el('q-state');
         if(stateSel){
           const cur = stateSel.value, head = stateSel.options[0].outerHTML;
@@ -4257,7 +4304,36 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; render(); });
       el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
-      el('q-day')?.addEventListener('change',    e => { dayF    = e.target.value; page = 1; render(); });
+      // Scheduled-date range. Each end applies on its own, so both listeners just re-render.
+      // The bounds are NOT auto-corrected if the operator inverts them (from after to): an
+      // inverted range legitimately matches nothing, and silently swapping the values would
+      // show rows they did not ask for. render() says so instead — see the empty-state below.
+      el('q-date-from')?.addEventListener('change', e => { dateFrom = e.target.value || ''; page = 1; syncDateClear(); render(); });
+      el('q-date-to')?.addEventListener('change',   e => { dateTo   = e.target.value || ''; page = 1; syncDateClear(); render(); });
+      el('q-date-clear')?.addEventListener('click', () => { clearDateFilter(); });
+
+      // The clear button only exists while there is something to clear — a permanently visible
+      // "×" next to an empty filter is just noise.
+      function syncDateClear(){
+        const btn = el('q-date-clear');
+        if(btn) btn.classList.toggle('hidden', !(dateFrom || dateTo));
+      }
+      function clearDateFilter(){
+        dateFrom = ''; dateTo = '';
+        if(el('q-date-from')) el('q-date-from').value = '';
+        if(el('q-date-to'))   el('q-date-to').value   = '';
+        page = 1; syncDateClear(); render();
+      }
+      // Clicking a day band narrows to exactly that day — the single-date case, without making
+      // the operator type the same value into both ends. Clicking the active day clears it, so
+      // the same control gets you back out.
+      window.__queueFilterDay = (ymd) => {
+        if(dateFrom === ymd && dateTo === ymd) { clearDateFilter(); return; }
+        dateFrom = dateTo = ymd;
+        if(el('q-date-from')) el('q-date-from').value = ymd;
+        if(el('q-date-to'))   el('q-date-to').value   = ymd;
+        page = 1; syncDateClear(); render();
+      };
       el('q-pagesize')?.addEventListener('change', e => { pageSize = Number(e.target.value) || 0; page = 1; render(); });
       el('q-prev')?.addEventListener('click', () => { if(page > 1){ page--; render(); } });
       el('q-next')?.addEventListener('click', () => { page++; render(); });
