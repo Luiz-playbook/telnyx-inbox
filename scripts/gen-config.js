@@ -26,6 +26,12 @@ const cfg = {
     || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-sync-numbers',
   // Only Google accounts on this domain may sign in.
   ALLOWED_EMAIL_DOMAIN: process.env.ALLOWED_EMAIL_DOMAIN || 'callplaybook.com',
+  // The pricing sheet the AI-940 sync writes (n8n "Marketing Blaster Pricing Sheet Sync").
+  // Linked from the Ticket Prices tab so the mirror is reachable from the thing it mirrors —
+  // it is otherwise invisible from inside the app. Not a secret: it is a Google document id,
+  // and access is enforced by Google, not by knowing the URL.
+  PRICING_SHEET_URL: process.env.PRICING_SHEET_URL
+    || 'https://docs.google.com/spreadsheets/d/1djGg7A5bddBV59Vl8OY2X4n1x44Y9bD8bbaiPmYEj-8/edit',
 };
 
 const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);

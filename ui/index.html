@@ -857,6 +857,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <input id="tp-to" type="date" class="input input-bordered input-sm w-36" title="Events to">
                 <button id="tp-clear" class="btn btn-ghost btn-sm">Clear</button>
                 <button id="tp-reload" class="btn btn-outline btn-sm gap-1">&#8635; Reload</button>
+                <!-- The sync mirror, reachable from the thing it mirrors. Hidden when no URL is
+                     configured rather than rendered dead — a link that goes nowhere is worse
+                     than no link. -->
+                <a id="tp-sheet" class="btn btn-outline btn-sm gap-1 hidden" target="_blank" rel="noopener"
+                   title="Open the pricing sheet this table syncs to">&#128203; Sheet</a>
               </div>
             </div>
             <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
@@ -4909,6 +4914,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       const clearBtn = el('tp-clear'); if(clearBtn) clearBtn.addEventListener('click', function(){ clearFilters(); });
       const reloadBtn = el('tp-reload'); if(reloadBtn) reloadBtn.addEventListener('click', function(){ LOADED = false; LOADING = null; window.__loadPrices(); });
+
+      // The sheet link is shown only when one is configured. The tab never reads the sheet — it
+      // is output-only, and reading it back would make a human edit look authoritative — so this
+      // is a pointer, not a status: what the sheet holds is whatever the last sync wrote, and
+      // the last sync is the last price refresh.
+      (function(){
+        const a = el('tp-sheet');
+        const url = (cfg.PRICING_SHEET_URL || '').trim();
+        if(!a || !url) return;
+        a.href = url;
+        a.classList.remove('hidden');
+      })();
       [['date','tp-sort-date'],['price','tp-sort-price'],['fresh','tp-sort-fresh']].forEach(function(pair){
         const th = el(pair[1]); if(!th) return;
         th.addEventListener('click', function(){
