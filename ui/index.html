@@ -4359,12 +4359,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return { amber: amber, red: amber * RED_MULT, near: near };
       }
 
+      // TODAY IN ET, NOT THE BROWSER'S CLOCK. Every other time in this app is shown in ET, and
+      // the freshness tier boundary has to agree with it: an operator in another timezone would
+      // otherwise see a different near/far classification — and a different colour — for the same
+      // row at the same moment. event_date itself is left alone: it is the date the game is
+      // played in its own city, not a timestamp.
       function daysUntil(ymd){
         if(!ymd) return null;
         const d = new Date(ymd + 'T00:00:00');
         if(isNaN(d)) return null;
-        const today = new Date(); today.setHours(0,0,0,0);
-        return Math.round((d - today) / 864e5);
+        const etToday = new Date(new Date().toLocaleDateString('en-CA', { timeZone: ET_TZ }) + 'T00:00:00');
+        return Math.round((d - etToday) / 864e5);
       }
 
       // fresh | amber | red | none (never priced) | past (event has been and gone)
