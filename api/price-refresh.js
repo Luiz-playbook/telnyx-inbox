@@ -16,7 +16,7 @@
 // Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js),
 //      optional CRON_SECRET/REPLY_SECRET.
 
-import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
+import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, OR_COST_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };
@@ -101,13 +101,28 @@ export default async function handler(req, res) {
     const nearCut = new Date(Date.now() - rules.price_stale_hours_near * 3600e3).toISOString();
     const farCut = new Date(Date.now() - rules.price_stale_hours * 3600e3).toISOString();
     const today = new Date().toISOString().slice(0, 10);
-    const winCut = new Date(Date.now() + rules.price_window_days * 864e5).toISOString().slice(0, 10);
+    // ?window=N overrides the horizon FOR THIS RUN ONLY (AI-940). decider_rules is left alone:
+    // price_window_days is what the 12-hourly cron reads too, so a button that wrote to it would
+    // silently retune the scheduled job as a side effect of one manual refresh.
+    //
+    // Clamped rather than trusted. This number decides how many games get paid for and it
+    // arrives in a query string, so 1..90 stops a typo turning a $0.20 top-up into a bill for
+    // the rest of the season.
+    const winReq = Math.floor(Number(req.query?.window));
+    const winDays = Number.isFinite(winReq) && winReq > 0
+      ? Math.max(1, Math.min(90, winReq))
+      : Number(rules.price_window_days);
+    const winCut = new Date(Date.now() + winDays * 864e5).toISOString().slice(0, 10);
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
       // status=eq.scheduled: never pay the model to look up a price for a cancelled or postponed
       // game (migration 053). The decider already skips them, but this endpoint spends money and
       // should not depend on an upstream filter staying correct to avoid spending it.
       `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}&status=eq.scheduled` +
+      // Soonest first. With no explicit order the rows arrive in whatever order Postgres
+      // chooses, so a shortened window (or ?limit=) would keep an arbitrary subset instead of
+      // the most urgent games — the opposite of what either control is for.
+      `&order=event_date.asc,id.asc` +
       // team_full feeds the SeatGeek /<team>-tickets fallback slug — "guardians" is not one.
       `&select=id,external_id,league,team,team_full,opponent,event_date,venue,state_code,best_price,priced_at,price_url`, { headers: sh });
     let games = await evR.json();
@@ -148,11 +163,13 @@ export default async function handler(req, res) {
         // running build — the run log only shows a route AFTER a paid run has happened.
         route: route.via, model: route.model, grounded: route.grounded,
         batches: batchCount,
-        // The per-request grounding rate describes the GOOGLE route only. On OpenRouter the
-        // charge is per token and reported exactly per response, so an estimate here would be
-        // a guess dressed as a number — the run log records the real figure instead.
-        est_cost_usd: route.grounded ? Number((batchCount * GROUNDING_PER_REQ).toFixed(4)) : null,
-        window_days: Number(rules.price_window_days),   // so the UI never hardcodes the horizon
+        // Each route has its own per-request rate: a flat grounding fee on Google, a measured
+        // average on OpenRouter (see OR_COST_PER_REQ). This is what the confirm dialog quotes
+        // before an operator agrees to spend, so it must never be null — the UI renders
+        // Number(est_cost_usd || 0), which turned a missing estimate into "roughly $0.00".
+        est_cost_usd: Number((batchCount * (route.grounded ? GROUNDING_PER_REQ : OR_COST_PER_REQ)).toFixed(4)),
+        window_days: winDays,                            // the horizon ACTUALLY used
+        window_default: Number(rules.price_window_days), // the stored rule, so the dialog can default to it
       });
       return;
     }
