@@ -621,6 +621,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="Other">Other</option>
                 </select>
                 <select id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <!-- NFL and CFB share the sport "Football" on purpose; league is what separates
+                     them. Added with college football (877 games) so the Queue can be read one
+                     competition at a time. -->
+                <select id="q-league" class="select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
                 <select id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
                 <select id="q-channel" class="select select-bordered select-sm" title="Channel">
                   <option value="">All channels</option>
@@ -842,6 +846,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <span class="text-sm text-base-content/50 mr-auto" id="tp-total">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="tp-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select id="tp-league" class="select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
                 <select id="tp-market" class="select select-bordered select-sm w-40"><option value="">All markets</option></select>
                 <select id="tp-fresh" class="select select-bordered select-sm" title="Price freshness">
                   <option value="">Any freshness</option>
@@ -3498,7 +3503,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // plus the two only the queue has: status and send day.
       // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
       // may be blank. They replace the old single-day `dayF`.
-      let qFilter = '', statusF = '', segF = '', sportF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
+      let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
       // Same pills Campaigns by Event uses, so a segment reads identically on both tabs. A row
       // with no segment predates migration 050 and targeted the whole market — saying "Other"
       // there would be a lie, so it says so.
@@ -3820,6 +3825,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function matchesRest(r){
         if(segF    && (r.segment||'') !== segF)   return false;
         if(sportF  && (r.sport||'')  !== sportF)  return false;
+        if(leagueF && String(r.league||'').toLowerCase() !== leagueF) return false;
         if(stateF  && (r.state_code||'') !== stateF) return false;
         if(chanF === 'email' && !r.email) return false;
         if(chanF === 'sms'   && !r.sms)   return false;
@@ -4401,6 +4407,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           sportSel.innerHTML = head + vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
           sportSel.value = vals.includes(cur) ? cur : '';
         }
+        // Built from the rows present, like every other filter here — a league with nothing
+        // queued should not offer an option that can only ever return nothing. Values are the
+        // lowercase codes stored in events_master; the label is upper-cased for display.
+        const leagueSel = el('q-league');
+        if(leagueSel){
+          const cur = leagueSel.value, head = leagueSel.options[0].outerHTML;
+          const vals = [...new Set(QUEUE.map(r => String(r.league||'').toLowerCase()).filter(Boolean))].sort();
+          leagueSel.innerHTML = head + vals.map(v=>`<option value="${esc(v)}">${esc(v.toUpperCase())}</option>`).join('');
+          leagueSel.value = vals.includes(cur) ? cur : '';
+        }
         // Date pickers: bound them to the days the queue actually spans. The filter still works
         // outside that window — the min/max are a hint, not a constraint on the comparison — but
         // it stops the operator wandering into months with nothing in them. Values are ET days,
@@ -4437,6 +4453,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
       el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; render(); });
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; render(); });
+      el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; render(); });
       el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
       // Scheduled-date range. Each end applies on its own, so both listeners just re-render.
@@ -4848,14 +4865,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // ---- filters -------------------------------------------------------------------
       function buildFilters(){
         const sports = Array.from(new Set(ROWS.map(r => r.sport).filter(Boolean))).sort();
+        // NFL and CFB are both "Football" — same sport, different competition — so sport alone
+        // cannot separate them here either.
+        const leagues = Array.from(new Set(ROWS.map(r => String(r.league||'').toLowerCase()).filter(Boolean))).sort();
         const markets = Array.from(new Set(ROWS.map(r => r.state_name || r.state_code).filter(Boolean))).sort();
-        const fill = (id, vals) => {
+        // `label` lets a filter show something other than its stored value — league is stored
+        // lowercase ('cfb') and shown upper ('CFB').
+        const fill = (id, vals, label) => {
           const sel = el(id); if(!sel) return;
           const cur = sel.value;
-          sel.innerHTML = '<option value="">All</option>' + vals.map(v => '<option value="' + esc2(v) + '">' + esc(v) + '</option>').join('');
+          sel.innerHTML = '<option value="">All</option>'
+            + vals.map(v => '<option value="' + esc2(v) + '">' + esc(label ? label(v) : v) + '</option>').join('');
           if(vals.indexOf(cur) >= 0) sel.value = cur;
         };
         fill('tp-sport', sports);
+        fill('tp-league', leagues, v => v.toUpperCase());
         fill('tp-market', markets);
         const far = thresholdsFor(999), near = thresholdsFor(0);
         el('tp-thresholds').innerHTML =
@@ -4867,10 +4891,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function visible(){
         const q = (el('tp-q').value || '').trim().toLowerCase();
         const sport = el('tp-sport').value, market = el('tp-market').value;
+        const league = el('tp-league') ? el('tp-league').value : '';
         const from = el('tp-from').value, to = el('tp-to').value;
         const fresh = el('tp-fresh').value;
         return ROWS.filter(r => {
           if(sport && r.sport !== sport) return false;
+          if(league && String(r.league||'').toLowerCase() !== league) return false;
           if(market && (r.state_name || r.state_code) !== market) return false;
           if(from && (r.event_date || '') < from) return false;
           if(to   && (r.event_date || '') > to)   return false;
@@ -5033,12 +5059,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
 
       function clearFilters(rerender){
-        ['tp-q','tp-from','tp-to','tp-sport','tp-market','tp-fresh'].forEach(id => { const e = el(id); if(e) e.value = ''; });
+        ['tp-q','tp-from','tp-to','tp-sport','tp-league','tp-market','tp-fresh'].forEach(id => { const e = el(id); if(e) e.value = ''; });
         if(rerender !== false) render();
       }
 
       // ---- wiring ---------------------------------------------------------------------
-      ['tp-q','tp-sport','tp-market','tp-from','tp-to','tp-fresh'].forEach(id => {
+      ['tp-q','tp-sport','tp-league','tp-market','tp-from','tp-to','tp-fresh'].forEach(id => {
         const e = el(id); if(!e) return;
         e.addEventListener(id === 'tp-q' ? 'input' : 'change', function(){ if(LOADED) render(); });
       });

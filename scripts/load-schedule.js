@@ -8,7 +8,10 @@
 //   node --env-file=.env scripts/load-schedule.js --league nhl --start 2026-10-01 --end 2027-04-30
 //   node --env-file=.env scripts/load-schedule.js --league nba --dry
 //
-// Sources: MLB -> MLB StatsAPI, NHL -> official api-web.nhle.com, NFL -> nflverse
+//   node --env-file=.env scripts/load-schedule.js --league cfb --year 2026     # CFBD, FBS home games
+//
+// Sources: MLB -> MLB StatsAPI, NHL -> official api-web.nhle.com, NFL -> nflverse,
+// CFB -> CollegeFootballData (needs CFBD_API_KEY)
 // community CSV (no official NFL API; widely-public data, per AI-844). NBA/college ->
 // ESPN's hidden scoreboard API, walked day by day. All map to the same row shape and go
 // through upsert_events_master (dedup + market resolution).
@@ -218,6 +221,69 @@ async function loadESPN() {
   return { rows, source: firstUrl };
 }
 
+// ---- CFB: CollegeFootballData (CFBD). One call returns the whole regular season.
+//
+// Why not ESPN, which is what the espn.com/college-football/schedule page shows: that page is
+// rendered from a public JSON scoreboard endpoint, so no scraping is needed either way — but it
+// is queried a DAY AT A TIME (~100 requests for a season) and has no division field. CFBD gives
+// the season in one 1.4s call and carries homeClassification, which is the only practical way to
+// keep FBS and leave 2,757 D-II/D-III games out.
+//
+// FBS home games, non-neutral — the same shape loadNFL() uses. Neutral-site games are excluded
+// because the home team is not actually hosting in its market, which is what the audience is
+// resolved from.
+async function loadCFB() {
+  const key = (process.env.CFBD_API_KEY || '').trim();
+  if (!key) throw new Error('CFBD_API_KEY is not set — required for --league cfb');
+  const gamesUrl = `https://api.collegefootballdata.com/games?year=${YEAR}&seasonType=regular`;
+  const venuesUrl = 'https://api.collegefootballdata.com/venues';
+  const teamsUrl = `https://api.collegefootballdata.com/teams/fbs?year=${YEAR}`;
+  const auth = { headers: { Authorization: `Bearer ${key}` } };
+
+  const [games, venues, teams] = await Promise.all([
+    fetch(gamesUrl, auth).then(r => { if (!r.ok) throw new Error(`${r.status} for ${gamesUrl}`); return r.json(); }),
+    fetch(venuesUrl, auth).then(r => r.ok ? r.json() : []),
+    fetch(teamsUrl, auth).then(r => r.ok ? r.json() : []),
+  ]);
+  const vById = new Map((venues || []).map(v => [v.id, v]));
+  // team_full is the marketing-facing name ("Michigan Wolverines"). CFBD's /games only carries
+  // the school, so the mascot comes from /teams — and team_full drives the SeatGeek slug the
+  // price lookup falls back to, so a bare school name would break those links.
+  const mascotBySchool = new Map((teams || []).map(t => [t.school, t.mascot]));
+
+  const rows = [];
+  for (const gm of games) {
+    if (gm.homeClassification !== 'fbs' || gm.neutralSite) continue;
+    if (!gm.startDate || !gm.homeTeam || !gm.awayTeam) continue;
+    const v = vById.get(gm.venueId) || {};
+    const d = new Date(gm.startDate);
+    if (isNaN(d)) continue;
+    const mascot = mascotBySchool.get(gm.homeTeam);
+    rows.push({
+      league: 'cfb',
+      // Lowercased school, matching how market_bridge_team.team_lc is keyed for every other
+      // league. Checked against the existing bridge before loading: zero CFB school names
+      // collide with a pro team already in there.
+      team: gm.homeTeam.toLowerCase().trim(),
+      team_full: mascot ? `${gm.homeTeam} ${mascot}` : gm.homeTeam,
+      opponent: gm.awayTeam.toLowerCase().trim(),
+      event_date: gm.startDate.slice(0, 10),
+      // startDate is UTC, like the MLB feed — events_master stores UTC and every screen renders ET.
+      event_time: gm.startTimeTBD ? null : gm.startDate.slice(11, 19),
+      venue: gm.venue || v.name || null,
+      home_away: 'home',
+      external_id: String(gm.id),
+      // CFBD has no cancellation field, so status is left off for the RPC to default — the same
+      // call loadNFL() makes, and for the same reason: better an honest default than a
+      // 'scheduled' we cannot stand behind.
+      source_url: gamesUrl,
+      source_note: 'CollegeFootballData /games, FBS home non-neutral; startDate UTC',
+      season: `${YEAR}-cfb`,
+    });
+  }
+  return { rows, source: gamesUrl };
+}
+
 async function rpc(name, body) {
   const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${name}`, {
     method: 'POST', headers: { 'content-type': 'application/json', apikey: SUPA_KEY, authorization: `Bearer ${SUPA_KEY}` },
@@ -231,8 +297,8 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 
 (async () => {
   console.log(`Schedule refresh: ${LEAGUE} ${START}->${END} (season ${SEASON})${DRY ? ' [DRY]' : ''}`);
-  const loaders = { mlb: loadMLB, nhl: loadNHL, nfl: loadNFL }; // official/community; rest fall back to ESPN
-  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web', nfl: 'nflverse' }[LEAGUE] || 'ESPN';
+  const loaders = { mlb: loadMLB, nhl: loadNHL, nfl: loadNFL, cfb: loadCFB }; // official/community; rest fall back to ESPN
+  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web', nfl: 'nflverse', cfb: 'CollegeFootballData' }[LEAGUE] || 'ESPN';
   const { rows, source } = await (loaders[LEAGUE] || loadESPN)();
   console.log(`Fetched ${rows.length} games from ${sourceName}.`);
   if (!rows.length) { console.log('Nothing to load (season may not be released yet).'); return; }
