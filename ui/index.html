@@ -2611,7 +2611,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const all = [];
         try {
           for(let offset = 0; offset < MAX; offset += PAGE){
-            const r = await fetch(`${url}?limit=${PAGE}&offset=${offset}`, { method:'POST', headers, body:'{}' });
+        // ORDERED, BECAUSE OFFSET PAGING OVER AN UNORDERED RESULT LOSES ROWS. event_targets has
+        // no ORDER BY of its own, so Postgres may return the rows in a different order per
+        // request — and limit/offset over a shifting order silently skips some and repeats
+        // others. Seen live: a paged read that should have returned 2,807 events came back with
+        // 1,568, no error. The dedupe below hides the repeats and hides nothing about the
+        // losses. event_date+event_id is unique, so every page is stable.
+            const r = await fetch(`${url}?limit=${PAGE}&offset=${offset}&order=event_date.asc,event_id.asc`, { method:'POST', headers, body:'{}' });
             if(!r.ok) return { data:null, error:{ message:`event_targets HTTP ${r.status}` } };
             const page = await r.json();
             if(!Array.isArray(page)) return { data:null, error:{ message:'event_targets returned no rows' } };
@@ -4732,7 +4738,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         let last = 'event_targets failed';
         for(let attempt = 0; attempt < 3; attempt++){
           try {
-            const r = await fetch(url + '?limit=' + PAGE + '&offset=' + offset, { method:'POST', headers: headers, body:'{}' });
+            // ORDERED, BECAUSE OFFSET PAGING OVER AN UNORDERED RESULT LOSES ROWS. event_targets has
+            // no ORDER BY of its own, so Postgres may return the rows in a different order per
+            // request — and limit/offset over a shifting order silently skips some and repeats
+            // others. Seen live: a paged read that should have returned 2,807 events came back with
+            // 1,568, no error. The dedupe below hides the repeats and hides nothing about the
+            // losses. event_date+event_id is unique, so every page is stable.
+            const r = await fetch(url + '?limit=' + PAGE + '&offset=' + offset + '&order=event_date.asc,event_id.asc',
+              { method:'POST', headers: headers, body:'{}' });
             if(r.ok){
               const page = await r.json();
               if(Array.isArray(page)) return page;
@@ -4782,7 +4795,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const headers = { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY, 'content-type':'application/json' };
         const out = [];
         for(let offset = 0; offset < 60000; offset += PAGE){
-          const r = await fetch(url + '?limit=' + PAGE + '&offset=' + offset, { method:'POST', headers: headers, body:'{}' });
+          // Same hazard, same fix: rpc_event_recommendations is 2,045 rows over the 1,000-row cap
+          // and has no guaranteed order either.
+          const r = await fetch(url + '?limit=' + PAGE + '&offset=' + offset + '&order=event_id.asc',
+            { method:'POST', headers: headers, body:'{}' });
           if(!r.ok) break;                       // eligibility is an enrichment, not the point of the tab
           const page = await r.json();
           if(!Array.isArray(page)) break;

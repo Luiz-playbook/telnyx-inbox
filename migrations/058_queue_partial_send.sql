@@ -129,6 +129,11 @@ as $function$
       when 'nba' then 'Basketball'
       when 'nhl' then 'Ice Hockey'
       when 'nfl' then 'Football'
+      -- CFB is football played in a different competition, so it shares the SPORT and is
+      -- separated by LEAGUE — which is how nhl/mlb/nfl already work. Without this branch the
+      -- CASE falls through to initcap(league) and the Sport filter grows a bogus "Cfb"
+      -- sitting next to "Football", splitting one sport across two filter options.
+      when 'cfb' then 'Football'
       else initcap(em.league)
     end as sport,
     em.venue,

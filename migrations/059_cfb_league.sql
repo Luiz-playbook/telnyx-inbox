@@ -10,11 +10,20 @@
 -- report sport "Cfb", which appears in the Sport filter as a second football-shaped option and
 -- splits one sport in two. league already separates them, which is what the ticket asked for.
 --
--- Bodies below are lifted verbatim from the migrations that last defined each function (055 for
--- event_targets, 058 for get_campaign_queue) with one CASE branch added. Nothing else changes.
+-- BASED ON WHAT IS ACTUALLY APPLIED, WHICH IS NOT THE HIGHEST-NUMBERED MIGRATION.
+-- event_targets comes from 055. get_campaign_queue comes from 056, NOT 058: 058 is committed
+-- but has not been run against this database — an earlier draft of this file lifted 058's body
+-- and failed with "column q.send_failures does not exist", because that column only exists once
+-- 058 is applied. Verified before regenerating: campaign_queue has no send_failures or
+-- sent_count, and the live function returns 056's 42 columns.
+--
+-- 058 HAS ALSO BEEN PATCHED to carry the same CASE branch, so applying it later cannot silently
+-- undo this. Whichever order the two are run in, CFB keeps reporting Football.
+--
+-- Bodies below are lifted verbatim with one CASE branch added; nothing else changes.
 --
 -- The market_bridge_team rows for the 85 mappable teams are DATA, not schema, and were written
--- separately; they are listed in the run log for 2026-08-27.
+-- separately on 2026-08-27.
 
 drop function if exists public.event_targets();
 
@@ -86,8 +95,7 @@ returns table (
   market_key text, country text, ticket_url text, email_subject text,
   archived_at timestamptz, segment text, rejected_at timestamptz, reject_note text,
   price_source text, priced_at timestamptz, price_seats smallint, price_currency text,
-  segment_email_count integer, segment_phone_count integer,
-  send_failures text
+  segment_email_count integer, segment_phone_count integer
 )
 language sql
 stable
@@ -97,15 +105,15 @@ as $function$
   select
     q.id, q.title, q.state_code, q.state_name, q.event_id,
     q.email, q.sms,
-    case when q.status in ('sent','partial') then q.phone_count
+    case when q.status = 'sent' then q.phone_count
          else coalesce(mc.phone_count::int, q.phone_count) end as phone_count,
-    case when q.status in ('sent','partial') then q.sms_count
+    case when q.status = 'sent' then q.sms_count
          else coalesce(mc.phone_count::int, q.sms_count) end   as sms_count,
     coalesce(q.ticket_price, em.best_price) as ticket_price,
     q.email_copy, q.sms_copy, q.scheduled_for, q.status, q.confirmed_at,
     q.snooze_count, q.sent_at, q.is_placeholder, q.created_at,
     q.email_from, q.sms_from,
-    case when q.status in ('sent','partial') then q.email_count
+    case when q.status = 'sent' then q.email_count
          else coalesce(mc.email_count::int, q.email_count) end as email_count,
     coalesce(em.team_full, initcap(nullif(btrim(q.team), '')), q.team)      as team,
     coalesce(initcap(nullif(btrim(em.opponent), '')), q.opponent)           as opponent,
@@ -132,22 +140,32 @@ as $function$
     q.segment,
     q.rejected_at,
     q.reject_note,
+    -- Price provenance. Only meaningful when ticket_price came from events_master: a row
+    -- carrying its own overridden q.ticket_price is not what these describe, and the UI says so
+    -- rather than attaching someone else's sourcing to a hand-typed number.
     em.price_source,
     em.priced_at,
     em.price_seats,
     em.price_currency,
-    case when q.status in ('sent','partial') then q.email_count else msc.email_count::int end as segment_email_count,
-    case when q.status in ('sent','partial') then q.phone_count else msc.phone_count::int end as segment_phone_count,
-    q.send_failures
+    -- Reach for THIS row's segment. NULL on a whole-market row (see the header) and, like the
+    -- market-level pair above, frozen at the snapshot once the row is sent — a sent blast
+    -- should report who it actually reached, not who the market holds today.
+    case when q.status = 'sent' then q.email_count else msc.email_count::int end as segment_email_count,
+    case when q.status = 'sent' then q.phone_count else msc.phone_count::int end as segment_phone_count
   from public.campaign_queue q
   left join public.events_master em on em.id = q.event_id
   left join public.market_counts mc on mc.code = q.state_code
+  -- On the view's full grouping key, so this matches at most one row and cannot fan out.
   left join public.market_segment_counts msc
          on msc.code = q.state_code and msc.segment = q.segment
   left join public.geo_region gr    on gr.code = q.state_code
   order by q.scheduled_for asc, q.created_at asc;
 $function$;
 
--- Reproduced verbatim from 056. Do not "tidy" this — see 056's closing note for why PUBLIC
--- appears here and what must happen to it when 052 is applied.
+-- GRANTS for get_campaign_queue, restored exactly as migration 056 left them.
+--
+-- Dropping a function drops its ACL, and CREATE FUNCTION then grants EXECUTE to PUBLIC by
+-- default — so omitting this does not merely leave the old grants in place, it replaces a
+-- deliberate list with a permissive default. 056 spells out this list; it is copied rather
+-- than reasoned about.
 grant execute on function public.get_campaign_queue() to public, anon, authenticated, service_role, readonly_preview;
