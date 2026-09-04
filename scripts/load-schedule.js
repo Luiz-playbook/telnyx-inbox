@@ -207,6 +207,20 @@ async function loadESPN() {
       const home = comp.competitors?.find(c => c.homeAway === 'home');
       const away = comp.competitors?.find(c => c.homeAway === 'away');
       if (!home || !away) continue;
+      // NEUTRAL SITE IS NOT A HOME GAME. loadNFL and loadCFB both drop these; this path did not,
+      // and it is the one every ESPN-sourced league uses. The row still names a "home" team, so
+      // the game would be credited to that team's market while being played somewhere else
+      // entirely — an NBA season carries a handful (Las Vegas, Mexico City, a college arena),
+      // and a blast for a Mavericks home game that is actually in Las Vegas is worse than no
+      // blast. The market is what the audience resolves from, so this has to match reality.
+      if (comp.neutralSite) continue;
+      // TBD placeholders. The NBA Cup knockout rounds appear on the schedule before the teams
+      // are known, as "TBD at TBD" with no venue — three of them loaded on the first run. They
+      // can never resolve a market, so they would sit in Ticket Prices as permanently
+      // unpriceable rows describing a game nobody can be sold a ticket to.
+      const hn = (home.team?.name || home.team?.shortDisplayName || '').toLowerCase();
+      const an = (away.team?.name || away.team?.shortDisplayName || '').toLowerCase();
+      if (!hn || !an || hn === 'tbd' || an === 'tbd') continue;
       rows.push({
         league: LEAGUE, team: (home.team?.name || home.team?.shortDisplayName || '').toLowerCase(),
         team_full: home.team?.displayName, opponent: (away.team?.name || away.team?.shortDisplayName || '').toLowerCase(),
