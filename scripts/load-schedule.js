@@ -302,6 +302,118 @@ async function loadCFB() {
   return { rows, source: gamesUrl };
 }
 
+// ---- March Madness: the NCAA men's tournament, via ESPN.
+//
+// NOT A LEAGUE IN THE USUAL SENSE, AND IT BREAKS TWO ASSUMPTIONS THE OTHER LOADERS RELY ON.
+//
+// 1. EVERY GAME IS NEUTRAL-SITE. loadESPN skips those, and rightly — for a league, a neutral
+//    site means the "home" team is not hosting in its market. Here it is the whole format: 63
+//    of 87 games across the probed 2026 dates were neutral, and the ones that were not are the
+//    NIT. So this cannot go through loadESPN and needs its own pass.
+//
+// 2. THE MARKET COMES FROM THE VENUE, NOT THE TEAM. The home side is a bracket artifact — Duke
+//    played Siena in Greenville, South Carolina. Keyed on the team, that game would market to
+//    North Carolina; keyed on the venue it correctly reaches South Carolina. upsert_events_master
+//    resolves market from market_bridge_team on the team name and offers no override, so these
+//    rows land with market_code null and are corrected in a second pass (patchVenueMarkets
+//    below) from the venue city and state.
+//
+//    That second pass is the honest short-term answer, not the good long-term one: the clean fix
+//    is for the RPC to accept an explicit market, which is a migration. Doing it here keeps the
+//    change inside this script until that lands.
+//
+// Selection Sunday is when the bracket appears — ESPN has nothing for the 2027 dates yet, so
+// this loads zero rows until roughly mid-March. It is wired into the monthly schedule-refresh
+// cron for exactly that reason: the month the bracket is published, it loads itself.
+const MM_HEADLINE = /^NCAA Men'?s Basketball Championship/i;
+
+async function loadMarchMadness() {
+  const rows = [];
+  // The tournament runs from the First Four to the final: mid-March into early April. Widened a
+  // little at both ends so a calendar shift cannot silently drop the first or last games.
+  const from = new Date(`${YEAR}-03-10T00:00:00Z`);
+  const to = new Date(`${YEAR}-04-15T00:00:00Z`);
+  let firstUrl = null;
+  for (const d = from; d <= to; d.setUTCDate(d.getUTCDate() + 1)) {
+    const ymd = d.toISOString().slice(0, 10).replace(/-/g, '');
+    // groups=50 is Division I. limit is generous: the First Four and the round of 64 put a lot
+    // of games on one day.
+    const url = `https://site.api.espn.com/apis/site/v2/sports/basketball/mens-college-basketball/scoreboard?dates=${ymd}&groups=50&limit=200`;
+    if (!firstUrl) firstUrl = url;
+    let data;
+    try { data = await getJson(url); } catch { continue; }
+    for (const ev of data.events || []) {
+      const comp = ev.competitions?.[0]; if (!comp) continue;
+      // The NIT and the College Basketball Crown run on the same dates and appear in the same
+      // feed. Only the NCAA championship is "March Madness"; the others are a different product
+      // and would quietly pad the league with games nobody asked for.
+      const headline = comp.notes?.[0]?.headline || '';
+      if (!MM_HEADLINE.test(headline)) continue;
+
+      const home = comp.competitors?.find(c => c.homeAway === 'home');
+      const away = comp.competitors?.find(c => c.homeAway === 'away');
+      if (!home || !away) continue;
+      const hn = (home.team?.name || home.team?.shortDisplayName || '').toLowerCase();
+      const an = (away.team?.name || away.team?.shortDisplayName || '').toLowerCase();
+      if (!hn || !an || hn === 'tbd' || an === 'tbd') continue;   // pre-bracket placeholders
+
+      const addr = comp.venue?.address || {};
+      rows.push({
+        league: 'march_madness',
+        team: hn, team_full: home.team?.displayName, opponent: an,
+        event_date: (ev.date || '').slice(0, 10),
+        event_time: (ev.date || '').slice(11, 19) || null,
+        venue: comp.venue?.fullName || null,
+        home_away: 'home', external_id: String(ev.id),
+        status: espnStatus(comp.status?.type?.name || ev.status?.type?.name),
+        source_url: url,
+        // The round is worth keeping: "First Four" and "National Championship" are very
+        // different propositions to sell against, and nothing else on the row records it.
+        source_note: `ESPN scoreboard; ${headline}; event_time UTC`,
+        season: `${YEAR}-march_madness`,
+        // Carried for patchVenueMarkets, stripped before the upsert — the RPC ignores unknown
+        // keys, but sending fields it will never read invites someone to think it uses them.
+        _city: addr.city || null, _state: addr.state || null,
+      });
+    }
+  }
+  return { rows, source: firstUrl };
+}
+
+// Resolve market from the VENUE for rows that carry one, and patch it in after the upsert.
+// Returns how many rows were given a market.
+async function patchVenueMarkets(rows) {
+  const withVenue = rows.filter(r => r._city || r._state);
+  if (!withVenue.length) return 0;
+  const q = (p) => fetch(`${SUPA_URL}/rest/v1/${p}`, {
+    headers: { apikey: SUPA_KEY, authorization: `Bearer ${SUPA_KEY}` },
+  }).then(r => r.json());
+  const [markets, bridge] = await Promise.all([q('market_state?select=market_key,state_code&limit=500'), q('market_bridge_team?select=market_key&limit=2000')]);
+  const byState = {};
+  for (const m of markets) (byState[m.state_code] = byState[m.state_code] || []).push(m.market_key);
+  const keyOf = s => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_');
+
+  let patched = 0;
+  for (const r of withVenue) {
+    const cands = byState[r._state] || [];
+    if (!cands.length) continue;                       // no market in that state — leave null
+    const city = keyOf(r._city);
+    // A host city that IS one of our markets wins; otherwise the state has one market and that
+    // is unambiguous. Several markets and no city match is left alone rather than guessed at —
+    // the state is what decides the audience, so a wrong pick here is only a wrong label, but
+    // an unmapped row is honest and a wrong one is not.
+    const market = cands.includes(city) ? city : (cands.length === 1 ? cands[0] : null);
+    if (!market) continue;
+    const res = await fetch(`${SUPA_URL}/rest/v1/events_master?league=eq.march_madness&external_id=eq.${encodeURIComponent(r.external_id)}`, {
+      method: 'PATCH',
+      headers: { apikey: SUPA_KEY, authorization: `Bearer ${SUPA_KEY}`, 'content-type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ market_code: market, state_code: r._state }),
+    });
+    if (res.ok) patched++;
+  }
+  return patched;
+}
+
 async function rpc(name, body) {
   const res = await fetch(`${SUPA_URL}/rest/v1/rpc/${name}`, {
     method: 'POST', headers: { 'content-type': 'application/json', apikey: SUPA_KEY, authorization: `Bearer ${SUPA_KEY}` },
@@ -315,8 +427,8 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 
 (async () => {
   console.log(`Schedule refresh: ${LEAGUE} ${START}->${END} (season ${SEASON})${DRY ? ' [DRY]' : ''}`);
-  const loaders = { mlb: loadMLB, nhl: loadNHL, nfl: loadNFL, cfb: loadCFB }; // official/community; rest fall back to ESPN
-  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web', nfl: 'nflverse', cfb: 'CollegeFootballData' }[LEAGUE] || 'ESPN';
+  const loaders = { mlb: loadMLB, nhl: loadNHL, nfl: loadNFL, cfb: loadCFB, march_madness: loadMarchMadness }; // official/community; rest fall back to ESPN
+  const sourceName = { mlb: 'MLB StatsAPI', nhl: 'NHL api-web', nfl: 'nflverse', cfb: 'CollegeFootballData', march_madness: 'ESPN (NCAA tournament)' }[LEAGUE] || 'ESPN';
   const { rows, source } = await (loaders[LEAGUE] || loadESPN)();
   console.log(`Fetched ${rows.length} games from ${sourceName}.`);
   if (!rows.length) { console.log('Nothing to load (season may not be released yet).'); return; }
@@ -328,7 +440,9 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
   // Status changes and reschedules are the whole point of migration 053, and they are invisible in
   // the "added" count (they update existing rows). Collect them so the run says what it did.
   const changes = [];
-  for (const batch of chunk(rows, 200)) {
+  // _city/_state are for patchVenueMarkets only; the RPC never reads them.
+  const clean = rows.map(r => { const { _city, _state, ...keep } = r; return keep; });
+  for (const batch of chunk(clean, 200)) {
     const out = await rpc('upsert_events_master', { p_rows: batch });
     for (const r of out) {
       fetched++;
@@ -339,6 +453,13 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
   const notes = changes.length
     ? changes.map(c => `${c.out_team} v ${c.out_opponent} ${c.out_date}: ${c.out_outcome}`).join('; ').slice(0, 2000)
     : null;
+  // Venue-keyed leagues resolve their market AFTER the upsert: the RPC only knows how to look a
+  // market up from the team, and for a neutral-site tournament the team is the wrong key.
+  let venuePatched = 0;
+  try { venuePatched = await patchVenueMarkets(rows); }
+  catch (e) { console.warn(`venue market patch failed: ${e.message}`); }
+  if (venuePatched) console.log(`Resolved ${venuePatched} market(s) from the venue.`);
+
   const runId = await rpc('record_schedule_run', { p: {
     league: LEAGUE, season: SEASON, source_url: source, fetched, added: addedIds.length, added_ids: addedIds,
     notes,
