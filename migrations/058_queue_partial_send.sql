@@ -134,6 +134,10 @@ as $function$
       -- CASE falls through to initcap(league) and the Sport filter grows a bogus "Cfb"
       -- sitting next to "Football", splitting one sport across two filter options.
       when 'cfb' then 'Football'
+      -- WNBA is its own league sharing the sport, exactly as CFB does with the NFL. Without
+      -- this the CASE falls through to initcap(league) and the Sport filter gains a "Wnba"
+      -- option beside "Basketball", splitting one sport in two.
+      when 'wnba' then 'Basketball'
       else initcap(em.league)
     end as sport,
     em.venue,

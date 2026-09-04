@@ -47,6 +47,10 @@ const SEASON = `${YEAR}-${LEAGUE}`;
 // ESPN sport/league path per league
 const ESPN = {
   nba: 'basketball/nba', nfl: 'football/nfl', nhl: 'hockey/nhl',
+  // WNBA is its own league, not a variant of the NBA — different teams, different arenas, and a
+  // May-to-October season, so it is loaded and filtered separately. It shares the SPORT
+  // 'Basketball' the way CFB shares 'Football' with the NFL.
+  wnba: 'basketball/wnba',
   ncaaf: 'football/college-football', ncaab: 'basketball/mens-college-basketball',
 };
 
