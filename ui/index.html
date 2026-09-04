@@ -1172,6 +1172,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     const etDate = (v, o) => new Date(v).toLocaleDateString('en-US', { timeZone: ET_TZ, ...(o||{}) });
     const etTime = (v, o) => new Date(v).toLocaleTimeString('en-US', { timeZone: ET_TZ, ...(o||{}) });
+
+    // ---- leagues, shared by every tab -------------------------------------------------
+    // Ticket Prices builds its filter and derives sport from this; Campaigns lists the same
+    // options; the Cole Rules reference card names which have a feed. One table so those three
+    // cannot disagree about what exists.
+    // [code, display name, sport, loads-on-its-own]
+    const KNOWN_LEAGUES = [
+      ['mlb', 'MLB', 'Baseball', true], ['nfl', 'NFL', 'Football', true],
+      ['nhl', 'NHL', 'Ice Hockey', true], ['nba', 'NBA', 'Basketball', true],
+      ['cfb', 'College Football', 'Football', true], ['wnba', 'WNBA', 'Basketball', true],
+      // Bracket published on Selection Sunday; the loader runs monthly and picks it up.
+      ['march_madness', 'March Madness', 'Basketball', true],
+      // "US Open" is three different competitions in three different sports and three
+      // different months — tennis at Flushing Meadows in Aug/Sep, the USGA golf major in June,
+      // and the US Open Cup in soccer. One entry would collide them into a single league whose
+      // rows could not be told apart, so each is its own, named so nobody has to guess.
+      ['us_open_tennis', 'US Open (Tennis)', 'Tennis', false],
+      ['us_open_golf', 'US Open (Golf)', 'Golf', false],
+      ['us_open_cup', 'US Open Cup (Soccer)', 'Soccer', false],
+      // 2026 finished in July; next is 2030. ESPN carries per-match venues for it, so this one
+      // is a loader away rather than a data problem — just not this cycle.
+      ['world_cup', 'World Cup', 'Soccer', false],
+    ];
+    const LEAGUE_AUTO = new Map(KNOWN_LEAGUES.map(p => [p[0], p[3]]));
+    const LEAGUE_LABEL = new Map(KNOWN_LEAGUES.map(p => [p[0], p[1]]));
+    const LEAGUE_SPORT = new Map(KNOWN_LEAGUES.map(p => [p[0], p[2]]));
+    const leagueLabel = code => LEAGUE_LABEL.get(String(code||'').toLowerCase()) || String(code||'').toUpperCase();
     // YYYY-MM-DD in ET. en-CA gives that ordering directly. This is the form events_master
     // .event_date is written in and the form api/queue-tick.js compares against.
     const etYmd = (v) => new Date(v == null ? Date.now() : v).toLocaleDateString('en-CA', { timeZone: ET_TZ });
@@ -1984,7 +2011,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // three times in two days, and a hand-written copy would already be wrong.
       // Both halves, because a list of only the connected ones reads as the complete picture and
       // leaves someone wondering where the US Open went.
-      const all = window.__knownLeagues || [];
+      const all = KNOWN_LEAGUES;
       const fed = all.filter(p => p[3]).map(p => p[1]);
       const unfed = all.filter(p => !p[3]).map(p => p[1]);
       setTxt('flow-leagues',
@@ -2584,7 +2611,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : '0 of 0';
         if(el('cbs-prev')) el('cbs-prev').disabled = page <= 1;
         if(el('cbs-next')) el('cbs-next').disabled = page >= pages;
-        if(!items.length){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No events match.</td></tr>'; return; }
+        if(!items.length){
+          // "Nothing matches your filters" and "this competition has no fixtures yet" look
+          // identical in an empty table and mean different things — one is a filter to loosen,
+          // the other is a season nobody has published.
+          const lg = String(leagueF || '').toLowerCase();
+          const known = KNOWN_LEAGUES;
+          const k = lg ? known.find(p => p[0] === lg) : null;
+          const hasRows = lg && ROWS.some(e => String(e.league || '').toLowerCase() === lg);
+          tb.innerHTML = (k && !hasRows)
+            ? '<tr><td colspan="8" class="text-center py-10">'
+              + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
+              + '<div class="text-sm text-base-content/50 mt-1">'
+              + (k[3] ? 'Fixtures load automatically once they are published.'
+                      : 'No schedule feed is connected for this one yet, so nothing will appear here.')
+              + '</div></td></tr>'
+            : '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
+          return;
+        }
         const today = todayYmd();
         tb.innerHTML = shown.map(e => {
           const isToday = e.event_date === today;
@@ -2829,6 +2873,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(a && b && days.length) [a, b].forEach(inp => { inp.min = days[0]; inp.max = days[days.length - 1]; });
       }
 
+      // event_targets returns league upper-cased ('CFB'); the shared table keys on the stored
+      // lowercase code. Options carry the UPPER form so the existing filter comparison is
+      // untouched, and the label comes from the shared table so "College Football" reads the same
+      // here as on Ticket Prices.
+      function fillLeagues(){
+        const sel = el('cbs-league'); if(!sel) return;
+        const cur = sel.value, head = sel.options[0].outerHTML;
+        const known = KNOWN_LEAGUES;
+        const label = code => { const k = known.find(p => p[0] === String(code).toLowerCase()); return k ? k[1] : code; };
+        const present = [...new Set(ROWS.map(e => e.league).filter(Boolean))].sort();
+        const presentLc = present.map(v => String(v).toLowerCase());
+        const missing = known.map(p => p[0]).filter(c => presentLc.indexOf(c) < 0);
+        sel.innerHTML = head
+          + present.map(v => `<option value="${esc(v)}">${esc(label(v))}</option>`).join('')
+          + missing.map(c => `<option value="${esc(c.toUpperCase())}">${esc(label(c))}</option>`).join('');
+        const all = present.concat(missing.map(c => c.toUpperCase()));
+        sel.value = all.indexOf(cur) >= 0 ? cur : '';
+      }
+
       function fillStates(){
         const sel = el('cbs-state'); if(!sel) return;
         const cur = sel.value, head = sel.options[0].outerHTML;
@@ -2918,7 +2981,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const events = new Set(ROWS.map(e => e.event_id).filter(Boolean));
         el('cbs-total').textContent = `${events.size.toLocaleString()} events`;
         fillFilter('cbs-sport',  e => e.sport);
-        fillFilter('cbs-league', e => e.league);
+        fillLeagues();
         fillStates();
         fillDateBounds();
         await refreshTestMode();   // populate window.__ALLOWED_CODES before first render (test-mode cues)
@@ -4730,8 +4793,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const leagueSel = el('q-league');
         if(leagueSel){
           const cur = leagueSel.value, head = leagueSel.options[0].outerHTML;
-          const vals = [...new Set(QUEUE.map(r => String(r.league||'').toLowerCase()).filter(Boolean))].sort();
-          leagueSel.innerHTML = head + vals.map(v=>`<option value="${esc(v)}">${esc(v.toUpperCase())}</option>`).join('');
+          // Whatever is queued, plus every league the system knows about. A league present in the
+          // queue but missing from KNOWN_LEAGUES still shows — 'test' rows exist, and hiding a row
+          // that is really there would be worse than an unfamiliar label.
+          const inQueue = [...new Set(QUEUE.map(r => String(r.league||'').toLowerCase()).filter(Boolean))];
+          const vals = [...new Set(inQueue.concat(KNOWN_LEAGUES.map(p => p[0])))].sort();
+          // Counted against the other filters, like the status options, so the numbers agree with
+          // the table rather than describing some other view of it.
+          const n = v => QUEUE.filter(r => String(r.league||'').toLowerCase() === v
+            && matchesStatus(r, statusF) && matchesRest(r)).length;
+          leagueSel.innerHTML = head + vals.map(v =>
+            `<option value="${esc(v)}">${esc(leagueLabel(v))} (${n(v)})</option>`).join('');
           leagueSel.value = vals.includes(cur) ? cur : '';
         }
         // Date pickers: bound them to the days the queue actually spans. The filter still works
@@ -5034,31 +5106,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // [code, display name, sport]. The sport column mirrors the CASE in event_targets and
       // get_campaign_queue (migrations 059/060) — this table reads events_master directly, so it
       // derives sport the same way the SQL does. If a league is added there, add it here.
-      // [code, display name, sport, loads-on-its-own]
-      const KNOWN_LEAGUES = [
-        ['mlb', 'MLB', 'Baseball', true], ['nfl', 'NFL', 'Football', true],
-        ['nhl', 'NHL', 'Ice Hockey', true], ['nba', 'NBA', 'Basketball', true],
-        ['cfb', 'College Football', 'Football', true], ['wnba', 'WNBA', 'Basketball', true],
-        // Bracket published on Selection Sunday; the loader runs monthly and picks it up.
-        ['march_madness', 'March Madness', 'Basketball', true],
-        // "US Open" is three different competitions in three different sports and three
-        // different months — tennis at Flushing Meadows in Aug/Sep, the USGA golf major in June,
-        // and the US Open Cup in soccer. One entry would collide them into a single league whose
-        // rows could not be told apart, so each is its own, named so nobody has to guess.
-        ['us_open_tennis', 'US Open (Tennis)', 'Tennis', false],
-        ['us_open_golf', 'US Open (Golf)', 'Golf', false],
-        ['us_open_cup', 'US Open Cup (Soccer)', 'Soccer', false],
-        // 2026 finished in July; next is 2030. ESPN carries per-match venues for it, so this one
-        // is a loader away rather than a data problem — just not this cycle.
-        ['world_cup', 'World Cup', 'Soccer', false],
-      ];
-      const LEAGUE_AUTO = new Map(KNOWN_LEAGUES.map(p => [p[0], p[3]]));
-      // Shared with the Cole Rules page, which names the leagues that have a feed. One list,
-      // so the reference card cannot fall behind the loaders.
-      window.__knownLeagues = KNOWN_LEAGUES;
-      const LEAGUE_LABEL = new Map(KNOWN_LEAGUES.map(p => [p[0], p[1]]));
-      const LEAGUE_SPORT = new Map(KNOWN_LEAGUES.map(p => [p[0], p[2]]));
-      const leagueLabel = code => LEAGUE_LABEL.get(String(code||'').toLowerCase()) || String(code||'').toUpperCase();
+
+
 
       const DOT = { fresh:'#16a34a', amber:'#d97706', red:'#dc2626', none:'#9ca3af', past:'#d1d5db' };
       function freshBadge(f){
