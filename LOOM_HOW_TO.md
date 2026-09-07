@@ -92,7 +92,7 @@ The agent can do everything the site can do to campaign data, **including sendin
 | `/api/queue-tick` | hourly | Sends any queued blast whose slot has arrived |
 | `/api/decide` | daily 14:00 | The AI decider |
 | `/api/price-refresh` | every 12h | Get-in price lookups |
-| `/api/schedule-refresh` | monthly | Pulls newly released MLB games into `events_master` |
+| `/api/schedule-refresh?league=<x>` | weekly, one entry per league | Pulls newly released games into `events_master` — MLB, NFL, NHL, NBA, CFB, WNBA, March Madness |
 
 ### Sending, end to end
 

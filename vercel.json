@@ -4,7 +4,13 @@
   "cleanUrls": true,
   "crons": [
     { "path": "/api/price-refresh", "schedule": "0 */12 * * *" },
-    { "path": "/api/schedule-refresh", "schedule": "0 8 1 * *" },
+    { "path": "/api/schedule-refresh?league=mlb", "schedule": "0 8 * * 1" },
+    { "path": "/api/schedule-refresh?league=nfl", "schedule": "0 9 * * 1" },
+    { "path": "/api/schedule-refresh?league=nhl", "schedule": "0 10 * * 1" },
+    { "path": "/api/schedule-refresh?league=nba", "schedule": "0 11 * * 1" },
+    { "path": "/api/schedule-refresh?league=cfb", "schedule": "0 15 * * 1" },
+    { "path": "/api/schedule-refresh?league=wnba", "schedule": "0 16 * * 1" },
+    { "path": "/api/schedule-refresh?league=march_madness", "schedule": "0 17 * * 1" },
     { "path": "/api/decide", "schedule": "0 14 * * *" },
     { "path": "/api/queue-tick", "schedule": "0 * * * *" },
     { "path": "/api/refresh-contacts", "schedule": "30 13 * * *" }

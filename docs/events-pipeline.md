@@ -44,8 +44,11 @@ Notes:
 - Write path: `upsert_events_master(jsonb)` — idempotent (`on conflict do nothing`), so re-runs
   and season refreshes only ADD new games. Resolves market at write time (league-aware, see §3).
 - **Schedule refresh** (AI-830): `record_schedule_run()` + `events_master_schedule_runs` change
-  log (rows added per run). Monthly cron `api/schedule-refresh.js` keeps MLB current; run
-  `load-schedule.js --league <x>` on demand when a league releases. Migration [`026`](../migrations/026_schedule_refresh.sql).
+  log (rows added per run). `api/schedule-refresh.js` takes `?league=` and runs on a weekly cron
+  per league (see `vercel.json`), so a newly released season is picked up without anyone acting.
+  It shares its loaders with `load-schedule.js`, which is still the way to load a league on demand
+  or against a custom window. The season window rolls forward once the current one has ended, so
+  asking for March Madness in September targets next year's tournament rather than last year's. Migration [`026`](../migrations/026_schedule_refresh.sql).
 
 ### Dates and times — read this before writing a date comparison
 

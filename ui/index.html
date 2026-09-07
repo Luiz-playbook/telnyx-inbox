@@ -827,8 +827,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
                 <ol class="text-sm text-base-content/70 leading-relaxed list-decimal pl-5 space-y-2">
                   <li>
-                    <b>The event exists.</b> Schedules load into the master events table from each
-                    league&rsquo;s own feed.
+                    <b>The event exists.</b> Schedules are pulled from each league&rsquo;s own feed
+                    into the master events table, once a week per league. A season that is not
+                    published yet simply loads nothing and is picked up by the following week&rsquo;s
+                    run &mdash; nobody has to remember to do it.
                     <span id="flow-leagues" class="text-base-content/50"></span>
                   </li>
                   <li>
@@ -1177,12 +1179,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Ticket Prices builds its filter and derives sport from this; Campaigns lists the same
     // options; the Cole Rules reference card names which have a feed. One table so those three
     // cannot disagree about what exists.
-    // [code, display name, sport, loads-on-its-own]
+    // [code, display name, sport, has-a-loader]
+    //
+    // has-a-loader now genuinely means "refreshes itself": /api/schedule-refresh takes ?league=
+    // and vercel.json runs one weekly cron per league (see api/schedule-refresh.js).
+    //
+    // It did NOT used to. The cron was MLB-only and the other loaders lived in a command-line
+    // script wired to no route, so every league but MLB was in the table because a person ran it.
+    // Before flipping a league to true, check there is a cron entry for it — a loader that nothing
+    // invokes is the failure this field used to hide.
     const KNOWN_LEAGUES = [
       ['mlb', 'MLB', 'Baseball', true], ['nfl', 'NFL', 'Football', true],
       ['nhl', 'NHL', 'Ice Hockey', true], ['nba', 'NBA', 'Basketball', true],
       ['cfb', 'College Football', 'Football', true], ['wnba', 'WNBA', 'Basketball', true],
-      // Bracket published on Selection Sunday; the loader runs monthly and picks it up.
+      // Bracket published on Selection Sunday; the weekly loader picks it up within the week.
       ['march_madness', 'March Madness', 'Basketball', true],
       // "US Open" is three different competitions in three different sports and three
       // different months — tennis at Flushing Meadows in Aug/Sep, the USGA golf major in June,
@@ -2015,8 +2025,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const fed = all.filter(p => p[3]).map(p => p[1]);
       const unfed = all.filter(p => !p[3]).map(p => p[1]);
       setTxt('flow-leagues',
-        (fed.length ? 'With a feed: ' + fed.join(', ') + '. ' : '')
-        + (unfed.length ? 'Listed but not connected to any feed yet: ' + unfed.join(', ') + '.' : ''));
+        (fed.length ? 'Refreshed weekly: ' + fed.join(', ') + '. ' : '')
+        + (unfed.length ? 'No feed yet, so nothing loads: ' + unfed.join(', ') + '.' : ''));
       setTxt('flow-price-floor', '$'+(r.price_skip_below ?? 15));
 
       const ft=document.getElementById('rules-fresh-thresholds');
@@ -2623,8 +2633,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             ? '<tr><td colspan="8" class="text-center py-10">'
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
-              + (k[3] ? 'Fixtures load automatically once they are published.'
-                      : 'No schedule feed is connected for this one yet, so nothing will appear here.')
+              + (k[3] ? 'The schedule loads on its own, once a week &mdash; these will appear within a week of the fixtures being published.'
+                      : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
             : '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
           return;
@@ -5523,10 +5533,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(leagueLabel(lg)) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
               + (auto
-                  ? 'Fixtures load automatically once they are published.'
-                  // Deliberately does NOT say "add them by hand": there is no way to do that yet.
-                  // Naming a workflow that does not exist sends someone hunting for a button.
-                  : 'No schedule feed is connected for this one yet, so nothing will appear here.')
+                  ? 'The schedule loads on its own, once a week &mdash; these will appear within a '
+                    + 'week of the fixtures being published.'
+                  : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
             : '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match these filters.</td></tr>';
         } else {
