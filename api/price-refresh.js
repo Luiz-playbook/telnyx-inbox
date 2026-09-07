@@ -11,7 +11,15 @@
 // Runs two ways (same auth as decide.js):
 //   • Vercel Cron    — Authorization: Bearer CRON_SECRET
 //   • On-demand UI   — x-inbox-secret: REPLY_SECRET
-// Flags: ?dry=1 (price but don't write), ?limit=N (cap games this run).
+// Flags: ?dry=1 (price but don't write), ?limit=N (cap games this run),
+//        ?window=N (horizon in days, this run only), ?force=1 (ignore the cooldown),
+//        ?leagues=nba,nfl (price only these; omitted = all), ?estimate=1 (quote it, spend nothing).
+//
+// PARTIAL REFRESHES ARE THE NORMAL CASE, not the exception (AI-968, Josh on the SendBlaster
+// review call): most prices are fairly static, and when one league's schedule drops he wants that
+// league pulled without paying for the rest. ?leagues= narrows the run; the 6h cooldown below
+// tracks which leagues each run covered so a one-league refresh cannot block a different one.
+// Leagues not selected are simply not queried — their stored prices are untouched, never cleared.
 //
 // Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js),
 //      optional CRON_SECRET/REPLY_SECRET.
@@ -76,14 +84,48 @@ export default async function handler(req, res) {
   const force = req.query?.force === '1' || req.query?.force === 'true';
   const started = Date.now();
 
+  // ?leagues=nba,nfl — price only those leagues (AI-968). Absent or empty means every league,
+  // so the cron and any existing caller keep behaving exactly as before.
+  //
+  // Sanitised to [a-z0-9_] rather than trusted: these values are interpolated into a PostgREST
+  // in.(...) filter below, and a query string is not a place to take an identifier on faith.
+  // Anything else in the list is dropped, not escaped — there is no league code it could be.
+  const leagueSel = String(req.query?.leagues || '')
+    .split(',').map(x => x.trim().toLowerCase()).filter(x => /^[a-z0-9_]+$/.test(x));
+  const leagues = [...new Set(leagueSel)].sort();
+  const allLeagues = leagues.length === 0;
+  const inSelection = g => allLeagues || leagues.includes(g.league);
+  const isEstimate = req.query?.estimate === '1' || req.query?.estimate === 'true';
+
   try {
-    // open-endpoint safety: skip if a real run happened < 6h ago (unless forced/dry)
+    // Open-endpoint safety: skip if a real run already covered these leagues < 6h ago (unless
+    // forced/dry).
+    //
+    // COVERAGE, NOT JUST RECENCY (AI-968). This used to look at the single most recent run and
+    // nothing else, which was right while every run priced everything. Now that a run can cover
+    // one league, that test would block refreshing the NFL ten minutes after refreshing the NBA —
+    // it would report a cooldown for work it had never done. So: gather the leagues covered in
+    // the window and skip only if they already include everything being asked for.
+    //
+    // A stored NULL means the run covered ALL leagues (see migration 061), which is also how
+    // every run predating that migration reads — correct, since they were all full refreshes.
     const COOLDOWN_H = 6;
     if (!dry && !force) {
-      const lr = await fetch(`${supaUrl}/rest/v1/events_master_price_runs?dry_run=eq.false&order=started_at.desc&limit=1&select=started_at`, { headers: sh }).then(r => r.json()).catch(() => []);
-      const last = Array.isArray(lr) && lr[0]?.started_at ? new Date(lr[0].started_at).getTime() : 0;
-      if (last && (Date.now() - last) < COOLDOWN_H * 3600e3) {
-        res.status(200).json({ ok: true, skipped: 'cooldown', last_run: lr[0].started_at, cooldown_h: COOLDOWN_H }); return;
+      const since = new Date(Date.now() - COOLDOWN_H * 3600e3).toISOString();
+      const lr = await fetch(`${supaUrl}/rest/v1/events_master_price_runs?dry_run=eq.false&started_at=gte.${since}&order=started_at.desc&select=started_at,leagues`, { headers: sh }).then(r => r.json()).catch(() => []);
+      const recent = Array.isArray(lr) ? lr : [];
+      const coveredAll = recent.some(r => !r.leagues || !r.leagues.length);
+      const covered = new Set(recent.flatMap(r => r.leagues || []));
+      // Asking for everything is only covered by a run that itself covered everything; asking for
+      // a subset is covered once each of those leagues has been done, by any mix of runs.
+      const already = allLeagues ? coveredAll : leagues.every(l => coveredAll || covered.has(l));
+      if (recent.length && already) {
+        res.status(200).json({
+          ok: true, skipped: 'cooldown', last_run: recent[0].started_at, cooldown_h: COOLDOWN_H,
+          leagues: allLeagues ? null : leagues,
+          covered: coveredAll ? 'all' : [...covered].sort(),
+        });
+        return;
       }
     }
     // tunable knobs (tiered staleness: near-term games decay fast -> shorter freshness window)
@@ -119,6 +161,11 @@ export default async function handler(req, res) {
       // game (migration 053). The decider already skips them, but this endpoint spends money and
       // should not depend on an upstream filter staying correct to avoid spending it.
       `${supaUrl}/rest/v1/events_master?id=in.${idList}&event_date=lte.${winCut}&status=eq.scheduled` +
+      // A RUN fetches only the leagues it will price — no point carrying rows across the wire to
+      // drop them. An ESTIMATE deliberately does not filter here: the dialog needs a count for
+      // EVERY league in the window, not just the ticked ones, so it can show which leagues have
+      // nothing to price and grey them out. It narrows to the selection in JS below instead.
+      ((allLeagues || isEstimate) ? '' : `&league=in.(${leagues.join(',')})`) +
       // Soonest first. With no explicit order the rows arrive in whatever order Postgres
       // chooses, so a shortened window (or ?limit=) would keep an arbitrary subset instead of
       // the most urgent games — the opposite of what either control is for.
@@ -128,7 +175,10 @@ export default async function handler(req, res) {
     let games = await evR.json();
     if (!Array.isArray(games)) { res.status(502).json({ error: 'events fetch failed', detail: games }); return; }
 
-    const eligibleTotal = games.length;
+    // Eligible means "in the window, send-eligible, AND in the leagues being asked for" — the
+    // figure the toast reports as the denominator. On the run path the query already did this;
+    // on the estimate path it has to happen here.
+    const eligibleTotal = games.filter(inSelection).length;
     // force = "reprice everything eligible", which is what the Refresh prices button means to
     // an operator: they pressed refresh, they expect a refresh, not a subset. The per-game
     // freshness and cheap-price skips exist to keep the CRON cheap; a human who has been shown
@@ -147,6 +197,13 @@ export default async function handler(req, res) {
       if (g.best_price != null && g.priced_at && g.priced_at > cut) return false;                       // still fresh for its tier
       return true;
     });
+    // Per-league counts for the window, taken BEFORE the selection narrows anything — a chip has
+    // to be able to show its own number, including a league the operator has just unticked.
+    const leagueCounts = {};
+    for (const g of games) if (g.league) leagueCounts[g.league] = (leagueCounts[g.league] || 0) + 1;
+
+    games = games.filter(inSelection);
+
     const limit = Number(req.query?.limit || 0);
     if (limit > 0) games = games.slice(0, limit);
 
@@ -170,6 +227,15 @@ export default async function handler(req, res) {
         est_cost_usd: Number((batchCount * (route.grounded ? GROUNDING_PER_REQ : OR_COST_PER_REQ)).toFixed(4)),
         window_days: winDays,                            // the horizon ACTUALLY used
         window_default: Number(rules.price_window_days), // the stored rule, so the dialog can default to it
+        // Echoed so the dialog can prove the quote it is showing matches the boxes that are
+        // ticked, rather than a stale reply from a previous combination landing late.
+        leagues: allLeagues ? null : leagues,
+        // How many games each league has in THIS window, every league, regardless of what is
+        // ticked. The dialog shows every league it covers and greys out the ones sitting at zero,
+        // so "why is there no NHL?" is answered in the control itself rather than by its absence
+        // — the NHL season simply starts two days after a 20-day window closes. Recomputed on
+        // every quote, so widening the window lights the league up.
+        league_counts: leagueCounts,
       });
       return;
     }
@@ -249,6 +315,13 @@ export default async function handler(req, res) {
       batches: batches.length, retried_batches: retriedBatches,
       in_tokens: acc.inTok, out_tokens: acc.outTok, cost_usd: Number(cost.toFixed(4)),
       duration_ms: durationMs, dry_run: dry,
+      // What this run COVERED, which is not the same as by_league (what it happened to find).
+      // A league with no eligible games still has to count as covered, or the cooldown would let
+      // it be retried immediately and the tab would keep calling it stale. null = all leagues.
+      leagues: allLeagues ? null : leagues,
+      // The real start. The column used to take its value from a row default at insert time,
+      // which happens after the run — so it recorded the finish and called it the start.
+      started_at: new Date(started).toISOString(),
     };
     if (!dry) await fetch(`${supaUrl}/rest/v1/rpc/record_price_run`, { method: 'POST', headers: sh, body: JSON.stringify({ p: runLog }) }).catch(() => {});
 

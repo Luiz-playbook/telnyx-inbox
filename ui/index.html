@@ -141,6 +141,72 @@
     .pb-modal-overlay{ position:fixed; inset:0; z-index:10000; background:rgba(19,59,73,.45); display:flex; align-items:center; justify-content:center; padding:1rem; animation:pbFadeIn .15s ease-out; }
     .pb-modal-card{ background:#fff; border-radius:16px; box-shadow:0 20px 60px rgba(19,59,73,.3); padding:22px; max-width:440px; width:100%; animation:pbToastIn .2s ease-out; }
     @keyframes pbFadeIn{ from{opacity:0} to{opacity:1} }
+
+    /* pbWindow's settings block — the "how much am I about to buy" controls, grouped.
+       They were loose rows under the prose and read as more body copy; the panel makes the
+       part you can change look different from the part you can only read. */
+    .pbw-panel{ border:1px solid #e8edf1; background:#fafcfd; border-radius:12px; padding:12px 14px; }
+    .pbw-row{ display:flex; align-items:center; gap:8px; }
+    .pbw-label{ font-size:13px; font-weight:700; color:#133b49; }
+    .pbw-rule{ height:1px; background:#e8edf1; margin:11px 0; }
+    .pbw-count{ font-size:12px; color:#8695a7; }
+    .pbw-quick{ margin-left:auto; display:flex; gap:2px; }
+    .pbw-quick button{ font-size:12px; color:#8695a7; padding:2px 8px; border-radius:6px; transition:.12s; }
+    .pbw-quick button:hover:not(:disabled){ color:#133b49; background:#eef4f7; }
+    /* "All" with everything already ticked does nothing. Offering it anyway makes the operator
+       click to find that out. */
+    .pbw-quick button:disabled{ opacity:.35; cursor:default; }
+    .pbw-chips{ display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:9px; }
+    /* Forces the unavailable group onto its own line however the live chips happen to wrap, so
+       the two weights never share a row and read as one ragged list. */
+    .pbw-break{ flex-basis:100%; height:0; }
+    .pbw-offlabel{ font-size:11px; color:#b4bfc9; }
+    /* The per-league game count. Muted and tabular so the row does not jump around as the
+       window changes the numbers under it. */
+    .pbw-n{ font-size:11px; font-variant-numeric:tabular-nums; color:#8695a7; }
+
+    /* League chips. daisyUI's .checkbox renders as a heavy dark square that dominated the
+       dialog and read as four warnings rather than four things that are switched on.
+       The real <input> is still there — visually hidden, not replaced — so keyboard focus,
+       space-to-toggle and label-clicking all keep working, and the JS still reads .checked. */
+    .pbw-chip{ display:inline-flex; align-items:center; gap:7px; position:relative;
+               padding:5px 12px 5px 9px; border:1px solid #dfe5ea; border-radius:999px;
+               background:#fff; font-size:13px; font-weight:500; color:#8695a7;
+               cursor:pointer; user-select:none; transition:.12s; }
+    .pbw-chip:hover{ border-color:#b9cdd6; color:#133b49; }
+    /* Weight stays 500 in both states on purpose: bolding the selected chip reflows the row
+       on every click, and a row of pills that shifts under the cursor feels broken. */
+    .pbw-chip:has(> input:checked){ background:#eef4f7; border-color:#b9cdd6; color:#133b49; }
+    .pbw-chip > input{ position:absolute; opacity:0; width:0; height:0; margin:0; }
+    .pbw-chip:has(> input:focus-visible){ outline:2px solid #e55608; outline-offset:2px; }
+    /* Covered, but with nothing to price in this window. Shown rather than hidden so the league
+       list is the same every time and its absence never has to be explained.
+
+       Smaller and flatter than a live chip, and sorted after them (see paintLeagues), because at
+       eleven leagues the dead ones outnumber the ones you can act on — seven to four in September
+       — and at equal weight they bury the actual choice. Still a chip rather than a line of text,
+       so a league becomes selectable in place the moment the window reaches it. */
+    .pbw-chip-off{ background:transparent; border-color:#eceff2; color:#b4bfc9;
+                   cursor:not-allowed; font-size:11px; padding:3px 9px; gap:5px; }
+    .pbw-chip-off:hover{ border-color:#eceff2; color:#b4bfc9; }
+    /* No tick on something that cannot be ticked — it is a label now, not a control. */
+    .pbw-chip-off .pbw-tick{ display:none; }
+    .pbw-chip-off .pbw-n{ font-size:10px; }
+    .pbw-chip-off .pbw-n{ color:#c3ccd8; }
+    /* An off chip must never show a filled tick — it is not selected, and a check mark that says
+       otherwise is the one thing this control cannot get wrong. Written to out-specify
+       `.pbw-chip:has(> input:checked) .pbw-tick`, which the class alone loses to: :has() carries
+       its argument's specificity, so the checked rule scores (0,3,1) and a bare
+       `.pbw-chip-off .pbw-tick` only (0,2,0). Doubling the class on the front takes it to (0,4,1).
+       The JS unchecks these too; this is the half that cannot be skipped by a missed repaint. */
+    .pbw-chip.pbw-chip-off .pbw-tick,
+    .pbw-chip.pbw-chip-off:has(> input:checked) .pbw-tick{ display:none; }
+    .pbw-tick{ width:15px; height:15px; flex:none; border-radius:50%; border:1.5px solid #cfd8e0;
+               display:inline-flex; align-items:center; justify-content:center; transition:.12s; }
+    .pbw-chip:has(> input:checked) .pbw-tick{ background:#133b49; border-color:#133b49; }
+    .pbw-chip:has(> input:checked) .pbw-tick::after{
+      content:''; width:7px; height:4px; margin-top:-2px;
+      border-left:2px solid #fff; border-bottom:2px solid #fff; transform:rotate(-45deg); }
     /* Date-range join groups: square right edge when the clear button is hidden.
 
        daisyUI rounds the FIRST and LAST .join-item. Our × button is hidden with .hidden rather
@@ -1065,6 +1131,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
                  They are read live from Cole Rules, so this line changes when the knobs do. -->
             <div id="tp-thresholds" class="text-xs text-base-content/50 -mt-2"></div>
+            <!-- What the last refresh actually covered. With per-league refreshes (AI-968) a
+                 timestamp alone is not enough: "3h ago" can mean one league was pulled and the
+                 rest are as stale as they were. -->
+            <div id="tp-lastrun" class="text-xs text-base-content/50"></div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <table class="camp-table w-full min-w-[1180px]">
@@ -3104,7 +3174,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // here: how many games fall in a window depends on the schedule, the decider's send list
       // and the cancelled-game filter, none of which the browser knows. ?estimate=1 is free and
       // calls no model, so asking again per keystroke costs nothing but a round trip.
-      function pbWindow({ title, body, value=20, min=1, max=90, estimate, initial=null, okText='Refresh', cancelText='Cancel' }){
+      // Resolves to { days, leagues } — leagues is an array of codes, or null for "all of them",
+      // which is the shape the endpoint wants (an omitted ?leagues= means every league).
+      // `leagues` in: [{ code, label }], all ticked to begin with, so pressing straight through
+      // asks for exactly what this dialog asked for before the filter existed. Omit it and no
+      // league row is rendered at all.
+      function pbWindow({ title, body, value=20, min=1, max=90, estimate, initial=null, leagues=null, okText='Refresh', cancelText='Cancel' }){
         return new Promise(resolve => {
           const ov = document.createElement('div');
           ov.className = 'pb-modal-overlay';
@@ -3115,12 +3190,35 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  <div class="font-extrabold text-lg text-[#133b49]">${title||''}</div>
                </div>
                <div class="text-sm text-base-content/70 whitespace-pre-line mb-3">${body||''}</div>
-               <label class="flex items-center gap-2 text-sm mb-2">
-                 <span class="font-semibold text-[#133b49]">Price games in the next</span>
-                 <input type="number" data-win class="input input-bordered input-sm w-20"
-                        value="${value}" min="${min}" max="${max}" step="1">
-                 <span class="font-semibold text-[#133b49]">days</span>
-               </label>
+               <div class="pbw-panel mb-3">
+                 <label class="pbw-row">
+                   <span class="pbw-label">Price games in the next</span>
+                   <input type="number" data-win class="input input-bordered input-sm w-20"
+                          value="${value}" min="${min}" max="${max}" step="1">
+                   <span class="pbw-label">days</span>
+                 </label>
+                 ${(leagues && leagues.length) ? `
+                 <div class="pbw-rule"></div>
+                 <div class="pbw-row">
+                   <span class="pbw-label">Leagues</span>
+                   <span class="pbw-count" data-lg-count></span>
+                   <div class="pbw-quick">
+                     <button type="button" data-lg-all>All</button>
+                     <button type="button" data-lg-none>None</button>
+                   </div>
+                 </div>
+                 <div class="pbw-chips" data-chips>
+                   ${leagues.map(l => `
+                     <label class="pbw-chip" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}">
+                       <input type="checkbox" data-lg value="${esc(l.code)}" checked>
+                       <span class="pbw-tick" aria-hidden="true"></span>
+                       <span>${esc(l.label)}</span>
+                       <span class="pbw-n" data-n></span>
+                     </label>`).join('')}
+                   <span class="pbw-break" data-break hidden></span>
+                   <span class="pbw-offlabel" data-offlabel hidden>Nothing to price:</span>
+                 </div>` : ''}
+               </div>
                <div class="text-xs text-base-content/60 mb-4" data-quote>Checking…</div>
                <div class="flex justify-end gap-2">
                  <button class="btn btn-sm btn-ghost" data-cancel>${cancelText}</button>
@@ -3130,6 +3228,97 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const input = ov.querySelector('[data-win]');
           const quote = ov.querySelector('[data-quote]');
           const okBtn = ov.querySelector('[data-ok]');
+          const boxes = [...ov.querySelectorAll('[data-lg]')];
+          const countEl = ov.querySelector('[data-lg-count]');
+
+          // Says the selection in words, because the chips answer "which" and not "how many of
+          // them" — and "all" is the state worth being able to confirm at a glance, since it is
+          // the one that spends the most.
+          const allBtn = ov.querySelector('[data-lg-all]'), noneBtn = ov.querySelector('[data-lg-none]');
+          const paintCount = () => {
+            if(!countEl) return;
+            const act = active(), on = act.filter(b => b.checked).length;
+            countEl.textContent = !act.length      ? 'nothing to price'
+                                : on === act.length ? `all ${act.length}`
+                                : on === 0          ? 'none'
+                                                    : `${on} of ${act.length}`;
+            if(allBtn)  allBtn.disabled  = !act.length || on === act.length;
+            if(noneBtn) noneBtn.disabled = !act.length || on === 0;
+          };
+
+          // A league with nothing to price in the current window is shown but disabled, so the
+          // operator can see it is covered rather than wonder where it went. Those are not part
+          // of any selection decision — only the ones that CAN be priced count.
+          const active = () => boxes.filter(b => !b.disabled);
+
+          // null when every selectable league is ticked, so an untouched dialog sends no
+          // ?leagues= at all and the request is byte-for-byte the one it made before this
+          // control existed. Disabled leagues are excluded rather than treated as unticked:
+          // they hold no games this window, so "all of them" and "all the ones with games" ask
+          // the server for exactly the same work.
+          const readLeagues = () => {
+            const act = active();
+            if(!act.length) return null;
+            const on = act.filter(b => b.checked).map(b => b.value);
+            return on.length === act.length ? null : on;
+          };
+
+          // Applies a quote's per-league counts to the chips: the number on each, and whether it
+          // can be picked at all. Runs on every quote, so widening the window lights up a league
+          // whose season starts just past the old horizon — which is exactly how the NHL and the
+          // NBA behave for most of September.
+          const chipBox = ov.querySelector('[data-chips]');
+          const breakEl = ov.querySelector('[data-break]');
+          const offLabel = ov.querySelector('[data-offlabel]');
+
+          function paintLeagues(counts){
+            if(!boxes.length || !counts) return;
+            boxes.forEach(b => {
+              const n = Number(counts[b.value] || 0);
+              const chip = b.closest('[data-chip]');
+              const noFeed = chip && chip.dataset.feed === '0';
+              // A league with nothing to price is unticked as well as disabled: leaving it ticked
+              // would draw a check beside a league this run cannot touch. Coming back into range
+              // re-ticks it, so it rejoins the all-leagues default rather than staying silently
+              // out — while a league the operator unticked themselves keeps that choice.
+              if(!n) b.checked = false;
+              else if(b.disabled) b.checked = true;
+              b.disabled = !n;
+              if(chip){
+                chip.classList.toggle('pbw-chip-off', !n);
+                chip.title = n ? ''
+                  : noFeed ? 'No schedule feed is connected for this one, so it has no games to price.'
+                           : 'No games in this window. Widen it and this league may come back.';
+                const nEl = chip.querySelector('[data-n]');
+                // Just the number, 0 included. This carried an em dash and then a "no feed" label
+                // to mark the leagues with no schedule source, on the grounds that 0 claims we
+                // counted. Dropped on Vhea's call (2026-09-08): the tab's own league filter
+                // already says which leagues have no feed, so spending a second vocabulary on it
+                // here made the chip row harder to scan to re-state something shown next to it.
+                // The distinction survives in the hover text below.
+                if(nEl) nEl.textContent = String(n);
+              }
+            });
+
+            // Live chips first, then the divider, then everything with nothing to price — each
+            // group keeping its KNOWN_LEAGUES order. Re-appending moves the existing nodes, so
+            // listeners and checked state come with them.
+            //
+            // Only when the order actually differs: the quote is re-fetched on every keystroke in
+            // the days box, and reshuffling a row under the cursor on each one would be its own
+            // kind of broken.
+            if(chipBox){
+              const live = boxes.filter(b => !b.disabled).map(b => b.closest('[data-chip]'));
+              const dead = boxes.filter(b =>  b.disabled).map(b => b.closest('[data-chip]'));
+              const want = [...live, breakEl, offLabel, ...dead].filter(Boolean);
+              const have = [...chipBox.children];
+              if(want.length !== have.length || want.some((el, i) => el !== have[i])){
+                want.forEach(el => chipBox.appendChild(el));
+              }
+              if(breakEl)  breakEl.hidden  = !dead.length || !live.length;
+              if(offLabel) offLabel.hidden = !dead.length;
+            }
+          }
 
           // Clamped on every read. This number decides what gets paid for, and the dialog must
           // never quote one figure while submitting another.
@@ -3145,6 +3334,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
           function paintQuote(est){
             const games = Number(est.would_price || 0);
+            paintLeagues(est.league_counts);
+            paintCount();
+            if(boxes.length && !active().some(b => b.checked)){
+              quote.innerHTML = active().length
+                ? 'No leagues selected — pick at least one.'
+                : 'No league has games to price in this window. Try a longer one.';
+              okBtn.textContent = okText;
+              okBtn.disabled = true;
+              return;
+            }
             if(!games){
               quote.innerHTML = 'No send-eligible games in that window — nothing to price.';
               okBtn.textContent = okText;
@@ -3158,11 +3357,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             okBtn.disabled = false;
           }
           async function requote(){
-            const n = read(), mine = ++seq;
+            const n = read(), lgs = readLeagues(), mine = ++seq;
             okBtn.disabled = true;
+            // Nothing ticked prices nothing, and asking the server to confirm that costs a round
+            // trip to be told what the checkboxes already say.
+            if(boxes.length && !active().some(b => b.checked)){ paintQuote({ league_counts:null }); return; }
             quote.textContent = 'Checking…';
             try {
-              const est = await estimate(n);
+              const est = await estimate(n, lgs);
               if(mine !== seq) return;                       // superseded
               paintQuote(est);
             } catch(e){
@@ -3172,18 +3374,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             }
           }
           input.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(requote, 350); });
+          // Ticking a box changes what is about to be bought, so the quote has to follow it. No
+          // debounce: it is one deliberate click, not a value being typed a digit at a time.
+          // A disabled input fires no change event, so this only ever runs for a selectable one.
+          boxes.forEach(b => b.addEventListener('change', () => { clearTimeout(timer); paintCount(); requote(); }));
+          const setAll = on => { active().forEach(b => { b.checked = on; }); clearTimeout(timer); paintCount(); requote(); };
+          allBtn?.addEventListener('click', () => setAll(true));
+          noneBtn?.addEventListener('click', () => setAll(false));
           // Paint from the quote already in hand rather than opening on "Checking…" — the caller
           // has just asked the server this exact question to decide whether to show the dialog
           // at all.
-          if(initial && Number(initial.window_days) === read()) { seq++; paintQuote(initial); }
+          // Only reusable while the dialog still describes the same request the caller quoted:
+          // same window AND every league, which is how it opens.
+          paintCount();
+          if(initial && Number(initial.window_days) === read() && !readLeagues()) { seq++; paintQuote(initial); }
           else requote();
 
           const done = v => { clearTimeout(timer); ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const answer = () => ({ days: read(), leagues: readLeagues() });
           const onKey = e => {
             if(e.key === 'Escape') done(null);
-            else if(e.key === 'Enter' && !okBtn.disabled) done(read());
+            else if(e.key === 'Enter' && !okBtn.disabled) done(answer());
           };
-          okBtn.addEventListener('click', () => { if(!okBtn.disabled) done(read()); });
+          okBtn.addEventListener('click', () => { if(!okBtn.disabled) done(answer()); });
           ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
           ov.addEventListener('click', e => { if(e.target===ov) done(null); });
           document.addEventListener('keydown', onKey);
@@ -3310,18 +3523,43 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         paintPriceTip();
       }
 
+      const setLastRunLine = v => { const e = el('tp-lastrun'); if(e) e.textContent = v; };
+
       async function showLastPriceRun(){
         if(!sb) return;
-        const { data, error } = await sb.from('events_master_price_runs')
-          .select('started_at,priced,cost_usd,dry_run').eq('dry_run', false)
+        // `leagues` arrives with migration 061. Asking for a column the database does not have
+        // is a 400 that takes the whole line with it, so the select is retried without it — the
+        // deploy order (code first, migration by hand) must not blank the readout.
+        const pick = cols => sb.from('events_master_price_runs')
+          .select(cols).eq('dry_run', false)
           .order('started_at', { ascending:false }).limit(1);
+        let { data, error } = await pick('started_at,priced,cost_usd,dry_run,leagues');
+        if(error) ({ data, error } = await pick('started_at,priced,cost_usd,dry_run'));
         const run = !error && data && data[0];
-        if(!run){ priceTip.last = 'Never run.'; paintPriceTip(); return; }
+        if(!run){
+          priceTip.last = 'Never run.';
+          paintPriceTip();
+          setLastRunLine('Prices have never been refreshed.');
+          return;
+        }
         const hrs = Math.round((Date.now() - new Date(run.started_at)) / 3600e3);
         const when = hrs < 1 ? 'just now' : hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs/24)}d ago`;
+        // A stored NULL means the run covered everything — that is how every run before AI-968
+        // reads, and they were all full refreshes.
+        const covered = (run.leagues && run.leagues.length)
+          ? run.leagues.map(leagueLabel).join(', ')
+          : 'all leagues';
         priceTip.last = `Last run ${when} · ${run.priced} priced · ${usd(run.cost_usd)}`;
         paintPriceTip();
+        // Stated on the tab, not just in the tooltip. With partial refreshes as the normal case,
+        // "3h ago" on its own is misleading — it can mean the WNBA was refreshed and nothing else,
+        // and the operator has no way to tell which prices that leaves stale.
+        setLastRunLine(`Last price refresh ${when} · covered ${covered} · ${run.priced} priced · ${usd(run.cost_usd)}`);
       }
+
+      // null/empty => no parameter at all, which the endpoint reads as "every league". Sending
+      // an empty ?leagues= instead would be an explicit request for nothing.
+      const qLeagues = lgs => (lgs && lgs.length) ? '&leagues=' + lgs.join(',') : '';
 
       // One call. Kept separate from the button state below so the estimate and the run can
       // reuse it WITHOUT re-entering the function that owns the spinner.
@@ -3414,7 +3652,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // The operator picks the horizon rather than being asked yes/no to the whole board.
           // Defaults to the stored rule (price_window_days, currently 20) so pressing straight
           // through behaves exactly as it did before this control existed.
-          const days = await pbWindow({
+          // EVERY league in KNOWN_LEAGUES, not just the ones with games in the window, and not
+          // just the ones with a schedule feed (Vhea, 2026-09-08).
+          //
+          // Listing only leagues that currently have something to price made the NHL and the NBA
+          // vanish for most of September — their seasons start days after a 20-day window closes —
+          // which reads as a bug and, worse, left no way to pick them after widening the window.
+          //
+          // The feedless four (US Open x3, World Cup) are here for the same reason, and they are
+          // the reason this list is not filtered at all: the tab's league filters show all eleven,
+          // so a dialog showing seven invites "where did the US Open go?". A greyed chip answers
+          // that where an absent one cannot. `feed` splits the two ways a chip can be dead —
+          // nothing scheduled in THIS window, versus no feed at all — because they are different
+          // problems with different fixes.
+          const leagueOpts = KNOWN_LEAGUES.map(p => ({ code: p[0], label: p[1], feed: p[3] }));
+
+          const answer = await pbWindow({
             title: 'Refresh ticket prices',
             // "22 lookups" is meaningless on its own — say why the cost is not 127 x the
             // per-call price. Billing is per grounded request, so games are priced in batches.
@@ -3427,13 +3680,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // default immediately instead of showing "Checking…" for a round trip that has
             // just been made.
             initial: est,
-            estimate: n => callPriceRefresh(true, '&estimate=1&window=' + n),
+            leagues: leagueOpts,
+            estimate: (n, lgs) => callPriceRefresh(true, '&estimate=1&window=' + n + qLeagues(lgs)),
             okText: 'Refresh',
           });
-          if(!days) return;
+          if(!answer) return;
+          const { days, leagues: pickedLeagues } = answer;
 
           priceBusy(true, Date.now());
-          const d = await callPriceRefresh(true, '&window=' + days);
+          const d = await callPriceRefresh(true, '&window=' + days + qLeagues(pickedLeagues));
 
           if(d.eligible === 0){
             pbToast({ type:'ok', title:'Nothing to price', lines:[ d.note || 'No games are send-eligible right now, so there is nothing worth pricing.' ] });
@@ -3446,6 +3701,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const lost  = !d.dry && priced > wrote;
           const bad   = !!d.write_error || !priced || lost;
           const leagues = d.by_league ? Object.entries(d.by_league).map(([k,v]) => `${v} ${k.toUpperCase()}`).join(' · ') : '';
+          // by_league only lists leagues that produced a price. A league that was asked for and
+          // came back with nothing would vanish from the toast entirely, reading as though it was
+          // never included — so name the ones that were covered but priced nothing.
+          const emptyLeagues = (pickedLeagues || [])
+            .filter(c => !(d.by_league && d.by_league[c]))
+            .map(c => leagueLabel(c));
           pbToast({
             type: bad ? 'err' : 'ok',
             title: d.write_error ? 'Prices found but could not be saved'
@@ -3458,6 +3719,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               d.unverified ? `${d.unverified} dropped — priced but no listing link, so the number could not be verified.` : '',
               d.timed_out ? `Ran out of time before ~${d.not_reached} games — everything priced so far was saved. Run again to finish the rest.` : '',
               leagues ? `Leagues: ${leagues}` : '',
+              emptyLeagues.length ? `Covered but nothing to price: ${emptyLeagues.join(', ')}.` : '',
               lost && !d.write_error ? 'Prices were paid for but did not match a stored event — check the write path before running again.' : '',
               `Cost ${usd(d.cost_usd)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
             ].filter(Boolean),
