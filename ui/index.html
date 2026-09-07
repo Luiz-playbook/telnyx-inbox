@@ -843,6 +843,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <span id="bh-note" class="text-xs text-base-content/50"></span>
               <button id="bh-sync" class="btn btn-primary btn-sm">Sync now</button>
             </div>
+            <!-- Standing freshness line (AI-970). The tab used to give no clue how current it
+                 was, so three months of missing sends looked exactly like a quiet week. -->
+            <div id="bh-state" class="text-xs text-base-content/50 -mt-3"></div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <table class="camp-table w-full min-w-[820px]">
@@ -6052,6 +6055,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
       const expanded = new Set();   // ids whose copy drawer is open
       const SYNC_STAMP = 'bh_last_sync', SYNC_EVERY = 10 * 60 * 1000;   // throttle: 10 minutes
+      let META = {};
+
+      // pbToast lives inside the Campaigns IIFE and is NOT in scope here — calling it directly
+      // is a ReferenceError, which is precisely the trap prettyMetro above was written to avoid.
+      // Reached through the window handle the Campaigns module exports, with the same native
+      // fallback the Queue module uses so a sync result is never silently lost.
+      const toast = o => window.__pbToast ? window.__pbToast(o) : alert([o.title, ...(o.lines||[])].filter(Boolean).join('\n'));
+
+      // The tab's standing answer to "is what I am looking at complete?" — the question AI-970
+      // was raised over, when three months of missing sends looked identical to a quiet week.
+      //
+      // Says how many blasts, how recent the newest one is, and when the sync last wrote. Last
+      // WROTE, deliberately: a run that finds nothing new writes nothing, so calling it "last
+      // checked" would claim a check that left no record.
+      async function paintSyncState(errText){
+        const box = el('bh-state');
+        if(!box) return;
+        const ago = t => {
+          if(!t) return null;
+          const h = Math.round((Date.now() - Date.parse(t)) / 3600e3);
+          return h < 1 ? 'just now' : h < 24 ? h + 'h ago' : Math.round(h/24) + 'd ago';
+        };
+        const c = META.counts || {};
+        const bits = [
+          `${(ROWS||[]).length.toLocaleString()} blasts`,
+          (c.cakemail != null ? `${c.cakemail} CakeMail` : null),
+          (c.blast_log ? `${c.blast_log} SMS` : null),
+          META.newest_sent_at ? `newest ${fmtDate(META.newest_sent_at)}` : null,
+          META.synced_at ? `synced ${ago(META.synced_at)}` : 'never synced',
+          // Named for the fix each one needs. "Not bridged" has an action behind it — add a
+          // market_bridge_list row; "no list name" does not.
+          META.unbridged ? `${META.unbridged} on lists not bridged to a market` : null,
+          META.noListName ? `${META.noListName} with no list name` : null,
+        ].filter(Boolean);
+        box.innerHTML = (errText ? '<span class="text-error font-semibold">' + esc(errText) + '</span><br>' : '') + esc(bits.join(' · '));
+      }
       let page = 1, pageSize = 50;   // 0 = show everything
 
       // Fill a <select> with the distinct values actually present, keeping "All" at the top —
@@ -6170,6 +6209,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const d = await r.json().catch(()=>({}));
           if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
           ROWS = Array.isArray(d.rows) ? d.rows : [];
+          META = { synced_at: d.synced_at || null, newest_sent_at: d.newest_sent_at || null,
+                   counts: d.counts || {}, unbridged: Number(d.unbridged || 0),
+                   noListName: Number(d.no_list_name || 0) };
         } catch(e){
           tb.innerHTML=`<tr><td colspan="8" class="text-center text-error py-8">${esc((e&&e.message)||'Could not load history')}</td></tr>`;
           return;
@@ -6177,24 +6219,108 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         fillFilter('bh-channel', r => r.channel);
         fillFilter('bh-status',  r => r.source);      // the Status filter now filters by SOURCE
         render();
+        paintSyncState(null);
       }
+      // AI-970. "Sync now" used to call /api/salesmsg-sync and NOTHING ELSE — the CakeMail sync
+      // had no caller anywhere in the app, and no cron either. Email history therefore stopped
+      // dead at 2026-06-01 while the button reported success, because syncing an empty Salesmsg
+      // account genuinely does succeed. 162 of Cole's 302 delivered campaigns were missing, and
+      // the decider read those markets as no_history.
+      //
+      // Both platforms now run, and the two are reported separately: "synced" has to mean
+      // something per source, or one silently doing nothing hides behind the other.
+      const post = async (path, body) => {
+        const r = await fetch(path, { method:'POST', headers: await apiHeaders(), body: body || '{}' });
+        const d = await r.json().catch(()=>({}));
+        if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+        return d;
+      };
+
+      // CakeMail is paged: one call fetches a bounded batch and reports `remaining`. A normal
+      // day is one pass; a first run after an outage is many, so it loops — and says which pass
+      // it is on, because a button that sits on "Syncing…" for a minute is the thing this ticket
+      // was raised about. Capped so a miscounted `remaining` cannot spin forever.
+      async function syncCakemail(onProgress){
+        let inserted = 0, updated = 0, unmapped = [], pass = 0;
+        for (;;) {
+          const d = await post('/api/cakemail-sync');
+          pass++;
+          inserted += Number(d.inserted || 0);
+          updated  += Number(d.updated  || 0);
+          unmapped = d.unmapped_lists || unmapped;
+          if(onProgress) onProgress(pass, d.remaining || 0);
+          if(!d.remaining || pass >= 12) return { inserted, updated, unmapped, remaining: d.remaining || 0 };
+        }
+      }
+
       async function sync(silent){
         const btn=el('bh-sync'), note=el('bh-note');
-        try{
-          if(!silent && btn){ btn.disabled=true; btn.textContent='Syncing…'; }
-          const r = await fetch('/api/salesmsg-sync', { method:'POST', headers: await apiHeaders(), body:'{}' });
-          const d = await r.json().catch(()=>({}));
-          if(r.ok){
-            if(note) note.textContent = `synced ${d.upserted ?? 0} · fetched ${d.fetched ?? 0}`;
-            sessionStorage.setItem(SYNC_STAMP, String(Date.now()));
-            // Only re-read when the sync actually changed something. It used to re-fetch and
-            // re-render the whole history on every run, which for an account with no Salesmsg
-            // broadcasts meant redrawing the table for nothing.
-            if(d.upserted) await readTable();
-          }
-          else if(note && !silent){ note.textContent = 'sync failed: ' + (d.error || ('HTTP '+r.status)); }
-        }catch(e){ if(note && !silent) note.textContent = 'sync needs the deployed /api'; }
+        const setNote = (txt, bad) => {
+          if(!note) return;
+          note.textContent = txt;
+          note.classList.toggle('text-error', !!bad);
+          note.classList.toggle('text-base-content/50', !bad);
+        };
+        if(btn){ btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-xs"></span> Syncing…'; }
+        if(!silent) setNote('Checking CakeMail and Salesmsg…', false);
+
+        // allSettled, not all: one platform being down must not hide what the other did. Each
+        // failure is named, so "it did nothing" is never the message.
+        const [cm, sm] = await Promise.allSettled([
+          syncCakemail((pass, remaining) => {
+            if(btn && remaining) btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Syncing… ${remaining} left`;
+          }),
+          post('/api/salesmsg-sync'),
+        ]);
+
+        // EVERY PLATFORM REPORTS, INCLUDING WHEN IT FOUND NOTHING. "Nothing new" and "did not
+        // run" look identical from outside, and this ticket exists because a button that had
+        // done nothing for three months looked exactly like one that had nothing to do. So each
+        // source states its own outcome in words.
+        const parts = [], errs = [];
+        let added = 0;
+
+        if(cm.status === 'fulfilled'){
+          const v = cm.value;
+          added += v.inserted;
+          parts.push(v.inserted || v.updated
+            ? `CakeMail: ${v.inserted} new${v.updated ? `, ${v.updated} updated` : ''}`
+            : 'CakeMail: nothing new');
+          if(v.remaining) errs.push(`${v.remaining} CakeMail campaigns still unfetched — press Sync now again to finish.`);
+        } else errs.push('CakeMail sync failed: ' + ((cm.reason && cm.reason.message) || cm.reason));
+
+        if(sm.status === 'fulfilled'){
+          const n = Number(sm.value.upserted ?? 0);
+          added += n;
+          parts.push(n ? `Salesmsg: ${n} new` : 'Salesmsg: nothing new');
+        } else errs.push('Salesmsg sync failed: ' + ((sm.reason && sm.reason.message) || sm.reason));
+
+        const changed = added > 0 || (cm.status==='fulfilled' && cm.value.updated);
+        if(changed) await readTable();
+        sessionStorage.setItem(SYNC_STAMP, String(Date.now()));
+
         if(btn){ btn.disabled=false; btn.textContent='Sync now'; }
+
+        // The tab's standing readout is rebuilt from the data either way, so a failed sync still
+        // shows how current the history actually is rather than only what went wrong.
+        await paintSyncState(errs.length ? errs.join(' ') : null);
+
+        // What the history holds NOW — the answer to "did that do anything?", stated after the
+        // per-platform lines so the totals are the last thing read.
+        const total = (ROWS || []).length;
+        const coverage = total
+          ? `History now holds ${total.toLocaleString()} blast${total===1?'':'s'}`
+            + (META.newest_sent_at ? `, newest ${fmtDate(META.newest_sent_at)}.` : '.')
+          : null;
+
+        const plural = n => `${n} new blast${n===1?'':'s'}`;
+        if(!silent){
+          if(errs.length) toast({ type:'err', title:'Sync finished with errors', lines:[...parts, ...errs, coverage] });
+          else if(added)  toast({ type:'ok', title:`Added ${plural(added)}`, lines:[...parts, coverage] });
+          else            toast({ type:'ok', title:'No new blasts', lines:['Every platform is already up to date.', ...parts, coverage] });
+        }
+        // The inline note mirrors it, for the throttled background run that shows no toast.
+        setNote(errs.length ? errs[0] : added ? `${plural(added)} added` : 'No new blasts — already up to date', !!errs.length);
       }
       el('bh-sync')?.addEventListener('click', ()=>sync(false));
       // Opening the tab used to fire a sync every single time — ~3s of Salesmsg round trips

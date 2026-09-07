@@ -11,8 +11,13 @@
 // Hawkeyes, Utah Utes, USC, Pirates suite, Orioles). Markets came back `no_history` because
 // the history stopped, not because it did not exist. See migration 047.
 //
-// Default account is 1679383 (cole@) — the account whose sent list is the real decision input.
-// Pass ?account_id= to sync another sub-account; each has its OWN PAT (lib/cakemail.js).
+// COVERS EVERY REAL SENDING ACCOUNT, not just one. Cole's (1679383) is where the history lives
+// today; production (1761047) is where sends moved on 2026-07-31, so reading only Cole's would
+// start losing blasts as the team finishes moving across. Each account has its OWN PAT
+// (lib/cakemail.js) and its id is stored per row, so they merge into one history.
+//
+// ?account_id= takes one id or a comma-separated list to override that. The pbtest sub-account
+// is excluded by default — see HISTORY_ACCOUNTS.
 //
 // COST SHAPE. The campaign list is 6 calls for the whole account, but list name, subject and
 // stats each need a per-campaign call (2 per campaign). A full backfill of 283 campaigns is
@@ -39,9 +44,43 @@ export const config = { maxDuration: 60 };
 // deployment change, matching how lib/cakemail.js resolves accounts.
 const COLE_ACCOUNT = (process.env.PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID || '1679383').trim();
 
-// One invocation's work. 60 campaigns ≈ 120 API calls, comfortably inside maxDuration with
-// room for slow reports. Raise via ?limit= when running a backfill from a machine that can wait.
+// josh.marcus@ — the production sender. Sends moved here on 2026-07-31 (see lib/cakemail.js),
+// so a history that only ever read cole@ would start losing real blasts the moment the team
+// finishes moving across. It holds one campaign today; that is a reason to wire it now, while
+// the gap is nothing, rather than to notice later.
+const PROD_ACCOUNT = (process.env.PBSPORTS_CAKEMAIL_ACCOUNT_ID || '1761047').trim();
+
+// Which accounts a plain call covers. AI-970 asks for EVERY CakeMail blast, and "every" spans
+// sub-accounts — the account id is stored per row, so they merge into one history cleanly.
+//
+// PBTESTACCOUNT is deliberately NOT here. Its six sends are QA — "[QA] send-path test",
+// "[TEST] nationals — Test Market ZZ" — and this table is the decider's memory of what worked
+// in which market. Test traffic in it would weight v_market_performance with sends to nobody.
+// Pass ?account_id=1679456 to pull it deliberately.
+const HISTORY_ACCOUNTS = [...new Set([COLE_ACCOUNT, PROD_ACCOUNT].filter(Boolean))];
+
+// One invocation's work.
+//
+// MEASURED, not estimated (2026-09-08, live account, 302 delivered): 40 campaigns complete in
+// ~10s, and a 5-campaign run also takes ~11s — so the cost is almost entirely FIXED, not
+// per-campaign. listCampaigns pages the whole account before anything else happens, and the
+// per-campaign detail/report/body calls run six wide. A bigger batch is therefore cheaper per
+// campaign, not dearer: the original 60 fits in ~12s against a 60s ceiling with room to spare.
+//
+// (An earlier revision of this comment cut the limit to 20 on the strength of the 5-campaign
+// run alone, reading its fixed overhead as a 2.3s-per-campaign rate. It is not; the numbers
+// above are what the loop actually does.)
+//
+// The deadline guard below is what really protects the invocation, so a slow CakeMail day costs
+// a smaller batch rather than a killed run. `remaining` says how much is left — call again
+// until it reads 0.
 const DEFAULT_LIMIT = 60;
+
+// Stop STARTING new work with enough margin left to upsert what is already in hand, ask for the
+// unmapped list and answer. A killed invocation writes nothing at all, so finishing small beats
+// being cut off — the same shape as the deadline in api/price-refresh.js.
+const SOFT_DEADLINE_MS = 45_000;
+const WRITE_MARGIN_MS = 10_000;
 
 const int = v => (v == null || v === '' ? null : Math.trunc(Number(v)));
 const dec = v => (v == null || v === '' ? null : Number(v));
@@ -124,13 +163,25 @@ function mapCampaign(c, detail, rep, body, accountId) {
 export default async function handler(req, res) {
   if (!await gate(req, res)) return;
 
-  const accountId = String(req.query?.account_id || COLE_ACCOUNT).trim();
+  // ?account_id= takes one id or a comma-separated list; omitted, it covers HISTORY_ACCOUNTS.
+  const asked = String(req.query?.account_id || '').split(',').map(x => x.trim()).filter(Boolean);
+  const accountIds = asked.length ? [...new Set(asked)] : HISTORY_ACCOUNTS;
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
   const refresh = req.query?.refresh === '1' || req.query?.refresh === 'true';
   const limit = Math.max(1, Math.min(300, Number(req.query?.limit) || DEFAULT_LIMIT));
 
-  const key = cakemailKey(accountId);
-  if (!key) { res.status(500).json({ error: `no CakeMail key for account ${accountId} — set ${cakemailKeyEnvName(accountId)} on the server` }); return; }
+  // A missing key for ONE account is reported and skipped, not fatal. Failing the whole run
+  // because a second sub-account is unconfigured would stop Cole's history — the one that
+  // matters most — for a reason unrelated to it.
+  const usable = [], keyless = [];
+  for (const id of accountIds) {
+    if (cakemailKey(id)) usable.push(id);
+    else keyless.push({ account_id: id, needs: cakemailKeyEnvName(id) });
+  }
+  if (!usable.length) {
+    res.status(500).json({ error: 'no CakeMail key for any requested account', accounts: keyless });
+    return;
+  }
 
   const supaUrl = process.env.SUPABASE_URL;
   // upsert_blast_templates is granted to service_role only — blast history is not anon-writable,
@@ -139,42 +190,77 @@ export default async function handler(req, res) {
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
-  try {
-    const campaigns = await listCampaigns({ accountId, key });   // delivered only, newest first
+  const startedAt = Date.now();
+  const deadline = startedAt + SOFT_DEADLINE_MS - WRITE_MARGIN_MS;
 
-    // What Supabase already has. Rows seeded before the sync existed have fetched_at null and
-    // are re-fetched once, because their stats came from a one-off import of unknown vintage.
+  try {
+    // What Supabase already has, across EVERY account — campaign ids are unique per CakeMail
+    // instance, so one map serves all of them and the "already fetched" test does not care
+    // which sub-account a row came from.
     const haveRes = await fetch(`${supaUrl}/rest/v1/blast_templates?select=campaign_id,fetched_at&limit=5000`, { headers: sh });
     const have = haveRes.ok ? await haveRes.json().catch(() => []) : [];
     const fetchedAt = new Map((Array.isArray(have) ? have : []).map(r => [String(r.campaign_id), r.fetched_at]));
 
-    const todo = campaigns.filter(c => refresh || !fetchedAt.get(String(c.id)));
-    const batch = todo.slice(0, limit);
-
-    // Three calls per campaign (detail, report, rendered body), in small waves — a 283-campaign
-    // account must not open 850 sockets at once. Any of the three failing yields null and the
-    // upsert's coalesce keeps whatever was already stored.
+    // Accounts are walked in order and share ONE budget — the limit and the deadline are per
+    // invocation, not per account, or two accounts would together take twice the ceiling. The
+    // first account therefore gets first call on the batch; `remaining` covers all of them, so
+    // repeated calls drain them in turn.
     const rows = [];
+    const perAccount = [];
+    let deliveredTotal = 0, remainingTotal = 0, ranOutOfTime = false;
     const WAVE = 6;
-    for (let i = 0; i < batch.length; i += WAVE) {
-      const slice = batch.slice(i, i + WAVE);
-      const got = await Promise.all(slice.map(async c => {
-        const id = String(c.id);
-        const [detail, rep, body] = await Promise.all([
-          campaignDetail(id, { accountId, key }),
-          campaignReport(id, { accountId, key }),
-          campaignBody(id, { accountId, key }),
-        ]);
-        return mapCampaign(c, detail, rep, body, accountId);
-      }));
-      rows.push(...got.filter(x => x.campaign_id));
+
+    for (const accountId of usable) {
+      const key = cakemailKey(accountId);
+      let campaigns = [];
+      try {
+        campaigns = await listCampaigns({ accountId, key });      // delivered only, newest first
+      } catch (e) {
+        // One account's list failing must not lose the others' work; it is reported instead.
+        perAccount.push({ account_id: accountId, error: String((e && e.message) || e) });
+        continue;
+      }
+      deliveredTotal += campaigns.length;
+
+      const todo = campaigns.filter(c => refresh || !fetchedAt.get(String(c.id)));
+      const room = Math.max(0, limit - rows.length);
+      const batch = ranOutOfTime ? [] : todo.slice(0, room);
+      remainingTotal += Math.max(0, todo.length - batch.length);
+
+      // Three calls per campaign (detail, report, rendered body), in small waves — a 300-campaign
+      // account must not open 900 sockets at once. Any of the three failing yields null and the
+      // upsert's coalesce keeps whatever was already stored.
+      let took = 0;
+      for (let i = 0; i < batch.length; i += WAVE) {
+        // Drain rather than start: whatever has been fetched is still worth writing, and the
+        // caller is told what was not reached so it can simply call again.
+        if (Date.now() > deadline) {
+          ranOutOfTime = true;
+          remainingTotal += batch.length - i;
+          break;
+        }
+        const slice = batch.slice(i, i + WAVE);
+        const got = await Promise.all(slice.map(async c => {
+          const id = String(c.id);
+          const [detail, rep, body] = await Promise.all([
+            campaignDetail(id, { accountId, key }),
+            campaignReport(id, { accountId, key }),
+            campaignBody(id, { accountId, key }),
+          ]);
+          return mapCampaign(c, detail, rep, body, accountId);
+        }));
+        const kept = got.filter(x => x.campaign_id);
+        rows.push(...kept);
+        took += kept.length;
+      }
+      perAccount.push({ account_id: accountId, delivered: campaigns.length, fetched: took, outstanding: Math.max(0, todo.length - took) });
     }
 
     if (dry) {
       res.status(200).json({
-        ok: true, dry: true, account_id: accountId,
-        delivered_in_cakemail: campaigns.length, already_stored: fetchedAt.size,
-        would_write: rows.length, remaining: Math.max(0, todo.length - batch.length),
+        ok: true, dry: true, accounts: perAccount,
+        delivered_in_cakemail: deliveredTotal, already_stored: fetchedAt.size,
+        would_write: rows.length, remaining: remainingTotal,
         sample: rows.slice(0, 3),
       });
       return;
@@ -198,12 +284,17 @@ export default async function handler(req, res) {
     if (un.ok) unmapped = await un.json().catch(() => []);
 
     res.status(200).json({
-      ok: true, account_id: accountId,
-      delivered_in_cakemail: campaigns.length,
+      ok: true,
+      // Per account, so a sub-account quietly returning nothing is visible rather than absorbed
+      // into a single total — the failure mode this whole ticket is about.
+      accounts: perAccount,
+      keyless: keyless.length ? keyless : undefined,
+      delivered_in_cakemail: deliveredTotal,
       processed: rows.length,
       inserted: result?.inserted ?? 0,
       updated: result?.updated ?? 0,
-      remaining: Math.max(0, todo.length - batch.length),
+      remaining: remainingTotal,
+      timed_out: ranOutOfTime || undefined,
       unmapped_lists: unmapped,
     });
   } catch (e) {

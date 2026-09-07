@@ -27,8 +27,26 @@
 -- would insert duplicates and double-count every market in v_market_performance (the view sums
 -- weighted by sent_emails). Verified clean before adding: 140 rows, 0 null campaign_id,
 -- 0 duplicates.
-alter table public.blast_templates
-  add constraint blast_templates_campaign_id_key unique (campaign_id);
+--
+-- GUARDED SO THE WHOLE MIGRATION CAN BE RE-RUN. A first attempt got this far and then stopped,
+-- leaving the constraint in place while the columns and functions below never landed — so the
+-- retry died on "42P07: relation blast_templates_campaign_id_key already exists" before
+-- reaching any of the work that still had to happen. `add constraint` has no IF NOT EXISTS,
+-- hence the block. Everything else in this file is already add-column-if-not-exists or
+-- create-or-replace, so with this guarded the migration is safe to run as many times as it
+-- takes (Vhea, 2026-09-08).
+do $$
+begin
+  if not exists (
+    select 1
+      from pg_constraint
+     where conname = 'blast_templates_campaign_id_key'
+       and conrelid = 'public.blast_templates'::regclass
+  ) then
+    alter table public.blast_templates
+      add constraint blast_templates_campaign_id_key unique (campaign_id);
+  end if;
+end $$;
 
 -- Which CakeMail sub-account a campaign came from. 1679383 is cole@ (the account whose sent
 -- list Cole actually works from); 1761047 is the production Josh sender. Nullable because the

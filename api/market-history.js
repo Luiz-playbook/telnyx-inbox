@@ -45,7 +45,7 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [blasts, broadcasts, campaigns, bridge] = await Promise.all([
+    const [blasts, broadcasts, campaigns, bridge, lastFetch] = await Promise.all([
       get('ticketblaster_market_blasts_log?select=id,market_key,state_code,channel,template_name,recipient_count,source,blasted_at,message,notes&order=blasted_at.desc&limit=1000'),
       get('salesmsg_broadcasts?select=broadcast_id,name,channel,status,recipients,sent_count,delivered_count,message,sent_at&order=sent_at.desc&limit=1000'),
       // CakeMail sends. This is the history Cole actually reads when deciding what to blast,
@@ -56,6 +56,10 @@ export default async function handler(req, res) {
         'blast_templates?select=campaign_id,name,list_name,scheduled_for,sent_emails,open_rate,clickthru_rate,email_template,subject,sender&order=scheduled_for.desc&limit=1000',
         'blast_templates?select=campaign_id,name,list_name,scheduled_for,sent_emails,open_rate,clickthru_rate,email_template&order=scheduled_for.desc&limit=1000'),
       get('market_bridge_list?select=list_name,market_key&limit=1000'),
+      // When the CakeMail sync last actually wrote. AI-970 asks the tab to state its own
+      // freshness, and until now nothing did — the history could be three months stale and the
+      // page looked identical to the day it was current.
+      get('blast_templates?select=fetched_at&order=fetched_at.desc.nullslast&limit=1'),
     ]);
 
     // list_name -> market_key, the same mapping v_blast_scored joins on. A list with no bridge
@@ -136,7 +140,25 @@ export default async function handler(req, res) {
     });
 
     res.setHeader('cache-control', 's-maxage=60, stale-while-revalidate=300');
-    res.status(200).json({ ok: true, rows, counts: { blast_log: blasts.length, salesmsg: broadcasts.length, cakemail: campaigns.length } });
+    res.status(200).json({
+      ok: true, rows,
+      counts: { blast_log: blasts.length, salesmsg: broadcasts.length, cakemail: campaigns.length },
+      // `synced_at` is when the sync last WROTE, which is not the same as when it last ran: a
+      // run that finds nothing new writes nothing. The tab labels it as such rather than
+      // claiming a check happened at a time nothing recorded.
+      synced_at: (lastFetch[0] && lastFetch[0].fetched_at) || null,
+      newest_sent_at: rows.length ? rows[0].sent_at : null,
+      // TWO DIFFERENT FAULTS, COUNTED SEPARATELY. A single "unmapped" total read 76 and hid
+      // that it was 35 lists nobody has bridged plus 41 campaigns carrying no list name at all.
+      // The first is fixed by adding market_bridge_list rows; the second cannot be, because
+      // there is nothing to bridge ON. Reporting them as one number invites someone to add 76
+      // bridge rows and wonder why the count barely moves.
+      //
+      // Both still cost the decider the same way: v_blast_scored inner-joins the bridge, so
+      // either kind contributes nothing to v_market_performance and the market reads no_history.
+      unbridged: campaigns.reduce((n, c) => n + (c.list_name && !marketOf.get(c.list_name) ? 1 : 0), 0),
+      no_list_name: campaigns.reduce((n, c) => n + (c.list_name ? 0 : 1), 0),
+    });
   } catch (e) {
     res.status(502).json({ error: String((e && e.message) || e), rows: [] });
   }
