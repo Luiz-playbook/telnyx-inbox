@@ -142,6 +142,33 @@
     .pb-modal-card{ background:#fff; border-radius:16px; box-shadow:0 20px 60px rgba(19,59,73,.3); padding:22px; max-width:440px; width:100%; animation:pbToastIn .2s ease-out; }
     @keyframes pbFadeIn{ from{opacity:0} to{opacity:1} }
 
+    /* Market History detail panel.
+
+       Replaces the inline accordion. That worked while the drawer held one block of copy, but
+       the detail is now a performance strip, the people who replied, demos booked, and a 520px
+       rendered email — inline, that pushes every row below it down and you lose your place
+       scrolling back. A centred modal would hide the table you are comparing against; the panel
+       keeps it visible, so you can click blast after blast and watch the figures change beside
+       it. Below 1100px it takes the full width, where there is no room to sit beside anything.
+
+       z-index sits under .pb-toast (9999) and .pb-modal-overlay (10000) on purpose: a confirm or
+       a toast raised from inside the panel must still land on top of it. */
+    .bh-panel{ position:fixed; top:0; right:0; height:100vh; width:min(560px,100vw); z-index:9500;
+               background:#fff; border-left:1px solid #e5ebf1; box-shadow:-16px 0 44px rgba(19,59,73,.15);
+               display:flex; flex-direction:column; transform:translateX(100%);
+               transition:transform .18s ease; }
+    .bh-panel.open{ transform:none; }
+    .bh-panel-head{ display:flex; align-items:flex-start; gap:10px; padding:16px 18px 12px;
+                    border-bottom:1px solid #e5ebf1; flex:0 0 auto; }
+    .bh-panel-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:16px 18px 28px; }
+    .bh-panel-x{ margin-left:auto; flex:0 0 auto; }
+    @media (max-width:1100px){ .bh-panel{ width:100vw; } }
+
+    /* The row whose detail is open. Rows are clickable now, so they say so. */
+    .camp-row.sel{ background:#eef4f7; }
+    tbody .camp-row{ cursor:pointer; }
+    tbody .camp-row:hover{ background:#f6f9fb; }
+
     /* pbWindow's settings block — the "how much am I about to buy" controls, grouped.
        They were loose rows under the prose and read as more body copy; the panel makes the
        part you can change look different from the part you can only read. */
@@ -846,13 +873,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <!-- Standing freshness line (AI-970). The tab used to give no clue how current it
                  was, so three months of missing sends looked exactly like a quiet week. -->
             <div id="bh-state" class="text-xs text-base-content/50 -mt-3"></div>
+            <!-- Detail panel. Lives outside the table so it is not clipped by the scroll box. -->
+            <div id="bh-panel" class="bh-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="bh-panel-title">
+              <div class="bh-panel-head">
+                <div class="min-w-0">
+                  <div id="bh-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
+                  <div id="bh-panel-sub" class="text-xs text-base-content/50 mt-0.5"></div>
+                </div>
+                <button id="bh-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
+              </div>
+              <div id="bh-panel-body" class="bh-panel-body"></div>
+            </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <table class="camp-table w-full min-w-[820px]">
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
-                    <th class="w-8"></th><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Source</th><th>Recipients</th><th>Sent</th>
+                    <th class="w-8"></th><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Source</th><th>Recipients</th><th>Sent</th><th>Opens</th><th>Clicks</th>
                   </tr></thead>
-                  <tbody id="bh-rows"><tr class="border-0"><td colspan="8" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading blast history&hellip;</div></td></tr></tbody>
+                  <tbody id="bh-rows"><tr class="border-0"><td colspan="10" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading blast history&hellip;</div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -6053,8 +6091,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const smsCountLabel = i => `${i.chars} character${i.chars===1?'':'s'} · ${i.segments} segment${i.segments===1?'':'s'} · ${i.ucs2?'UCS-2 (70/segment)':'GSM-7 (160/segment)'}`;
 
       let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
-      const expanded = new Set();   // ids whose copy drawer is open
-      const SYNC_STAMP = 'bh_last_sync', SYNC_EVERY = 10 * 60 * 1000;   // throttle: 10 minutes
+      // The blast whose panel is open, or null. Was a Set of expanded row ids; a panel shows one
+      // thing at a time, so it is a single id now.
+      let selected = null;
+      let rowClickGuard = false;   // set while a row click is being handled, see the document listener
+      // WHEN THIS BROWSER LAST CHECKED — localStorage, not sessionStorage, and six hours, not ten
+      // minutes. A sessionStorage stamp is empty in every new tab, so the throttle it was meant to
+      // provide never survived a reload; six hours matches how often a check is actually useful
+      // against a daily cron.
+      const SYNC_STAMP = 'bh_last_sync', SYNC_EVERY = 6 * 60 * 60 * 1000;
+      const stampGet = () => { try { return Number(localStorage.getItem(SYNC_STAMP) || 0); } catch { return 0; } };
+      const stampSet = () => { try { localStorage.setItem(SYNC_STAMP, String(Date.now())); } catch {} };
       let META = {};
 
       // pbToast lives inside the Campaigns IIFE and is NOT in scope here — calling it directly
@@ -6103,6 +6150,57 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         sel.value = vals.includes(cur) ? cur : '';
       }
 
+      // AI-971. One cell for opens and one for clicks, with the rate under the count — the
+      // count says how many and the rate says whether that is good, and neither answers the
+      // other. Unique figures, not raw totals: see the note in api/market-history.js.
+      //
+      // THREE STATES, NOT TWO. A zero and an unmeasurable are different facts:
+      //   available + a number  -> the number, 0 included. Zero opens is a real result.
+      //   available + null      -> "—", the sync has not fetched this campaign's report yet.
+      //   not available         -> "—" with the reason on hover. SMS has no open tracking at
+      //                            all, and a 0 there would read as "nobody opened it" rather
+      //                            than "nobody could have known".
+      // The rest of what CakeMail measures, in the drawer rather than the row. Bounces and
+      // unsubscribes matter when reading a single blast — a 10% bounce says the list is stale,
+      // not that the copy failed — but they are not what you scan a table for, and eight more
+      // columns would bury the two that answer "did this work".
+      function engStrip(r){
+        const e = r.engagement || {};
+        if(!e.available) return '';
+        const stat = (label, v, sub) => v == null ? '' :
+          `<div class="pr-5"><div class="text-[10px] uppercase tracking-wide text-base-content/40">${esc(label)}</div>`
+          + `<div class="font-semibold text-[#133b49]">${fmt(v)}`
+          + (sub == null ? '' : `<span class="text-[11px] font-normal text-base-content/50 ml-1">${Number(sub).toFixed(1)}%</span>`)
+          + '</div></div>';
+        const cells = [
+          stat('Delivered', e.delivered, null),
+          stat('Unique opens', e.opens, e.open_rate),
+          stat('Unique clicks', e.clicks, e.clickthru_rate),
+          stat('Bounced', e.bounces, e.bounce_rate),
+          stat('Unsubscribed', e.unsubscribes, null),
+          stat('Spam', e.spams, null),
+        ].filter(Boolean).join('');
+        if(!cells) return '';
+        return `<div class="prev-label mb-1">Performance</div>`
+          + `<div class="flex flex-wrap gap-y-2 mb-3">${cells}</div>`;
+      }
+      function engCell(r, kind){
+        const e = r.engagement || {};
+        const dash = why => `<td><span class="text-base-content/40"${why?` title="${esc(why)}"`:''}>—</span></td>`;
+        if(!e.available) return dash(e.why || 'This channel reports no engagement.');
+        const n    = kind === 'opens' ? e.opens : e.clicks;
+        const rate = kind === 'opens' ? e.open_rate : e.clickthru_rate;
+        if(n == null && rate == null) return dash('No report fetched for this campaign yet.');
+        // Raw total in the tooltip: opens counts repeat views, so it is normally higher than
+        // the unique figure shown, and the difference invites a "that looks wrong" otherwise.
+        const tot = kind === 'opens' ? e.opens_total : e.clicks_total;
+        const tip = tot != null && n != null && tot !== n
+          ? `${fmt(tot)} total ${kind}, ${fmt(n)} unique` : '';
+        return `<td class="whitespace-nowrap"${tip?` title="${esc(tip)}"`:''}>`
+          + `<span class="font-semibold text-[#133b49]">${n == null ? '—' : fmt(n)}</span>`
+          + (rate == null ? '' : `<span class="text-[11px] text-base-content/50 ml-1.5">${Number(rate).toFixed(1)}%</span>`)
+          + '</td>';
+      }
       function render(){
         const tb = el('bh-rows');
         const f = filter.trim().toLowerCase();
@@ -6131,8 +6229,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : '0 of 0';
         if(el('bh-prev')) el('bh-prev').disabled = page <= 1;
         if(el('bh-next')) el('bh-next').disabled = page >= pages;
-        if(!total){ tb.innerHTML='<tr><td colspan="8" class="text-center text-base-content/50 py-10">No blast history yet.</td></tr>'; return; }
-        if(!rows.length){ tb.innerHTML='<tr><td colspan="8" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
+        if(!total){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">No blast history yet.</td></tr>'; return; }
+        if(!rows.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">No blasts match these filters.</td></tr>'; return; }
         // Same accordion as the Queue: the row states WHAT was blasted, the drawer shows the
         // copy that actually went out. A history you cannot read the copy of only tells you
         // that something happened, not what — and the copy is the part worth learning from.
@@ -6144,50 +6242,182 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // colour, and whether a utility class beats it depends on the order the Play CDN and
         // daisyUI stylesheets happen to land in — which is why the class version was still
         // rendering dark-on-dark. An inline style has nothing to lose that race against.
-        tb.innerHTML = paged.map(r=>{
-          const open = expanded.has(r.id);
-          const head = `<tr class="camp-row">
-            <td>${r.message ? `<button class="btn btn-ghost btn-xs" data-bhtoggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button>` : ''}</td>
+        tb.innerHTML = paged.map(r=>`<tr class="camp-row${r.id===selected?' sel':''}" data-bhrow="${esc(r.id)}">
+            <td class="text-base-content/30">${r.id===selected?'&#9662;':'&#9656;'}</td>
             <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
             <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
             <td class="whitespace-nowrap">${r.market ? `<span class="font-semibold text-[#133b49]">${esc(prettyMetro(r.market))}</span>${r.state_code?` <span class="text-[10px] font-bold uppercase text-base-content/40">${esc(r.state_code)}</span>`:''}` : '<span class="text-base-content/40">—</span>'}</td>
             <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info':'tb-sms badge'}"${r.channel==='Email'?' style="color:#fff"':''}>${esc(r.channel||'—')}</span></td>
-            <td><span class="seg tb-ph">${esc(r.source||'—')}</span></td>
+            <td class="whitespace-nowrap">
+              <span class="seg tb-ph">${esc(r.source||'—')}</span>
+              ${r.account ? `<div class="text-[10px] text-base-content/45 mt-0.5" title="CakeMail sub-account ${esc(r.account.id)}">${esc(r.account.label)}</div>` : ''}
+            </td>
             <td>${fmt(r.recipients)}</td>
             <td>${r.sent_count==null?'<span class="text-base-content/40">—</span>':fmt(r.sent_count)}</td>
-          </tr>`;
-          if(!open || !r.message) return head;
-          // Each channel reads as itself, in the same chrome the Queue uses: an SMS as a phone
-          // bubble with its segment count (seeing a 494-character blast render as four segments
-          // is the point — it is what the copy cost to send), an email as an inbox renders it.
-          //
-          // The From/Subject header rows are printed ONLY when the row actually carries them.
-          // Most history has neither: the 140 seeded CakeMail rows never captured an envelope,
-          // and the Textable/Salesmsg logs have no concept of one. The Queue can fall back to
-          // "(no subject)" because it is an editor and the blank is a prompt to fill it in —
-          // here the send already happened, so an empty label is just noise in a list you are
-          // skimming. No header lines at all means the body panel stands alone.
-          const mailHead = [
-            r.sender  ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(r.sender)}</span></div>` : '',
-            r.subject ? `<div class="flex items-baseline"><span class="inline-block w-16 shrink-0 text-base-content/40">Subject</span><span class="font-semibold text-[#133b49] flex-1">${esc(r.subject)}</span></div>` : '',
-          ].join('');
-          const body = r.channel === 'SMS'
-            ? `<div class="sms-phone max-w-md"><div class="sms-bubble">${esc(r.message)}</div></div>
-               <div class="text-xs text-base-content/50 mt-1.5">${esc(smsCountLabel(smsInfo(r.message)))}</div>`
-            : `<div class="border border-base-300 rounded-lg overflow-hidden bg-white max-w-3xl">
-                 ${mailHead ? `<div class="px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">${mailHead}</div>` : ''}
-                 <div class="mail-body p-4 text-sm">${nl2br(r.message)}</div>
-               </div>`;
-          return head + `<tr class="bg-base-200/30"><td></td><td colspan="7" class="pb-4">
-            <div class="prev-label mb-1">${r.channel === 'SMS' ? 'SMS sent' : 'Copy sent'}</div>
-            ${body}
-            ${r.notes?`<div class="text-xs text-base-content/50 mt-1.5">${esc(r.notes)}</div>`:''}
-          </td></tr>`;
-        }).join('');
-        tb.querySelectorAll('[data-bhtoggle]').forEach(b=>b.addEventListener('click',()=>{
-          const id=b.dataset.bhtoggle; expanded.has(id)?expanded.delete(id):expanded.add(id); render();
+            ${engCell(r, 'opens')}
+            ${engCell(r, 'clicks')}
+          </tr>`).join('');
+
+        // Whole row opens the panel; the same row again closes it. The caret in the first column
+        // is an indicator now, not a control — there is nothing to hit precisely.
+        tb.querySelectorAll('[data-bhrow]').forEach(tr => tr.addEventListener('click', () => {
+          const id = tr.dataset.bhrow;
+          selected = (selected === id) ? null : id;
+          // render() replaces these <tr>s, so by the time the document-level close listener runs
+          // its event target is detached and closest() can no longer prove the click was on a
+          // row. The flag carries that fact across instead.
+          rowClickGuard = true;
+          render();
+          renderPanel();
         }));
+
       }
+
+      // ---- detail panel -------------------------------------------------------------
+      // One blast at a time, beside the table rather than inside it.
+      function renderPanel(){
+        const p = el('bh-panel'), body = el('bh-panel-body');
+        if(!p || !body) return;
+        const r = selected ? ROWS.find(x => x.id === selected) : null;
+        if(!r){
+          p.classList.remove('open');
+          p.setAttribute('aria-hidden', 'true');
+          body.innerHTML = '';        // drops the iframe with it rather than leaving it loaded
+          return;
+        }
+
+        setTxt2('bh-panel-title', r.name || '(untitled blast)');
+        setTxt2('bh-panel-sub', [
+          fmtDate(r.sent_at),
+          r.market ? prettyMetro(r.market) : null,
+          r.channel,
+          r.account ? r.account.label : r.source,
+        ].filter(Boolean).join(' · '));
+
+        // Printed only when the row actually carries them. Most history has neither: the 140
+        // seeded CakeMail rows never captured an envelope, and the Textable/Salesmsg logs have no
+        // concept of one. An empty "(no subject)" label is noise in a panel you are skimming.
+        const mailHead = [
+          r.sender  ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(r.sender)}</span></div>` : '',
+          r.account ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">Account</span><span class="text-[#133b49]">${esc(r.account.label)} <span class="text-base-content/40">&middot; ${esc(r.account.id)}</span></span></div>` : '',
+          r.subject ? `<div class="flex items-baseline"><span class="inline-block w-16 shrink-0 text-base-content/40">Subject</span><span class="font-semibold text-[#133b49] flex-1">${esc(r.subject)}</span></div>` : '',
+        ].join('');
+
+        // ONE SHAPE FOR BOTH CHANNELS. Section label, a view switch, then the message in its own
+        // frame — an email and an SMS answer the same question and should not need re-learning
+        // between rows. What differs is only what a channel can actually offer: an email has a
+        // rendered form and a text form, an SMS has one form, so its switch shows a single
+        // selected option rather than disappearing and shifting the layout.
+        const cid = r.source === 'cakemail' && r.message ? String(r.id).replace(/^cm:/, '') : null;
+        const views = cid
+          ? [['html','Rendered'],['text','Text']]
+          : r.channel === 'SMS' ? [['text','Message']] : [['text','Text']];
+        const switcher = `<div class="join" data-views>${views.map(([v,label],ix) =>
+          `<button class="btn btn-xs join-item ${ix===0?'btn-active':''}" data-view="${v}">${label}</button>`).join('')}</div>`;
+
+        // The frame is identical for both; only its contents differ.
+        const inner = !r.message
+          ? '<div class="p-4 text-sm text-base-content/50">No copy was recorded for this blast.</div>'
+          : r.channel === 'SMS'
+            ? `<div class="p-4"><div class="sms-phone"><div class="sms-bubble">${esc(r.message)}</div></div>
+                 <div class="text-xs text-base-content/50 mt-1.5">${esc(smsCountLabel(smsInfo(r.message)))}</div></div>`
+            : `<div class="mail-body p-4 text-sm" data-plain>${nl2br(r.message)}</div>
+               <div class="hidden" data-htmlhost></div>`;
+
+        body.innerHTML = engStrip(r)
+          + `<div class="flex items-center gap-2 mb-1">
+               <span class="prev-label">${r.channel === 'SMS' ? 'SMS sent' : 'Copy sent'}</span>
+               <span class="ml-auto">${switcher}</span>
+             </div>`
+          + `<div class="border border-base-300 rounded-lg overflow-hidden bg-white">
+               ${mailHead ? `<div class="px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">${mailHead}</div>` : ''}
+               ${inner}
+             </div>`
+          + (r.notes ? `<div class="text-xs text-base-content/50 mt-2">${esc(r.notes)}</div>` : '');
+
+        p.classList.add('open');
+        p.setAttribute('aria-hidden', 'false');
+
+        // ---- rendered email --------------------------------------------------------
+        //
+        // SANDBOXED IFRAME WITH srcdoc, not innerHTML. This is a whole email document — its own
+        // <style>, tables, widths — and dropping it into the page would let it restyle the app
+        // around it. sandbox="" with no allow-* tokens means no scripts, no forms, no top-level
+        // navigation: it can only draw itself.
+        //
+        // RENDERED IS THE DEFAULT. It is the thing that actually landed in the inbox; the stripped
+        // text is the fallback, not the reference. Still fetched per blast rather than with the
+        // table — 303 emails at ~8 KB is 2.4 MB nobody asked for — and cached, so paging back to a
+        // blast you already looked at costs nothing.
+        if(cid){
+          const host = body.querySelector('[data-htmlhost]');
+          const plain = body.querySelector('[data-plain]');
+          const btns = [...body.querySelectorAll('[data-view]')];
+          const mark = v => btns.forEach(b => b.classList.toggle('btn-active', b.dataset.view === v));
+
+          const showText = () => {
+            host.classList.add('hidden'); plain.classList.remove('hidden'); mark('text');
+          };
+          const showHtml = async () => {
+            mark('html');
+            if(!host.dataset.loaded){
+              host.innerHTML = '<div class="p-4 text-sm text-base-content/50">Loading the sent email…</div>';
+              host.classList.remove('hidden'); plain.classList.add('hidden');
+              try{
+                let html = HTML_CACHE.get(cid);
+                if(html == null){
+                  const rs = await fetch(`/api/market-history?html=${encodeURIComponent(cid)}`, { headers: await apiHeaders() });
+                  const d = await rs.json().catch(()=>({}));
+                  if(!rs.ok || !d.html) throw new Error(d.error || ('HTTP ' + rs.status));
+                  html = d.html;
+                  HTML_CACHE.set(cid, html);
+                }
+                const fr = document.createElement('iframe');
+                fr.setAttribute('sandbox', '');
+                fr.className = 'w-full border-0 bg-white';
+                fr.style.height = '520px';
+                fr.srcdoc = html;
+                host.innerHTML = ''; host.appendChild(fr);
+                host.dataset.loaded = '1';
+              }catch(e){
+                // Falls back to the text rather than leaving an empty frame: the copy is still
+                // readable, and the reason it could not be rendered is stated above it.
+                host.innerHTML = '';
+                showText();
+                const warn = document.createElement('div');
+                warn.className = 'text-xs text-error mb-1';
+                warn.textContent = 'Could not load the sent email: ' + ((e && e.message) || e) + ' — showing the text instead.';
+                plain.parentNode.insertBefore(warn, plain);
+                return;
+              }
+            }
+            host.classList.remove('hidden'); plain.classList.add('hidden');
+          };
+
+          btns.forEach(b => b.addEventListener('click', () => b.dataset.view === 'html' ? showHtml() : showText()));
+          showHtml();                       // default view
+        }
+      }
+
+      // campaign id -> rendered HTML, for the life of the page. Reopening a blast, or flipping
+      // back from Text, must not refetch.
+      const HTML_CACHE = new Map();
+
+      const setTxt2 = (id, v) => { const e = el(id); if(e) e.textContent = v; };
+      const closePanel = () => { selected = null; render(); renderPanel(); };
+
+      el('bh-panel-close')?.addEventListener('click', closePanel);
+
+      // Escape closes, and a click anywhere that is not the panel or a row closes. Registered ONCE
+      // here rather than per render, or every repaint would add another listener.
+      document.addEventListener('keydown', e => { if(e.key === 'Escape' && selected) closePanel(); });
+      document.addEventListener('click', e => {
+        if(!selected) return;
+        // The row handler ran first and already decided; its target is detached by now.
+        if(rowClickGuard){ rowClickGuard = false; return; }
+        if(e.target.closest && e.target.closest('#bh-panel')) return;
+        closePanel();
+      });
 
       el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; render(); });
       el('bh-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
@@ -6219,6 +6449,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         fillFilter('bh-channel', r => r.channel);
         fillFilter('bh-status',  r => r.source);      // the Status filter now filters by SOURCE
         render();
+        // Refresh an open panel against the new data — but ONLY here, where ROWS actually
+        // changed. Doing it inside render() would rebuild the panel on every search keystroke and
+        // throw away a loaded email preview mid-read.
+        renderPanel();
         paintSyncState(null);
       }
       // AI-970. "Sync now" used to call /api/salesmsg-sync and NOTHING ELSE — the CakeMail sync
@@ -6261,14 +6495,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           note.classList.toggle('text-error', !!bad);
           note.classList.toggle('text-base-content/50', !bad);
         };
-        if(btn){ btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-xs"></span> Syncing…'; }
+        // A silent background check leaves the button alone. Disabling it and spinning it is what
+        // made an already-rendered table look like it was still loading.
+        if(btn && !silent){ btn.disabled=true; btn.innerHTML='<span class="loading loading-spinner loading-xs"></span> Syncing…'; }
         if(!silent) setNote('Checking CakeMail and Salesmsg…', false);
 
         // allSettled, not all: one platform being down must not hide what the other did. Each
         // failure is named, so "it did nothing" is never the message.
         const [cm, sm] = await Promise.allSettled([
           syncCakemail((pass, remaining) => {
-            if(btn && remaining) btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Syncing… ${remaining} left`;
+            if(btn && !silent && remaining) btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Syncing… ${remaining} left`;
           }),
           post('/api/salesmsg-sync'),
         ]);
@@ -6297,9 +6533,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         const changed = added > 0 || (cm.status==='fulfilled' && cm.value.updated);
         if(changed) await readTable();
-        sessionStorage.setItem(SYNC_STAMP, String(Date.now()));
+        stampSet();
 
-        if(btn){ btn.disabled=false; btn.textContent='Sync now'; }
+        if(btn && !silent){ btn.disabled=false; btn.textContent='Sync now'; }
 
         // The tab's standing readout is rebuilt from the data either way, so a failed sync still
         // shows how current the history actually is rather than only what went wrong.
@@ -6325,12 +6561,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('bh-sync')?.addEventListener('click', ()=>sync(false));
       // Opening the tab used to fire a sync every single time — ~3s of Salesmsg round trips
       // before the view settled. The history itself loads in under a second, so the sync is
-      // now throttled: at most once per SYNC_EVERY, and the button remains the way to force
-      // one. Salesmsg broadcast history changes on the order of days, not seconds.
+      // throttled: at most once per SYNC_EVERY, and the button remains the way to force one.
+      //
+      // AND ONLY WHEN THE HISTORY IS ACTUALLY STALE. Adding CakeMail to this sync (AI-970) made
+      // opening the tab cost several seconds of background work that almost always found
+      // nothing, with the button sitting on "Syncing…" the whole time — the table had already
+      // rendered, but the tab read as still loading (Vhea, 2026-09-08).
+      //
+      // There is now a daily cron, so freshness is not this handler's job. It only covers the
+      // gap between the last write and now: if the history was synced within FRESH_ENOUGH, the
+      // tab opens with no network work at all, and the button is still there for immediacy
+      // right after a blast goes out.
       window.__loadBlastHistory = async () => {
         await readTable();
-        const last = Number(sessionStorage.getItem(SYNC_STAMP) || 0);
-        if(Date.now() - last > SYNC_EVERY) sync(true);
+        // GATED ON WHEN WE LAST CHECKED, NOT ON WHEN THE DATA LAST CHANGED. The first version of
+        // this test used META.synced_at, which is the last time the sync WROTE something — so a
+        // quiet week left it hours old and the tab re-synced on every single visit, several
+        // seconds each time, always finding nothing (Vhea, 2026-09-08). A sync that finds no new
+        // blasts is a successful check, and has to count as one.
+        //
+        // synced_at still matters for the one case the stamp cannot see: never synced at all.
+        if(Date.now() - stampGet() < SYNC_EVERY && META.synced_at) return;
+        sync(true);
       };
     })();
 

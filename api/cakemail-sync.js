@@ -207,20 +207,28 @@ export default async function handler(req, res) {
     // repeated calls drain them in turn.
     const rows = [];
     const perAccount = [];
-    let deliveredTotal = 0, remainingTotal = 0, ranOutOfTime = false;
+    let scannedTotal = 0, remainingTotal = 0, ranOutOfTime = false;
     const WAVE = 6;
 
     for (const accountId of usable) {
       const key = cakemailKey(accountId);
       let campaigns = [];
       try {
-        campaigns = await listCampaigns({ accountId, key });      // delivered only, newest first
+        // Stop paging as soon as a whole page holds nothing we have not already fetched. The
+        // listing is newest-first, so unseen campaigns are always at the front — a full page of
+        // known ids means every later page is older and known too.
+        //
+        // A refresh run deliberately re-reads everything, so it must NOT stop early.
+        campaigns = await listCampaigns({
+          accountId, key,
+          stopWhen: refresh ? null : rows => rows.every(c => fetchedAt.get(String(c.id))),
+        });
       } catch (e) {
         // One account's list failing must not lose the others' work; it is reported instead.
         perAccount.push({ account_id: accountId, error: String((e && e.message) || e) });
         continue;
       }
-      deliveredTotal += campaigns.length;
+      scannedTotal += campaigns.length;
 
       const todo = campaigns.filter(c => refresh || !fetchedAt.get(String(c.id)));
       const room = Math.max(0, limit - rows.length);
@@ -253,13 +261,22 @@ export default async function handler(req, res) {
         rows.push(...kept);
         took += kept.length;
       }
-      perAccount.push({ account_id: accountId, delivered: campaigns.length, fetched: took, outstanding: Math.max(0, todo.length - took) });
+      perAccount.push({
+        account_id: accountId,
+        // 'scanned', not 'delivered': once paging stops early this is how far the listing was
+        // walked, not how many the account holds. Naming it delivered would have the response
+        // report a shrinking account every time the sync got cheaper.
+        scanned: campaigns.length,
+        partial_scan: campaigns.complete === false || undefined,
+        fetched: took,
+        outstanding: Math.max(0, todo.length - took),
+      });
     }
 
     if (dry) {
       res.status(200).json({
         ok: true, dry: true, accounts: perAccount,
-        delivered_in_cakemail: deliveredTotal, already_stored: fetchedAt.size,
+        scanned_in_cakemail: scannedTotal, already_stored: fetchedAt.size,
         would_write: rows.length, remaining: remainingTotal,
         sample: rows.slice(0, 3),
       });
@@ -289,7 +306,7 @@ export default async function handler(req, res) {
       // into a single total — the failure mode this whole ticket is about.
       accounts: perAccount,
       keyless: keyless.length ? keyless : undefined,
-      delivered_in_cakemail: deliveredTotal,
+      scanned_in_cakemail: scannedTotal,
       processed: rows.length,
       inserted: result?.inserted ?? 0,
       updated: result?.updated ?? 0,
