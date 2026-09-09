@@ -58,6 +58,13 @@
              background:#fff; border:1px solid #e3e8ef; border-radius:10px; padding:6px;
              box-shadow:0 10px 30px rgba(19,59,73,.18); min-width:132px; }
     .q-menu.hidden{ display:none; }
+    /* A PICKED ROW. Same warm tint as the bulk bar above the table, on purpose: "what is
+       selected" and "what the Actions menu will act on" have to read as one thing, or a
+       selection spanning two pages becomes a guess. The left edge is marked as well as the
+       fill — banded rows already carry a background, and a tint alone is easy to miss on the
+       grey day-band stripe. */
+    .camp-row.q-picked > td{ background:#fdf3ec; }
+    .camp-row.q-picked > td:first-child{ box-shadow:inset 3px 0 0 #e8935a; }
     /* Hover states for the action buttons, stated outright instead of inherited.
        daisyUI hovers an outline button to `color: var(--<colour>-content)`, and in its light
        theme --suc / --erc / --wac are all `0% 0 0` — PURE BLACK. So Confirm and Reject filled
@@ -77,6 +84,10 @@
     /* The trigger sits outside .q-menu. daisyUI already gives it white-on-dark, but it is
        pinned here too so the menu and the button that opens it hover as one thing. */
     .btn.btn-outline[data-qmenu]:hover{ background-color:#133b49; border-color:#133b49; color:#fff; }
+    /* Pill, to match the status badge it now sits beside. daisyUI gives .btn a squared-off
+       --rounded-btn while .badge is fully round, and the two shapes touching in one cell read as
+       a mistake rather than as a pair. */
+    .btn[data-qmenu]{ border-radius:9999px; padding-left:.7rem; padding-right:.6rem; }
     .price-info{ cursor:help; color:#94a3b8; font-size:11px; vertical-align:super; }
     .price-info:hover{ color:#133b49; }
     /* Price editor. The pencil is a SEPARATE control from the price itself, which is already an
@@ -153,16 +164,55 @@
 
        z-index sits under .pb-toast (9999) and .pb-modal-overlay (10000) on purpose: a confirm or
        a toast raised from inside the panel must still land on top of it. */
-    .bh-panel{ position:fixed; top:0; right:0; height:100vh; width:min(560px,100vw); z-index:9500;
+    /* top/height are set from <main> at open time (see fitPanel) so the panel matches the
+       Campaign Agent rail beside it and leaves the header and tabs reachable — you can switch
+       tabs without closing it. These values are the fallback for before that runs, and for a
+       layout with no <main> to measure. */
+    .bh-panel{ position:fixed; top:0; right:0; height:100vh; width:min(600px,100vw); z-index:9500;
                background:#fff; border-left:1px solid #e5ebf1; box-shadow:-16px 0 44px rgba(19,59,73,.15);
                display:flex; flex-direction:column; transform:translateX(100%);
                transition:transform .18s ease; }
     .bh-panel.open{ transform:none; }
-    .bh-panel-head{ display:flex; align-items:flex-start; gap:10px; padding:16px 18px 12px;
+    /* MARGIN ZERO, AND IT IS LOAD-BEARING. The panel is a child of #view-history, which carries
+       Tailwind space-y-5 — that is "> * + * { margin-top: 1.25rem }" — and it applies to the panel
+       because the rule only skips elements with the [hidden] attribute, which this uses
+       aria-hidden for. A fixed element with a top margin is pushed down by it: the panel sat 20px
+       below the viewport top and its bottom 20px past the fold, so the last of the list was cut
+       off with no way to scroll to it (Vhea, 2026-09-09). */
+    .bh-panel{ margin:0 !important; }
+    .bh-panel-head{ display:flex; align-items:flex-start; gap:10px; padding:13px 18px 11px;
                     border-bottom:1px solid #e5ebf1; flex:0 0 auto; }
-    .bh-panel-body{ flex:1 1 auto; overflow-y:auto; overscroll-behavior:contain; padding:16px 18px 28px; }
+    /* The body is a column, not a scroll box. The figures and the view switch stay put at the
+       top and the message takes the rest of the height — so there is exactly ONE thing
+       scrolling, and it is the message. It used to be a scrolling panel containing a fixed
+       520px iframe that scrolled too, which meant two bars side by side and a letterbox view
+       of a long email (Vhea, 2026-09-08). */
+    /* Scrolls as a whole when the panel is short. It used to be overflow:hidden, which let the
+       message frame below collapse to a sliver with its own scrollbar once the figures and tabs
+       had taken the height — a letterbox with a scrollbar in it (Vhea, 2026-09-09). */
+    .bh-panel-body{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column;
+                    overflow-y:auto; padding:14px 18px 18px; }
+    .bh-panel-fixed{ flex:0 0 auto; }
+    /* A FLOOR, so it can never be squashed into that sliver. flex:1 with min-height:0 alone lets
+       it shrink to nothing on a short window; below this it is not worth showing at all and the
+       panel scrolls instead. */
+    .bh-copy{ flex:1 1 auto; min-height:min(58vh, 360px); display:flex; flex-direction:column;
+              border:1px solid #e5ebf1; border-radius:10px; overflow:hidden; background:#fff; }
+    .bh-copy-head{ flex:0 0 auto; }
+    /* the text view scrolls itself; the rendered view hands its scrolling to the iframe */
+    .bh-copy-scroll{ flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+    .bh-copy-fill{ flex:1 1 auto; min-height:0; }
+    .bh-copy-fill > iframe{ width:100%; height:100%; border:0; display:block; background:#fff; }
     .bh-panel-x{ margin-left:auto; flex:0 0 auto; }
     @media (max-width:1100px){ .bh-panel{ width:100vw; } }
+
+    /* The caret in the first column. Left over from the accordion, where flipping it downwards
+       meant "this expands below" — the panel opens to the SIDE, so it points right and stays
+       pointing right. Selection is shown by colour and a small nudge towards the panel, which is
+       where the eye is going anyway. */
+    .bh-caret{ color:#c3ccd8; transition:color .12s ease, transform .12s ease; }
+    .camp-row:hover .bh-caret{ color:#8695a7; }
+    .bh-caret.on{ color:#e55608; transform:translateX(2px); }
 
     /* The row whose detail is open. Rows are clickable now, so they say so. */
     .camp-row.sel{ background:#eef4f7; }
@@ -184,6 +234,21 @@
        click to find that out. */
     .pbw-quick button:disabled{ opacity:.35; cursor:default; }
     .pbw-chips{ display:flex; flex-wrap:wrap; align-items:center; gap:7px; margin-top:9px; }
+
+    /* A row that just resolved from HubSpot. Green for a moment, then back to normal — long
+       enough to catch the eye that something landed, short enough that a screen of previously
+       found rows does not stay lit and stop meaning anything. Fades rather than snaps, so it
+       reads as settling rather than as a second change. */
+    @keyframes bhFoundFade {
+      0%   { background:#dcfce7; }
+      55%  { background:#dcfce7; }
+      100% { background:transparent; }
+    }
+    .bh-found{ animation: bhFoundFade 2.6s ease-out forwards; }
+    /* prefers-reduced-motion still gets the confirmation, just without the animation */
+    @media (prefers-reduced-motion: reduce){
+      .bh-found{ animation:none; background:#dcfce7; }
+    }
     /* Forces the unavailable group onto its own line however the live chips happen to wrap, so
        the two weights never share a row and read as one ragged list. */
     .pbw-break{ flex-basis:100%; height:0; }
@@ -213,9 +278,11 @@
        eleven leagues the dead ones outnumber the ones you can act on — seven to four in September
        — and at equal weight they bury the actual choice. Still a chip rather than a line of text,
        so a league becomes selectable in place the moment the window reaches it. */
+    /* Dimmed because there is nothing in this window, NOT because it cannot be chosen. It stays
+       clickable — the count says what to expect and the result says what happened. */
     .pbw-chip-off{ background:transparent; border-color:#eceff2; color:#b4bfc9;
-                   cursor:not-allowed; font-size:11px; padding:3px 9px; gap:5px; }
-    .pbw-chip-off:hover{ border-color:#eceff2; color:#b4bfc9; }
+                   font-size:11px; padding:3px 9px; gap:5px; }
+    .pbw-chip-off:hover{ border-color:#cfd8e0; color:#8695a7; }
     /* No tick on something that cannot be ticked — it is a label now, not a control. */
     .pbw-chip-off .pbw-tick{ display:none; }
     .pbw-chip-off .pbw-n{ font-size:10px; }
@@ -761,6 +828,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <!-- BULK BAR. Hidden until something is ticked, so the table looks exactly as it
+                   did for anyone not using selection. It sits INSIDE the panel and above the
+                   scroll box rather than up with the filters: it describes the rows, it is not
+                   another way of choosing them, and it must not scroll away from the checkboxes
+                   it belongs to. -->
+              <div id="q-bulk" class="hidden items-center gap-3 flex-wrap px-4 py-2.5 border-b border-base-300 bg-[#fdeee4]">
+                <span class="text-sm font-bold text-[#133b49]"><span id="q-bulk-n">0</span> selected</span>
+                <span id="q-bulk-off" class="text-xs text-base-content/60"></span>
+                <button id="q-bulk-all" class="link link-primary text-xs hidden"></button>
+                <div class="ml-auto flex items-center gap-2">
+                  <button id="q-bulk-clear" class="btn btn-xs btn-ghost">Clear</button>
+                  <button id="q-bulk-menu" data-bulkmenu class="btn btn-xs btn-outline">Actions &#9662;</button>
+                </div>
+                <!-- Reuses .q-menu so it is placed, flipped and dismissed by exactly the code
+                     that already does that for the per-row menus. -->
+                <div id="q-bulk-pop" class="q-menu hidden"></div>
+              </div>
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <!-- ONE VIEW, NO SIDEWAYS SCROLL (Josh, 2026-08-03). This was min-w-[1720px] and
                      the two sender pickers were a third of it — ~460px of dropdown that nobody
@@ -769,7 +853,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                      one dropdown, Blast title clipped with the full text on hover. -->
                 <table class="camp-table w-full min-w-[1080px]">
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
-                    <th class="w-8"></th>
+                    <!-- Select-all covers THIS PAGE, not the whole filtered set: a checkbox that
+                         silently reached 300 rows you cannot see is how bulk actions go wrong.
+                         Selecting everything the filters match is a separate, named offer in the
+                         bar below. -->
+                    <th class="w-[58px] col-tight">
+                      <input id="q-all" type="checkbox" class="checkbox checkbox-xs align-middle" aria-label="Select every blast on this page" title="Select every blast on this page">
+                    </th>
                     <!-- Columns 2-7 mirror Campaigns by Event so the same blast reads the same on
                          both tabs; the rest are queue-only (when it goes, how it is doing). -->
                     <th>Blast</th>
@@ -786,10 +876,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <!-- Sized to the datetime-local control itself (date + time + picker icon),
                          not to spare table width. -->
                     <th id="q-sort-sched" class="col-tight w-[196px] sortable" title="Sort by scheduled time">Schedule <span class="font-normal normal-case text-base-content/50">(ET)</span> <span class="sort-ind">&#9650;&#9660;</span></th>
+                    <!-- Actions lives in this cell too. It was the last column of a ten-column
+                         table that is wider than most windows, so reaching the menu meant
+                         scrolling sideways past everything else to find it. -->
                     <th>Status</th>
-                    <th class="w-24">Actions</th>
                   </tr></thead>
-                  <tbody id="q-rows"><tr class="border-0"><td colspan="10" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div></td></tr></tbody>
+                  <tbody id="q-rows"><tr class="border-0"><td colspan="9" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -858,12 +950,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="bh-channel" class="select select-bordered select-sm"><option value="">All channels</option></select>
                 <select id="bh-status" class="select select-bordered select-sm" title="Source platform"><option value="">All sources</option></select>
-                <select id="bh-window" class="select select-bordered select-sm" title="Sent within">
-                  <option value="">All time</option>
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="365">Last 12 months</option>
-                </select>
+                <!-- Same joined shape as Ticket Prices and the Queue. Replaces a "last N days"
+                     select: the question here is usually "what went out that week", which a
+                     preset cannot express. -->
+                <div class="join" title="Sent date — set either end, or both">
+                  <input id="bh-from" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Sent from">
+                  <span class="join-item flex items-center px-2 bg-base-200 border border-base-300 text-xs text-base-content/60">to</span>
+                  <input id="bh-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Sent to">
+                  <button id="bh-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
+                </div>
               </div>
             </div>
             <div class="flex items-center gap-2 flex-wrap justify-end">
@@ -2880,14 +2975,32 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // is a good way to get rate-limited by all three sources at once.
       const RESCAN_LEAGUES = ['mlb', 'nhl', 'nfl'];
 
+      // EVERY LEAGUE WE HOLD FIXTURES FOR IS RESCANNABLE. MLB, the NHL and the NFL come from
+      // whole-season endpoints; the rest are read from ESPN a day at a time, bounded by the
+      // window this dialog asks for (lib/schedule-source.js).
+      //
+      // ESPN used to be refused outright on the grounds that it was unreachable from the deploy
+      // network (AI-844). Re-tested rather than inherited: the scoreboard answers in ~380ms, and
+      // it is the same endpoint the multi-league schedule loader already uses. If it does fail in
+      // production the rescan reports that league as NOT CHECKED — never as clean — so being
+      // wrong about this costs a failed check, not a false all-clear.
+      // EVERY league, including the four with no schedule feed. Rescanning one of those is
+      // harmless and honest: the route answers "no upcoming events stored for this league" with
+      // nothing checked, which is a better way to learn it than a chip that cannot be pressed.
+      const rescanLeagueOptions = () => KNOWN_LEAGUES
+        .map(p => ({ code: p[0], label: p[1], feed: p[3], note: p[3] ? null : 'no feed' }));
+
       (function wireBulkRescan(){
         const btn = el('rescan-schedules');
         if(!btn) return;
         const toast = o => window.__pbToast ? window.__pbToast(o) : alert([o.title, ...(o.lines||[])].filter(Boolean).join('\n'));
 
+        // from/to are passed through to the route, which already accepts them — the window is a
+        // real narrowing of what gets checked, not a client-side filter on a full pull.
+        let WINDOW = null;                       // { from, to } for this run
         const call = (league, apply) => fetch('/api/rescan-events', {
           method:'POST', headers:{'content-type':'application/json'},
-          body: JSON.stringify({ league, apply: !!apply }),
+          body: JSON.stringify({ league, apply: !!apply, ...(WINDOW || {}) }),
         }).then(async r => {
           const j = await r.json().catch(() => ({}));
           if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
@@ -2895,6 +3008,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         });
 
         btn.addEventListener('click', async () => {
+          // Same dialog as the price refresh: a horizon and a set of leagues. It asks before it
+          // starts because a rescan of everything walks three season feeds, and most of the time
+          // the question is about one league and the next few weeks.
+          const answer = await pbWindow({
+            title: 'Rescan schedules',
+            body: 'Re-checks stored fixtures against each league\u2019s own schedule feed, and reports what has moved, been cancelled, or changed time or venue.\n\nNothing is written until you confirm the report.',
+            label: 'Check fixtures in the next',
+            value: 60, min: 1, max: 365,
+            note: 'Nothing is changed until you confirm what it finds.',
+            leagues: rescanLeagueOptions(),
+            okText: 'Rescan',
+          });
+          if(!answer) return;
+
+          // The route takes dates, the dialog asks for a horizon — today to today plus N, in ET,
+          // because event_date is the game's local date and the rest of this app reads it in ET.
+          const from = etYmd();
+          const to = etYmd(Date.now() + Number(answer.days) * 86400000);
+          WINDOW = { from, to };
+          // null means every selectable league, which is how the dialog opens.
+          const leagues = (answer.leagues && answer.leagues.length) ? answer.leagues : RESCAN_LEAGUES;
+
           const orig = btn.innerHTML;
           // Tooltip swapped for the duration and restored in the finally, the same way the price
           // button does it — leaving "nothing is changed until you confirm" on screen while a
@@ -2905,7 +3040,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           btn.disabled = true;
           const reports = [];
           try {
-            for(const lg of RESCAN_LEAGUES){
+            for(const lg of leagues){
               btn.innerHTML = `Checking ${lg.toUpperCase()}…`;
               try { reports.push(await call(lg, false)); }
               catch(e){ reports.push({ league: lg, outcome: 'unreachable', detail: String(e.message || e), checked: 0, summary: {} }); }
@@ -3220,7 +3355,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // `leagues` in: [{ code, label }], all ticked to begin with, so pressing straight through
       // asks for exactly what this dialog asked for before the filter existed. Omit it and no
       // league row is rendered at all.
-      function pbWindow({ title, body, value=20, min=1, max=90, estimate, initial=null, leagues=null, okText='Refresh', cancelText='Cancel' }){
+      // `estimate` is OPTIONAL. It exists so the price dialog can quote what a run will cost
+      // before anyone commits to spending; a schedule rescan spends nothing, so it passes a
+      // static `note` instead and the OK button is live from the start.
+      //
+      // `label`/`unit` name the number, because "Price games in the next 20 days" is wrong on a
+      // dialog that checks fixtures. A league can arrive already `disabled` with a `why`, for
+      // sources that exist but cannot be read.
+      function pbWindow({ title, body, value=20, min=1, max=90, estimate, initial=null, leagues=null,
+                          label='Price games in the next', unit='days', note='',
+                          okText='Refresh', cancelText='Cancel' }){
         return new Promise(resolve => {
           const ov = document.createElement('div');
           ov.className = 'pb-modal-overlay';
@@ -3233,10 +3377,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                <div class="text-sm text-base-content/70 whitespace-pre-line mb-3">${body||''}</div>
                <div class="pbw-panel mb-3">
                  <label class="pbw-row">
-                   <span class="pbw-label">Price games in the next</span>
+                   <span class="pbw-label">${label}</span>
                    <input type="number" data-win class="input input-bordered input-sm w-20"
                           value="${value}" min="${min}" max="${max}" step="1">
-                   <span class="pbw-label">days</span>
+                   <span class="pbw-label">${unit}</span>
                  </label>
                  ${(leagues && leagues.length) ? `
                  <div class="pbw-rule"></div>
@@ -3250,11 +3394,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>
                  <div class="pbw-chips" data-chips>
                    ${leagues.map(l => `
-                     <label class="pbw-chip" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}">
-                       <input type="checkbox" data-lg value="${esc(l.code)}" checked>
+                     <label class="pbw-chip ${l.disabled ? 'pbw-chip-off' : ''}" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}"${l.why ? ` title="${esc(l.why)}"` : ''}>
+                       <input type="checkbox" data-lg value="${esc(l.code)}"${l.disabled ? ' disabled' : ' checked'}>
                        <span class="pbw-tick" aria-hidden="true"></span>
                        <span>${esc(l.label)}</span>
-                       <span class="pbw-n" data-n></span>
+                       <span class="pbw-n" data-n>${l.note ? esc(l.note) : ""}</span>
                      </label>`).join('')}
                    <span class="pbw-break" data-break hidden></span>
                    <span class="pbw-offlabel" data-offlabel hidden>Nothing to price:</span>
@@ -3318,13 +3462,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               const n = Number(counts[b.value] || 0);
               const chip = b.closest('[data-chip]');
               const noFeed = chip && chip.dataset.feed === '0';
-              // A league with nothing to price is unticked as well as disabled: leaving it ticked
-              // would draw a check beside a league this run cannot touch. Coming back into range
-              // re-ticks it, so it rejoins the all-leagues default rather than staying silently
-              // out — while a league the operator unticked themselves keeps that choice.
-              if(!n) b.checked = false;
-              else if(b.disabled) b.checked = true;
-              b.disabled = !n;
+              // SHOWN, NOT FORBIDDEN. These used to be disabled at zero, which made the dialog
+              // predict what the server would say — and a greyed chip cannot be tried, so a wrong
+              // prediction never gets corrected. It was wrong once already: the rescan refused
+              // every ESPN league on a stale note about the network, and ESPN answers fine.
+              //
+              // The count is the information; picking a league with 0 in this window simply
+              // prices nothing from it, which the quote and the result both say plainly
+              // (Vhea, 2026-09-09).
+              b.disabled = false;
+              // Still unticked by default at zero, so "all leagues" does not quietly mean
+              // "including four that cannot contribute" — ticking it back is one click.
+              if(!n && !b.dataset.touched) b.checked = false;
               if(chip){
                 chip.classList.toggle('pbw-chip-off', !n);
                 chip.title = n ? ''
@@ -3349,8 +3498,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // the days box, and reshuffling a row under the cursor on each one would be its own
             // kind of broken.
             if(chipBox){
-              const live = boxes.filter(b => !b.disabled).map(b => b.closest('[data-chip]'));
-              const dead = boxes.filter(b =>  b.disabled).map(b => b.closest('[data-chip]'));
+              // Grouped on whether the league has anything in this window, not on whether the box
+              // is disabled — nothing is disabled any more, so that test grouped everything as
+              // live and the ordering silently stopped happening.
+              const off = b => { const c = b.closest('[data-chip]'); return c && c.classList.contains('pbw-chip-off'); };
+              const live = boxes.filter(b => !off(b)).map(b => b.closest('[data-chip]'));
+              const dead = boxes.filter(b =>  off(b)).map(b => b.closest('[data-chip]'));
               const want = [...live, breakEl, offLabel, ...dead].filter(Boolean);
               const have = [...chipBox.children];
               if(want.length !== have.length || want.some((el, i) => el !== have[i])){
@@ -3398,6 +3551,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             okBtn.disabled = false;
           }
           async function requote(){
+            // Without an estimate there is no server to ask; the only thing that changes with a
+            // tick is whether OK is allowed at all.
+            if(!estimate){
+              const ok = boxes.length ? active().some(b => b.checked) : true;
+              okBtn.disabled = !ok;
+              quote.textContent = ok ? (note || '') : 'No leagues selected — pick at least one.';
+              return;
+            }
             const n = read(), lgs = readLeagues(), mine = ++seq;
             okBtn.disabled = true;
             // Nothing ticked prices nothing, and asking the server to confirm that costs a round
@@ -3418,17 +3579,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // Ticking a box changes what is about to be bought, so the quote has to follow it. No
           // debounce: it is one deliberate click, not a value being typed a digit at a time.
           // A disabled input fires no change event, so this only ever runs for a selectable one.
-          boxes.forEach(b => b.addEventListener('change', () => { clearTimeout(timer); paintCount(); requote(); }));
-          const setAll = on => { active().forEach(b => { b.checked = on; }); clearTimeout(timer); paintCount(); requote(); };
+          boxes.forEach(b => b.addEventListener('change', () => {
+            // Marks the box as deliberately set, so a later repaint does not un-tick a league the
+            // operator chose despite it having nothing in the current window.
+            b.dataset.touched = '1';
+            clearTimeout(timer); paintCount(); requote();
+          }));
+          const setAll = on => { active().forEach(b => { b.checked = on; b.dataset.touched = '1'; }); clearTimeout(timer); paintCount(); requote(); };
           allBtn?.addEventListener('click', () => setAll(true));
           noneBtn?.addEventListener('click', () => setAll(false));
           // Paint from the quote already in hand rather than opening on "Checking…" — the caller
           // has just asked the server this exact question to decide whether to show the dialog
           // at all.
+          paintCount();
+          if(!estimate){
+            // Nothing to quote. The static note takes the quote line's place so the space does
+            // not read as a figure that failed to load.
+            quote.textContent = note || '';
+            okBtn.textContent = okText;
+            okBtn.disabled = boxes.length ? !active().some(b => b.checked) : false;
+          }
           // Only reusable while the dialog still describes the same request the caller quoted:
           // same window AND every league, which is how it opens.
-          paintCount();
-          if(initial && Number(initial.window_days) === read() && !readLeagues()) { seq++; paintQuote(initial); }
+          else if(initial && Number(initial.window_days) === read() && !readLeagues()) { seq++; paintQuote(initial); }
           else requote();
 
           const done = v => { clearTimeout(timer); ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
@@ -4139,6 +4312,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // rather than an option that cannot send.
       let SALESMSG_SENDERS = [];
       let QUEUE = [], NUMBERS = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
+      // WHAT IS TICKED, BY ID — not by index, so it survives a re-render, a sort and a page
+      // turn. It is pruned to the FILTERED set on every render (see below): the filters define
+      // the working set, the pager is only a window onto it, so selecting on page 1 and acting
+      // from page 2 is fine while selecting and then filtering away is not.
+      const picked = new Set();
+      // The last filtered and last paged row sets, kept so ticking a box can update the bar
+      // and the header checkbox without a full re-render — which would blow away focus and
+      // scroll position on every click.
+      let lastRows = [], lastPaged = [];
       // "Send now" kill switch — OFF as of 2026-08-27, at the operator's request.
       //
       // It was set on 2026-08-12 as a demo guard: test mode had just been turned off so the UI
@@ -4426,6 +4608,220 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<button class="btn btn-xs btn-outline justify-start" disabled title="${esc(why)}">Snooze</button>`;
       }
 
+      // ---- BULK ACTIONS ---------------------------------------------------------------------
+      //
+      // A selection is almost never uniform: it will hold a sent row, a rejected one and four
+      // pending ones, because it was made by ticking a day band. So every action states how many
+      // of the selection it can actually touch ("Confirm 4 of 6") and is disabled at zero, rather
+      // than running and reporting five failures afterwards.
+      const bDone     = r => r.status === "sent" || r.status === "partial" || r.status === "sending";
+      const bRejected = r => r.status === "rejected";
+      const bArchived = r => !!r.archived_at;
+      const bLive     = r => !bDone(r) && !bRejected(r) && !bArchived(r);
+
+      // SEND NOW IS DELIBERATELY ABSENT. Every action here is reversible or refusable; a send is
+      // neither, and /api/queue-tick takes one id per call with an unauthenticated browser path
+      // that is open only while TEST MODE is on — so a bulk send would be N unauthenticated POSTs
+      // that each put real mail on the wire. It belongs behind a server-side credential, not
+      // behind a checkbox.
+      const BULK = [
+        { key: "confirm", label: "Confirm", cls: "btn-outline btn-success", past: "Confirmed",
+          // Already-confirmed rows are excluded so the count means something. Re-confirming is
+          // harmless, but "Confirm 6 of 6" on a selection that is already approved is a lie.
+          can: r => bLive(r) && r.status !== "confirmed",
+          none: "Nothing selected is waiting for approval.",
+          ask: async rows => askConfirm({
+            title: "Confirm " + rows.length + " blast" + (rows.length === 1 ? "" : "s") + "?",
+            body: "Approval does not change any send time — each blast still goes at its own slot.\n\nNothing is sent now.",
+            okText: "Confirm all",
+          }),
+          run: r => sb.rpc("queue_confirm", { p_id: r.id }) },
+
+        { key: "snooze", label: "Snooze", cls: "btn-outline", past: "Snoozed",
+          can: r => bLive(r) && canSnooze(r),
+          none: "Nothing selected can be snoozed — every one of these games happens before the shortest snooze lands.",
+          // ONE CHOICE FOR THE WHOLE SET, with the cost of each option shown. Per row, the modal
+          // flags an option that would land after that game; across a set the equivalent fact is
+          // HOW MANY would, so each option carries its own count.
+          ask: async rows => {
+            const opts = SNOOZE_DAYS.map(days => {
+              const at = new Date(Date.now() + days * 864e5);
+              const bad = rows.filter(r => snoozeOvershoots(r, days)).length;
+              return {
+                value: String(days),
+                selected: days === 7,
+                label: days + " day" + (days === 1 ? "" : "s") + " &mdash; until " + esc(etDate(at, { weekday: "short", month: "short", day: "numeric" }))
+                  + (bad ? " <span class=" + JSON.stringify("text-[#c94d07] font-semibold") + ">&#9888; " + bad + " land" + (bad === 1 ? "s" : "") + " after its game</span>" : ""),
+              };
+            });
+            const days = await askChoose({
+              title: "Snooze " + rows.length + " blast" + (rows.length === 1 ? "" : "s"),
+              body: "They stay in the queue and keep their markets held — only the send dates move, all by the same amount.",
+              options: opts, okText: "Snooze",
+            });
+            return days ? Number(days) : null;
+          },
+          run: (r, days) => sb.rpc("queue_snooze", { p_id: r.id, p_days: days }) },
+
+        { key: "reject", label: "Reject", cls: "btn-outline btn-error", past: "Rejected",
+          can: r => bLive(r),
+          none: "Nothing selected is still in the working queue.",
+          // ONE reason for the set. That is honest for the case this exists to serve — refusing a
+          // whole day for one reason — and the note is what the decider reads back, so a blank
+          // one wastes the signal. Per-row reasons stay available in the row menu.
+          ask: async rows => {
+            const ans = await askNote({
+              title: "Reject " + rows.length + " blast" + (rows.length === 1 ? "" : "s") + "?",
+              body: "They leave the queue and free their slots. The decider will not suggest these games, for these segments, again for 21 days.\n\n"
+                + "The reason is written to every one of them — write one that is true of all " + rows.length + ".\n\nNothing has been sent. Restore puts them back.",
+              placeholder: "Why not these? e.g. \"priced too high this week\", \"already blasted this market\"",
+              okText: "Reject all", danger: true,
+            });
+            return ans ? ans.note : null;
+          },
+          run: (r, note) => sb.rpc("queue_reject", { p_id: r.id, p_note: note }) },
+
+        { key: "archive", label: "Archive", cls: "btn-outline", past: "Archived",
+          // Sent rows only, matching the row menu: archiving is how a finished blast leaves the
+          // working queue without losing its send record.
+          can: r => bDone(r) && !bArchived(r),
+          none: "Nothing selected has been sent — archive is for blasts that are done.",
+          ask: async rows => askConfirm({
+            title: "Archive " + rows.length + " blast" + (rows.length === 1 ? "" : "s") + "?",
+            body: "They leave the queue but their send records are kept — find them again under the \"Archived\" status filter, and Restore puts them back.",
+            okText: "Archive all",
+          }),
+          run: r => sb.rpc("queue_archive", { p_id: r.id }) },
+
+        { key: "restore", label: "Restore", cls: "btn-outline", past: "Restored",
+          can: r => bArchived(r) || bRejected(r),
+          none: "Nothing selected is archived or rejected.",
+          ask: async rows => askConfirm({
+            title: "Restore " + rows.length + " blast" + (rows.length === 1 ? "" : "s") + "?",
+            body: "They go back in the working queue. For rejected blasts the 21-day suppression is cleared and the reason you wrote is discarded — the decider may suggest those games again.",
+            okText: "Restore all",
+          }),
+          // Rejected is tested first, matching the row menu: a row can carry both flags and
+          // "rejected" is the one that is actively suppressing something.
+          run: r => bRejected(r) ? sb.rpc("queue_unreject", { p_id: r.id }) : sb.rpc("queue_unarchive", { p_id: r.id }) },
+
+        { key: "delete", label: "Delete", cls: "btn-ghost text-base-content/50", past: "Deleted",
+          can: r => bLive(r),
+          none: "Nothing selected can be deleted — sent blasts are kept for good.",
+          ask: async rows => {
+            const ans = await askNote({
+              title: "Delete " + rows.length + " blast" + (rows.length === 1 ? "" : "s") + "?",
+              body: "They are removed for good. Their slots open up and their markets can be picked again on the next run — including these same games, because deleting does not suppress them. Use Reject for that.\n\nNothing has been sent, so no history is lost.",
+              placeholder: "Optional — e.g. \"queued by mistake\", \"test rows\"",
+              okText: "Delete all", danger: true,
+            });
+            return ans ? ans.note : null;
+          },
+          run: (r, note) => sb.rpc("queue_delete", { p_id: r.id, p_note: note }) },
+      ];
+
+      // The bar, the header checkbox and the menu all say the same thing, so they are painted
+      // together from one place — called after a render and after every tick.
+      function paintBulk(){
+        const bar = el("q-bulk"); if(!bar) return;
+        const n = picked.size;
+        bar.classList.toggle("hidden", n === 0);
+        bar.classList.toggle("flex",   n > 0);
+        const nEl = el("q-bulk-n"); if(nEl) nEl.textContent = n;
+
+        // Header checkbox: checked when every row ON THIS PAGE is picked, indeterminate when some
+        // are. Indeterminate matters — without it a part-selected page shows an empty box, which
+        // reads as "nothing here is selected" and invites a click that clears the lot.
+        const box = el("q-all");
+        if(box){
+          const ids = lastPaged.map(r => r.id);
+          const on  = ids.filter(id => picked.has(id)).length;
+          box.checked = ids.length > 0 && on === ids.length;
+          box.indeterminate = on > 0 && on < ids.length;
+        }
+
+        // A selection that reaches past the current page has to say so, or acting on it looks
+        // like it did more than you asked.
+        const pageIds = new Set(lastPaged.map(r => r.id));
+        const offPage = [...picked].filter(id => !pageIds.has(id)).length;
+        const offEl = el("q-bulk-off");
+        if(offEl) offEl.textContent = offPage ? "\u00b7 " + offPage + " on other pages" : "";
+
+        // Extending to the whole filtered set is an explicit, counted offer rather than something
+        // the header checkbox does behind your back.
+        const all = el("q-bulk-all");
+        if(all){
+          const rest = lastRows.length - picked.size;
+          const show = n > 0 && rest > 0 && lastRows.length > lastPaged.length;
+          all.classList.toggle("hidden", !show);
+          if(show) all.textContent = "Select all " + lastRows.length + " that match these filters";
+        }
+      }
+
+      function bulkMenuHtml(){
+        const sel = QUEUE.filter(r => picked.has(r.id));
+        return BULK.map(a => {
+          const n = sel.filter(a.can).length;
+          // The count is shown only when it disagrees with the selection size — "Confirm 6 of 6"
+          // is noise, "Confirm 4 of 6" is the whole point.
+          const of = (n && n < sel.length) ? " <span class=" + JSON.stringify("opacity-60 font-normal") + ">" + n + " of " + sel.length + "</span>" : "";
+          return "<button class=" + JSON.stringify("btn btn-xs " + a.cls + " justify-start") + " data-bulk=" + JSON.stringify(a.key)
+            + (n ? "" : " disabled") + " title=" + JSON.stringify(n ? "" : a.none) + ">" + a.label + of + "</button>";
+        }).join("");
+      }
+
+      // Applied ONE AT A TIME, not fanned out. Each of these is an RPC against the same table and
+      // the interesting outcome is per row — a parallel burst would make a partial failure hard to
+      // attribute and give the operator no honest progress to watch. A row that fails stays ticked
+      // so it can be retried without rebuilding the selection.
+      async function runBulk(act){
+        const chosen = QUEUE.filter(r => picked.has(r.id));
+        const rows = chosen.filter(act.can);
+        if(!rows.length) return;
+        const skipped = chosen.length - rows.length;
+
+        const ctx = await act.ask(rows);
+        // askConfirm resolves false, askNote/askChoose resolve null. A note may legitimately be an
+        // empty string, so only an outright cancel stops here.
+        if(ctx === false || ctx === null || ctx === undefined) return;
+
+        const btn = el("q-bulk-menu");
+        const orig = btn ? btn.innerHTML : "";
+        if(btn) btn.disabled = true;
+        closeActionMenus();
+
+        const failed = [];
+        let done = 0;
+        for(let i = 0; i < rows.length; i++){
+          const r = rows[i];
+          if(btn) btn.innerHTML = "<span class=" + JSON.stringify("loading loading-spinner loading-xs") + "></span> " + (i + 1) + " of " + rows.length;
+          try {
+            const d = await act.run(r, ctx);
+            if(d && d.error) throw new Error(d.error.message);
+            done++;
+            picked.delete(r.id);
+            expanded.delete(r.id);
+          } catch(e){
+            failed.push(blastTitle(r) + " \u2014 " + String((e && e.message) || e));
+          }
+        }
+        if(btn){ btn.disabled = false; btn.innerHTML = orig; }
+
+        toast({
+          type: failed.length ? (done ? "info" : "err") : "ok",
+          title: failed.length
+            ? act.past + " " + done + " of " + rows.length + " \u2014 " + failed.length + " failed"
+            : act.past + " " + done + " blast" + (done === 1 ? "" : "s"),
+          lines: [
+            skipped ? skipped + " of the " + chosen.length + " selected could not be, and " + (skipped === 1 ? "was" : "were") + " left untouched." : "",
+            ...failed.slice(0, 6),
+            failed.length > 6 ? "\u2026and " + (failed.length - 6) + " more" : "",
+            failed.length ? "The ones that failed are still selected." : "",
+          ].filter(Boolean),
+        });
+        await refresh();
+      }
+
       function actionsMenu(r, { sent, rejected, archived }){
         const items = [
           (sent||rejected) ? '' : `
@@ -4557,8 +4953,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // shoving the pager up the page when the real rows land.
       function loadingRows(){
         const skeleton = Array.from({length:6}, () =>
-          '<tr class="border-0"><td colspan="10" class="py-2"><div class="skeleton h-6 w-full"></div></td></tr>').join('');
-        return `<tr class="border-0"><td colspan="10" class="pt-6 pb-3">
+          '<tr class="border-0"><td colspan="9" class="py-2"><div class="skeleton h-6 w-full"></div></td></tr>').join('');
+        return `<tr class="border-0"><td colspan="9" class="pt-6 pb-3">
             <progress class="progress progress-primary w-full"></progress>
             <div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div>
           </td></tr>${skeleton}`;
@@ -4567,12 +4963,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function render(){
         const tb = el('q-rows');
         // Ahead of paintStatusCounts(): counts off an unloaded QUEUE would all read (0).
-        if(!LOADED){ tb.innerHTML = loadingRows(); return; }
+        if(!LOADED){ tb.innerHTML = loadingRows(); lastRows = lastPaged = []; paintBulk(); return; }
         // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
         // keeps advertising counts from the last load.
         paintStatusCounts();
-        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; return; }
+        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="9" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
         const rows = visibleRows();
+        // PRUNE TO WHAT THE FILTERS LEAVE. Without this you could tick six rows, change the
+        // status filter, and then apply an action to rows that are no longer on screen — the
+        // classic way a bulk control does something nobody asked for.
+        if(picked.size){
+          const live = new Set(rows.map(r => r.id));
+          [...picked].forEach(id => { if(!live.has(id)) picked.delete(id); });
+        }
         // Same affordance as the sortable columns on Campaigns and Ticket Prices.
         const sh = el('q-sort-sched');
         if(sh){
@@ -4590,6 +4993,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(page > pages) page = pages;
         const start = (page - 1) * size;
         const paged = rows.slice(start, start + size);
+        lastRows = rows; lastPaged = paged;
         const rng = el('q-range');
         if(rng) rng.textContent = rows.length
           ? `${start + 1}–${Math.min(start + size, rows.length)} of ${rows.length}${pageSize > 0 ? ` · page ${page} of ${pages}` : ''}`
@@ -4606,8 +5010,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : 'No blasts match these filters.';
           const clear = (dateFrom || dateTo)
             ? ' <button data-dateclear class="link link-primary">Clear the date filter</button>' : '';
-          tb.innerHTML = `<tr><td colspan="10" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
+          tb.innerHTML = `<tr><td colspan="9" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
           tb.querySelector('[data-dateclear]')?.addEventListener('click', clearDateFilter);
+          lastRows = lastPaged = []; paintBulk();
           return;
         }
         // Multi-day view: the queue now spans several send days, so rows are banded by the
@@ -4633,7 +5038,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // rendering. That is what makes the headers respect the active filter for free.
             const n = rows.filter(x => sendYmd(x.scheduled_for) === day).length;
             const isOnly = dateFrom === day && dateTo === day;
-            dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
+            // A checkbox on the band itself, because "approve everything going out Thursday" is
+            // the actual reason this table is banded by day — and it is far more discoverable
+            // than the shift-click convention that would otherwise cover the same case. It picks
+            // the rows of that day ON THIS PAGE, matching the header checkbox rather than
+            // quietly reaching across the pager.
+            const dayIds = paged.filter(x => sendYmd(x.scheduled_for) === day).map(x => x.id);
+            const dayOn  = dayIds.length > 0 && dayIds.every(id => picked.has(id));
+            dayHead = `<tr class="bg-base-200/70"><td colspan="9" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
+              <input type="checkbox" class="checkbox checkbox-xs align-middle mr-2" data-pickday="${esc(day)}" ${dayOn ? 'checked' : ''} title="Select every blast on this page going out on this day" aria-label="Select this day">
               <button data-dayjump="${esc(day)}" class="hover:underline decoration-dotted underline-offset-2 uppercase tracking-wide" title="${isOnly ? 'Showing this day only — click to clear the date filter' : 'Show only this day'}">${esc(sendDateShort(r.scheduled_for))}</button>
               <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span>${isOnly?' <span class="badge badge-xs badge-ghost font-normal normal-case">only this day</span>':''}</td></tr>`;
           }
@@ -4696,8 +5109,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                </div>`
             : '<span class="text-base-content/40">—</span>';
           const blockedRow = sendBlocked(r);
-          const main = `<tr class="camp-row">
-            <td><button class="btn btn-ghost btn-xs" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button></td>
+          const isPicked = picked.has(r.id);
+          const main = `<tr class="camp-row${isPicked ? ' q-picked' : ''}">
+            <td class="col-tight"><div class="flex items-center gap-0.5">
+              <input type="checkbox" class="checkbox checkbox-xs" data-pick="${esc(r.id)}" ${isPicked ? 'checked' : ''} aria-label="Select this blast">
+              <button class="btn btn-ghost btn-xs px-1" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button>
+            </div></td>
             <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
@@ -4705,8 +5122,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${blockedRow ? blockedReachCell(r.email, reachOf(r,'email')) : reachCell(r.email, reachOf(r,'email'))}</td>
             <td>${blockedRow ? blockedReachCell(r.sms, reachOf(r,'sms')) : reachCell(r.sms, reachOf(r,'sms'))}</td>
             <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toEtInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''} title="US Eastern"></td>
-            <td class="whitespace-nowrap">${statusCell(r)}${cooldownNote(r)}</td>
-            <td class="whitespace-nowrap">${actionsMenu(r, { sent, rejected, archived })}</td>
+            <td class="whitespace-nowrap"><div class="flex items-center gap-2">${statusCell(r)}${actionsMenu(r, { sent, rejected, archived })}</div>${cooldownNote(r)}</td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
           // bubble directly, so the row costs one block per channel instead of a textarea
@@ -4752,13 +5168,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>`
               : offNote('SMS')}
           </section>`;
-          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="8" class="py-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${emailPanel}${smsPanel}</div>
-            ${sent?'':`<div class="mt-2 flex items-center gap-2 flex-wrap"><button class="btn btn-xs btn-primary" data-savecopy="${esc(r.id)}">Save copy</button> <span class="text-xs text-base-content/50" data-copystatus="${esc(r.id)}"></span><span class="text-xs text-base-content/40 ml-auto">Click the subject, the body or the bubble to edit.</span></div>`}
+            <!-- ONE BUTTON PER CHANNEL, AND ONLY WHEN THERE IS SOMETHING TO SAVE.
+
+                 A single "Save copy" wrote both channels at once, so fixing a typo in the SMS
+                 also rewrote the email — and it sat there permanently enabled, which after a
+                 save looked like the save had not taken. Each button now appears only while its
+                 own channel differs from what is stored, and disappears again when it matches:
+                 present means unsaved, absent means saved, with nothing to interpret. -->
+            ${sent?'':`<div class="mt-2 flex items-center gap-2 flex-wrap">
+                 <button class="btn btn-xs btn-primary hidden" data-saveemail="${esc(r.id)}">Save email</button>
+                 <button class="btn btn-xs btn-primary hidden" data-savesms="${esc(r.id)}">Save SMS</button>
+                 <span class="text-xs text-base-content/50" data-copystatus="${esc(r.id)}"></span>
+                 <span class="text-xs text-base-content/40 ml-auto">Click the subject, the body or the bubble to edit.</span>
+               </div>`}
           </td></tr>`;
           return dayHead + main + detail;
         }).join('');
         wire();
+        paintBulk();
       }
 
       // Close every open action menu. Called before opening another, on outside click, on
@@ -4767,10 +5196,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function closeActionMenus(except){
         document.querySelectorAll('.q-menu:not(.hidden)').forEach(m => { if(m !== except) m.classList.add('hidden'); });
       }
-      document.addEventListener('click', e => { if(!e.target.closest('[data-qmenu]') && !e.target.closest('.q-menu')) closeActionMenus(); });
+      document.addEventListener('click', e => { if(!e.target.closest('[data-qmenu]') && !e.target.closest('[data-bulkmenu]') && !e.target.closest('.q-menu')) closeActionMenus(); });
       document.addEventListener('keydown', e => { if(e.key === 'Escape') closeActionMenus(); });
       // Capture phase: the scroll happens on the table's own overflow box, which does not bubble.
       document.addEventListener('scroll', () => closeActionMenus(), true);
+
+      // Kept in step after a single-row tick: a band that stays ticked while one of its rows is
+      // not is a claim the selection does not support.
+      function syncDayBoxes(){
+        const tb = el('q-rows'); if(!tb) return;
+        tb.querySelectorAll('[data-pickday]').forEach(cb => {
+          const ids = lastPaged.filter(x => sendYmd(x.scheduled_for) === cb.dataset.pickday).map(x => x.id);
+          const on = ids.filter(id => picked.has(id)).length;
+          cb.checked = ids.length > 0 && on === ids.length;
+          cb.indeterminate = on > 0 && on < ids.length;
+        });
+      }
 
       function wire(){
         const tb = el('q-rows');
@@ -4794,6 +5235,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         tb.querySelectorAll('[data-dayjump]').forEach(b=>b.addEventListener('click', e => {
           e.stopPropagation();
           window.__queueFilterDay(b.dataset.dayjump);
+        }));
+        // TICKING DOES NOT RE-RENDER. render() rebuilds the whole tbody, which would drop focus,
+        // reset the scroll box and make ticking ten rows feel like ten page loads. The three
+        // things a tick changes — the row tint, the bar, the header box — are updated directly.
+        tb.querySelectorAll('[data-pick]').forEach(cb => cb.addEventListener('change', () => {
+          const id = cb.dataset.pick;
+          if(cb.checked) picked.add(id); else picked.delete(id);
+          cb.closest('tr')?.classList.toggle('q-picked', cb.checked);
+          syncDayBoxes();
+          paintBulk();
+        }));
+        tb.querySelectorAll('[data-pickday]').forEach(cb => cb.addEventListener('change', () => {
+          const day = cb.dataset.pickday, on = cb.checked;
+          lastPaged.filter(x => sendYmd(x.scheduled_for) === day).forEach(x => {
+            if(on) picked.add(x.id); else picked.delete(x.id);
+            const box = tb.querySelector(`[data-pick="${CSS.escape(x.id)}"]`);
+            if(box){ box.checked = on; box.closest('tr')?.classList.toggle('q-picked', on); }
+          });
+          paintBulk();
         }));
         tb.querySelectorAll('[data-toggle]').forEach(b=>b.addEventListener('click',()=>{
           const id = b.dataset.toggle, opening = !expanded.has(id);
@@ -4958,36 +5418,82 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             document.execCommand('insertText', false, text);
           }));
         }
-        tb.querySelectorAll('[data-savecopy]').forEach(b=>b.addEventListener('click', async ()=>{
-          const id=b.dataset.savecopy, em=tb.querySelector(`[data-copy-email="${id}"]`), sm=tb.querySelector(`[data-copy-sms="${id}"]`), st=tb.querySelector(`[data-copystatus="${id}"]`);
+        // WHAT COUNTS AS AN EDIT: the editor differing from the row we last stored, not merely
+        // "the field was typed in". Typing a character and deleting it again leaves nothing to
+        // save, and offering a button for it is the same lie as leaving one up after a save.
+        const storedSubject = row => String((row && (row.email_subject || row.title)) || '(no subject)');
+        const tidy = t => String(t == null ? '' : t).replace(/\s+/g, ' ').trim();
+
+        function copyState(id){
+          const row = QUEUE.find(x => x.id === id) || {};
+          const em  = tb.querySelector(`[data-copy-email="${id}"]`);
+          const sm  = tb.querySelector(`[data-copy-sms="${id}"]`);
           const sub = tb.querySelector(`[data-subject="${id}"]`);
-          const emailCopy = readCopy(em), smsCopy = readCopy(sm);
-          b.disabled=true; if(st) st.textContent='Saving…';
-          const res = await sb.rpc('queue_set_copy',{p_id:id, p_email: emailCopy, p_sms: smsCopy});
-          if(res.error){ if(st) st.textContent = 'Save failed'; toast({ type:'err', title:'Could not save the copy', lines:[ res.error.message ] }); }
-          else {
-            // Subject is a separate RPC (migration 044) because queue_set_copy already had
-            // callers and widening its signature would break them mid-deploy. Saved on the
-            // same button so there is one Save for the whole email, not two.
-            const row = QUEUE.find(x => x.id === id);
-            let subjErr = null;
-            if(sub){
-              const subject = readCopy(sub).replace(/\s+/g,' ').trim();
-              // The editor shows `title` as a stand-in when no subject is stored; saving that
-              // back would bake queue bookkeeping in as a real subject line.
-              if(subject && subject !== '(no subject)' && subject !== (row && row.title)){
-                const sres = await sb.rpc('queue_set_email_subject',{p_id:id, p_subject: subject});
-                if(sres.error) subjErr = sres.error.message; else if(row) row.email_subject = subject;
-              }
-            }
-            // Keep the in-memory row in step so a re-render (filter, pager, refresh) shows the
-            // saved copy rather than reverting the editor to what was last fetched.
-            if(row){ if(em) row.email_copy = emailCopy; if(sm) row.sms_copy = smsCopy; }
-            if(subjErr){ if(st) st.textContent='Copy saved, subject failed'; toast({ type:'err', title:'Could not save the subject', lines:[ subjErr ] }); }
-            else if(st) st.textContent='Saved';
+          const emailDirty = (!!em  && readCopy(em) !== (row.email_copy || ''))
+                          || (!!sub && tidy(readCopy(sub)) !== tidy(storedSubject(row)));
+          const smsDirty   = !!sm && readCopy(sm) !== (row.sms_copy || '');
+          return { row, em, sm, sub, emailDirty, smsDirty };
+        }
+
+        function paintSave(id){
+          const { emailDirty, smsDirty } = copyState(id);
+          const be = tb.querySelector(`[data-saveemail="${id}"]`);
+          const bs = tb.querySelector(`[data-savesms="${id}"]`);
+          if(be) be.classList.toggle('hidden', !emailDirty);
+          if(bs) bs.classList.toggle('hidden', !smsDirty);
+          // A stale "Saved" beside a field being edited again is worse than no message at all.
+          const st = tb.querySelector(`[data-copystatus="${id}"]`);
+          if(st && (emailDirty || smsDirty)) st.textContent = '';
+        }
+
+        tb.querySelectorAll('[data-copy-email],[data-copy-sms],[data-subject]').forEach(node => {
+          const id = node.dataset.copyEmail || node.dataset.copySms || node.dataset.subject;
+          if(id) node.addEventListener('input', () => paintSave(id));
+        });
+
+        // Each save sends the OTHER channel as it is already stored, not as it is on screen —
+        // queue_set_copy writes both columns, so passing the live editor value would let
+        // "Save email" quietly commit an SMS edit the operator had not chosen to save.
+        async function saveCopy(b, id, which){
+          const st = tb.querySelector(`[data-copystatus="${id}"]`);
+          const { row, em, sm, sub } = copyState(id);
+          const emailCopy = which === 'email' ? readCopy(em) : (row.email_copy ?? null);
+          const smsCopy   = which === 'sms'   ? readCopy(sm) : (row.sms_copy   ?? null);
+          b.disabled = true; if(st) st.textContent = 'Saving…';
+          const res = await sb.rpc('queue_set_copy', { p_id:id, p_email: emailCopy, p_sms: smsCopy });
+          if(res.error){
+            if(st) st.textContent = 'Save failed';
+            toast({ type:'err', title:'Could not save the copy', lines:[ res.error.message ] });
+            b.disabled = false;
+            return;
           }
-          b.disabled=false;
-        }));
+          if(row){ if(which === 'email') row.email_copy = emailCopy; else row.sms_copy = smsCopy; }
+
+          // Subject is a separate RPC (migration 044) because queue_set_copy already had callers
+          // and widening its signature would break them mid-deploy. It rides with the email save,
+          // so there is one Save for the whole email rather than two.
+          let subjErr = null;
+          if(which === 'email' && sub){
+            const subject = tidy(readCopy(sub));
+            // The editor shows `title` as a stand-in when no subject is stored; saving that back
+            // would bake queue bookkeeping in as a real subject line.
+            if(subject && subject !== '(no subject)' && subject !== tidy(row && row.title)){
+              const sres = await sb.rpc('queue_set_email_subject', { p_id:id, p_subject: subject });
+              if(sres.error) subjErr = sres.error.message; else if(row) row.email_subject = subject;
+            }
+          }
+
+          if(subjErr){ if(st) st.textContent = 'Copy saved, subject failed'; toast({ type:'err', title:'Could not save the subject', lines:[ subjErr ] }); }
+          else if(st) st.textContent = which === 'email' ? 'Email saved' : 'SMS saved';
+          b.disabled = false;
+          // Re-reads the editors against the row we just updated, so the button hides itself.
+          paintSave(id);
+        }
+
+        tb.querySelectorAll('[data-saveemail]').forEach(b =>
+          b.addEventListener('click', () => saveCopy(b, b.dataset.saveemail, 'email')));
+        tb.querySelectorAll('[data-savesms]').forEach(b =>
+          b.addEventListener('click', () => saveCopy(b, b.dataset.savesms, 'sms')));
       }
 
       // Toast + confirm are the Campaigns tab's; if that module never ran, fall back to natives
@@ -5198,13 +5704,44 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(el('q-date-to'))   el('q-date-to').value   = ymd;
         page = 1; syncDateClear(); render();
       };
+      // ---- bulk bar, bound ONCE ---------------------------------------------------------------
+      // The bar is not rebuilt by render(), so these must not live in wire() — binding there would
+      // add a fresh listener on every render and fire the action once per render that had happened.
+      el('q-all')?.addEventListener('change', e => {
+        const on = e.target.checked;
+        lastPaged.forEach(r => { if(on) picked.add(r.id); else picked.delete(r.id); });
+        render();
+      });
+      el('q-bulk-all')?.addEventListener('click', () => { lastRows.forEach(r => picked.add(r.id)); render(); });
+      el('q-bulk-clear')?.addEventListener('click', () => { picked.clear(); render(); });
+      el('q-bulk-menu')?.addEventListener('click', e => {
+        e.stopPropagation();
+        const menu = el('q-bulk-pop'); if(!menu) return;
+        const wasOpen = !menu.classList.contains('hidden');
+        closeActionMenus();
+        if(wasOpen) return;
+        // Built at open time, not at render time: the counts on each item describe the selection
+        // as it stands right now, and the selection changes without a render.
+        menu.innerHTML = bulkMenuHtml();
+        menu.querySelectorAll('[data-bulk]').forEach(b => b.addEventListener('click', () => {
+          const act = BULK.find(a => a.key === b.dataset.bulk);
+          if(act) runBulk(act);
+        }));
+        menu.classList.remove('hidden');
+        // Same placement maths as the row menus — measured after unhiding so it has a height,
+        // flipped above the trigger when it would run off the bottom.
+        const rect = e.currentTarget.getBoundingClientRect(), mh = menu.offsetHeight, mw = menu.offsetWidth;
+        const below = window.innerHeight - rect.bottom;
+        menu.style.top  = (below < mh + 8 ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4) + 'px';
+        menu.style.left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8)) + 'px';
+      });
       el('q-pagesize')?.addEventListener('change', e => { pageSize = Number(e.target.value) || 0; page = 1; render(); });
       el('q-prev')?.addEventListener('click', () => { if(page > 1){ page--; render(); } });
       el('q-next')?.addEventListener('click', () => { page++; render(); });
 
       async function refresh(){
         const { data, error } = await sb.rpc('get_campaign_queue');
-        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="9" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         LOADED = true;
         // Make the stored sender match the one the row is shown with — for a retired value
@@ -5237,7 +5774,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         render();
       }
       async function loadQueue(){
-        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
         // Salesmsg numbers, live from the API. A failure here is NOT fatal: the dropdown falls
         // back to Telnyx only. Better a shorter list than an option that looks real and routes
@@ -5545,7 +6082,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         LOADED = false;                      // a reload is not 'loaded' while it is in flight
         syncClear();
-        tb.innerHTML = window.__tableLoading(9, 'ticket prices');
+        // THE SKELETON IS FOR AN EMPTY TABLE, NOT FOR A REFRESH. Paging events_master takes about
+        // four seconds, and blanking rows that are already on screen for the whole of it made
+        // every refresh look like a fresh page load (Vhea, 2026-09-08). Keep the current rows,
+        // dim them, and let them be replaced when the new ones arrive.
+        const firstLoad = !ROWS.length;
+        if(firstLoad) tb.innerHTML = window.__tableLoading(9, 'ticket prices');
+        else tb.style.opacity = '.45';
+        const settle = () => { tb.style.opacity = ''; };
         try {
           const rulesRes = await sb.rpc('get_decider_rules').then(r => r, function(){ return { data:null }; });
           const ruleRows = rulesRes && rulesRes.data;
@@ -5583,9 +6127,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             };
           });
           LOADED = true;
+          settle();
           buildFilters();
           render();
         } catch(err){
+          settle();
           // Log the real object too — a bare "Failed to fetch" on screen says nothing about
           // WHICH request died, and the console keeps the stack and the network entry.
           console.error('[Ticket Prices] load failed', err);
@@ -6090,11 +6636,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
       const smsCountLabel = i => `${i.chars} character${i.chars===1?'':'s'} · ${i.segments} segment${i.segments===1?'':'s'} · ${i.ucs2?'UCS-2 (70/segment)':'GSM-7 (160/segment)'}`;
 
-      let ROWS = [], filter = '', chanF = '', statusF = '', windowF = '';
+      let ROWS = [], filter = '', chanF = '', statusF = '', fromF = '', toF = '';
+
+      // Sources arrive from the database in lower case — cakemail, textable, salesmsg — which is
+      // how they are stored, not how they should be read in a filter or a chip.
+      const nice = v => { const t = String(v || ''); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; };
       // The blast whose panel is open, or null. Was a Set of expanded row ids; a panel shows one
       // thing at a time, so it is a single id now.
       let selected = null;
       let rowClickGuard = false;   // set while a row click is being handled, see the document listener
+      let panelTab = 'copy';       // copy | replies | recipients — reset when a different blast opens
+      // Per campaign, for the life of the page. Reopening a blast must not refetch.
+      const REPLY_CACHE = new Map();
+      const RECIP_CACHE = new Map();   // cid -> { contacts:[], next:cursor|null, done:bool }
       // WHEN THIS BROWSER LAST CHECKED — localStorage, not sessionStorage, and six hours, not ten
       // minutes. A sessionStorage stamp is empty in every new tab, so the throttle it was meant to
       // provide never survived a reload; six hours matches how often a check is actually useful
@@ -6125,10 +6679,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return h < 1 ? 'just now' : h < 24 ? h + 'h ago' : Math.round(h/24) + 'd ago';
         };
         const c = META.counts || {};
+        // The per-source counts moved into the Source filter, where each option now reads
+        // "Cakemail (303)". Repeating them here made a long line longer without being actionable
+        // — this line is about how CURRENT the history is, which is its own question.
         const bits = [
           `${(ROWS||[]).length.toLocaleString()} blasts`,
-          (c.cakemail != null ? `${c.cakemail} CakeMail` : null),
-          (c.blast_log ? `${c.blast_log} SMS` : null),
           META.newest_sent_at ? `newest ${fmtDate(META.newest_sent_at)}` : null,
           META.synced_at ? `synced ${ago(META.synced_at)}` : 'never synced',
           // Named for the fix each one needs. "Not bridged" has an action behind it — add a
@@ -6142,11 +6697,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // Fill a <select> with the distinct values actually present, keeping "All" at the top —
       // same helper the Campaigns tab uses.
+      // Each option carries how many rows it would leave — the same treatment the league and
+      // freshness filters got on Ticket Prices. "Cakemail (303)" answers the question the summary
+      // line used to answer, in the place where you act on it.
       function fillFilter(id, keyFn){
         const sel = el(id); if(!sel) return;
         const cur = sel.value, head = sel.options[0].outerHTML;
-        const vals = [...new Set(ROWS.map(keyFn).filter(Boolean))].sort();
-        sel.innerHTML = head + vals.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+        const all = ROWS.map(keyFn);
+        const vals = [...new Set(all.filter(Boolean))].sort();
+        const n = v => all.filter(x => x === v).length;
+        sel.innerHTML = head + vals.map(v =>
+          `<option value="${esc(v)}">${esc(nice(v))} (${n(v)})</option>`).join('');
         sel.value = vals.includes(cur) ? cur : '';
       }
 
@@ -6164,25 +6725,49 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // unsubscribes matter when reading a single blast — a 10% bounce says the list is stale,
       // not that the copy failed — but they are not what you scan a table for, and eight more
       // columns would bury the two that answer "did this work".
+      // TWO TIERS, BECAUSE THESE SIX NUMBERS ARE NOT EQUALS. Opens and clicks are what the blast
+      // achieved; bounces, unsubscribes and spam are what it cost. Rendered at one weight they
+      // read as a wall of figures and the eye has to hunt for the two that answer "did this
+      // work?" — so those get size, and the rest a quiet line underneath.
       function engStrip(r){
         const e = r.engagement || {};
         if(!e.available) return '';
-        const stat = (label, v, sub) => v == null ? '' :
-          `<div class="pr-5"><div class="text-[10px] uppercase tracking-wide text-base-content/40">${esc(label)}</div>`
-          + `<div class="font-semibold text-[#133b49]">${fmt(v)}`
-          + (sub == null ? '' : `<span class="text-[11px] font-normal text-base-content/50 ml-1">${Number(sub).toFixed(1)}%</span>`)
-          + '</div></div>';
-        const cells = [
-          stat('Delivered', e.delivered, null),
-          stat('Unique opens', e.opens, e.open_rate),
-          stat('Unique clicks', e.clicks, e.clickthru_rate),
-          stat('Bounced', e.bounces, e.bounce_rate),
-          stat('Unsubscribed', e.unsubscribes, null),
-          stat('Spam', e.spams, null),
+
+        // The headline pair, with the rate under the count: the count says how many people, the
+        // rate says whether that is good, and neither answers the other.
+        const big = (label, v, rate) => v == null ? '' :
+          `<div class="min-w-[5.5rem]">
+             <div class="text-[10px] uppercase tracking-wide text-base-content/40">${esc(label)}</div>
+             <div class="text-lg font-bold text-[#133b49] leading-tight">${fmt(v)}</div>
+             ${rate == null ? '' : `<div class="text-[11px] text-base-content/50">${Number(rate).toFixed(1)}% of delivered</div>`}
+           </div>`;
+
+        // The cost line. Amber once bounces get high enough to be about the list rather than
+        // about this send — a 10% bounce is a stale list, not a bad subject line.
+        const small = (label, v, rate, warn) => v == null ? '' :
+          `<span class="whitespace-nowrap">
+             <span class="text-base-content/40">${esc(label)}</span>
+             <span class="font-semibold ${warn ? 'text-warning' : 'text-base-content/70'} ml-1">${fmt(v)}</span>
+             ${rate == null ? '' : `<span class="text-base-content/40 ml-0.5">(${Number(rate).toFixed(1)}%)</span>`}
+           </span>`;
+
+        const head = [
+          big('Delivered', e.delivered, null),
+          big('Unique opens', e.opens, e.open_rate),
+          big('Unique clicks', e.clicks, e.clickthru_rate),
         ].filter(Boolean).join('');
-        if(!cells) return '';
-        return `<div class="prev-label mb-1">Performance</div>`
-          + `<div class="flex flex-wrap gap-y-2 mb-3">${cells}</div>`;
+
+        const foot = [
+          small('Bounced', e.bounces, e.bounce_rate, Number(e.bounce_rate) >= 5),
+          small('Unsubscribed', e.unsubscribes, null, false),
+          small('Spam', e.spams, null, Number(e.spams) > 0),
+        ].filter(Boolean).join('');
+
+        if(!head && !foot) return '';
+        return `<div class="border border-base-300 rounded-lg bg-base-200/30 px-3.5 py-2.5 mb-3">
+             ${head ? `<div class="flex flex-wrap gap-x-7 gap-y-2">${head}</div>` : ''}
+             ${foot ? `<div class="flex flex-wrap gap-x-4 text-[11px] mt-2 pt-2 border-t border-base-300/70">${foot}</div>` : ''}
+           </div>`;
       }
       function engCell(r, kind){
         const e = r.engagement || {};
@@ -6204,11 +6789,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function render(){
         const tb = el('bh-rows');
         const f = filter.trim().toLowerCase();
-        const cut = windowF ? Date.now() - Number(windowF)*86400000 : null;
+        // Compared as ET calendar dates, not instants: "sent on the 25th" has to mean the 25th in
+        // the timezone the rest of this app shows times in, or a late-evening blast falls into the
+        // next day and disappears from its own date.
+        const inRange = r => {
+          if(!fromF && !toF) return true;
+          const d = r.sent_at ? etYmd(r.sent_at) : null;
+          if(!d) return false;
+          if(fromF && d < fromF) return false;
+          if(toF && d > toF) return false;
+          return true;
+        };
         const rows = ROWS.filter(r => {
           if(chanF   && (r.channel||'')  !== chanF) return false;
           if(statusF && (r.source||'')   !== statusF) return false;
-          if(cut && !(r.sent_at && new Date(r.sent_at).getTime() >= cut)) return false;
+          if(!inRange(r)) return false;
           // Search covers the market and the copy too — "what did we send Denver" and
           // "which blasts mentioned club seats" are the questions this tab is for.
           return !f || [r.name, r.market, r.state_code, r.message].some(v => (v||'').toLowerCase().includes(f));
@@ -6243,13 +6838,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // daisyUI stylesheets happen to land in — which is why the class version was still
         // rendering dark-on-dark. An inline style has nothing to lose that race against.
         tb.innerHTML = paged.map(r=>`<tr class="camp-row${r.id===selected?' sel':''}" data-bhrow="${esc(r.id)}">
-            <td class="text-base-content/30">${r.id===selected?'&#9662;':'&#9656;'}</td>
+            <td class="bh-caret ${r.id===selected?'on':''}" aria-hidden="true">&#9656;</td>
             <td class="whitespace-nowrap">${esc(fmtDate(r.sent_at))}</td>
             <td class="font-semibold text-[#133b49]">${esc(r.name||'—')}</td>
             <td class="whitespace-nowrap">${r.market ? `<span class="font-semibold text-[#133b49]">${esc(prettyMetro(r.market))}</span>${r.state_code?` <span class="text-[10px] font-bold uppercase text-base-content/40">${esc(r.state_code)}</span>`:''}` : '<span class="text-base-content/40">—</span>'}</td>
             <td><span class="badge badge-sm ${r.channel==='Email'?'badge-info':'tb-sms badge'}"${r.channel==='Email'?' style="color:#fff"':''}>${esc(r.channel||'—')}</span></td>
             <td class="whitespace-nowrap">
-              <span class="seg tb-ph">${esc(r.source||'—')}</span>
+              <span class="seg tb-ph">${esc(nice(r.source) || '—')}</span>
               ${r.account ? `<div class="text-[10px] text-base-content/45 mt-0.5" title="CakeMail sub-account ${esc(r.account.id)}">${esc(r.account.label)}</div>` : ''}
             </td>
             <td>${fmt(r.recipients)}</td>
@@ -6263,6 +6858,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         tb.querySelectorAll('[data-bhrow]').forEach(tr => tr.addEventListener('click', () => {
           const id = tr.dataset.bhrow;
           selected = (selected === id) ? null : id;
+          panelTab = 'copy';        // a new blast opens on its copy, not on whatever tab was last used
           // render() replaces these <tr>s, so by the time the document-level close listener runs
           // its event target is detached and closest() can no longer prove the click was on a
           // row. The flag carries that fact across instead.
@@ -6275,6 +6871,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // ---- detail panel -------------------------------------------------------------
       // One blast at a time, beside the table rather than inside it.
+      // Match the Campaign Agent rail: same top, same height. The rail is lg:h-full inside
+      // <main>, so <main> is the thing to measure — hard-coding a header height would be wrong
+      // the moment the TEST MODE banner appears or the nav wraps.
+      function fitPanel(){
+        const p = el('bh-panel');
+        if(!p) return;
+        const main = document.querySelector('main');
+        if(!main) return;                       // no layout to match; the CSS fallback stands
+        const r = main.getBoundingClientRect();
+        p.style.top = Math.max(0, r.top) + 'px';
+        p.style.height = r.height + 'px';
+      }
+      // Re-measured on resize because the banner and the nav both change height with the window,
+      // and a panel left at the old offset either floats or overhangs.
+      window.addEventListener('resize', () => { if(selected) fitPanel(); });
+
       function renderPanel(){
         const p = el('bh-panel'), body = el('bh-panel-body');
         if(!p || !body) return;
@@ -6291,15 +6903,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           fmtDate(r.sent_at),
           r.market ? prettyMetro(r.market) : null,
           r.channel,
-          r.account ? r.account.label : r.source,
+          r.account ? r.account.label : nice(r.source),
         ].filter(Boolean).join(' · '));
 
         // Printed only when the row actually carries them. Most history has neither: the 140
         // seeded CakeMail rows never captured an envelope, and the Textable/Salesmsg logs have no
         // concept of one. An empty "(no subject)" label is noise in a panel you are skimming.
+        // ACCOUNT FIRST. It is the coarser fact — which CakeMail sub-account sent this — and the
+        // sender sits inside it: Josh, Jake, Will and Zay have all sent from Cole's account, so
+        // reading the sender first invites treating four senders as four sources.
         const mailHead = [
-          r.sender  ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(r.sender)}</span></div>` : '',
           r.account ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">Account</span><span class="text-[#133b49]">${esc(r.account.label)} <span class="text-base-content/40">&middot; ${esc(r.account.id)}</span></span></div>` : '',
+          r.sender  ? `<div><span class="inline-block w-16 shrink-0 text-base-content/40">From</span><span class="font-semibold text-[#133b49]">${esc(r.sender)}</span></div>` : '',
           r.subject ? `<div class="flex items-baseline"><span class="inline-block w-16 shrink-0 text-base-content/40">Subject</span><span class="font-semibold text-[#133b49] flex-1">${esc(r.subject)}</span></div>` : '',
         ].join('');
 
@@ -6317,24 +6932,46 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         // The frame is identical for both; only its contents differ.
         const inner = !r.message
-          ? '<div class="p-4 text-sm text-base-content/50">No copy was recorded for this blast.</div>'
+          ? '<div class="bh-copy-scroll p-4 text-sm text-base-content/50">No copy was recorded for this blast.</div>'
           : r.channel === 'SMS'
-            ? `<div class="p-4"><div class="sms-phone"><div class="sms-bubble">${esc(r.message)}</div></div>
+            ? `<div class="bh-copy-scroll p-4"><div class="sms-phone"><div class="sms-bubble">${esc(r.message)}</div></div>
                  <div class="text-xs text-base-content/50 mt-1.5">${esc(smsCountLabel(smsInfo(r.message)))}</div></div>`
-            : `<div class="mail-body p-4 text-sm" data-plain>${nl2br(r.message)}</div>
-               <div class="hidden" data-htmlhost></div>`;
+            : `<div class="bh-copy-scroll mail-body p-4 text-sm" data-plain>${nl2br(r.message)}</div>
+               <div class="bh-copy-fill hidden" data-htmlhost></div>`;
 
-        body.innerHTML = engStrip(r)
-          + `<div class="flex items-center gap-2 mb-1">
-               <span class="prev-label">${r.channel === 'SMS' ? 'SMS sent' : 'Copy sent'}</span>
-               <span class="ml-auto">${switcher}</span>
-             </div>`
-          + `<div class="border border-base-300 rounded-lg overflow-hidden bg-white">
-               ${mailHead ? `<div class="px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">${mailHead}</div>` : ''}
-               ${inner}
-             </div>`
-          + (r.notes ? `<div class="text-xs text-base-content/50 mt-2">${esc(r.notes)}</div>` : '');
+        // TABS, because the detail outgrew one column. Performance stays pinned above them — it
+        // is four numbers and it is what the row is judged on — while the copy, the replies and
+        // the roster each get the full remaining height instead of stacking into a long scroll.
+        const cid2 = cid;
+        const tabs = [
+          ['copy', r.channel === 'SMS' ? 'Message' : 'Copy'],
+          ...(cid2 ? [['replies', 'Replies'], ['recipients', 'Recipients']] : []),
+        ];
+        const tabBar = `<div role="tablist" class="tabs tabs-bordered">${tabs.map(([k,label]) =>
+            `<button role="tab" class="tab ${panelTab===k?'tab-active':''}" data-ptab="${k}">${label}</button>`).join('')}</div>`;
 
+        body.innerHTML = `<div class="bh-panel-fixed">
+             ${engStrip(r)}
+             ${r.notes ? `<div class="text-xs text-base-content/50 mb-2">${esc(r.notes)}</div>` : ''}
+             <div class="flex items-end gap-2 mb-1.5">
+               ${tabBar}
+               <span class="ml-auto pb-1">${panelTab === 'copy' ? switcher : ''}</span>
+             </div>
+           </div>`
+          + (panelTab === 'copy'
+              ? `<div class="bh-copy">
+                   ${mailHead ? `<div class="bh-copy-head px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">${mailHead}</div>` : ''}
+                   ${inner}
+                 </div>`
+              : '<div class="bh-copy"><div class="bh-copy-scroll p-3" data-people></div></div>');
+
+        body.querySelectorAll('[data-ptab]').forEach(b => b.addEventListener('click', () => {
+          panelTab = b.dataset.ptab; renderPanel();
+        }));
+        if(panelTab === 'replies')    loadReplies(cid2, body.querySelector('[data-people]'));
+        if(panelTab === 'recipients') loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+
+        fitPanel();
         p.classList.add('open');
         p.setAttribute('aria-hidden', 'false');
 
@@ -6374,8 +7011,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 }
                 const fr = document.createElement('iframe');
                 fr.setAttribute('sandbox', '');
-                fr.className = 'w-full border-0 bg-white';
-                fr.style.height = '520px';
                 fr.srcdoc = html;
                 host.innerHTML = ''; host.appendChild(fr);
                 host.dataset.loaded = '1';
@@ -6404,9 +7039,168 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const HTML_CACHE = new Map();
 
       const setTxt2 = (id, v) => { const e = el(id); if(e) e.textContent = v; };
+
+      const mkNote = (text) => { const s = document.createElement('span');
+        s.className = 'text-xs text-base-content/40'; s.textContent = text; return s; };
+
+      const personName = p => [p.first, p.last].filter(Boolean).join(' ') || p.email || '(unknown)';
+      const hsLink = id => `https://app.hubspot.com/contacts/4313631/record/0-1/${encodeURIComponent(id)}`;
+
+      // A reply body arrives with the whole quoted thread under it. Show what the person wrote,
+      // which is everything above the first quote marker — the rest is our own blast read back.
+      function replySnippet(text){
+        const cut = String(text || '').split(/\r?\n\s*(?:>|On .{0,80}wrote:|-----Original Message)/)[0];
+        return cut.replace(/\s+/g, ' ').trim().slice(0, 220);
+      }
+
+      async function loadReplies(cid, host){
+        if(!cid || !host) return;
+        const cached = REPLY_CACHE.get(cid);
+        const paint = d => {
+          if(!d.available){
+            // "cannot see replies" is not "no replies", and must not render as an empty list —
+            // a reader would take a blank panel as a blast nobody answered.
+            //
+            // Reads as a feature that is not here yet, rather than as a broken one. The server
+            // supplies the headline; the detail line below says why, without naming an
+            // environment variable at somebody who cannot set it.
+            host.innerHTML = `<div class="text-center text-base-content/50 py-10 px-4">
+                 <div class="text-3xl mb-2">&#128172;</div>
+                 <div class="font-semibold text-[#133b49]">${esc(d.reason || 'Coming soon')}</div>
+                 ${d.detail ? `<div class="text-sm mt-1">${esc(d.detail)}</div>` : ''}
+               </div>`;
+            return;
+          }
+          if(!d.people.length){ host.innerHTML = '<div class="text-sm text-base-content/50 p-2">No replies to this blast.</div>'; return; }
+          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2">${d.people.length} ${d.people.length===1?'person':'people'} replied &middot; ${d.messages} message${d.messages===1?'':'s'}</div>`
+            + d.people.map(p => `<div class="border-b border-base-200 py-2">
+                 <div class="flex items-baseline gap-2">
+                   <span class="font-semibold text-[#133b49]">${esc(personName(p))}</span>
+                   <span class="text-xs text-base-content/45">${esc(p.email || '')}</span>
+                   <span class="text-xs text-base-content/40 ml-auto">${p.at ? esc(fmtDate(p.at)) : ''}${p.messages>1?' &middot; '+p.messages+' msgs':''}</span>
+                 </div>
+                 ${p.text ? `<div class="text-sm text-base-content/70 mt-1">${esc(replySnippet(p.text))}</div>` : ''}
+               </div>`).join('');
+        };
+        if(cached){ paint(cached); return; }
+        host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Looking for replies…</div>';
+        try{
+          const rs = await fetch(`/api/market-history?replies=${encodeURIComponent(cid)}`, { headers: await apiHeaders() });
+          const d = await rs.json().catch(()=>({}));
+          if(!rs.ok) throw new Error(d.error || ('HTTP ' + rs.status));
+          REPLY_CACHE.set(cid, d); paint(d);
+        }catch(e){ host.innerHTML = `<div class="text-sm text-error p-2">${esc((e&&e.message)||e)}</div>`; }
+      }
+
+      async function loadRecipients(cid, host, more, row){
+        if(!cid || !host) return;
+        const st = RECIP_CACHE.get(cid) || { contacts: [], next: null, done: false, note: '' };
+        const paint = () => {
+          if(st.unavailable){ host.innerHTML = `<div class="text-sm text-base-content/60 p-2">${esc(st.unavailable)}</div>`; return; }
+          // SAY IT WITH THIS BLAST'S OWN NUMBERS. The first version explained the caveat in the
+          // abstract ("the list as it stands today, shared by every blast to this market") and
+          // had to be explained in turn. "2,684 on the list today; this blast went to 2,051" is
+          // the same fact and needs no gloss (Vhea, 2026-09-09).
+          const sent = row && row.sent_count != null ? Number(row.sent_count) : null;
+          const shown = st.contacts.length;
+          const total = st.done ? shown : null;                 // only known once fully paged
+          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2">
+                 <div><span class="font-semibold text-[#133b49]">${shown.toLocaleString()}</span> shown${st.done ? '' : ' so far'}${st.list ? ' from the &ldquo;'+esc(st.list)+'&rdquo; list' : ''}.</div>
+                 ${sent != null ? `<div class="mt-0.5">This blast went to <span class="font-semibold text-[#133b49]">${sent.toLocaleString()}</span> addresses on ${esc(fmtDate(row.sent_at))}.</div>` : ''}
+                 <div class="mt-1">Who is on the list <em>now</em> &mdash; CakeMail keeps no record of who a past send reached, and this list is reused by every blast to this market.</div>
+               </div>`
+            // A GRID, NOT A FLEX ROW. Flex let a two-word name wrap onto a second line and push
+            // the whole row out of alignment with its neighbours. Fixed tracks with truncation
+            // keep every row the same height, and the full value stays available on hover.
+            + st.contacts.map(c => `<div class="grid items-baseline gap-x-2 border-b border-base-200 py-1.5" data-crow
+                 style="grid-template-columns: minmax(0,9rem) minmax(0,1fr) auto auto">
+                 <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
+                 <span class="text-xs text-base-content/45 truncate" title="${esc(c.email || '')}">${esc(c.email || '')}</span>
+                 <span class="text-xs ${c.status && c.status !== 'active' ? 'text-warning' : 'text-base-content/40'}">${esc(c.status || '')}</span>
+                 ${c.hubspot_id
+                   ? `<a class="text-xs link" target="_blank" rel="noopener" href="${hsLink(c.hubspot_id)}">HubSpot</a>`
+                   // ABOUT HALF THE ROSTER HAS NO recordid — 15 of 30 in the sample — so half
+                   // these rows would otherwise end in nothing at all. The address is the only
+                   // thing known about them, and it is enough to find the record.
+                   : (c.email
+                       ? `<button class="btn btn-ghost btn-xs" data-hslookup="${esc(c.email)}">Find in HubSpot</button>`
+                       : '')}
+               </div>`).join('')
+            + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
+          // A page is 100 contacts from CakeMail plus a mirror lookup for the ones without an
+          // id — comfortably over a second. Without this the button just sat there and the
+          // obvious response was to press it again, which fetches the same page twice.
+          const moreBtn = host.querySelector('[data-more]');
+          moreBtn?.addEventListener('click', () => {
+            moreBtn.disabled = true;
+            moreBtn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Loading…';
+            loadRecipients(cid, host, true, row);
+          });
+
+          // Delegated, so rows added by Load more are covered without rebinding — and so a
+          // repaint cannot leave stale listeners behind.
+          host.querySelectorAll('[data-hslookup]').forEach(b => b.addEventListener('click', async () => {
+            const email = b.dataset.hslookup;
+            b.disabled = true; b.textContent = 'Looking…';
+            try{
+              const rs = await fetch(`/api/market-history?lookup=${encodeURIComponent(email)}`, { headers: await apiHeaders() });
+              const d = await rs.json().catch(()=>({}));
+              if(!rs.ok) throw new Error(d.error || ('HTTP ' + rs.status));
+              if(d.available === false){ b.replaceWith(mkNote(d.reason)); return; }
+              if(!d.found || !d.contact){
+                // Not an error: this person genuinely is not in the CRM. Say so and stop —
+                // leaving the button would invite clicking it again for the same answer.
+                b.replaceWith(mkNote(d.reason || 'Not in HubSpot'));
+                return;
+              }
+              const c = d.contact;
+              // ONLY WHAT THE ROW DOES NOT ALREADY SHOW. The name is in the first column
+              // already; repeating it beside the link read as a duplicate and pushed the row
+              // wide. The company is new information, so that stays.
+              const wrap = document.createElement('span');
+              wrap.className = 'text-xs whitespace-nowrap';
+              wrap.innerHTML = (c.company ? `<span class="text-base-content/45 mr-1.5">${esc(c.company)}</span>` : '')
+                + `<a class="link" target="_blank" rel="noopener" href="${hsLink(c.hs_object_id)}">HubSpot</a>`;
+              // Read the row BEFORE the swap: replaceWith detaches the button, and a detached
+              // node has no ancestors left to walk up to.
+              const rowEl = b.closest('[data-crow]');
+              b.replaceWith(wrap);
+              if(rowEl){
+                rowEl.classList.add('bh-found');
+                // Removed once the fade has played, so the class is not left on a row that will
+                // be re-rendered later and would flash a second time for no reason.
+                setTimeout(() => rowEl.classList.remove('bh-found'), 2700);
+              }
+            }catch(e){ b.disabled = false; b.textContent = 'Find in HubSpot'; b.title = String((e && e.message) || e); }
+          }));
+        };
+        if(st.contacts.length && !more){ paint(); return; }
+        if(!st.contacts.length) host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Loading recipients…</div>';
+        try{
+          const q = st.next && more ? '&cursor=' + encodeURIComponent(st.next) : '';
+          const rs = await fetch(`/api/market-history?recipients=${encodeURIComponent(cid)}${q}`, { headers: await apiHeaders() });
+          const d = await rs.json().catch(()=>({}));
+          if(!rs.ok) throw new Error(d.error || ('HTTP ' + rs.status));
+          if(d.available === false){ st.unavailable = d.reason; RECIP_CACHE.set(cid, st); paint(); return; }
+          st.contacts = st.contacts.concat(d.contacts || []);
+          st.next = d.next_cursor || null;
+          st.done = !d.next_cursor;
+          st.list = d.list_name || st.list;
+          RECIP_CACHE.set(cid, st); paint();
+        }catch(e){ host.innerHTML = `<div class="text-sm text-error p-2">${esc((e&&e.message)||e)}</div>`; }
+      }
       const closePanel = () => { selected = null; render(); renderPanel(); };
 
       el('bh-panel-close')?.addEventListener('click', closePanel);
+
+      // ANY click inside the panel stops here and never reaches the document closer below.
+      //
+      // Without this, clicking a tab or Load more closed the panel: those handlers rebuild the
+      // panel body, so by the time the document listener ran its event target was detached from
+      // the DOM and closest(#bh-panel) could no longer prove the click had been inside it — the
+      // same detachment that the row guard exists for (Vhea, 2026-09-08). Stopping propagation at
+      // the panel fixes the whole class of it rather than adding a guard per control.
+      el('bh-panel')?.addEventListener('click', e => e.stopPropagation());
 
       // Escape closes, and a click anywhere that is not the panel or a row closes. Registered ONCE
       // here rather than per render, or every repaint would add another listener.
@@ -6422,7 +7216,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; render(); });
       el('bh-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
       el('bh-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
-      el('bh-window')?.addEventListener('change', e => { windowF = e.target.value; page = 1; render(); });
+      // Either end alone is a valid filter — "everything since the 1st" is as common a question
+      // as a closed range.
+      const bhDates = () => { const c = el('bh-date-clear'); if(c) c.classList.toggle('hidden', !fromF && !toF); };
+      el('bh-from')?.addEventListener('change', e => { fromF = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-to')?.addEventListener('change',   e => { toF   = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-date-clear')?.addEventListener('click', () => {
+        fromF = ''; toF = '';
+        const f = el('bh-from'), t = el('bh-to');
+        if(f) f.value = ''; if(t) t.value = '';
+        page = 1; bhDates(); render();
+      });
       el('bh-pagesize')?.addEventListener('change', e => { pageSize = Number(e.target.value) || 0; page = 1; render(); });
       el('bh-prev')?.addEventListener('click', () => { if(page > 1){ page--; render(); } });
       el('bh-next')?.addEventListener('click', () => { page++; render(); });

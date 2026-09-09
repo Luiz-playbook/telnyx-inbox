@@ -25,11 +25,37 @@ const num = v => (v == null || v === '' ? null : Number(v));
 // lib/cakemail.js does, so moving a sub-account is a deployment change and not a code change.
 // An unknown id falls back to the raw number rather than being hidden: an unlabelled account is
 // something to notice, not something to swallow.
+// Make a sent email safe to LOOK at.
+//
+// sandbox="" on the iframe stops scripts, forms and top-level navigation — but it does NOT stop
+// a click navigating the iframe itself. Every blast ends in a one-click Unsubscribe, and that
+// URL unsubscribes on GET: previewing a blast in the panel could quietly opt a real contact out
+// of a real list (Vhea, 2026-09-08). Every tracked link in the body has the same shape, so a
+// stray click could also register a click against the campaign and move the numbers this tab
+// reports.
+//
+// Defanged HERE rather than in the browser, so a live href never reaches the page at all. The
+// address is kept in data-href so it is still inspectable, and the anchors keep their styling —
+// the point of the preview is to see what was sent, underlines included.
+function defangHtml(html) {
+  const inert =
+    '<style>a{pointer-events:none!important;cursor:default!important}' +
+    'form{pointer-events:none!important}</style>';
+  const body = String(html)
+    // href on anchors -> data-href. Handles quoted and bare values.
+    .replace(/(<a\b[^>]*?)\shref\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '$1 data-href=$2')
+    // and the same for a form that would post somewhere
+    .replace(/(<form\b[^>]*?)\saction\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '$1 data-action=$2')
+    // <base> would re-point every relative URL; nothing in a preview needs one
+    .replace(/<base\b[^>]*>/gi, '');
+  return inert + body;
+}
+
 function accountLabels() {
   const map = {};
   const put = (env, label) => { const id = (process.env[env] || '').trim(); if (id) map[id] = label; };
-  put('PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID', 'Cole');
-  put('PBSPORTS_CAKEMAIL_ACCOUNT_ID', 'Production');
+  put('PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Cole');
+  put('PBSPORTS_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Josh');
   put('PBTESTACCOUNT_CAKEMAIL_ACCOUNT_ID', 'Test');
   return map;
 }
@@ -42,6 +68,213 @@ export default async function handler(req, res) {
   if (!url || !key) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const h = { apikey: key, Authorization: `Bearer ${key}` };
 
+  // ?lookup=<email> — find one person in HubSpot, on demand.
+  //
+  // WHY THIS EXISTS. A CakeMail list contact carries a `recordid` that is the HubSpot contact id,
+  // and the roster links straight through to HubSpot on it. But only about half of them have one
+  // — 15 of 30 in the sample — so the other half show no link and no company, and the only thing
+  // known about them is an email address. This turns that address into the record.
+  //
+  // PROXIED, NOT CALLED FROM THE BROWSER. The n8n webhook URL would otherwise have to be
+  // published in config.js to every visitor, and it answers "is this address one of your
+  // contacts, and who are they" — which is not a question a page should be able to ask on behalf
+  // of anyone who opens it. Here it is behind the same sign-in as the rest of /api.
+  //
+  // The webhook itself checks the mirror first and only calls HubSpot on a miss, caching what it
+  // finds — so a second look at the same person costs nothing.
+  const wantLookup = String(req.query?.lookup || '').trim();
+  if (wantLookup) {
+    const hook = (process.env.HUBSPOT_CONTACT_LOOKUP_URL || '').trim();
+    if (!hook) {
+      res.status(200).json({ ok: true, available: false,
+        reason: 'Contact lookup is not configured. Set HUBSPOT_CONTACT_LOOKUP_URL on the server.' });
+      return;
+    }
+    try {
+      const hr = await fetch(hook, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          // Sent whether or not the webhook currently checks it. If the endpoint is given a
+          // secret later — and it should be, it reads out real people's details — this side
+          // already speaks it and nothing here has to change.
+          'x-inbox-secret': process.env.REPLY_SECRET || '',
+        },
+        body: JSON.stringify({ email: wantLookup }),
+      });
+      const d = await hr.json().catch(() => null);
+      if (!hr.ok) {
+        // 400 from the webhook means the address was unusable — pass that through as a real
+        // answer rather than a server error, because the caller can act on it.
+        res.status(hr.status === 400 ? 200 : 502).json({
+          ok: hr.status === 400, available: true, found: false,
+          reason: (d && (d.error || d.reason)) || `lookup failed (HTTP ${hr.status})`,
+        });
+        return;
+      }
+      res.status(200).json({ ok: true, available: true, found: !!(d && d.found),
+        source: d && d.source, contact: (d && d.contact) || null,
+        reason: d && d.reason });
+    } catch (e) {
+      res.status(502).json({ error: String((e && e.message) || e) });
+    }
+    return;
+  }
+  // ?recipients=<campaign_id>[&cursor=] — who a blast went to.
+  //
+  // ONE PAGE AT A TIME. A market list runs to a few thousand contacts (Washington State is
+  // 2,684 across 27 pages), so this is opened deliberately from the panel and paged, never
+  // loaded with the table.
+  //
+  // WHAT THIS IS, EXACTLY: the CakeMail list as it stands TODAY, not the roster at send time.
+  // We never recorded the latter. Lists are also reused — 303 campaigns share 99 lists, and the
+  // Pennsylvania list has been sent to seven times — so this is the market audience rather than
+  // this campaign than anyone else. The UI says so; the honest framing has to travel with the
+  // data, or it becomes a per-send recipient list in the reader mind.
+  const wantRecips = String(req.query?.recipients || '').trim();
+  if (wantRecips) {
+    if (!/^[0-9]+$/.test(wantRecips)) { res.status(400).json({ error: 'recipients must be a campaign id' }); return; }
+    const rows = await fetch(`${url}/rest/v1/blast_templates?select=account_id,list_id,list_name,scheduled_for&campaign_id=eq.${wantRecips}&limit=1`, { headers: h })
+      .then(r => r.ok ? r.json() : []).catch(() => []);
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) { res.status(404).json({ error: `campaign ${wantRecips} is not in blast history` }); return; }
+    if (!row.list_id) { res.status(200).json({ ok: true, available: false, reason: 'This campaign has no list recorded, so its recipients cannot be looked up.' }); return; }
+    const accountId = String(row.account_id || '');
+    if (!cakemailKey(accountId)) { res.status(502).json({ error: `no CakeMail key for account ${accountId}` }); return; }
+    try {
+      const cur = String(req.query?.cursor || '').trim();
+      const q = new URLSearchParams({ per_page: '100' });
+      if (cur) q.set('cursor', cur);
+      const j = await cakemailGet(`/lists/${row.list_id}/contacts?${q}`, { accountId });
+      const data = (j && j.data) || [];
+      const attr = (c, name) => (c.custom_attributes || []).find(a => a.name === name)?.value ?? null;
+      const contacts = data.map(c => ({
+        email: c.email || null,
+        first: attr(c, 'firstname'), last: attr(c, 'lastname'),
+        // The Playbook/HubSpot record id CakeMail carries per contact. Only about half the list
+        // has one, which is why the mirror is consulted for the rest below.
+        hubspot_id: attr(c, 'recordid'),
+        status: c.status || null,
+        bounces: c.bounces_count == null ? null : Number(c.bounces_count),
+      }));
+
+      // FILL THE GAPS FROM THE MIRROR. A contact found once through the lookup is cached in
+      // hubspot.hubspot_contacts — but the roster is rebuilt from CakeMail every time, and
+      // CakeMail still has no recordid for them. Without this, reopening the panel offered "Find
+      // in HubSpot" for somebody we had already found, forever.
+      //
+      // One batched call for the whole page rather than one per contact. Failure is not fatal:
+      // the button reappears, which is the old behaviour, not a broken screen.
+      const missing = contacts.filter(c => !c.hubspot_id && c.email).map(c => c.email);
+      if (missing.length) {
+        try {
+          const idsR = await fetch(`${url}/rest/v1/rpc/hubspot_ids_for_emails`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_emails: missing }),
+          });
+          if (idsR.ok) {
+            const pairs = await idsR.json().catch(() => []);
+            const byEmail = new Map((Array.isArray(pairs) ? pairs : []).map(p => [String(p.email || '').toLowerCase(), p.hs_object_id]));
+            for (const c of contacts) {
+              if (c.hubspot_id || !c.email) continue;
+              const id = byEmail.get(c.email.toLowerCase());
+              // `from_mirror` so the UI can tell a CakeMail-supplied id from one we resolved.
+              if (id != null) { c.hubspot_id = String(id); c.from_mirror = true; }
+            }
+          }
+        } catch { /* leave them unresolved; the Find button still works */ }
+      }
+
+      res.status(200).json({
+        ok: true, available: true,
+        list_id: String(row.list_id), list_name: row.list_name || null,
+        contacts,
+        next_cursor: (j && j.pagination && j.pagination.cursor && j.pagination.cursor.next) || null,
+      });
+    } catch (e) { res.status(502).json({ error: String((e && e.message) || e) }); }
+    return;
+  }
+
+  // ?replies=<campaign_id> — who replied to a blast.
+  //
+  // NEEDS A HUBSPOT TOKEN, WHICH THE SERVER DOES NOT HAVE YET. CakeMail exposes no reply metric
+  // of any kind (checked the whole report payload), and blasts send with no reply_to override,
+  // so replies land in Josh mailbox — which IS connected to HubSpot, 19,320 incoming emails
+  // logged. Matching them to a blast on the subject line is verified: the Atlanta blast of
+  // 2026-08-04 "tickets to see Messi & quick call" has replies logged as
+  // "Re: tickets to see Messi & quick call".
+  //
+  // Until HUBSPOT_TOKEN is set this answers available:false with the reason, rather than 500 or
+  // an empty list — "no replies" and "we cannot see replies" are different facts and the panel
+  // must not show the second as the first.
+  const wantReplies = String(req.query?.replies || '').trim();
+  if (wantReplies) {
+    if (!/^[0-9]+$/.test(wantReplies)) { res.status(400).json({ error: 'replies must be a campaign id' }); return; }
+    const token = (process.env.HUBSPOT_TOKEN || '').trim();
+    if (!token) {
+      res.status(200).json({ ok: true, available: false,
+        reason: 'Coming soon.',
+        detail: 'Replies are matched from HubSpot, which is not connected to this server yet.' });
+      return;
+    }
+    const rows = await fetch(`${url}/rest/v1/blast_templates?select=subject,scheduled_for&campaign_id=eq.${wantReplies}&limit=1`, { headers: h })
+      .then(r => r.ok ? r.json() : []).catch(() => []);
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) { res.status(404).json({ error: `campaign ${wantReplies} is not in blast history` }); return; }
+    if (!row.subject) {
+      res.status(200).json({ ok: true, available: false,
+        reason: 'No subject line was captured for this blast, and replies are matched on the subject.' });
+      return;
+    }
+    try {
+      // Replies keep arriving for weeks — the Messi blasts drew replies from 5 to 31 August — so
+      // the window is generous rather than a day or two.
+      const from = row.scheduled_for ? Date.parse(row.scheduled_for) : 0;
+      const body = {
+        filterGroups: [{ filters: [
+          { propertyName: 'hs_email_direction', operator: 'EQ', value: 'INCOMING_EMAIL' },
+          { propertyName: 'hs_email_subject', operator: 'CONTAINS_TOKEN', value: row.subject },
+          ...(from ? [{ propertyName: 'hs_timestamp', operator: 'GTE', value: String(from) }] : []),
+        ] }],
+        properties: ['hs_email_subject', 'hs_email_from_email', 'hs_email_from_firstname',
+                     'hs_email_from_lastname', 'hs_email_text', 'hs_timestamp'],
+        sorts: [{ propertyName: 'hs_timestamp', direction: 'DESCENDING' }],
+        limit: 100,
+      };
+      const hr = await fetch('https://api.hubapi.com/crm/v3/objects/emails/search', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const hj = await hr.json().catch(() => null);
+      if (!hr.ok) { res.status(502).json({ error: `HubSpot ${hr.status}: ${(hj && hj.message) || 'search failed'}` }); return; }
+
+      // A subject match is not proof on its own: nine subjects are reused across markets, and a
+      // CONTAINS_TOKEN match is looser still. Compare the stripped subject exactly.
+      const norm = t => String(t || '').replace(/^\s*(re|fwd|fw)\s*:\s*/gi, '').replace(/^\s*\[external\]\s*/i, '').trim().toLowerCase();
+      const target = norm(row.subject);
+      const hits = ((hj && hj.results) || []).filter(e => norm(e.properties?.hs_email_subject) === target);
+
+      // ONE ROW PER PERSON, not per message. A thread runs to four or five replies from the same
+      // contact; counting messages would read as five interested people.
+      const byPerson = new Map();
+      for (const e of hits) {
+        const p = e.properties || {};
+        const key = String(p.hs_email_from_email || e.id).toLowerCase();
+        const at = p.hs_timestamp || null;
+        const prev = byPerson.get(key);
+        if (prev) { prev.messages += 1; if (at && (!prev.at || at > prev.at)) { prev.at = at; prev.text = p.hs_email_text || prev.text; prev.id = e.id; } continue; }
+        byPerson.set(key, {
+          id: e.id, email: p.hs_email_from_email || null,
+          first: p.hs_email_from_firstname || null, last: p.hs_email_from_lastname || null,
+          at, text: p.hs_email_text || null, messages: 1,
+        });
+      }
+      const people = [...byPerson.values()].sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      res.status(200).json({ ok: true, available: true, subject: row.subject, people, messages: hits.length });
+    } catch (e) { res.status(502).json({ error: String((e && e.message) || e) }); }
+    return;
+  }
   // ?html=<campaign_id> — the email exactly as it was sent, rendered.
   //
   // SERVED THROUGH HERE RATHER THAN LINKING THE HOSTED COPY. Every campaign carries a
@@ -65,7 +298,7 @@ export default async function handler(req, res) {
       const raw = await cakemailGet(`/campaigns/${wantHtml}/render-html`, { accountId, raw: true });
       const html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
       if (!html) { res.status(502).json({ error: 'CakeMail returned no rendered HTML for this campaign' }); return; }
-      res.status(200).json({ ok: true, campaign_id: wantHtml, name: row.name || null, subject: row.subject || null, html });
+      res.status(200).json({ ok: true, campaign_id: wantHtml, name: row.name || null, subject: row.subject || null, html: defangHtml(html) });
     } catch (e) {
       res.status(502).json({ error: String((e && e.message) || e) });
     }
