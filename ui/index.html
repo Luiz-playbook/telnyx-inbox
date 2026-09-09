@@ -552,6 +552,8 @@
                   <option value="has">Has ticket price</option>
                   <option value="no">No price yet</option>
                 </select>
+                <!-- Only once something is filtered, as on every other tab. -->
+                <button id="cbs-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
               </div>
             </div>
             <!-- Toolbar row 2 — the actions and the settings they read sit on one line,
@@ -825,6 +827,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <input id="q-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Scheduled to">
                   <button id="q-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
+                <!-- Only once something is filtered — see syncDateClear(). This queue carries
+                     seven filters plus a search box, so getting back to "everything" by hand is
+                     eight controls; that is the case Clear exists for. -->
+                <button id="q-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
@@ -959,6 +965,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <input id="bh-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Sent to">
                   <button id="bh-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
+                <!-- Same rule as Ticket Prices: rendered only once something is actually
+                     filtered. A permanently visible Clear on an unfiltered table is a control
+                     that does nothing, sitting next to four that do. -->
+                <button id="bh-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
               </div>
             </div>
             <div class="flex items-center gap-2 flex-wrap justify-end">
@@ -1251,6 +1261,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <span class="tooltip tooltip-bottom tooltip-wide tooltip-sm" data-tip="Re-reads what is already stored and repaints the table. Free, and instant — it looks nothing up. Use Refresh prices to go and fetch new prices.">
                   <button id="tp-reload" class="btn btn-outline btn-sm gap-1">&#8635; Reload</button>
                 </span>
+              </div>
+            </div>
+            <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
+                 They are read live from Cole Rules, so this line changes when the knobs do. -->
+            <div id="tp-thresholds" class="text-xs text-base-content/50 -mt-2"></div>
+            <!-- What the last refresh actually covered, and the two controls that act on it.
+
+                 THE BUTTONS BELONG TO THIS LINE, NOT TO THE FILTERS. Refresh prices and Sheet
+                 sat in the filter row, where every neighbour narrows what you are looking at and
+                 neither of these does — one spends money fetching new prices and the other opens
+                 the mirror. The sentence they answer to ("Last price refresh 1h ago · covered all
+                 leagues · 113 priced · $0.40") was directly underneath them, reading as caption
+                 to the table instead of as the state those buttons change.
+
+                 With per-league refreshes (AI-968) a timestamp alone is not enough: "3h ago" can
+                 mean one league was pulled and the rest are as stale as they were. -->
+            <div class="flex items-center justify-between flex-wrap gap-x-3 gap-y-2">
+              <div id="tp-lastrun" class="text-xs text-base-content/50"></div>
+              <div class="flex items-center gap-2 flex-wrap justify-end">
                 <!-- Reload re-reads what is stored; this goes and looks the prices up again, and
                      costs money. Kept visually distinct for that reason, and it carries the last
                      run's cost in its tooltip. -->
@@ -1264,13 +1293,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    title="Open the pricing sheet this table syncs to">&#128203; Sheet</a>
               </div>
             </div>
-            <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
-                 They are read live from Cole Rules, so this line changes when the knobs do. -->
-            <div id="tp-thresholds" class="text-xs text-base-content/50 -mt-2"></div>
-            <!-- What the last refresh actually covered. With per-league refreshes (AI-968) a
-                 timestamp alone is not enough: "3h ago" can mean one league was pulled and the
-                 rest are as stale as they were. -->
-            <div id="tp-lastrun" class="text-xs text-base-content/50"></div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <table class="camp-table w-full min-w-[1180px]">
@@ -2987,8 +3009,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // EVERY league, including the four with no schedule feed. Rescanning one of those is
       // harmless and honest: the route answers "no upcoming events stored for this league" with
       // nothing checked, which is a better way to learn it than a chip that cannot be pressed.
+      // Still every league, still every one of them pickable — a rescan of a feedless league is
+      // harmless and answers "no upcoming events stored for this league", which is a better way
+      // to learn it than a chip that cannot be pressed.
+      //
+      // But it no longer starts TICKED. "All 11" quietly meant "seven that can be checked and
+      // four that will report nothing", so the run always ended with four empty results to read
+      // past. Unticked and greyed says the same thing before the run instead of after it, and
+      // ticking one back is one click.
       const rescanLeagueOptions = () => KNOWN_LEAGUES
-        .map(p => ({ code: p[0], label: p[1], feed: p[3], note: p[3] ? null : 'no feed' }));
+        .map(p => ({
+          code: p[0], label: p[1], feed: p[3], note: p[3] ? null : 'no feed',
+          off: !p[3], preselect: p[3],
+          why: p[3] ? null : 'No schedule feed is connected for this league, so a rescan has nothing to check it against. Tick it to try anyway.',
+        }));
 
       (function wireBulkRescan(){
         const btn = el('rescan-schedules');
@@ -3267,21 +3301,35 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // Any filter change puts you back on page 1 — page 7 of the old result set means nothing
       // once the set changes.
-      el('cbs-search').addEventListener('input', e => { filter = e.target.value; page = 1; render(); });
-      el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; page = 1; render(); });
-      el('cbs-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; render(); });
-      el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; page = 1; render(); });
-      el('cbs-window')?.addEventListener('change', e => { windowF = e.target.value; page = 1; render(); });
-      el('cbs-date-from')?.addEventListener('change', e => { dateFromF = e.target.value; page = 1; render(); });
-      el('cbs-date-to')?.addEventListener('change', e => { dateToF = e.target.value; page = 1; render(); });
+      // Both clears are painted from the STATE, so they describe what the table is filtered by
+      // rather than what the controls happen to be showing.
+      const cbsClears = () => {
+        const d = el('cbs-date-clear'); if(d) d.classList.toggle('hidden', !(dateFromF || dateToF));
+        const b = el('cbs-clear');
+        if(b) b.classList.toggle('hidden',
+          !(filter || sportF || leagueF || stateF || windowF || dateFromF || dateToF || priceF || segF));
+      };
+      el('cbs-search').addEventListener('input', e => { filter = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-window')?.addEventListener('change', e => { windowF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-date-from')?.addEventListener('change', e => { dateFromF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-date-to')?.addEventListener('change', e => { dateToF = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-date-clear')?.addEventListener('click', () => {
         dateFromF = ''; dateToF = '';
         if(el('cbs-date-from')) el('cbs-date-from').value = '';
         if(el('cbs-date-to'))   el('cbs-date-to').value   = '';
-        page = 1; render();
+        page = 1; cbsClears(); render();
       });
-      el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; render(); });
-      el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; render(); });
+      el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-clear')?.addEventListener('click', () => {
+        filter = sportF = leagueF = stateF = windowF = dateFromF = dateToF = priceF = segF = '';
+        ['cbs-search','cbs-sport','cbs-league','cbs-state','cbs-window','cbs-date-from','cbs-date-to','cbs-price','cbs-segment']
+          .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        page = 1; cbsClears(); render();
+      });
       // Click cycles cheapest-first, most-expensive-first, then back to the default event order.
       el('cbs-sort-price')?.addEventListener('click', () => {
         sortDir = sortDir === '' ? 'asc' : sortDir === 'asc' ? 'desc' : '';
@@ -3394,8 +3442,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>
                  <div class="pbw-chips" data-chips>
                    ${leagues.map(l => `
-                     <label class="pbw-chip ${l.disabled ? 'pbw-chip-off' : ''}" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}"${l.why ? ` title="${esc(l.why)}"` : ''}>
-                       <input type="checkbox" data-lg value="${esc(l.code)}"${l.disabled ? ' disabled' : ' checked'}>
+                     <label class="pbw-chip ${(l.disabled || l.off) ? 'pbw-chip-off' : ''}" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}"${l.why ? ` title="${esc(l.why)}"` : ''}>
+                       <!-- THREE SEPARATE FLAGS, deliberately. A disabled league cannot be pressed,
+                            an off one is only greyed, and preselect:false merely starts it unticked.
+                            They used to be one flag, so a league could not be shown as unpromising
+                            without also being made unpickable. Options that set none of the three —
+                            the price-refresh dialog ones — behave exactly as before.
+                            (No backticks in here: this comment lives inside a template literal.) -->
+                       <input type="checkbox" data-lg value="${esc(l.code)}"${l.disabled ? ' disabled' : (l.preselect === false ? '' : ' checked')}>
                        <span class="pbw-tick" aria-hidden="true"></span>
                        <span>${esc(l.label)}</span>
                        <span class="pbw-n" data-n>${l.note ? esc(l.note) : ""}</span>
@@ -5668,12 +5722,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         schedDir = schedDir === 'asc' ? 'desc' : schedDir === 'desc' ? null : 'asc';
         page = 1; render();
       });
-      el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
-      el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; render(); });
-      el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; render(); });
-      el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; render(); });
-      el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; render(); });
-      el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
+      el('q-clear')?.addEventListener('click', clearQueueFilters);
+      el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; syncDateClear(); render(); });
       // Scheduled-date range. Each end applies on its own, so both listeners just re-render.
       // The bounds are NOT auto-corrected if the operator inverts them (from after to): an
       // inverted range legitimately matches nothing, and silently swapping the values would
@@ -5687,6 +5742,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function syncDateClear(){
         const btn = el('q-date-clear');
         if(btn) btn.classList.toggle('hidden', !(dateFrom || dateTo));
+        // Painted from the state, not from the inputs: the two can differ for a moment during a
+        // programmatic reset, and the button has to describe what the TABLE is filtered by.
+        const all = el('q-clear');
+        if(all) all.classList.toggle('hidden',
+          !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo));
+      }
+      // Everything at once, including the search box. The per-filter dropdowns each go back to
+      // their "All …" option rather than being emptied of options.
+      function clearQueueFilters(){
+        qFilter = statusF = segF = sportF = leagueF = stateF = chanF = dateFrom = dateTo = '';
+        ['q-search','q-status','q-segment','q-sport','q-league','q-state','q-channel','q-date-from','q-date-to']
+          .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        page = 1; syncDateClear(); render();
       }
       function clearDateFilter(){
         dateFrom = ''; dateTo = '';
@@ -7213,14 +7281,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         closePanel();
       });
 
-      el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; render(); });
-      el('bh-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
-      el('bh-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
+      el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; bhDates(); render(); });
       // Either end alone is a valid filter — "everything since the 1st" is as common a question
       // as a closed range.
-      const bhDates = () => { const c = el('bh-date-clear'); if(c) c.classList.toggle('hidden', !fromF && !toF); };
+      // The date group keeps its own × for the dates alone; Clear resets every filter. Both are
+      // painted from the STATE rather than from the inputs, so they cannot disagree with what the
+      // table is actually filtered by.
+      const bhDates = () => {
+        const c = el('bh-date-clear'); if(c) c.classList.toggle('hidden', !fromF && !toF);
+        const b = el('bh-clear');
+        if(b) b.classList.toggle('hidden', !(filter || chanF || statusF || fromF || toF));
+      };
       el('bh-from')?.addEventListener('change', e => { fromF = e.target.value; page = 1; bhDates(); render(); });
       el('bh-to')?.addEventListener('change',   e => { toF   = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-clear')?.addEventListener('click', () => {
+        filter = chanF = statusF = fromF = toF = '';
+        ['bh-search','bh-channel','bh-status','bh-from','bh-to'].forEach(id => { const e = el(id); if(e) e.value = ''; });
+        page = 1; bhDates(); render();
+      });
       el('bh-date-clear')?.addEventListener('click', () => {
         fromF = ''; toF = '';
         const f = el('bh-from'), t = el('bh-to');
