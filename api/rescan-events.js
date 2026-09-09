@@ -31,7 +31,19 @@ export const config = { maxDuration: 300 };
 
 // Below this, a "successful" pull is assumed broken rather than believed. Real seasons are
 // 264 (NFL) to 1344 (NHL) games; anything under this is a feed having a bad day.
+//
+// AN ABSOLUTE FLOOR ONLY MAKES SENSE FOR A WHOLE-SEASON PULL. Once a rescan can ask about a
+// window — the next 30 days, say — a small answer is the correct answer: in September the NBA
+// has 22 fixtures in the next month, and the WNBA 30. Both were rejected as "implausibly few"
+// and reported NOT CHECKED, which is a false alarm and, repeated, the kind that teaches people
+// to ignore the real one (Vhea, 2026-09-09).
+//
+// What the guard is actually for is a pull that came back far emptier than what we hold, since
+// absence is how a cancellation looks. So it is measured against the stored count for the same
+// window, and capped by the absolute floor so a season-wide pull is still held to it.
 const MIN_PLAUSIBLE_GAMES = 50;
+const implausible = (liveCount, storedCount) =>
+  liveCount < Math.min(MIN_PLAUSIBLE_GAMES, Math.ceil(storedCount / 2));
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -82,17 +94,20 @@ export default async function handler(req, res) {
       return;
     }
 
-    const live = await fetchLeagueGames(league);
+    // The window is handed to the source, not just used to filter afterwards. A day-by-day
+    // source (ESPN) can only be afforded if it knows how many days to walk — asking it for a
+    // whole season would be hundreds of requests for a question about the next fortnight.
+    const live = await fetchLeagueGames(league, { from, to });
 
     // Guards 1 and 2. Nothing was learned, so nothing — including absence — is interpreted.
-    const tooFew = live.ok && live.games.size < MIN_PLAUSIBLE_GAMES;
+    const tooFew = live.ok && implausible(live.games.size, stored.length);
     if (!live.ok || tooFew) {
       res.status(200).json({
         ok: true, league, from, to, checked: stored.length,
         outcome: live.unsupported ? 'unsupported' : 'unreachable',
         applied: 0, results: [], summary: emptySummary(),
         detail: tooFew
-          ? `source returned only ${live.games.size} games, which is implausibly few — treating the pull as failed rather than as mass cancellation`
+          ? `source returned ${live.games.size} games against ${stored.length} stored for this window — treating the pull as failed rather than as mass cancellation`
           : (live.detail || 'the schedule source could not be read'),
         source_url: live.source_url,
       });
