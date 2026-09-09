@@ -15,7 +15,7 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { cakemailGet, cakemailKey } from '../lib/cakemail.js';
+import { cakemailGet, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 
 export const config = { maxDuration: 30 };
 
@@ -52,12 +52,32 @@ function defangHtml(html) {
 }
 
 function accountLabels() {
-  const map = {};
+  // Seeded with the live ids so an account can still be NAMED on a deploy that is missing its
+  // environment — which is the deploy most likely to be raising an error about it. Built only
+  // from the *_ACCOUNT_ID vars, this map was empty in exactly the case it was needed for, and
+  // the error fell back to "account 1679383". These ids mirror FALLBACK_ACCOUNT_ENV in
+  // lib/cakemail.js, which resolves the same three the same way and for the same reason.
+  // Anything the environment declares still wins, so moving a sub-account is a deployment
+  // change and not a code change.
+  const map = {
+    '1679383': 'Playbook Sports - Cole',
+    '1761047': 'Playbook Sports - Josh',
+    '1679456': 'Test',
+  };
   const put = (env, label) => { const id = (process.env[env] || '').trim(); if (id) map[id] = label; };
   put('PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Cole');
   put('PBSPORTS_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Josh');
   put('PBTESTACCOUNT_CAKEMAIL_ACCOUNT_ID', 'Test');
   return map;
+}
+
+// Said in the two places a missing PAT surfaces — the HTML preview and the recipient roster.
+// The account is NAMED rather than numbered, because the id is a lookup for the reader and the
+// name is what every other part of this tab shows. cakemailKeyEnvName exists to state the exact
+// variable to set, so the message carries the diagnosis and the fix together.
+function missingKeyError(accountId) {
+  const name = accountLabels()[String(accountId || '')] || (accountId ? `account ${accountId}` : 'this account');
+  return `no CakeMail key for ${name} — set ${cakemailKeyEnvName(accountId)} on this deployment`;
 }
 
 export default async function handler(req, res) {
@@ -140,7 +160,7 @@ export default async function handler(req, res) {
     if (!row) { res.status(404).json({ error: `campaign ${wantRecips} is not in blast history` }); return; }
     if (!row.list_id) { res.status(200).json({ ok: true, available: false, reason: 'This campaign has no list recorded, so its recipients cannot be looked up.' }); return; }
     const accountId = String(row.account_id || '');
-    if (!cakemailKey(accountId)) { res.status(502).json({ error: `no CakeMail key for account ${accountId}` }); return; }
+    if (!cakemailKey(accountId)) { res.status(502).json({ error: missingKeyError(accountId) }); return; }
     try {
       const cur = String(req.query?.cursor || '').trim();
       const q = new URLSearchParams({ per_page: '100' });
@@ -293,7 +313,7 @@ export default async function handler(req, res) {
     const row = Array.isArray(rows) ? rows[0] : null;
     if (!row) { res.status(404).json({ error: `campaign ${wantHtml} is not in blast history` }); return; }
     const accountId = String(row.account_id || '');
-    if (!cakemailKey(accountId)) { res.status(502).json({ error: `no CakeMail key for account ${accountId}` }); return; }
+    if (!cakemailKey(accountId)) { res.status(502).json({ error: missingKeyError(accountId) }); return; }
     try {
       const raw = await cakemailGet(`/campaigns/${wantHtml}/render-html`, { accountId, raw: true });
       const html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
