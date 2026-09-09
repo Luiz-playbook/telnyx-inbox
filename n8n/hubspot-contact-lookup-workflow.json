@@ -1,0 +1,427 @@
+{
+  "name": "HubSpot contact lookup by email (AI-971)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1a2b3c4d-0001-4000-8000-000000000001",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hubspot-contact-lookup",
+        "authentication": "basicAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        192
+      ],
+      "id": "1a2b3c4d-0002-4000-8000-000000000002",
+      "name": "Webhook: Look up contact by email",
+      "webhookId": "7c9e2a41-6b3d-4f80-9e12-5a7c3d1b8e40",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "ur7HbBfjmdQDj5bi",
+          "name": "Unnamed credential 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// POST {\"email\":\"someone@club.org\"}\n//\n// DOES NOT THROW ON BAD INPUT. Throwing here errors the workflow, and with responseMode\n// \"responseNode\" no response node is ever reached — so the caller gets HTTP 200 with an empty\n// body and no way to tell what went wrong. Verified against the live webhook (Vhea,\n// 2026-09-09). Invalid input is routed to a proper 400 instead.\n//\n// Lower-cased and trimmed so the mirror lookup, the HubSpot search and the response all speak\n// about the same string: addresses arrive from replies, CSV pastes and typed input, and\n// \"Someone@Club.org \" is the same person.\nconst body = ($json && $json.body) || $json || {};\nconst raw = String(body.email || '');\nconst email = raw.trim().toLowerCase();\nconst valid = !!email && /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email);\nreturn [{ json: { email, valid, given: raw } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        96
+      ],
+      "id": "1a2b3c4d-0003-4000-8000-000000000003",
+      "name": "Prepare the email to search"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ALWAYS RETURNS EXACTLY ONE ROW, even on a miss.\n--\n-- A plain `select ... where email = $1` returns nothing when the contact is unknown, and an n8n\n-- node with no input items does not run — so the \"not found\" branch would never fire and the\n-- webhook would hang with no response. The left join against a one-row subquery makes the miss an\n-- explicit `found = false` instead of an absence.\nselect\n  q.e                                   as email_in,\n  (c.hs_object_id is not null)          as found,\n  c.hs_object_id,\n  c.email,\n  c.firstname,\n  c.lastname,\n  c.company,\n  c.state,\n  c.lifecyclestage,\n  c.hs_lastmodifieddate,\n  c.synced_at\nfrom (select $1::text as e) q\nleft join hubspot.hubspot_contacts c\n       on lower(c.email) = q.e;",
+        "options": {
+          "queryReplacement": "={{ $json.email }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        672,
+        96
+      ],
+      "id": "1a2b3c4d-0004-4000-8000-000000000004",
+      "name": "Look in the mirror first"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-found-in-mirror",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        896,
+        96
+      ],
+      "id": "1a2b3c4d-0005-4000-8000-000000000005",
+      "name": "Already in the mirror?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  found: true,\n  source: 'mirror',\n  contact: {\n    hs_object_id: Number($json.hs_object_id),   // bigint arrives quoted; keep one type across both paths\n    email: $json.email,\n    firstname: $json.firstname,\n    lastname: $json.lastname,\n    company: $json.company,\n    state: $json.state,\n    lifecyclestage: $json.lifecyclestage,\n    hs_lastmodifieddate: $json.hs_lastmodifieddate,\n    synced_at: $json.synced_at\n  }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1120,
+        0
+      ],
+      "id": "1a2b3c4d-0006-4000-8000-000000000006",
+      "name": "Respond: from the mirror"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: $json.email_in }] }],\n  properties: ['email','firstname','lastname','company','state','lifecyclestage','hs_lastmodifieddate'],\n  limit: 1\n}) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        192
+      ],
+      "id": "1a2b3c4d-0007-4000-8000-000000000007",
+      "name": "HubSpot: Search by email"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ALWAYS RETURNS ONE ITEM, found or not — same reason as the SQL above. An empty result would\n// stop the chain and leave the caller waiting for a response that never comes.\n//\n// The address searched for is carried through as email_in so the \"not found\" answer can name it.\nconst email = $('Prepare the email to search').first().json.email;\nconst first = ($input.first().json.results || [])[0];\n\nif (!first) {\n  return [{ json: { found: false, email_in: email, rows: [] } }];\n}\n\nconst p = first.properties || {};\nconst contact = {\n  hs_object_id: Number(first.id),\n  email: p.email || null,\n  firstname: p.firstname || null,\n  lastname: p.lastname || null,\n  company: p.company || null,\n  state: p.state || null,\n  lifecyclestage: p.lifecyclestage || null,\n  hs_lastmodifieddate: p.hs_lastmodifieddate || null,\n  synced_at: new Date().toISOString(),\n};\n\n// CACHE WHAT WE JUST PAID FOR. A miss cost an API call; writing it back means the next lookup for\n// this person is a local query. Same upsert shape as the sync, so the two can never disagree about\n// the row format.\nreturn [{ json: { found: true, email_in: email, contact, rows: [contact] } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        192
+      ],
+      "id": "1a2b3c4d-0008-4000-8000-000000000008",
+      "name": "Shape the HubSpot result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-found-in-hubspot",
+              "leftValue": "={{ $json.found }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1568,
+        192
+      ],
+      "id": "1a2b3c4d-0009-4000-8000-000000000009",
+      "name": "Does HubSpot have them?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_contacts\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_contacts, $1::jsonb)\non conflict (hs_object_id) do update set\n  email = excluded.email,\n  firstname = excluded.firstname,\n  lastname = excluded.lastname,\n  company = excluded.company,\n  state = excluded.state,\n  lifecyclestage = excluded.lifecyclestage,\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.rows) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1792,
+        96
+      ],
+      "id": "1a2b3c4d-000a-4000-8000-00000000000a",
+      "name": "Cache the contact"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ found: true, source: 'hubspot', cached: true, contact: $('Shape the HubSpot result').first().json.contact }) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2016,
+        96
+      ],
+      "id": "1a2b3c4d-000b-4000-8000-00000000000b",
+      "name": "Respond: fetched and cached"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ found: false, source: 'hubspot', email: $json.email_in, reason: 'No HubSpot contact has this email address.' }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1792,
+        288
+      ],
+      "id": "1a2b3c4d-000c-4000-8000-00000000000c",
+      "name": "Respond: no such contact"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-email-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        336,
+        96
+      ],
+      "id": "1a2b3c4d-000d-4000-8000-00000000000d",
+      "name": "Is the email usable?"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ found: false, error: 'Send {\"email\":\"someone@example.com\"}', given: $json.given }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        336,
+        288
+      ],
+      "id": "1a2b3c4d-000e-4000-8000-00000000000e",
+      "name": "Respond: bad request"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Prepare the email to search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: Look up contact by email": {
+      "main": [
+        [
+          {
+            "node": "Prepare the email to search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare the email to search": {
+      "main": [
+        [
+          {
+            "node": "Is the email usable?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Look in the mirror first": {
+      "main": [
+        [
+          {
+            "node": "Already in the mirror?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already in the mirror?": {
+      "main": [
+        [
+          {
+            "node": "Respond: from the mirror",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot: Search by email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Search by email": {
+      "main": [
+        [
+          {
+            "node": "Shape the HubSpot result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape the HubSpot result": {
+      "main": [
+        [
+          {
+            "node": "Does HubSpot have them?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Does HubSpot have them?": {
+      "main": [
+        [
+          {
+            "node": "Cache the contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: no such contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache the contact": {
+      "main": [
+        [
+          {
+            "node": "Respond: fetched and cached",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is the email usable?": {
+      "main": [
+        [
+          {
+            "node": "Look in the mirror first",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: bad request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
+  }
+}

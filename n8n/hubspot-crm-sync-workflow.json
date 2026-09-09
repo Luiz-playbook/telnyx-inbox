@@ -1,0 +1,344 @@
+{
+  "name": "HubSpot deals + companies to Supabase (AI-971)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hubspot-crm-sync",
+        "authentication": "basicAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 192],
+      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "name": "Webhook: Sync now",
+      "webhookId": "4d8b1c07-59a2-4e36-9f14-6c2a7b0e5d31",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "ur7HbBfjmdQDj5bi",
+          "name": "Unnamed credential 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 384],
+      "id": "a1b2c3d4-0003-4000-8000-000000000003",
+      "name": "Every 6 hours"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from hubspot.sync_state();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [224, 192],
+      "id": "a1b2c3d4-0004-4000-8000-000000000004",
+      "name": "Read how current the mirror is"
+    },
+    {
+      "parameters": {
+        "jsCode": "// One watermark per object, read from hubspot.sync_state() (migration 065 returns a row for\n// contacts, companies and deals; migration 062 returned only contacts, so 065 must be applied\n// before this workflow runs or the two branches below both start from the epoch every time).\n//\n// SAME RULES AS THE CONTACTS SYNC, and for the same reasons:\n//\n//   * THE FLOOR IS THE EPOCH, NOT A RECENT DATE. A recent floor silently skips everything last\n//     touched before it, and nothing reports the gap. On the first run the tables are empty, so\n//     this pulls full history; after that the watermark takes over and runs are small.\n//   * THE WATERMARK IS REWOUND A MINUTE. HubSpot's clock is not our clock, and a record modified\n//     in the same second the previous run read its last page would fall in the gap between runs\n//     and never be seen again. Re-reading a minute costs nothing — the write is an upsert.\nconst FLOOR = 0;\nconst REWIND_MS = 60 * 1000;\n\nconst state = {};\nfor (const r of $input.all()) {\n  const j = r.json || {};\n  if (j.source) state[j.source] = j.newest_modified;\n}\n\n// POST {\"since\":\"2026-01-01\"} to the webhook to re-read a period on purpose — after a mapping\n// change, or to repair a gap — without truncating the tables. The schedule and the manual trigger\n// carry no body and ignore it.\nlet override = null;\ntry {\n  const body = $('Webhook: Sync now').first().json.body || {};\n  const t = body.since ? Date.parse(body.since) : NaN;\n  if (Number.isFinite(t)) override = t;\n} catch (e) { /* not triggered by the webhook */ }\n\nconst since = key => {\n  if (override !== null) return String(override);\n  const v = state[key] ? Date.parse(state[key]) : NaN;\n  return String(Number.isFinite(v) ? Math.max(FLOOR, v - REWIND_MS) : FLOOR);\n};\n\nreturn [{ json: { since_deals: since('deals'), since_companies: since('companies') } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [448, 192],
+      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "name": "Prepare the since timestamps"
+    },
+
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/deals/search",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'hs_lastmodifieddate', operator: 'GT', value: $json.since_deals }] }],\n  sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['dealname','pipeline','dealstage','amount','closedate','hs_lastmodifieddate'],\n  limit: 100\n}) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "after",
+                    "value": "={{ $response.body.paging?.next?.after }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging?.next?.after }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [672, 96],
+      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "name": "HubSpot: Get deals changed since"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 100 pages x 100 records = 10,000 per execution, which is not our choice: HubSpot's search API\n// refuses to page past 10,000 results for ANY one query. The watermark is what gets past it — each\n// run starts where the last one stopped, so a backfill completes over several runs rather than one.\n// 20,863 deals is ~3 runs. Nothing is lost in between; it is only slow to become complete.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      dealname: p.dealname || null,\n      pipeline: p.pipeline || null,\n      dealstage: p.dealstage || null,\n      // Empty string is what HubSpot sends for an unset number; Number('') is 0, which would\n      // silently invent a zero-value deal.\n      amount: (p.amount === '' || p.amount == null) ? null : Number(p.amount),\n      closedate: p.closedate || null,\n      associated_contact_ids: [],\n      associated_company_ids: [],\n      hs_lastmodifieddate: p.hs_lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\n// ONE item carrying the whole batch — the upsert takes the array as a single parameter. Nothing\n// downstream runs when this is empty, which is the wanted behaviour for \"no deals changed\".\nreturn rows.length ? [{ json: { rows } }] : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [896, 96],
+      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "name": "Prepare deal rows"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ONE ITEM PER 100 IDS. The v4 batch association endpoint takes at most 100 inputs per call, and an\n// n8n HTTP node runs once per input item — so chunking here is what turns 10,000 deals into 100\n// association calls without a loop node.\nconst rows = $input.first().json.rows || [];\nconst SIZE = 100;\nconst out = [];\nfor (let i = 0; i < rows.length; i += SIZE) {\n  out.push({ json: { ids: rows.slice(i, i + SIZE).map(r => r.hs_object_id) } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 96],
+      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "name": "Chunk deal ids"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v4/associations/deals/contacts/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: $json.ids.map(id => ({ id: String(id) })) }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1344, 96],
+      "id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "name": "HubSpot: Deal → contact associations"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v4/associations/deals/companies/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: $('Chunk deal ids').item.json.ids.map(id => ({ id: String(id) })) }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1568, 96],
+      "id": "a1b2c3d4-000a-4000-8000-00000000000a",
+      "name": "HubSpot: Deal → company associations"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fold both association reads back onto the rows.\n//\n// BOTH EDGES ARE ARRAYS BECAUSE BOTH GENUINELY FAN OUT — 2,330 contacts in this portal have more\n// than one deal (the heaviest has 25) and 1,328 companies have more than one. A scalar \"the\n// company\" or \"the deal\" would be wrong for thousands of records, and wrong silently.\n//\n// A deal with no association is left with the empty array the row was built with, not dropped: it\n// is a real deal that simply reaches nobody we track, and hiding it would make the mirror disagree\n// with HubSpot's own count.\nconst rows = $('Prepare deal rows').first().json.rows || [];\nconst byId = new Map(rows.map(r => [String(r.hs_object_id), r]));\n\n// v4 batch read answers { results: [ { from: { id }, to: [ { toObjectId, associationTypes } ] } ] }\nconst fold = (items, field) => {\n  for (const item of items) {\n    for (const r of ((item.json || {}).results || [])) {\n      const row = byId.get(String(r.from && r.from.id));\n      if (!row) continue;\n      const ids = (r.to || []).map(t => Number(t.toObjectId)).filter(Number.isFinite);\n      // De-duplicated: HubSpot returns one entry per association TYPE, so a contact that is both\n      // the primary and a labelled contact on the same deal comes back twice.\n      row[field] = [...new Set(row[field].concat(ids))];\n    }\n  }\n};\n\nfold($('HubSpot: Deal → contact associations').all(), 'associated_contact_ids');\nfold($input.all(), 'associated_company_ids');\n\nreturn [{ json: { rows } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1792, 96],
+      "id": "a1b2c3d4-000b-4000-8000-00000000000b",
+      "name": "Attach deal associations"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_deals\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_deals, $1::jsonb)\non conflict (hs_object_id) do update set\n  dealname = excluded.dealname,\n  pipeline = excluded.pipeline,\n  dealstage = excluded.dealstage,\n  amount = excluded.amount,\n  closedate = excluded.closedate,\n  associated_contact_ids = excluded.associated_contact_ids,\n  associated_company_ids = excluded.associated_company_ids,\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.rows) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2016, 96],
+      "id": "a1b2c3d4-000c-4000-8000-00000000000c",
+      "name": "Upsert deals"
+    },
+
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/companies/search",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'hs_lastmodifieddate', operator: 'GT', value: $json.since_companies }] }],\n  sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['name','domain','state','lifecyclestage','hs_lastmodifieddate'],\n  limit: 100\n}) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "after",
+                    "value": "={{ $response.body.paging?.next?.after }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging?.next?.after }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [672, 384],
+      "id": "a1b2c3d4-000d-4000-8000-00000000000d",
+      "name": "HubSpot: Get companies changed since"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 205,769 companies against HubSpot's hard 10,000-per-query paging ceiling is ~21 runs to backfill.\n// See the note on the deals branch: the watermark is what walks past the ceiling.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      name: p.name || null,\n      domain: p.domain || null,\n      state: p.state || null,\n      lifecyclestage: p.lifecyclestage || null,\n      associated_contact_ids: [],\n      hs_lastmodifieddate: p.hs_lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\nreturn rows.length ? [{ json: { rows } }] : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [896, 384],
+      "id": "a1b2c3d4-000e-4000-8000-00000000000e",
+      "name": "Prepare company rows"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.first().json.rows || [];\nconst SIZE = 100;\nconst out = [];\nfor (let i = 0; i < rows.length; i += SIZE) {\n  out.push({ json: { ids: rows.slice(i, i + SIZE).map(r => r.hs_object_id) } });\n}\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 384],
+      "id": "a1b2c3d4-000f-4000-8000-00000000000f",
+      "name": "Chunk company ids"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v4/associations/companies/contacts/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: $json.ids.map(id => ({ id: String(id) })) }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1344, 384],
+      "id": "a1b2c3d4-0010-4000-8000-000000000010",
+      "name": "HubSpot: Company → contact associations"
+    },
+    {
+      "parameters": {
+        "jsCode": "// THIS IS THE EDGE THAT MADE THE WHOLE DESIGN WORTH IT. A contact-to-company link is one fact and\n// could be stored on either end; storing it here costs ~2,058 batch calls against ~11,167 on the\n// contact side, and it means hubspot.hubspot_contacts needs no migration and the contacts sync that\n// is already running is untouched.\n//\n// The many-to-many is real: contact 53284377 is associated with four companies (NJ Ravens FC, New\n// Jersey Santos Rush, Lasker Rink, First Shot Soccer). HubSpot's own `associatedcompanyid` property\n// on a contact would have returned exactly one of those four.\nconst rows = $('Prepare company rows').first().json.rows || [];\nconst byId = new Map(rows.map(r => [String(r.hs_object_id), r]));\n\nfor (const item of $input.all()) {\n  for (const r of ((item.json || {}).results || [])) {\n    const row = byId.get(String(r.from && r.from.id));\n    if (!row) continue;\n    const ids = (r.to || []).map(t => Number(t.toObjectId)).filter(Number.isFinite);\n    row.associated_contact_ids = [...new Set(row.associated_contact_ids.concat(ids))];\n  }\n}\n\nreturn [{ json: { rows } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1568, 384],
+      "id": "a1b2c3d4-0011-4000-8000-000000000011",
+      "name": "Attach company associations"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_companies\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_companies, $1::jsonb)\non conflict (hs_object_id) do update set\n  name = excluded.name,\n  domain = excluded.domain,\n  state = excluded.state,\n  lifecyclestage = excluded.lifecyclestage,\n  associated_contact_ids = excluded.associated_contact_ids,\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.rows) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1792, 384],
+      "id": "a1b2c3d4-0012-4000-8000-000000000012",
+      "name": "Upsert companies"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+    },
+    "Webhook: Sync now": {
+      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+    },
+    "Every 6 hours": {
+      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+    },
+    "Read how current the mirror is": {
+      "main": [[{ "node": "Prepare the since timestamps", "type": "main", "index": 0 }]]
+    },
+    "Prepare the since timestamps": {
+      "main": [[
+        { "node": "HubSpot: Get deals changed since", "type": "main", "index": 0 },
+        { "node": "HubSpot: Get companies changed since", "type": "main", "index": 0 }
+      ]]
+    },
+
+    "HubSpot: Get deals changed since": {
+      "main": [[{ "node": "Prepare deal rows", "type": "main", "index": 0 }]]
+    },
+    "Prepare deal rows": {
+      "main": [[{ "node": "Chunk deal ids", "type": "main", "index": 0 }]]
+    },
+    "Chunk deal ids": {
+      "main": [[{ "node": "HubSpot: Deal → contact associations", "type": "main", "index": 0 }]]
+    },
+    "HubSpot: Deal → contact associations": {
+      "main": [[{ "node": "HubSpot: Deal → company associations", "type": "main", "index": 0 }]]
+    },
+    "HubSpot: Deal → company associations": {
+      "main": [[{ "node": "Attach deal associations", "type": "main", "index": 0 }]]
+    },
+    "Attach deal associations": {
+      "main": [[{ "node": "Upsert deals", "type": "main", "index": 0 }]]
+    },
+
+    "HubSpot: Get companies changed since": {
+      "main": [[{ "node": "Prepare company rows", "type": "main", "index": 0 }]]
+    },
+    "Prepare company rows": {
+      "main": [[{ "node": "Chunk company ids", "type": "main", "index": 0 }]]
+    },
+    "Chunk company ids": {
+      "main": [[{ "node": "HubSpot: Company → contact associations", "type": "main", "index": 0 }]]
+    },
+    "HubSpot: Company → contact associations": {
+      "main": [[{ "node": "Attach company associations", "type": "main", "index": 0 }]]
+    },
+    "Attach company associations": {
+      "main": [[{ "node": "Upsert companies", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

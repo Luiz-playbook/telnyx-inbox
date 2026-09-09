@@ -1,0 +1,160 @@
+{
+  "name": "HubSpot contacts to Supabase (AI-971)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "b1a4c6d2-0f31-4a7e-9b52-1c0d8e4f2a10",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hubspot-contacts-sync",
+        "authentication": "basicAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 192],
+      "id": "c2b5d7e3-1042-4b8f-8c63-2d1e9f5a3b21",
+      "name": "Webhook: Sync now",
+      "webhookId": "e7f3a1b9-2c48-4d6e-9a71-3b5c8d2e4f60",
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "ur7HbBfjmdQDj5bi",
+          "name": "Unnamed credential 3"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 384],
+      "id": "d3c6e8f4-2153-4c90-9d74-3e2f0a6b4c32",
+      "name": "Every 6 hours"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select * from hubspot.sync_state();",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [304, 192],
+      "id": "e4d7f9a5-3264-4da1-8e85-4f301b7c5d43",
+      "name": "Read how current the mirror is"
+    },
+    {
+      "parameters": {
+        "jsCode": "// INCREMENTAL, KEYED ON hs_lastmodifieddate. HubSpot bumps that timestamp on ANY change, so one\n// filter carries both cases: a new contact is modified when it is created, an edited one when it\n// is edited. Both come back, and the upsert on hs_object_id inserts the first and overwrites the\n// second. Nothing ever asks Supabase which records it already holds — that would be one query per\n// record.\n//\n// THE FLOOR IS THE EPOCH, NOT A RECENT DATE. A recent floor silently skips every contact last\n// touched before it — one edited in 2023 and left alone would never sync, and nothing would report\n// it missing. On the first run the table is empty, so this pulls full history; after that the\n// watermark takes over and runs are small.\nconst FLOOR = 0;\n\n// The watermark is rewound a minute. HubSpot's clock and ours are not the same clock, and a record\n// modified in the same second the previous run read its last page would otherwise fall in the gap\n// between runs and never be seen again. Re-reading a minute costs nothing — the write is an upsert.\nconst REWIND_MS = 60 * 1000;\n\nconst state = {};\nfor (const r of $input.all()) {\n  const j = r.json || {};\n  if (j.source) state[j.source] = j.newest_modified;\n}\n\n// POST {\"since\":\"2026-01-01\"} to the webhook to re-read a period on purpose — after a mapping\n// change, or to repair a gap — without truncating the table. The schedule and the manual trigger\n// carry no body and ignore it.\nlet override = null;\ntry {\n  const body = $('Webhook: Sync now').first().json.body || {};\n  const t = body.since ? Date.parse(body.since) : NaN;\n  if (Number.isFinite(t)) override = t;\n} catch (e) { /* not triggered by the webhook */ }\n\nconst v = state.contacts ? Date.parse(state.contacts) : NaN;\nconst since = override !== null\n  ? String(override)\n  : String(Number.isFinite(v) ? Math.max(FLOOR, v - REWIND_MS) : FLOOR);\n\nreturn [{ json: { since_contacts: since } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [528, 192],
+      "id": "f5e8a0b6-4375-4eb2-9f96-5a412c8d6e54",
+      "name": "Prepare the since timestamp"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'hs_lastmodifieddate', operator: 'GT', value: $json.since_contacts }] }],\n  sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['email','firstname','lastname','company','state','lifecyclestage','hs_lastmodifieddate'],\n  limit: 100\n}) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "body",
+                    "name": "after",
+                    "value": "={{ $response.body.paging?.next?.after }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ !$response.body.paging?.next?.after }}",
+              "limitPagesFetched": true,
+              "maxRequestsPerPage": 100
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, 192],
+      "id": "a6f9b1c7-5486-4fc3-8a07-6b523d9e7f65",
+      "name": "HubSpot: Get contacts changed since"
+    },
+    {
+      "parameters": {
+        "jsCode": "// HubSpot search pages come back as { results: [...] }; flatten them into the row shape\n// hubspot.hubspot_contacts expects.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      email: p.email || null,\n      firstname: p.firstname || null,\n      lastname: p.lastname || null,\n      company: p.company || null,\n      state: p.state || null,\n      lifecyclestage: p.lifecyclestage || null,\n      hs_lastmodifieddate: p.hs_lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\n// ONE item carrying the whole batch. The upsert below takes the array as a single parameter, and\n// ten thousand separate statements is not a sync, it is an outage.\nreturn rows.length ? [{ json: { rows } }] : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1024, 192],
+      "id": "b7a0c2d8-6597-40d4-9b18-7c634ea08076",
+      "name": "Prepare contact rows"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_contacts\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_contacts, $1::jsonb)\non conflict (hs_object_id) do update set\n  email = excluded.email,\n  firstname = excluded.firstname,\n  lastname = excluded.lastname,\n  company = excluded.company,\n  state = excluded.state,\n  lifecyclestage = excluded.lifecyclestage,\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.rows) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1248, 192],
+      "id": "c8b1d3e9-76a8-41e5-8c29-8d745fb19187",
+      "name": "Upsert contacts"
+    }
+  ],
+  "connections": {
+    "When clicking ‘Execute workflow’": {
+      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+    },
+    "Webhook: Sync now": {
+      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+    },
+    "Every 6 hours": {
+      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+    },
+    "Read how current the mirror is": {
+      "main": [[{ "node": "Prepare the since timestamp", "type": "main", "index": 0 }]]
+    },
+    "Prepare the since timestamp": {
+      "main": [[{ "node": "HubSpot: Get contacts changed since", "type": "main", "index": 0 }]]
+    },
+    "HubSpot: Get contacts changed since": {
+      "main": [[{ "node": "Prepare contact rows", "type": "main", "index": 0 }]]
+    },
+    "Prepare contact rows": {
+      "main": [[{ "node": "Upsert contacts", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
+  }
+}
