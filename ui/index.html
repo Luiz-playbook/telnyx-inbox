@@ -468,6 +468,7 @@
           <a href="#" data-tab="history">Market History</a>
           <a href="#" data-tab="templates">Templates</a>
           <a href="#" data-tab="rules">Cole Rules</a>
+          <a href="#" data-tab="reports">Reports</a>
         </nav>
         <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
              so a logged-out visitor never sees an empty account chip on the way to /login. -->
@@ -903,20 +904,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                          silently reached 300 rows you cannot see is how bulk actions go wrong.
                          Selecting everything the filters match is a separate, named offer in the
                          bar below. -->
-                    <!-- THE CONTROL COLUMN: select, expand, act. All three are things you do TO a
-                         row; every column after this one is data ABOUT the game.
+                    <!-- THE CONTROL COLUMN: select and expand. Both are things you do TO a row;
+                         every column after this one is data ABOUT the game.
 
-                         Actions lives here rather than at the far end because this column cannot be
-                         scrolled away from. It sat in the last column of a ten-column table wider
-                         than most windows, which is what Josh complained about; parking it in the
-                         Status cell only fixed that for as long as the table happens to fit, and
-                         put a button in a cell that also carries a status badge and a sub-line. -->
-                    <th class="w-[86px] col-tight">
+                         Actions USED to live here too. It began in the last column of a
+                         ten-column table wider than most windows — Josh's original complaint —
+                         then moved here because this column cannot be scrolled away from. Josh
+                         has since asked for it directly after the blast name instead, which is
+                         where it now sits: still left of the horizontal scroll, and next to the
+                         thing it acts on rather than next to the checkbox. -->
+                    <th class="w-[62px] col-tight">
                       <input id="q-all" type="checkbox" class="checkbox checkbox-xs align-middle" aria-label="Select every blast on this page" title="Select every blast on this page">
                     </th>
-                    <!-- Columns 2-7 mirror Campaigns by Event so the same blast reads the same on
+                    <!-- Columns 2-8 mirror Campaigns by Event so the same blast reads the same on
                          both tabs; the rest are queue-only (when it goes, how it is doing). -->
                     <th>Blast</th>
+                    <!-- Per Josh: between the blast name and the price. -->
+                    <th class="col-tight w-[52px]">Actions</th>
                     <th>Cheapest</th>
                     <th>Sport</th>
                     <!-- Market is one metro word ("Chicago") over its state/country code, so it
@@ -935,7 +939,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                          scrolling sideways past everything else to find it. -->
                     <th>Status</th>
                   </tr></thead>
-                  <tbody id="q-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading queue&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
+                  <tbody id="q-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading queue&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -1068,6 +1072,205 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           </div>
 
           <!-- ===== COLE RULES ===== -->
+          <!-- ===== Reports =====
+               A list of independent reports, each its own collapsible panel. Adding a report
+               means adding one <details> sibling below — no layout to rework, and nothing
+               about the others changes.
+
+               <details>/<summary> rather than a JS accordion: the open/closed state is the
+               browser's, it survives without any of our code running, and it stays keyboard-
+               and screen-reader-operable for free. They are deliberately NOT grouped by a
+               shared name attribute — these are unrelated reports, so opening one should not
+               collapse another someone is reading. -->
+          <div data-view id="view-reports" class="hidden space-y-3">
+
+            <!-- Telnyx 10DLC volume vs the carrier cap.
+                 Deliberately NOT called "SMS volume". It answers a compliance question — how
+                 close is the 10DLC brand to being throttled — and that number will not agree
+                 with the reach figures on Market History, which also count CakeMail and
+                 Salesmsg. Two different questions, two different totals. -->
+            <details id="tu-strip" class="collapse collapse-arrow border border-base-300 bg-base-100 hidden" open>
+              <summary class="collapse-title min-h-0 py-3">
+                <div class="flex items-baseline justify-between flex-wrap gap-2 pr-6">
+                  <span class="font-semibold text-sm">Telnyx SMS volume &mdash; all carriers, and the one cap</span>
+                  <span class="text-xs text-base-content/50" id="tu-prov"></span>
+                </div>
+              </summary>
+              <div class="collapse-content">
+                <div class="flex flex-col gap-3 pb-1">
+
+                  <!-- TWO QUESTIONS, SIDE BY SIDE, LABELLED AS TWO.
+                       This block used to lead with the T-Mobile figure alone, which made the
+                       whole report look like a T-Mobile report — the biggest number on the
+                       page was a fifth of what we actually send. Total volume now leads, and
+                       the cap is a clearly separated second panel rather than the headline. -->
+                  <div class="flex items-stretch gap-5 flex-wrap">
+                    <div class="min-w-[9rem]">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">Sent today</div>
+                      <div class="text-3xl font-bold leading-tight tabular-nums" id="tu-sent">&mdash;</div>
+                      <div class="text-xs text-base-content/60" id="tu-sent-sub">all carriers</div>
+                    </div>
+
+                    <div class="border-l border-base-300"></div>
+
+                    <!-- Everything right of the divider is about the cap, and says so. -->
+                    <div class="grow min-w-[20rem]">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">
+                        Against the only cap &mdash; T&#8209;Mobile
+                      </div>
+                      <div class="flex items-baseline gap-4 flex-wrap mt-0.5">
+                        <div>
+                          <span class="text-2xl font-semibold tabular-nums" id="tu-today">&mdash;</span>
+                          <span class="text-xs text-base-content/60">used</span>
+                        </div>
+                        <div>
+                          <span class="text-2xl font-semibold tabular-nums" id="tu-left">&mdash;</span>
+                          <span class="text-xs text-base-content/60">left</span>
+                        </div>
+                      </div>
+                      <div class="h-2.5 w-full bg-base-200 rounded-sm overflow-hidden mt-1.5">
+                        <div id="tu-bar" class="h-full bg-success" style="width:0%"></div>
+                      </div>
+                      <div class="flex justify-between text-[11px] text-base-content/50 mt-1 tabular-nums">
+                        <span id="tu-today-sub">&nbsp;</span><span id="tu-cap">&mdash;</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- WHERE THE REST WENT. Without this, "3,429 sent / 696 T-Mobile" reads as
+                       though 2,700 messages went missing. They went to carriers that impose no
+                       daily ceiling, so they cost nothing against the cap — which is only
+                       obvious once you can see them. -->
+                  <div class="border border-base-300 rounded-md p-3">
+                    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">
+                        Where messages went
+                      </div>
+                      <div class="join">
+                        <button class="btn btn-xs join-item" data-tu-range="today">Today</button>
+                        <button class="btn btn-xs join-item btn-active" data-tu-range="window">Last 14 days</button>
+                      </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5" id="tu-carriers"></div>
+                    <p class="text-[11px] text-base-content/50 mt-2">
+                      Only T&#8209;Mobile sets a daily volume cap. The rest have no ceiling to use up &mdash;
+                      these are running totals, not allowances.
+                    </p>
+                  </div>
+
+                  <!-- Fourteen days. Bars are scaled to the busiest day, not to the cap: at
+                       ~3% of allowance every bar against the cap would be an invisible sliver
+                       and the shape of the fortnight would be lost. Colour still encodes cap
+                       pressure, so a genuinely heavy day reads amber or red regardless.
+                       Each bar carries its own figure, so the chart is readable without
+                       hovering — the tooltip adds the cap percentage on top. -->
+                  <div class="border border-base-300 rounded-md p-3">
+                    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">
+                        Messages per day &middot; last 14 days
+                      </div>
+                      <div class="flex items-center gap-3 text-[11px] text-base-content/60">
+                        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 bg-success"></span>T&#8209;Mobile (capped)</span>
+                        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 bg-base-300"></span>Everyone else</span>
+                      </div>
+                    </div>
+                    <div class="flex items-end gap-[3px] h-24" id="tu-days"></div>
+                    <div class="flex justify-between text-[11px] text-base-content/50 mt-1">
+                      <span id="tu-from"></span><span id="tu-to"></span>
+                    </div>
+                  </div>
+
+                  <!-- TWO TABLES, TWO DIFFERENT QUESTIONS, and they were being mistaken for one
+                       another. Each now carries a numbered eyebrow saying what it answers, and
+                       the brand table is tinted and boxed because it is the one that decides
+                       whether we get throttled — the inbox table underneath is a plain
+                       breakdown of who did the sending. -->
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="bg-base-200 px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">1 &middot; The limit</div>
+                      <div class="text-sm font-semibold">By brand &mdash; who has how much allowance <span class="font-normal text-base-content/50">&middot; last 14 days</span></div>
+                      <div class="text-[11px] text-base-content/60">
+                        The cap is set per brand and resets at midnight UTC. Sent and T&#8209;Mobile are
+                        fortnight totals; Busiest day is the single worst day against that brand's own ceiling.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Brand</th><th class="text-right">Score</th><th class="text-right">Cap/day</th>
+                          <th class="text-right">Senders</th><th class="text-right">Sent</th>
+                          <th class="text-right">T&#8209;Mobile</th><th class="text-right">Busiest day</th>
+                        </tr></thead>
+                        <tbody id="tu-brands"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2 hidden" id="tu-idle"></p>
+                  </div>
+
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">2 &middot; The usage</div>
+                      <div class="text-sm font-semibold">By inbox &mdash; who did the sending <span class="font-normal text-base-content/50">&middot; last 14 days</span></div>
+                      <div class="text-[11px] text-base-content/60">
+                        A rolling fortnight, not today &mdash; the oldest day drops off as a new one is added.
+                        Every number that sent, and the brand whose allowance it drew on.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Inbox</th><th>Number</th><th>Brand</th>
+                          <th class="text-right">Sent</th>
+                          <th class="text-right" title="The only carrier with a daily cap.">T&#8209;Mobile</th>
+                          <th class="text-right">AT&amp;T</th><th class="text-right">Verizon</th>
+                          <th class="text-right" title="Every other carrier combined — none of them cap daily volume.">Other</th>
+                          <th class="text-right">Segments</th>
+                        </tr></thead>
+                        <tbody id="tu-inbox"></tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <!-- The four limits, in the same panel as the numbers they govern. They get
+                       confused constantly, because "rate limit" means four different things
+                       depending on who set it — and only ONE of them is a daily quantity that
+                       can run out. The other three are speeds. Two rows follow the brand's
+                       vetting score and are read live; two have no API at all and are recorded
+                       from the Telnyx portal. -->
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">3 &middot; The rules</div>
+                      <div class="text-sm font-semibold">Sending limits &mdash; what we may send, and how fast</div>
+                      <div class="text-[11px] text-base-content/60">
+                        Four separate limits. They are not nested &mdash; only the T&#8209;Mobile row is a daily
+                        quantity that runs out; the other three are speeds.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Limit</th><th>Kind</th><th>Set by</th><th class="text-right">Ceiling</th>
+                          <th>Applies to</th><th class="text-right">Our usage</th>
+                        </tr></thead>
+                        <tbody id="tu-limits-rows"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2" id="tu-limits-note"></p>
+                  </div>
+
+                  <p class="text-[11px] text-base-content/50" id="tu-note"></p>
+                </div>
+              </div>
+            </details>
+
+            <!-- Shown only when nothing rendered, so an empty Reports tab explains itself
+                 rather than looking broken. -->
+            <div id="rep-empty" class="text-sm text-base-content/50 hidden">
+              No reports could be loaded. The Telnyx volume report needs
+              <code>api/telnyx-usage-sync</code> to have run at least once.
+            </div>
+          </div>
+
           <div data-view id="view-rules" class="hidden space-y-5">
             <!-- HOW THE RULES ABOVE ARE ACTUALLY USED. The three inputs on this page decide which
                  events can be blasted, but nothing on screen said where in the chain they act —
@@ -2196,7 +2399,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     });
 
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', rules:'view-rules' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', reports:'view-reports', rules:'view-rules' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -2205,6 +2408,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'rules') loadRules();
       if(tab === 'queue' && window.__loadQueue) window.__loadQueue();
       if(tab === 'history' && window.__loadBlastHistory) window.__loadBlastHistory();
+      if(tab === 'reports' && window.__loadTelnyxUsage) window.__loadTelnyxUsage();
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
@@ -5103,7 +5307,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
         // keeps advertising counts from the last load.
         paintStatusCounts();
-        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="9" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
+        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
         const rows = visibleRows();
         // PRUNE TO WHAT THE FILTERS LEAVE. Without this you could tick six rows, change the
         // status filter, and then apply an action to rows that are no longer on screen — the
@@ -5146,7 +5350,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : 'No blasts match these filters.';
           const clear = (dateFrom || dateTo)
             ? ' <button data-dateclear class="link link-primary">Clear the date filter</button>' : '';
-          tb.innerHTML = `<tr><td colspan="9" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
+          tb.innerHTML = `<tr><td colspan="10" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
           tb.querySelector('[data-dateclear]')?.addEventListener('click', clearDateFilter);
           lastRows = lastPaged = []; paintBulk();
           return;
@@ -5181,7 +5385,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // quietly reaching across the pager.
             const dayIds = paged.filter(x => sendYmd(x.scheduled_for) === day).map(x => x.id);
             const dayOn  = dayIds.length > 0 && dayIds.every(id => picked.has(id));
-            dayHead = `<tr class="bg-base-200/70"><td colspan="9" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
+            dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
               <input type="checkbox" class="checkbox checkbox-xs align-middle mr-2" data-pickday="${esc(day)}" ${dayOn ? 'checked' : ''} title="Select every blast on this page going out on this day" aria-label="Select this day">
               <button data-dayjump="${esc(day)}" class="hover:underline decoration-dotted underline-offset-2 uppercase tracking-wide" title="${isOnly ? 'Showing this day only — click to clear the date filter' : 'Show only this day'}">${esc(sendDateShort(r.scheduled_for))}</button>
               <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span>${isOnly?' <span class="badge badge-xs badge-ghost font-normal normal-case">only this day</span>':''}</td></tr>`;
@@ -5250,9 +5454,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="col-tight"><div class="flex items-center gap-0.5">
               <input type="checkbox" class="checkbox checkbox-xs" data-pick="${esc(r.id)}" ${isPicked ? 'checked' : ''} aria-label="Select this blast">
               <button class="btn btn-ghost btn-xs px-1" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button>
-              ${actionsMenu(r, { sent, rejected, archived })}
             </div></td>
             <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
+            <td class="col-tight">${actionsMenu(r, { sent, rejected, archived })}</td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td class="col-tight">${marketCell}</td>
@@ -5327,7 +5531,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               : offNote('SMS')}
             ${panelFoot('sms', r.id)}
           </section>`;
-          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="8" class="py-3">
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${emailPanel}${smsPanel}</div>
             <!-- The save controls moved INTO each panel (see panelFoot). What is left here is the
                  one line that is about neither channel in particular. -->
@@ -5936,7 +6140,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function refresh(){
         const { data, error } = await sb.rpc('get_campaign_queue');
-        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="9" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         LOADED = true;
         // Make the stored sender match the one the row is shown with — for a retired value
@@ -5969,7 +6173,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         render();
       }
       async function loadQueue(){
-        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
         // Salesmsg numbers, live from the API. A failure here is NOT fatal: the dropdown falls
         // back to Telnyx only. Better a shorter list than an option that looks real and routes
@@ -6797,6 +7001,294 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Reads EVERY blast, from whichever platform sent it, via /api/market-history: the blast log
     // (Textable/CakeMail history, and the decider's cooldown source) merged with the Salesmsg
     // broadcast sync. Rows expand to show the copy that was sent. "Sync now" still pulls Salesmsg.
+    // ===== Telnyx 10DLC volume vs carrier cap — the strip above Market History =====
+    //
+    // Telnyx publishes what a brand may send and never what it has sent against that, so the
+    // remaining figure is computed on our side: cached usage_reports volume from
+    // api/telnyx-usage-sync.js, compared to the cap that sync derives from the brand's
+    // vetting score. /api/telnyx-usage does the arithmetic; this only draws it.
+    //
+    // Fails QUIETLY by hiding the strip. It sits on top of a tab that works without it, and a
+    // red error bar over Cole's send history — for a compliance readout he did not ask for —
+    // would be worse than the strip simply not being there.
+    (function telnyxUsageModule(){
+      const strip = document.getElementById('tu-strip');
+      if(!strip) return;
+      const $ = id => document.getElementById(id);
+      const nf = n => (Number(n)||0).toLocaleString();
+      const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      const shortDate = d => { const [y,m,dd] = String(d).split('-'); return `${dd}/${m}`; };
+
+      let loaded = false;
+
+      window.__loadTelnyxUsage = async function(force){
+        // The tab can be re-entered many times in a session and this number moves once a day.
+        if(loaded && !force) return;
+        const empty = document.getElementById('rep-empty');
+        try{
+          const r = await fetch('/api/telnyx-usage?days=14', { headers: await apiHeaders() });
+          if(!r.ok) throw new Error(r.status);
+          const j = await r.json();
+          if(!j || !j.ok) throw new Error('not ok');
+          render(j);
+          loaded = true;
+          strip.classList.remove('hidden');
+          if(empty) empty.classList.add('hidden');
+        }catch{
+          // On its own tab the strip is the whole page, so failing silently would leave
+          // Reports blank with no explanation. Say why instead.
+          if(empty) empty.classList.remove('hidden');
+        }
+      };
+
+      // Chips repaint on the Today/Last-14-days toggle without refetching — both figures come
+      // back in the same response, so switching is free.
+      let lastCarriers = [];
+      let lastCap = 0;
+      let carrierRange = 'window';
+
+      function paintCarriers(){
+        const el = document.getElementById('tu-carriers');
+        if(!el) return;
+        const isToday = carrierRange === 'today';
+        const val = c => isToday ? (Number(c.today) || 0) : (Number(c.total) || 0);
+        // A carrier with nothing today is dropped rather than shown as 0 — on a quiet morning
+        // that would be eighteen empty chips burying the two that did send.
+        const rows = lastCarriers.filter(c => val(c) > 0).sort((a, b) => val(b) - val(a));
+        const sum = rows.reduce((s, c) => s + val(c), 0);
+
+        el.innerHTML = rows.length ? rows.map(c => {
+          const n = val(c);
+          const share = sum ? (n / sum * 100).toFixed(1) : 0;
+          const name = c.carrier === 'unidentified'
+            ? '<span class="opacity-60" title="Telnyx returned no carrier for these — usually landlines, VoIP, or numbers it could not resolve.">unidentified</span>'
+            : esc(c.carrier);
+          const cls = c.capped
+            ? 'badge badge-sm bg-success/15 border-success/40 text-success-content'
+            : 'badge badge-sm badge-ghost';
+          const tip = c.capped
+            ? `${c.carrier} — the only carrier with a daily cap. ${nf(c.today)} today of ${nf(lastCap)} allowed, `
+              + `${nf(Math.max(0, lastCap - (Number(c.today) || 0)))} left. ${nf(c.total)} over the window.`
+            : `${c.carrier} — no daily volume cap, so this is a running total rather than a share of any allowance. `
+              + `${nf(c.today)} today, ${nf(c.total)} over the window.`;
+          return `<span class="${cls}" title="${esc(tip)}">${name}
+                    <span class="tabular-nums font-semibold ml-1">${nf(n)}</span>
+                    <span class="opacity-60 ml-1">${share}%</span>
+                  </span>`;
+        }).join('')
+          : `<span class="text-base-content/50 text-xs">Nothing sent ${isToday ? 'yet today' : 'in this window'}.</span>`;
+      }
+
+      document.querySelectorAll('[data-tu-range]').forEach(b => b.addEventListener('click', () => {
+        carrierRange = b.dataset.tuRange;
+        document.querySelectorAll('[data-tu-range]').forEach(x => x.classList.toggle('btn-active', x === b));
+        paintCarriers();
+      }));
+
+      // Recorded from Telnyx portal → Messaging → Programmable Messaging → Rate Limits, which
+      // is the ONLY place these appear — there is no API that returns an account rate limit.
+      // Re-check them if throughput ever changes; nothing here can detect them going stale.
+      const PORTAL_CHECKED = '11 Sep 2026';
+      const ACCOUNT_PER_MIN = 3000;
+      // n8n bulk-send sends batchSize 5 every 1100ms. Kept next to the ceiling it is measured
+      // against, because the only reason to know the ceiling is to decide whether to raise this.
+      const OUR_PER_MIN = Math.round(5 / 1.1 * 60);   // ≈273
+
+      // The four limits people keep conflating. Two follow the brand's vetting score and are
+      // read live; two are fixed and recorded by hand.
+      function renderLimits(j){
+        const tb = document.getElementById('tu-limits-rows');
+        if(!tb) return;
+        const cap = Number(j.cap && j.cap.tmobile_daily) || 0;
+        const att = Number(j.cap && j.cap.att_tpm) || 0;
+        const peak = j.peak ? Number(j.peak.pct_of_cap) || 0 : 0;
+        const pctOf = (used, ceiling) => ceiling ? `${(used / ceiling * 100).toFixed(0)}%` : '—';
+
+        // "Kind" is the column that stops the whole table being misread. A daily quantity and
+        // a per-minute speed are different things: only the quantity can be used up, and none
+        // of these sits inside any of the others.
+        const QTY = { label: 'Daily quantity', cls: 'badge-warning', tip: 'A bucket. Fills through the day, empties at midnight. This one can run out.' };
+        const SPD = { label: 'Speed', cls: 'badge-ghost', tip: 'A pace, not a total. It never runs out — you either exceed it in a given minute or you do not.' };
+
+        const rows = [
+          { name: 'T‑Mobile daily volume', kind: QTY, by: 'T‑Mobile, via 10DLC', ceiling: `${nf(cap)} / day`,
+            applies: 'T‑Mobile-bound messages, per brand',
+            usage: `${peak}% on the busiest day`, live: true },
+          { name: 'Account rate limit', kind: SPD, by: 'Telnyx', ceiling: `${nf(ACCOUNT_PER_MIN)} / min`,
+            applies: 'Everything we send, every number, every carrier',
+            // The one that runs out FIRST when the send rate is raised: AT&T's ceiling counts
+            // only AT&T-bound segments, this one counts the lot.
+            note: 'Shared — inboxes sending at once split it between them',
+            usage: `${nf(OUR_PER_MIN)} / min · ${pctOf(OUR_PER_MIN, ACCOUNT_PER_MIN)}` },
+          { name: 'AT&T throughput', kind: SPD, by: 'AT&T, via 10DLC', ceiling: `${nf(att)} segments / min`,
+            applies: 'AT&T-bound segments only (~21% of our traffic)',
+            usage: '~11% at current send rate', live: true },
+          { name: 'Unregistered long code', kind: SPD, by: 'Telnyx / industry', ceiling: '0.1 / sec ≈ 6 / min',
+            applies: 'Any number on no 10DLC campaign',
+            usage: '+1 615 805 0766', warn: true },
+        ];
+
+        tb.innerHTML = rows.map(r => `<tr>
+          <td class="font-medium">${esc(r.name)}${r.live ? ' <span class="badge badge-ghost badge-xs align-middle" title="Read live from the brand’s vetting score on every sync.">live</span>' : ''}</td>
+          <td><span class="badge badge-sm ${r.kind.cls}" title="${esc(r.kind.tip)}">${esc(r.kind.label)}</span></td>
+          <td class="opacity-70">${esc(r.by)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">${esc(r.ceiling)}</td>
+          <td class="opacity-70">${esc(r.applies)}${r.note ? `<div class="text-[11px] opacity-70">${esc(r.note)}</div>` : ''}</td>
+          <td class="text-right tabular-nums whitespace-nowrap ${r.warn ? 'text-error' : ''}">${esc(r.usage)}</td>
+        </tr>`).join('');
+
+        document.getElementById('tu-limits-note').innerHTML =
+          `Go over a <b>speed</b> limit and nothing is lost straight away — Telnyx holds the excess `
+          + `in a queue and releases it as fast as the limit allows. That queue holds about `
+          + `<b>1 hour</b> of messages; past that it refuses the rest with error <code>40318</code>. `
+          + `Go over the <b>daily</b> limit and there is no queue: T‑Mobile stops accepting until midnight UTC.<br>`
+          + `Rows marked live follow the brand’s vetting score. The account and long-code figures `
+          + `have no API and were read from the Telnyx portal on ${PORTAL_CHECKED}.`;
+      }
+
+      function render(j){
+        const cap = Number(j.cap && j.cap.tmobile_daily) || 0;
+        const today = j.today || { tmobile:0, total:0 };
+        const pct = cap ? (today.tmobile / cap * 100) : 0;
+
+        const tmoToday = Number(today.tmobile) || 0;
+        const allToday = Number(today.total) || 0;
+
+        // Total volume leads. This is the figure that was left unpopulated when the summary
+        // was split in two — the element existed and nothing ever wrote to it, so it sat on
+        // its em-dash placeholder next to a live T-Mobile count.
+        $('tu-sent').textContent = nf(allToday);
+        $('tu-sent-sub').textContent = allToday
+          ? `all carriers · ${nf(allToday - tmoToday)} of it uncapped`
+          : 'all carriers';
+
+        // The number the report exists for: ceiling minus what today has already spent.
+        const left = Math.max(0, cap - tmoToday);
+        $('tu-left').textContent = nf(left);
+        $('tu-today').textContent = nf(tmoToday);
+        $('tu-today-sub').textContent = cap ? `${pct.toFixed(2)}% used` : '';
+        $('tu-cap').textContent = `${nf(cap)} cap`;
+
+        const bar = $('tu-bar');
+        // Sub-1% still has to be visible as a sliver, or a working day reads as a broken bar.
+        bar.style.width = Math.max(pct, today.tmobile > 0 ? 0.6 : 0) + '%';
+        // Semantic, and separate from the app's accent: green under half, amber past 50%,
+        // red past 80% — the point at which a blast could still push the day over.
+        bar.className = 'h-full ' + (pct >= 80 ? 'bg-error' : pct >= 50 ? 'bg-warning' : 'bg-success');
+
+        const c = j.cap || {};
+        const when = c.checked_at ? new Date(c.checked_at).toLocaleDateString() : 'never';
+        $('tu-prov').textContent =
+          `${pct.toFixed(2)}% of cap · ${nf(cap)}/day from vetting score ${c.vetting_score == null ? 'unvetted' : c.vetting_score}`
+          + `${c.brand ? ' (' + c.brand + ')' : ''} · checked ${when}`;
+
+        // ── 14-day bars, scaled to the busiest day ──
+        // STACKED: full bar is everything we sent that day, the coloured foot is the
+        // T-Mobile portion. Showing T-Mobile alone made this look like a T-Mobile report and
+        // hid four fifths of the volume; showing only the total hid the part that can get us
+        // throttled. One bar answers both.
+        const days = j.by_day || [];
+        const max = Math.max(1, ...days.map(d => Number(d.total) || 0));
+        $('tu-days').innerHTML = days.map(d => {
+          const tot = Number(d.total) || 0, tmo = Number(d.tmobile) || 0;
+          // Bars top out at 78% of the track so the figure above them always has room; a bar
+          // drawn to 100% would push its own label out of the box.
+          const h = Math.max(tot > 0 ? 4 : 1.5, Math.round(tot / max * 78));
+          // Colour the T-Mobile foot on cap PRESSURE: pct_of_cap is already the worst-affected
+          // brand that day, measured against that brand's own allowance.
+          const p = Number(d.pct_of_cap) || 0;
+          const tone = p >= 80 ? 'bg-error' : p >= 50 ? 'bg-warning' : 'bg-success';
+          // Share of the bar, not of the track — so the foot reads as a proportion of that
+          // day's sending regardless of how tall the day was.
+          const foot = tot ? Math.min(100, Math.round(tmo / tot * 100)) : 0;
+          const tip = `${d.date} — ${nf(tot)} sent in total · ${nf(tmo)} to T‑Mobile`
+            + (d.worst_brand ? ` (${p}% of ${d.worst_brand}’s cap)` : '')
+            + ` · ${nf(tot - tmo)} to carriers with no cap`;
+          // A zero prints as 0 rather than blank: an empty gap over a flat bar reads as
+          // missing data, and "we sent nothing that day" is a fact, not a hole.
+          return `<div class="grow flex flex-col justify-end items-center gap-1 h-full" title="${esc(tip)}">
+                    <span class="text-[10px] leading-none tabular-nums ${tot ? 'text-base-content/70' : 'text-base-content/30'}">${nf(tot)}</span>
+                    <div class="w-full bg-base-300 flex flex-col justify-end" style="height:${h}%">
+                      <div class="w-full ${tone}" style="height:${foot}%"></div>
+                    </div>
+                  </div>`;
+        }).join('');
+        if(days.length){
+          $('tu-from').textContent = shortDate(days[0].date);
+          $('tu-to').textContent = shortDate(days[days.length-1].date);
+        }
+
+        // ── Per carrier ──
+        // The capped one is called out; everything else is deliberately quiet, because its
+        // only job is to account for the difference between "sent" and "T‑Mobile".
+        lastCarriers = j.by_carrier || [];
+        lastCap = cap;
+        paintCarriers();
+
+        // ── Per brand ──
+        // Utilisation is measured against each brand's OWN cap. An earlier cut compared every
+        // brand to the lowest cap on the account and read 70.8% where the truth was 3.5%.
+        const brands = j.by_brand || [];
+        $('tu-brands').innerHTML = brands.length ? brands.map(b => {
+          const p = Number(b.peak_pct_of_cap) || 0;
+          const tone = p >= 80 ? 'text-error font-semibold' : p >= 50 ? 'text-warning' : '';
+          const score = b.vetting_score == null
+            ? '<span class="text-warning" title="No external vetting on this brand — it sits in the bottom band: 2,000 messages/day to T‑Mobile and 240 segments/minute to AT&amp;T.">unvetted</span>'
+            : esc(b.vetting_score);
+          return `<tr>
+            <td>${esc(b.brand || '—')}</td>
+            <td class="text-right tabular-nums">${score}</td>
+            <td class="text-right tabular-nums">${nf(b.tmobile_daily_cap)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(b.numbers)}</td>
+            <td class="text-right tabular-nums">${nf(b.total)}</td>
+            <td class="text-right tabular-nums">${nf(b.tmobile)}</td>
+            <td class="text-right tabular-nums ${tone}">${b.peak_day ? esc(b.peak_day) + ' · ' + p + '%' : '—'}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="7" class="text-base-content/50">No brand sent anything in this window.</td></tr>';
+
+        // Say what was left out, so a one-row table is not mistaken for "we only have one brand".
+        const idle = j.idle_brands || [];
+        const idleEl = $('tu-idle');
+        if(idleEl){
+          idleEl.textContent = idle.length
+            ? `Not shown: ${idle.join(', ')} — registered, but sent nothing in this window.`
+            : '';
+          idleEl.classList.toggle('hidden', !idle.length);
+        }
+
+        // ── Per inbox ──
+        const rows = j.by_inbox || [];
+        $('tu-inbox').innerHTML = rows.length ? rows.map(x => {
+          // A number with no row in telnyx_senders is sending without anyone having claimed
+          // it. That is worth seeing, not hiding behind the bare digits.
+          const label = x.label ? esc(x.label) : '<span class="text-warning">unlabelled</span>';
+          // Not registered to a campaign means carrier filtering and a 0.1 MPS per-number
+          // ceiling regardless of brand tier — the loudest thing this table can say.
+          const brand = x.registered
+            ? `<span class="opacity-70">${esc(x.brand || '—')}</span>`
+              + (x.campaign ? ` <span class="opacity-40 text-[11px] font-mono">${esc(x.campaign)}</span>` : '')
+            : '<span class="badge badge-error badge-sm text-white" title="This number is not registered to any 10DLC campaign. Carriers filter unregistered long codes, and it is capped at 0.1 messages/second by the number itself — the brand tier does not apply.">not registered</span>';
+          return `<tr>
+            <td>${label}</td>
+            <td class="font-mono text-[11px] opacity-70">${esc(x.number)}</td>
+            <td>${brand}</td>
+            <td class="text-right tabular-nums font-semibold">${nf(x.total)}</td>
+            <td class="text-right tabular-nums bg-success/5">${nf(x.tmobile)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(x.att)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(x.verizon)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(x.other)}</td>
+            <td class="text-right tabular-nums opacity-50">${nf(x.segments)}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="9" class="text-base-content/50">Nothing sent in this window.</td></tr>';
+
+        renderLimits(j);
+
+        $('tu-note').textContent =
+          `Last ${j.days} days. The cap counts T‑Mobile-bound messages only — it is a carrier limit, not a reach figure, `
+          + `so it will not match the totals below. ${j.excludes || ''}`;
+      }
+    })();
+
     (function blastHistoryModule(){
       const el = (id) => document.getElementById(id);
       if(!el('bh-rows')) return;
