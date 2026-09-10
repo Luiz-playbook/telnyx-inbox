@@ -6817,6 +6817,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Stage text arrives as an internal id on some pipelines and as a label on others ("Closed
       // Lost - Never Launched"), so the won/lost test is on the text and anything unrecognised
       // stays neutral rather than being guessed at.
+      // Local, because this module never had one. eventTargetsModule and queueModule each define
+      // their own clip() and neither is in scope here — dealLine called it and threw
+      // "clip is not defined" the moment a recipient row carried a deal.
+      const clip = (t, n = 17) => { t = (t == null ? '' : t).toString(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+
       function dealTag(d){
         if(!d) return '';
         // THE LABEL, NOT THE ID. HubSpot stores dealstage as an opaque id — "1607069",
