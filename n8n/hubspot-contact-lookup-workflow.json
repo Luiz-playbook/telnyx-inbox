@@ -5,10 +5,10 @@
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        -144,
-        -176
+        2800,
+        -784
       ],
-      "id": "74cdd4e5-708b-4857-b2b7-dbf0f1473463",
+      "id": "ce833267-477c-4df6-b6ff-66b1112677f9",
       "name": "When clicking ‘Execute workflow’"
     },
     {
@@ -21,10 +21,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -144,
-        16
+        2800,
+        -592
       ],
-      "id": "5687ba91-eb59-4b47-8fb9-1a66028a2587",
+      "id": "ee6ea821-c7f6-460b-b977-555434574cab",
       "name": "Webhook: Look up contact by email",
       "webhookId": "7c9e2a41-6b3d-4f80-9e12-5a7c3d1b8e40"
     },
@@ -35,10 +35,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        80,
-        -80
+        3024,
+        -688
       ],
-      "id": "76af7e0e-928c-463b-b2e4-75c31b2d63e5",
+      "id": "12d2ff29-38c1-446b-b9af-3802d3692ff9",
       "name": "Prepare the email to search"
     },
     {
@@ -52,10 +52,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        656,
-        -96
+        3600,
+        -704
       ],
-      "id": "ae62a290-0e84-4eed-acd0-23c5b1665a14",
+      "id": "cd8c1b7b-1e7b-493f-a412-48b2eab394bf",
       "name": "Look in the mirror first",
       "credentials": {
         "postgres": {
@@ -93,10 +93,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        880,
-        -96
+        3824,
+        -704
       ],
-      "id": "ebf378a5-4af0-46f2-a465-019b201740e5",
+      "id": "9580df2c-cb07-4d9d-83aa-62f434b096f9",
       "name": "Already in the mirror?"
     },
     {
@@ -113,10 +113,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1104,
-        0
+        4048,
+        -608
       ],
-      "id": "9f52a3ad-bfcd-4f82-bad5-48a0a67e9ce7",
+      "id": "6dc0e949-ac4f-4f92-b6da-c4a9a102360e",
       "name": "HubSpot: Search by email",
       "credentials": {
         "hubspotAppToken": {
@@ -132,10 +132,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1328,
-        0
+        4272,
+        -608
       ],
-      "id": "dbc19b08-3520-4afc-832b-9b11118ff84e",
+      "id": "4eeb76d8-2bca-45b4-82fc-59edd3e0554e",
       "name": "Shape the HubSpot result"
     },
     {
@@ -167,10 +167,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1552,
-        0
+        4496,
+        -608
       ],
-      "id": "7fbb64e0-752a-4dd6-a9da-6c85729f4e5d",
+      "id": "9dbaa899-680e-4b37-891f-653859ee2f5f",
       "name": "Does HubSpot have them?"
     },
     {
@@ -184,10 +184,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1776,
-        -96
+        4720,
+        -720
       ],
-      "id": "065eaa8c-d0e8-4fa4-874b-7a435ba44bc7",
+      "id": "ae8b8883-f1ac-4636-862f-b9be0ed2ed62",
       "name": "Cache the contact",
       "credentials": {
         "postgres": {
@@ -207,10 +207,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1776,
-        96
+        4720,
+        -512
       ],
-      "id": "4789bfa5-97ed-43d8-8215-f16ead757fc5",
+      "id": "372abef6-e52e-4344-8947-4f3ba13e1832",
       "name": "Respond: no such contact"
     },
     {
@@ -242,10 +242,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        320,
-        -80
+        3264,
+        -688
       ],
-      "id": "0ceb4a6d-14ed-454e-a555-36e5ef5eda35",
+      "id": "53e72f9d-5b5d-44d4-b9ea-30464101303e",
       "name": "Is the email usable?"
     },
     {
@@ -259,10 +259,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        656,
-        96
+        3600,
+        -512
       ],
-      "id": "373149fa-0ca7-40af-8c23-e91a6933c4a4",
+      "id": "dd3c0e4d-4249-4f4f-a071-ea8f85e7921b",
       "name": "Respond: bad request"
     },
     {
@@ -272,10 +272,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1568,
-        96
+        5008,
+        -720
       ],
-      "id": "1a2b3c4d-0020-4000-8000-000000000020",
+      "id": "6d3e5b66-8bb5-4d34-8d15-dc5006e392fe",
       "name": "Contact to enrich"
     },
     {
@@ -299,10 +299,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1792,
-        0
+        5264,
+        -720
       ],
-      "id": "1a2b3c4d-0021-4000-8000-000000000021",
+      "id": "5a0e2e0d-0889-4467-b084-c8588060002a",
       "name": "HubSpot: Companies on this contact",
       "retryOnFail": true,
       "maxTries": 3,
@@ -335,10 +335,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2016,
-        0
+        5552,
+        -720
       ],
-      "id": "1a2b3c4d-0022-4000-8000-000000000022",
+      "id": "b84c5557-4768-4b4f-b5d9-8cbeb95da896",
       "name": "HubSpot: Deals on this contact",
       "retryOnFail": true,
       "maxTries": 3,
@@ -357,10 +357,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2240,
-        0
+        5776,
+        -720
       ],
-      "id": "1a2b3c4d-0023-4000-8000-000000000023",
+      "id": "558f6d27-b298-4ad0-9849-4b1276c0dd44",
       "name": "Collect the associated ids"
     },
     {
@@ -384,10 +384,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2464,
-        0
+        6000,
+        -720
       ],
-      "id": "1a2b3c4d-0024-4000-8000-000000000024",
+      "id": "6557cf7a-50e0-451e-ad8f-506b32b290bd",
       "name": "HubSpot: Read those companies",
       "retryOnFail": true,
       "maxTries": 3,
@@ -420,10 +420,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2688,
-        0
+        6224,
+        -720
       ],
-      "id": "1a2b3c4d-0025-4000-8000-000000000025",
+      "id": "3f08e0ea-aaa8-4654-b1c6-acde308912b6",
       "name": "HubSpot: Read those deals",
       "retryOnFail": true,
       "maxTries": 3,
@@ -442,10 +442,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2912,
-        0
+        6448,
+        -720
       ],
-      "id": "1a2b3c4d-0026-4000-8000-000000000026",
+      "id": "6e78c7db-f65c-403d-aa03-8a1fab36b340",
       "name": "Shape company and deal rows"
     },
     {
@@ -459,10 +459,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3136,
-        0
+        6672,
+        -720
       ],
-      "id": "1a2b3c4d-0027-4000-8000-000000000027",
+      "id": "9d6c6f9e-8721-426f-98c0-25e11df7976c",
       "name": "Cache the companies",
       "credentials": {
         "postgres": {
@@ -482,10 +482,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3360,
-        0
+        6896,
+        -720
       ],
-      "id": "1a2b3c4d-0028-4000-8000-000000000028",
+      "id": "fec5e56b-2603-4c2e-bdb7-ad51bbd2952d",
       "name": "Cache the deals",
       "credentials": {
         "postgres": {
@@ -505,10 +505,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3584,
-        0
+        7120,
+        -720
       ],
-      "id": "1a2b3c4d-0029-4000-8000-000000000029",
+      "id": "62f5259f-2bad-4ea4-b8ea-45db93c63650",
       "name": "Resolve the deal",
       "credentials": {
         "postgres": {
@@ -526,10 +526,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        3808,
-        0
+        7344,
+        -720
       ],
-      "id": "1a2b3c4d-002a-4000-8000-00000000002a",
+      "id": "2ebbcb5b-a817-4f1d-9c00-646b43fe8723",
       "name": "Respond: contact, companies and deal"
     },
     {
@@ -543,10 +543,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        304,
-        400
+        3248,
+        -208
       ],
-      "id": "5a9e1111-0000-4000-8000-00000000-a1",
+      "id": "f0580e62-8f33-4d74-8cdd-ab8b0e750837",
       "name": "HubSpot: Deal pipelines",
       "retryOnFail": true,
       "maxTries": 3,
@@ -565,10 +565,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        528,
-        400
+        3472,
+        -208
       ],
-      "id": "5a9e1111-0000-4000-8000-00000000-a2",
+      "id": "1026f444-977d-4c1e-96e3-95eed8d13cb1",
       "name": "Flatten the stages"
     },
     {
@@ -582,10 +582,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        752,
-        400
+        3696,
+        -208
       ],
-      "id": "5a9e1111-0000-4000-8000-00000000-a3",
+      "id": "5f273207-aa12-4470-a545-5923e17b994a",
       "name": "Cache the deal stages",
       "credentials": {
         "postgres": {
@@ -868,5 +868,15 @@
   "pinData": {},
   "meta": {
     "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
-  }
+  },
+  "name": "Marketing Blaster - HS look up contact email | Vhea",
+  "id": "NtM1swQyI83OZRob",
+  "active": true,
+  "versionId": "b29b8805-1d7e-4971-9e86-27e88f34e916",
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "nodeGroups": [],
+  "tags": []
 }
