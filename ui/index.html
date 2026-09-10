@@ -6819,15 +6819,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // stays neutral rather than being guessed at.
       function dealTag(d){
         if(!d) return '';
-        const stage = String(d.stage || '');
-        const low = stage.toLowerCase();
-        const kind = /closed won|won\b/.test(low) ? ' won' : /closed lost|lost\b/.test(low) ? ' lost' : '';
+        // THE LABEL, NOT THE ID. HubSpot stores dealstage as an opaque id — "1607069",
+        // "37bf5e8e-93c2-...". migration 067 maps it through hubspot.hubspot_deal_stages, and
+        // stage_label falls back to the raw id when that table has not been synced yet: an
+        // unreadable id is worse than a word but far better than an empty pill hiding a deal.
+        const label = String(d.stage_label || d.stage || '');
+        // WON AND LOST COME FROM HUBSPOT, NOT FROM THE TEXT. A stage carries isClosed and a
+        // probability, and this portal proves why that matters: the stage whose id is literally
+        // "closedlost" is labelled "Initial Interest" and is OPEN at probability 0.5. Reading
+        // either the id or the label gets it exactly backwards.
+        const kind = d.is_won ? ' won' : d.is_lost ? ' lost' : '';
         const via = d.via === 'company' ? ' via-company' : '';
         const title = (d.via === 'company'
           ? 'A deal at this contact\u2019s latest-modified company, not on the contact themselves.'
           : 'A deal associated with this contact directly.')
-          + (stage ? '\n\nStage: ' + stage : '');
-        return `<span class="deal-pill${kind}${via}" title="${esc(title)}">${esc(stage || "deal")}</span>`;
+          + (d.pipeline_label ? '\n\nPipeline: ' + d.pipeline_label : '')
+          + (label ? '\nStage: ' + label : '');
+        return `<span class="deal-pill${kind}${via}" title="${esc(title)}">${esc(label || "deal")}</span>`;
       }
 
       // The line under the name. Deal first, company after it and muted. Returns NOTHING when

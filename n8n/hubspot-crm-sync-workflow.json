@@ -370,6 +370,56 @@
       ],
       "id": "a1b2c3d4-0012-4000-8000-000000000012",
       "name": "Upsert companies"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/pipelines/deals",
+        "method": "GET",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        640
+      ],
+      "id": "5a9e0000-0000-4000-8000-00000000-a1",
+      "name": "HubSpot: Deal pipelines",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// The pipeline/stage map, flattened. GET /crm/v3/pipelines/deals returns every pipeline with its\n// stages nested; a deal row stores only the stage id, so this is what turns \"1607069\" into\n// \"Closed\". Four pipelines, 76 stages in this portal — small enough to replace wholesale.\n//\n// WON AND LOST ARE HUBSPOT OWN FLAGS, not a reading of the label. In this portal the stage whose\n// id is literally \"closedlost\" is labelled \"Initial Interest\" and is OPEN at probability 0.5 —\n// any heuristic on the id or the text gets that exactly backwards.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const p of ((item.json || {}).results || [])) {\n    for (const s of (p.stages || [])) {\n      const m = s.metadata || {};\n      rows.push({\n        stage_id: String(s.id),\n        pipeline_id: String(p.id),\n        pipeline_label: p.label || null,\n        stage_label: s.label || null,\n        display_order: Number.isFinite(Number(s.displayOrder)) ? Number(s.displayOrder) : null,\n        is_closed: String(m.isClosed) === 'true',\n        // Empty string and undefined both mean \"not set\"; Number() would turn them into 0, which\n        // is the value that means LOST.\n        probability: (m.probability === undefined || m.probability === null || m.probability === '')\n          ? null : Number(m.probability),\n        synced_at: new Date().toISOString(),\n      });\n    }\n  }\n}\nreturn rows.length ? [{ json: { stages: rows } }] : [];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        640
+      ],
+      "id": "5a9e0000-0000-4000-8000-00000000-a2",
+      "name": "Flatten the stages"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_deal_stages\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_deal_stages, $1::jsonb)\non conflict (stage_id) do update set\n  pipeline_id = excluded.pipeline_id,\n  pipeline_label = excluded.pipeline_label,\n  stage_label = excluded.stage_label,\n  display_order = excluded.display_order,\n  is_closed = excluded.is_closed,\n  probability = excluded.probability,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.stages) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1120,
+        640
+      ],
+      "id": "5a9e0000-0000-4000-8000-00000000-a3",
+      "name": "Cache the deal stages"
     }
   ],
   "connections": {
@@ -427,6 +477,11 @@
           },
           {
             "node": "HubSpot: Get companies changed since",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HubSpot: Deal pipelines",
             "type": "main",
             "index": 0
           }
@@ -548,6 +603,28 @@
         [
           {
             "node": "Upsert companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Deal pipelines": {
+      "main": [
+        [
+          {
+            "node": "Flatten the stages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Flatten the stages": {
+      "main": [
+        [
+          {
+            "node": "Cache the deal stages",
             "type": "main",
             "index": 0
           }

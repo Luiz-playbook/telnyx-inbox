@@ -139,11 +139,28 @@ export default async function handler(req, res) {
       //
       // Every field is optional: an older lookup workflow that answers with the contact alone
       // still works, and the row simply shows what it always showed.
+      // The webhook answers with the raw HubSpot deal, where dealstage is an opaque id. The
+      // batch path resolves it through hubspot.hubspot_deal_stages; this one has to as well, or
+      // a row filled in by clicking shows "1607069" beside neighbours reading "Closed".
+      let stageMap = null;
+      if (d && d.deal && d.deal.dealstage) {
+        try {
+          const sr = await fetch(`${url}/rest/v1/rpc/hubspot_stage_labels`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_stage_ids: [String(d.deal.dealstage)] }),
+          });
+          if (sr.ok) { const rows = await sr.json().catch(() => []); stageMap = Array.isArray(rows) ? rows[0] : null; }
+        } catch { /* the raw id still renders; a label is an improvement, not a requirement */ }
+      }
       const deal = d && d.deal ? {
         id: String(d.deal.hs_object_id != null ? d.deal.hs_object_id : d.deal_id),
         name: d.deal.dealname || null,
         stage: d.deal.dealstage || null,
+        stage_label: (stageMap && stageMap.stage_label) || d.deal.dealstage || null,
+        is_won: !!(stageMap && stageMap.is_won),
+        is_lost: !!(stageMap && stageMap.is_lost),
         pipeline: d.deal.pipeline || null,
+        pipeline_label: (stageMap && stageMap.pipeline_label) || null,
         amount: d.deal.amount == null ? null : Number(d.deal.amount),
         closedate: d.deal.closedate || null,
         modified: d.deal.hs_lastmodifieddate || null,
@@ -263,7 +280,13 @@ export default async function handler(req, res) {
                   id: String(d.deal_id),
                   name: d.deal_name || null,
                   stage: d.deal_stage || null,
+                  // The readable form, plus HubSpot's own won/lost flags — see migration 067.
+                  // The UI must never infer either of those from the text.
+                  stage_label: d.deal_stage_label || null,
+                  is_won: !!d.deal_is_won,
+                  is_lost: !!d.deal_is_lost,
                   pipeline: d.deal_pipeline || null,
+                  pipeline_label: d.deal_pipeline_label || null,
                   amount: d.deal_amount == null ? null : Number(d.deal_amount),
                   closedate: d.deal_closedate || null,
                   modified: d.deal_modified || null,
