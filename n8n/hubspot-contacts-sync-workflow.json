@@ -1,39 +1,32 @@
 {
-  "name": "HubSpot contacts to Supabase (AI-971)",
+  "name": "Marketing Blaster - HS contacts to supabase | Vhea",
   "nodes": [
     {
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        0,
-        0
+        304,
+        -64
       ],
-      "id": "b1a4c6d2-0f31-4a7e-9b52-1c0d8e4f2a10",
+      "id": "501b3036-f0dd-4e5c-8ef6-78854b086ed8",
       "name": "When clicking ‘Execute workflow’"
     },
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "hubspot-contacts-sync",
-        "authentication": "basicAuth",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        192
+        304,
+        128
       ],
-      "id": "c2b5d7e3-1042-4b8f-8c63-2d1e9f5a3b21",
+      "id": "0c2d96c2-807a-49c2-b2f4-4016e7d0ce48",
       "name": "Webhook: Sync now",
-      "webhookId": "e7f3a1b9-2c48-4d6e-9a71-3b5c8d2e4f60",
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "ur7HbBfjmdQDj5bi",
-          "name": "Unnamed credential 3"
-        }
-      }
+      "webhookId": "e7f3a1b9-2c48-4d6e-9a71-3b5c8d2e4f60"
     },
     {
       "parameters": {
@@ -49,10 +42,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        0,
-        384
+        304,
+        320
       ],
-      "id": "d3c6e8f4-2153-4c90-9d74-3e2f0a6b4c32",
+      "id": "5b344ed6-5b5e-4f43-b9b9-07cf125ad994",
       "name": "Every 6 hours"
     },
     {
@@ -64,38 +57,43 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        304,
-        192
+        608,
+        128
       ],
-      "id": "e4d7f9a5-3264-4da1-8e85-4f301b7c5d43",
-      "name": "Read how current the mirror is"
+      "id": "3b8689a6-5287-4bc2-8851-b6273d9e615a",
+      "name": "Read how current the mirror is",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// INCREMENTAL, KEYED ON hs_lastmodifieddate. HubSpot bumps that timestamp on ANY change, so one\n// filter carries both cases: a new contact is modified when it is created, an edited one when it\n// is edited. Both come back, and the upsert on hs_object_id inserts the first and overwrites the\n// second. Nothing ever asks Supabase which records it already holds — that would be one query per\n// record.\n//\n// THE FLOOR IS THE EPOCH, NOT A RECENT DATE. A recent floor silently skips every contact last\n// touched before it — one edited in 2023 and left alone would never sync, and nothing would report\n// it missing. On the first run the table is empty, so this pulls full history; after that the\n// watermark takes over and runs are small.\nconst FLOOR = 0;\n\n// The watermark is rewound a minute. HubSpot's clock and ours are not the same clock, and a record\n// modified in the same second the previous run read its last page would otherwise fall in the gap\n// between runs and never be seen again. Re-reading a minute costs nothing — the write is an upsert.\nconst REWIND_MS = 2 * 1000;\n\nconst state = {};\nfor (const r of $input.all()) {\n  const j = r.json || {};\n  if (j.source) state[j.source] = j.newest_modified;\n}\n\n// POST {\"since\":\"2026-01-01\"} to the webhook to re-read a period on purpose — after a mapping\n// change, or to repair a gap — without truncating the table. The schedule and the manual trigger\n// carry no body and ignore it.\nlet override = null;\ntry {\n  const body = $('Webhook: Sync now').first().json.body || {};\n  const t = body.since ? Date.parse(body.since) : NaN;\n  if (Number.isFinite(t)) override = t;\n} catch (e) { /* not triggered by the webhook */ }\n\nconst v = state.contacts ? Date.parse(state.contacts) : NaN;\nconst since = override !== null\n  ? String(override)\n  : String(Number.isFinite(v) ? Math.max(FLOOR, v - REWIND_MS) : FLOOR);\n\nreturn [{ json: { since_contacts: since } }];"
+        "jsCode": "// INCREMENTAL, KEYED ON THE CONTACT'S LAST-MODIFIED TIMESTAMP. HubSpot bumps it on ANY change, so\n// one filter carries both cases: a new contact is modified when it is created, an edited one when\n// it is edited. Both come back, and the upsert on hs_object_id inserts the first and overwrites the\n// second. Nothing ever asks Supabase which records it already holds — that would be one query per\n// record.\n//\n// THE PROPERTY IS CALLED 'lastmodifieddate' ON CONTACTS, not hs_lastmodifieddate. See the note on\n// the search node below; this workflow spent its whole life reading a property contacts do not\n// return, so the watermark below never moved off the floor.\n//\n// THE FLOOR IS THE EPOCH, NOT A RECENT DATE. A recent floor silently skips every contact last\n// touched before it — one edited in 2023 and left alone would never sync, and nothing would report\n// it missing. On the first run the table is empty, so this pulls full history; after that the\n// watermark takes over and runs are small.\nconst FLOOR = 0;\n\n// THE WATERMARK IS REWOUND TWO SECONDS, not a minute. This used to say \"HubSpot's clock and ours\n// are not the same clock\", which was wrong: the watermark is max(hs_lastmodifieddate) of the rows\n// we STORED, so it is a HubSpot timestamp compared against a HubSpot filter and no machine clock\n// enters into it. The only real risk is a record sharing the exact millisecond of the last one\n// stored, which GT would skip. Two seconds covers that.\n//\n// A MINUTE WAS ACTIVELY EXPENSIVE HERE. Every contact in this portal was bulk-modified on\n// 2026-09-10 between 04:23 and 12:29 — `lastmodifieddate LT 2025-09-04` matches zero of the\n// 1,116,689 — so the whole population spans eight hours. A 10,000-record page covers about 260\n// seconds of that range, and rewinding 60 of them discarded a quarter of every run. Compress the\n// same kind of bulk edit into twenty minutes and a page covers ~10 seconds, the rewind exceeds the\n// progress made, and the sync loops forever going backwards.\nconst REWIND_MS = 2 * 1000;\n\nconst state = {};\nfor (const r of $input.all()) {\n  const j = r.json || {};\n  if (j.source) state[j.source] = j.newest_modified;\n}\n\n// POST {\"since\":\"2026-01-01\"} to the webhook to re-read a period on purpose — after a mapping\n// change, or to repair a gap — without truncating the table. The schedule and the manual trigger\n// carry no body and ignore it.\nlet override = null;\ntry {\n  const body = $('Webhook: Sync now').first().json.body || {};\n  const t = body.since ? Date.parse(body.since) : NaN;\n  if (Number.isFinite(t)) override = t;\n} catch (e) { /* not triggered by the webhook */ }\n\nconst v = state.contacts ? Date.parse(state.contacts) : NaN;\nconst since = override !== null\n  ? String(override)\n  : String(Number.isFinite(v) ? Math.max(FLOOR, v - REWIND_MS) : FLOOR);\n\nreturn [{ json: { since_contacts: since } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        528,
-        192
+        832,
+        128
       ],
-      "id": "f5e8a0b6-4375-4eb2-9f96-5a412c8d6e54",
+      "id": "4c1430f6-f0fc-44b1-a108-e160a8be4d95",
       "name": "Prepare the since timestamp"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'lastmodifieddate', operator: 'GT', value: $json.since_contacts }] }],\n  sorts: [{ propertyName: 'lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['email','firstname','lastname','company','state','lifecyclestage','lastmodifieddate'],\n  limit: 100\n}) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "pagination": {
             "pagination": {
-              "paginationMode": "updateAParameterInEachRequest",
               "parameters": {
                 "parameters": [
                   {
@@ -108,7 +106,8 @@
               "paginationCompleteWhen": "other",
               "completeExpression": "={{ !$response.body.paging?.next?.after }}",
               "limitPagesFetched": true,
-              "maxRequestsPerPage": 100
+              "maxRequestsPerPage": 100,
+              "requestInterval": 400
             }
           }
         }
@@ -116,23 +115,32 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        800,
-        192
+        1104,
+        128
       ],
-      "id": "a6f9b1c7-5486-4fc3-8a07-6b523d9e7f65",
-      "name": "HubSpot: Get contacts changed since"
+      "id": "19bb5592-db13-4cf8-9607-00ab17a4ebdd",
+      "name": "HubSpot: Get contacts changed since",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// HubSpot search pages come back as { results: [...] }; flatten them into the row shape\n// hubspot.hubspot_contacts expects.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      email: p.email || null,\n      firstname: p.firstname || null,\n      lastname: p.lastname || null,\n      company: p.company || null,\n      state: p.state || null,\n      lifecyclestage: p.lifecyclestage || null,\n      // HUBSPOT CALLS THIS 'lastmodifieddate' ON CONTACTS. Only companies, deals and tickets\n      // carry hs_lastmodifieddate; asking a contact for it returns undefined even when the\n      // property is named explicitly in the request. Our COLUMN keeps the hs_ name so all three\n      // mirror tables read the same — it is the source property that differs.\n      hs_lastmodifieddate: p.lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\n// ONE item carrying the whole batch. The upsert below takes the array as a single parameter, and\n// ten thousand separate statements is not a sync, it is an outage.\nreturn rows.length ? [{ json: { rows } }] : [];"
+        "jsCode": "// HubSpot search pages come back as { results: [...] }; flatten them into the row shape\n// hubspot.hubspot_contacts expects.\n//\n// 100 pages x 100 records = 10,000 per execution, which is not our choice: HubSpot's search API\n// refuses to page past 10,000 results for ANY one query. The watermark is what gets past it — each\n// run starts where the last one stopped, so a backfill completes over several runs rather than one.\n// 1,116,689 contacts is ~112 runs. Nothing is lost in between; it is only slow to become complete.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      email: p.email || null,\n      firstname: p.firstname || null,\n      lastname: p.lastname || null,\n      company: p.company || null,\n      state: p.state || null,\n      lifecyclestage: p.lifecyclestage || null,\n      // HUBSPOT CALLS THIS 'lastmodifieddate' ON CONTACTS. Only companies, deals and tickets carry\n      // hs_lastmodifieddate; a contact returns nothing for it even when it is named explicitly in\n      // the request, so this line used to store null on every row — and the watermark, which is\n      // max(hs_lastmodifieddate), stayed null with it. Our COLUMN keeps the hs_ name so all three\n      // mirror tables read alike; it is the SOURCE property that differs.\n      hs_lastmodifieddate: p.lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\n// ONE item carrying the whole batch. The upsert below takes the array as a single parameter, and\n// ten thousand separate statements is not a sync, it is an outage.\nreturn rows.length ? [{ json: { rows } }] : [];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1024,
-        192
+        1328,
+        128
       ],
-      "id": "b7a0c2d8-6597-40d4-9b18-7c634ea08076",
+      "id": "cee84657-ea19-4298-a6be-e9f9c0d6c468",
       "name": "Prepare contact rows"
     },
     {
@@ -146,13 +154,20 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1248,
-        192
+        1552,
+        128
       ],
-      "id": "c8b1d3e9-76a8-41e5-8c29-8d745fb19187",
-      "name": "Upsert contacts"
+      "id": "3dee14bc-8c3d-4bd3-89f8-a111e7a57b86",
+      "name": "Upsert contacts",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     }
   ],
+  "pinData": {},
   "connections": {
     "When clicking ‘Execute workflow’": {
       "main": [
@@ -232,9 +247,17 @@
       ]
     }
   },
-  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "f8441f73-ab30-47a4-a85e-608a0073b61f",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
-  }
+  },
+  "nodeGroups": [],
+  "id": "cAt0yl8Ml2osb04Y",
+  "tags": []
 }
