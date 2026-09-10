@@ -81,6 +81,15 @@
        company. That reads as "some rows have a badge and some do not", which is exactly what it
        was asked. The labels are 10.5px and muted: free to skip once you know them, and they
        answer the question permanently for anyone who does not. */
+    /* The disclosure caret. Rendered ONLY on rows that have something under them, so its
+       presence is the signal that there is anything to open — a caret on an empty row is a
+       control that does nothing, and with 100 rows on screen that is 100 of them. */
+    .rec-caret{ width:14px; height:14px; line-height:14px; text-align:center; font-size:9px;
+                color:#8695a7; background:none; border:0; padding:0; cursor:pointer;
+                transition:transform .12s ease; }
+    .rec-caret:hover{ color:#133b49; }
+    .rec-caret.open{ transform:rotate(90deg); }
+    .rec-detail{ grid-column:1 / -1; padding:6px 0 4px 22px; }
     .rec-meta{ display:flex; align-items:baseline; gap:6px; margin-top:3px; min-width:0; }
     .rec-meta > .prev-label{ flex:0 0 3.6rem; }
     .rec-meta-val{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; }
@@ -7253,6 +7262,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }catch(e){ host.innerHTML = `<div class="text-sm text-error p-2">${esc((e&&e.message)||e)}</div>`; }
       }
 
+      // WHICH ROWS ARE OPEN, BY EMAIL. Held outside loadRecipients because paint() rebuilds the
+      // whole list on every page: keeping this in the render would slam every expanded row shut
+      // the moment you pressed Load more.
+      const RECIP_OPEN = new Set();
+
       async function loadRecipients(cid, host, more, row){
         if(!cid || !host) return;
         const st = RECIP_CACHE.get(cid) || { contacts: [], next: null, done: false, note: '' };
@@ -7276,26 +7290,48 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // items-START, not items-baseline. A row carrying a deal line is two lines tall, and
             // baseline would leave the email and the link aligned to the second line instead of
             // the first. The name column also widens, since it now holds two things.
-            + st.contacts.map(c => `<div class="grid items-start gap-x-2 border-b border-base-200 py-1.5" data-crow
-                 style="grid-template-columns: minmax(0,11rem) minmax(0,1fr) auto auto">
+            // AN ACCORDION. The roster is the thing being scanned — a hundred names, who they are
+            // and whether we can reach them — so the row stays one line and the CRM detail goes
+            // underneath a caret. Two-line rows made a long list hard to read past.
+            //
+            // The caret is only drawn when there IS detail, so it doubles as the indicator: an
+            // arrow means we know something about this person, no arrow means we do not.
+            + st.contacts.map(c => {
+              const detail = dealLine(c);
+              const key = (c.email || String(c.hubspot_id || '')).toLowerCase();
+              const open = detail && RECIP_OPEN.has(key);
+              return `<div class="grid items-center gap-x-2 border-b border-base-200 py-1.5" data-crow
+                 style="grid-template-columns: 16px minmax(0,11rem) minmax(0,1fr) auto auto">
+                 ${detail
+                   ? `<button class="rec-caret${open ? " open" : ""}" data-rtoggle="${esc(key)}" aria-expanded="${open ? "true" : "false"}" title="${open ? "Hide" : "Show"} the CRM record">&#9654;</button>`
+                   : `<span></span>`}
                  <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
                  <span class="text-xs text-base-content/45 truncate" title="${esc(c.email || '')}">${esc(c.email || '')}</span>
-                 <span class="text-xs ${c.status && c.status !== 'active' ? 'text-warning' : 'text-base-content/40'}">${esc(c.status || '')}</span>
+                 <span class="text-xs ${c.status && c.status !== "active" ? "text-warning" : "text-base-content/40"}">${esc(c.status || '')}</span>
                  ${c.hubspot_id
                    ? `<a class="text-xs link" target="_blank" rel="noopener" href="${hsLink(c.hubspot_id)}">HubSpot</a>`
-                   // ABOUT HALF THE ROSTER HAS NO recordid — 15 of 30 in the sample — so half
-                   // these rows would otherwise end in nothing at all. The address is the only
-                   // thing known about them, and it is enough to find the record.
                    : (c.email
                        ? `<button class="btn btn-ghost btn-xs" data-hslookup="${esc(c.email)}">Find in HubSpot</button>`
                        : '')}
-                 <!-- Spans every column so a long stage name has the panel width, not 11rem. -->
-                 <div style="grid-column: 1 / -1">${dealLine(c)}</div>
-               </div>`).join('')
+                 ${detail ? `<div class="rec-detail${open ? "" : " hidden"}" data-rdetail="${esc(key)}">${detail}</div>` : ''}
+               </div>`;
+            }).join('')
             + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
           // A page is 100 contacts from CakeMail plus a mirror lookup for the ones without an
           // id — comfortably over a second. Without this the button just sat there and the
           // obvious response was to press it again, which fetches the same page twice.
+          // Toggling does NOT re-render: paint() rebuilds a hundred rows and would drop the scroll
+          // position every time somebody opened one.
+          host.querySelectorAll('[data-rtoggle]').forEach(btn => btn.addEventListener('click', () => {
+            const key = btn.dataset.rtoggle;
+            const panel = host.querySelector(`[data-rdetail="${CSS.escape(key)}"]`);
+            const nowOpen = !RECIP_OPEN.has(key);
+            if(nowOpen) RECIP_OPEN.add(key); else RECIP_OPEN.delete(key);
+            btn.classList.toggle('open', nowOpen);
+            btn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+            btn.title = (nowOpen ? 'Hide' : 'Show') + ' the CRM record';
+            if(panel) panel.classList.toggle('hidden', !nowOpen);
+          }));
           const moreBtn = host.querySelector('[data-more]');
           moreBtn?.addEventListener('click', () => {
             moreBtn.disabled = true;
@@ -7340,10 +7376,45 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               const rowEl = b.closest('[data-crow]');
               b.replaceWith(wrap);
               if(rowEl){
-                // First cell holds the name; the deal line goes under it. Guarded so a repeat
-                // click on a row that was not re-rendered cannot stack two copies.
-                const nameCell = rowEl.firstElementChild;
-                if(dealHtml && nameCell && !nameCell.querySelector('.deal-pill')) nameCell.insertAdjacentHTML('beforeend', dealHtml);
+                // A ROW THAT HAD NOTHING TO SHOW HAS NO CARET AND NO DETAIL PANEL — it was
+                // rendered without them, which is the whole point of drawing the caret only where
+                // there is something under it. Finding a deal has to build both: the placeholder
+                // <span> in the first cell becomes a real caret, and the panel is appended to the
+                // row (it spans every column through .rec-detail).
+                //
+                // Opened straight away. The click that produced this WAS the request to see it,
+                // so making the operator open it again would be asking twice.
+                if(dealHtml && !rowEl.querySelector('[data-rdetail]')){
+                  const key = (b.dataset.hslookup || '').toLowerCase();
+                  RECIP_OPEN.add(key);
+
+                  const panel = document.createElement('div');
+                  panel.className = 'rec-detail';
+                  panel.setAttribute('data-rdetail', key);
+                  panel.innerHTML = dealHtml;
+                  rowEl.appendChild(panel);
+
+                  const slot = rowEl.firstElementChild;
+                  if(slot && slot.tagName === 'SPAN' && !slot.textContent.trim()){
+                    const caret = document.createElement('button');
+                    caret.className = 'rec-caret open';
+                    caret.setAttribute('data-rtoggle', key);
+                    caret.setAttribute('aria-expanded', 'true');
+                    caret.title = 'Hide the CRM record';
+                    caret.innerHTML = '&#9654;';
+                    // Bound here rather than left for the next paint(): until something forces a
+                    // re-render this is the only caret on the page with no listener on it.
+                    caret.addEventListener('click', () => {
+                      const nowOpen = !RECIP_OPEN.has(key);
+                      if(nowOpen) RECIP_OPEN.add(key); else RECIP_OPEN.delete(key);
+                      caret.classList.toggle('open', nowOpen);
+                      caret.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+                      caret.title = (nowOpen ? 'Hide' : 'Show') + ' the CRM record';
+                      panel.classList.toggle('hidden', !nowOpen);
+                    });
+                    slot.replaceWith(caret);
+                  }
+                }
                 rowEl.classList.add('bh-found');
                 // Removed once the fade has played, so the class is not left on a row that will
                 // be re-rendered later and would flash a second time for no reason.
