@@ -63,6 +63,19 @@
        selection spanning two pages becomes a guess. The left edge is marked as well as the
        fill — banded rows already carry a background, and a tint alone is easy to miss on the
        grey day-band stripe. */
+    /* A resolved deal on a recipient row. The STAGE gets the pill because that is what people
+       scan for; the deal name sits beside it and the company goes in the same quiet line, muted
+       — the deal is the answer, the company is reference. */
+    .deal-pill{ display:inline-flex; align-items:center; border-radius:9999px; padding:1px 7px;
+                font-size:10px; font-weight:800; letter-spacing:.02em; white-space:nowrap;
+                background:#eaf0fe; color:#2f6bff; border:1px solid #d3def8; }
+    /* Won and lost are the two stages worth telling apart at a glance. Everything else is
+       in-flight and shares the neutral blue rather than being colour-guessed. */
+    .deal-pill.won{ background:#e6f6ea; color:#067523; border-color:#c7e9d1; }
+    .deal-pill.lost{ background:#f4f6f8; color:#8695a7; border-color:#e3e8ef; }
+    /* Reached through the company rather than the contact. Dashed, because the claim is weaker:
+       a deal at their club is not their deal. */
+    .deal-pill.via-company{ border-style:dashed; }
     .camp-row.q-picked > td{ background:#fdf3ec; }
     .camp-row.q-picked > td:first-child{ box-shadow:inset 3px 0 0 #e8935a; }
     /* Hover states for the action buttons, stated outright instead of inherited.
@@ -6797,6 +6810,51 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // achieved; bounces, unsubscribes and spam are what it cost. Rendered at one weight they
       // read as a wall of figures and the eye has to hunt for the two that answer "did this
       // work?" — so those get size, and the rest a quiet line underneath.
+      // ONE RENDERER, TWO CALLERS. The recipients page resolves deals in bulk and the Find button
+      // resolves one on demand; both draw the same thing, and drawing it twice is how the two
+      // drift apart.
+      //
+      // Stage text arrives as an internal id on some pipelines and as a label on others ("Closed
+      // Lost - Never Launched"), so the won/lost test is on the text and anything unrecognised
+      // stays neutral rather than being guessed at.
+      function dealTag(d){
+        if(!d) return '';
+        const stage = String(d.stage || '');
+        const low = stage.toLowerCase();
+        const kind = /closed won|won\b/.test(low) ? ' won' : /closed lost|lost\b/.test(low) ? ' lost' : '';
+        const via = d.via === 'company' ? ' via-company' : '';
+        const title = (d.via === 'company'
+          ? 'A deal at this contact\u2019s latest-modified company, not on the contact themselves.'
+          : 'A deal associated with this contact directly.')
+          + (stage ? '\n\nStage: ' + stage : '');
+        return `<span class="deal-pill${kind}${via}" title="${esc(title)}">${esc(stage || "deal")}</span>`;
+      }
+
+      // The line under the name. Deal first, company after it and muted. Returns NOTHING when
+      // there is neither — most of a list is unknown until the mirror fills, and a row repeating
+      // "no deal" hundreds of times is noise, not information.
+      function dealLine(c){
+        const d = c && c.deal;
+        if(!d && !(c && c.company_name)) return '';
+        const bits = [];
+        if(d) bits.push(dealTag(d) + (d.name ? ` <span class="font-semibold text-[#133b49]">${esc(clip(d.name, 32))}</span>` : ''));
+        // DEALS IN THIS PORTAL ARE OFTEN NAMED AFTER THE CLUB — "Cut Shot Volleyball" the deal
+        // at "Cut Shot Volleyball" the company — so printing both produced the same words twice
+        // with a separator between them. The company is reference data; when it adds nothing it
+        // is dropped rather than repeated.
+        const sameName = d && d.name && c.company_name
+          && String(d.name).trim().toLowerCase() === String(c.company_name).trim().toLowerCase();
+        if(c.company_name && !sameName){
+          // "+2" when the contact sits on more than one company: the latest-modified is the one
+          // shown and the one the deal fallback keyed on, so the others have to be acknowledged
+          // rather than silently dropped.
+          const extra = (c.company_count > 1) ? `<span class="text-base-content/30" title="On ${c.company_count} companies; the most recently modified one is shown."> +${c.company_count - 1}</span>` : '';
+          bits.push(`<span class="text-base-content/40">${esc(clip(c.company_name, 26))}</span>${extra}`);
+        }
+        const sep = ' <span class="text-base-content/25">&middot;</span> ';
+        return `<div class="text-[11px] leading-tight mt-0.5 truncate">${bits.join(sep)}</div>`;
+      }
+
       function engStrip(r){
         const e = r.engagement || {};
         if(!e.available) return '';
@@ -7180,9 +7238,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // A GRID, NOT A FLEX ROW. Flex let a two-word name wrap onto a second line and push
             // the whole row out of alignment with its neighbours. Fixed tracks with truncation
             // keep every row the same height, and the full value stays available on hover.
-            + st.contacts.map(c => `<div class="grid items-baseline gap-x-2 border-b border-base-200 py-1.5" data-crow
-                 style="grid-template-columns: minmax(0,9rem) minmax(0,1fr) auto auto">
-                 <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
+            // items-START, not items-baseline. A row carrying a deal line is two lines tall, and
+            // baseline would leave the email and the link aligned to the second line instead of
+            // the first. The name column also widens, since it now holds two things.
+            + st.contacts.map(c => `<div class="grid items-start gap-x-2 border-b border-base-200 py-1.5" data-crow
+                 style="grid-template-columns: minmax(0,11rem) minmax(0,1fr) auto auto">
+                 <div class="min-w-0">
+                   <span class="font-semibold text-[#133b49] truncate block" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
+                   ${dealLine(c)}
+                 </div>
                  <span class="text-xs text-base-content/45 truncate" title="${esc(c.email || '')}">${esc(c.email || '')}</span>
                  <span class="text-xs ${c.status && c.status !== 'active' ? 'text-warning' : 'text-base-content/40'}">${esc(c.status || '')}</span>
                  ${c.hubspot_id
@@ -7227,13 +7291,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               // wide. The company is new information, so that stays.
               const wrap = document.createElement('span');
               wrap.className = 'text-xs whitespace-nowrap';
-              wrap.innerHTML = (c.company ? `<span class="text-base-content/45 mr-1.5">${esc(c.company)}</span>` : '')
-                + `<a class="link" target="_blank" rel="noopener" href="${hsLink(c.hs_object_id)}">HubSpot</a>`;
+              wrap.innerHTML = `<a class="link" target="_blank" rel="noopener" href="${hsLink(c.hs_object_id)}">HubSpot</a>`;
+              // THE DEAL GOES WHERE THE BULK-RESOLVED ONES GO — under the name, through the same
+              // renderer — so a row filled in by clicking is indistinguishable from one that
+              // arrived already resolved. company_name is the latest-modified of the companies the
+              // webhook found, which is the one the deal fallback keys on.
+              const dealHtml = dealLine({
+                deal: d.deal || null,
+                company_name: d.company_name || c.company || null,
+                company_count: d.company_count || 0,
+              });
               // Read the row BEFORE the swap: replaceWith detaches the button, and a detached
               // node has no ancestors left to walk up to.
               const rowEl = b.closest('[data-crow]');
               b.replaceWith(wrap);
               if(rowEl){
+                // First cell holds the name; the deal line goes under it. Guarded so a repeat
+                // click on a row that was not re-rendered cannot stack two copies.
+                const nameCell = rowEl.firstElementChild;
+                if(dealHtml && nameCell && !nameCell.querySelector('.deal-pill')) nameCell.insertAdjacentHTML('beforeend', dealHtml);
                 rowEl.classList.add('bh-found');
                 // Removed once the fade has played, so the class is not left on a row that will
                 // be re-rendered later and would flash a second time for no reason.

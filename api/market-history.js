@@ -132,8 +132,32 @@ export default async function handler(req, res) {
         });
         return;
       }
+      // THE WEBHOOK RETURNS MORE THAN THE CONTACT NOW — it fetches and caches the contact's
+      // companies and deals in the same request, and resolves which deal applies. Those fields
+      // were being dropped here, so the work was done, cached, and then thrown away before it
+      // reached the browser.
+      //
+      // Every field is optional: an older lookup workflow that answers with the contact alone
+      // still works, and the row simply shows what it always showed.
+      const deal = d && d.deal ? {
+        id: String(d.deal.hs_object_id != null ? d.deal.hs_object_id : d.deal_id),
+        name: d.deal.dealname || null,
+        stage: d.deal.dealstage || null,
+        pipeline: d.deal.pipeline || null,
+        amount: d.deal.amount == null ? null : Number(d.deal.amount),
+        closedate: d.deal.closedate || null,
+        modified: d.deal.hs_lastmodifieddate || null,
+        via: d.deal_via || null,
+      } : null;
+      // The latest-modified company, which is the one the deal fallback keys on. The webhook
+      // sends every company it found; the newest is the one worth naming.
+      const comps = Array.isArray(d && d.companies) ? d.companies.slice() : [];
+      comps.sort((a, b) => String(b.hs_lastmodifieddate || '').localeCompare(String(a.hs_lastmodifieddate || '')));
       res.status(200).json({ ok: true, available: true, found: !!(d && d.found),
         source: d && d.source, contact: (d && d.contact) || null,
+        deal,
+        company_name: comps.length ? (comps[0].name || null) : null,
+        company_count: comps.length,
         reason: d && d.reason });
     } catch (e) {
       res.status(502).json({ error: String((e && e.message) || e) });
@@ -203,6 +227,54 @@ export default async function handler(req, res) {
             }
           }
         } catch { /* leave them unresolved; the Find button still works */ }
+      }
+
+      // THE DEAL, FOR THE WHOLE PAGE, IN ONE CALL. The deal is the thing worth seeing on a
+      // recipient — "is this person attached to a live account, and which" — so it is resolved
+      // for everyone we can name, not only for the rows somebody thinks to click. A page is 100
+      // contacts; asking per person would be 100 round trips to paint one screen.
+      //
+      // Deliberately not fatal. A missing migration, an empty mirror or a slow database leaves
+      // every row exactly as it was — the roster is still useful without deal data, and losing
+      // the whole tab because an enrichment failed would be the wrong trade.
+      const withEmail = contacts.filter(c => c.email).map(c => c.email);
+      if (withEmail.length) {
+        try {
+          const dr = await fetch(`${url}/rest/v1/rpc/hubspot_deals_for_emails`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_emails: withEmail }),
+          });
+          if (dr.ok) {
+            const rows2 = await dr.json().catch(() => []);
+            const byEmail = new Map((Array.isArray(rows2) ? rows2 : [])
+              .map(r => [String(r.email || '').toLowerCase(), r]));
+            for (const c of contacts) {
+              const d = c.email && byEmail.get(c.email.toLowerCase());
+              if (!d) continue;
+              // The id comes back here too, so a contact the mirror knows gets its link even if
+              // the pass above was skipped because CakeMail had already supplied one.
+              if (!c.hubspot_id && d.hs_object_id != null) { c.hubspot_id = String(d.hs_object_id); c.from_mirror = true; }
+              // Company is REFERENCE, deal is the answer — both are sent, and the UI ranks them.
+              c.company_name = d.company_name || null;
+              c.company_id = d.company_id != null ? String(d.company_id) : null;
+              c.company_count = d.company_count || 0;
+              if (d.deal_id != null) {
+                c.deal = {
+                  id: String(d.deal_id),
+                  name: d.deal_name || null,
+                  stage: d.deal_stage || null,
+                  pipeline: d.deal_pipeline || null,
+                  amount: d.deal_amount == null ? null : Number(d.deal_amount),
+                  closedate: d.deal_closedate || null,
+                  modified: d.deal_modified || null,
+                  // "their deal" and "a deal at their company" are different claims and the row
+                  // must not present them identically.
+                  via: d.deal_via || null,
+                };
+              }
+            }
+          }
+        } catch { /* deal data is an enrichment; the roster stands without it */ }
       }
 
       res.status(200).json({

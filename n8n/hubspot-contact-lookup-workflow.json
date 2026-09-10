@@ -1,40 +1,32 @@
 {
-  "name": "HubSpot contact lookup: contact, companies and deals (AI-971)",
   "nodes": [
     {
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        0,
-        0
+        -144,
+        -176
       ],
-      "id": "1a2b3c4d-0001-4000-8000-000000000001",
+      "id": "74cdd4e5-708b-4857-b2b7-dbf0f1473463",
       "name": "When clicking ‘Execute workflow’"
     },
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "hubspot-contact-lookup",
-        "authentication": "basicAuth",
         "responseMode": "responseNode",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        192
+        -144,
+        16
       ],
-      "id": "1a2b3c4d-0002-4000-8000-000000000002",
+      "id": "5687ba91-eb59-4b47-8fb9-1a66028a2587",
       "name": "Webhook: Look up contact by email",
-      "webhookId": "7c9e2a41-6b3d-4f80-9e12-5a7c3d1b8e40",
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "ur7HbBfjmdQDj5bi",
-          "name": "Unnamed credential 3"
-        }
-      }
+      "webhookId": "7c9e2a41-6b3d-4f80-9e12-5a7c3d1b8e40"
     },
     {
       "parameters": {
@@ -43,10 +35,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        224,
-        96
+        80,
+        -80
       ],
-      "id": "1a2b3c4d-0003-4000-8000-000000000003",
+      "id": "76af7e0e-928c-463b-b2e4-75c31b2d63e5",
       "name": "Prepare the email to search"
     },
     {
@@ -60,11 +52,17 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        672,
-        96
+        656,
+        -96
       ],
-      "id": "1a2b3c4d-0004-4000-8000-000000000004",
-      "name": "Look in the mirror first"
+      "id": "ae62a290-0e84-4eed-acd0-23c5b1665a14",
+      "name": "Look in the mirror first",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
@@ -95,10 +93,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        896,
-        96
+        880,
+        -96
       ],
-      "id": "1a2b3c4d-0005-4000-8000-000000000005",
+      "id": "ebf378a5-4af0-46f2-a465-019b201740e5",
       "name": "Already in the mirror?"
     },
     {
@@ -115,11 +113,17 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1120,
-        192
+        1104,
+        0
       ],
-      "id": "1a2b3c4d-0007-4000-8000-000000000007",
-      "name": "HubSpot: Search by email"
+      "id": "9f52a3ad-bfcd-4f82-bad5-48a0a67e9ce7",
+      "name": "HubSpot: Search by email",
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -128,10 +132,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1344,
-        192
+        1328,
+        0
       ],
-      "id": "1a2b3c4d-0008-4000-8000-000000000008",
+      "id": "dbc19b08-3520-4afc-832b-9b11118ff84e",
       "name": "Shape the HubSpot result"
     },
     {
@@ -163,10 +167,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1568,
-        192
+        1552,
+        0
       ],
-      "id": "1a2b3c4d-0009-4000-8000-000000000009",
+      "id": "7fbb64e0-752a-4dd6-a9da-6c85729f4e5d",
       "name": "Does HubSpot have them?"
     },
     {
@@ -180,11 +184,17 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1792,
-        96
+        1776,
+        -96
       ],
-      "id": "1a2b3c4d-000a-4000-8000-00000000000a",
-      "name": "Cache the contact"
+      "id": "065eaa8c-d0e8-4fa4-874b-7a435ba44bc7",
+      "name": "Cache the contact",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
@@ -197,10 +207,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1792,
-        288
+        1776,
+        96
       ],
-      "id": "1a2b3c4d-000c-4000-8000-00000000000c",
+      "id": "4789bfa5-97ed-43d8-8215-f16ead757fc5",
       "name": "Respond: no such contact"
     },
     {
@@ -232,10 +242,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        336,
-        96
+        320,
+        -80
       ],
-      "id": "1a2b3c4d-000d-4000-8000-00000000000d",
+      "id": "0ceb4a6d-14ed-454e-a555-36e5ef5eda35",
       "name": "Is the email usable?"
     },
     {
@@ -249,10 +259,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        336,
-        288
+        656,
+        96
       ],
-      "id": "1a2b3c4d-000e-4000-8000-00000000000e",
+      "id": "373149fa-0ca7-40af-8c23-e91a6933c4a4",
       "name": "Respond: bad request"
     },
     {
@@ -296,7 +306,13 @@
       "name": "HubSpot: Companies on this contact",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -326,7 +342,13 @@
       "name": "HubSpot: Deals on this contact",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -369,7 +391,13 @@
       "name": "HubSpot: Read those companies",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -399,7 +427,13 @@
       "name": "HubSpot: Read those deals",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -429,7 +463,13 @@
         0
       ],
       "id": "1a2b3c4d-0027-4000-8000-000000000027",
-      "name": "Cache the companies"
+      "name": "Cache the companies",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
@@ -446,7 +486,13 @@
         0
       ],
       "id": "1a2b3c4d-0028-4000-8000-000000000028",
-      "name": "Cache the deals"
+      "name": "Cache the deals",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
@@ -463,7 +509,13 @@
         0
       ],
       "id": "1a2b3c4d-0029-4000-8000-000000000029",
-      "name": "Resolve the deal"
+      "name": "Resolve the deal",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
@@ -726,7 +778,6 @@
   },
   "pinData": {},
   "meta": {
-    "templateCredsSetupCompleted": true,
     "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
   }
 }
