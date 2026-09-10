@@ -645,7 +645,7 @@
                       <th>Phone #s</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0"><td colspan="8" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading events&hellip;</div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="8" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="8" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="8" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -935,7 +935,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                          scrolling sideways past everything else to find it. -->
                     <th>Status</th>
                   </tr></thead>
-                  <tbody id="q-rows"><tr class="border-0"><td colspan="9" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div></td></tr></tbody>
+                  <tbody id="q-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading queue&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -1043,7 +1043,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
                     <th class="w-8"></th><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Source</th><th>Recipients</th><th>Sent</th><th>Opens</th><th>Clicks</th>
                   </tr></thead>
-                  <tbody id="bh-rows"><tr class="border-0"><td colspan="10" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading blast history&hellip;</div></td></tr></tbody>
+                  <tbody id="bh-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading blast history&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -1355,7 +1355,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Venue</th>
                     <th class="col-tight w-[150px]">Eligibility</th>
                   </tr></thead>
-                  <tbody id="tp-rows"><tr class="border-0"><td colspan="9" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading ticket prices&hellip;</div></td></tr></tbody>
+                  <tbody id="tp-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading ticket prices&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager, same shape and defaults as the Campaigns table. 4,080 rows in one
@@ -1440,13 +1440,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const ts = wall - etOffset(wall);
       return wall - etOffset(ts);
     }
-    // One loading state for every data table — a full-width progress bar over a caption. The
-    // tables used to disagree (Queue had this, Campaigns and Market History had bare text), which
-    // made the same wait look like three different kinds of slow.
-    window.__tableLoading = (cols, what) =>
-      '<tr class="border-0"><td colspan="' + cols + '" class="pt-6 pb-3">'
-      + '<progress class="progress progress-primary w-full"></progress>'
-      + '<div class="text-center text-base-content/50 text-sm mt-2">Loading ' + what + '&hellip;</div></td></tr>';
+    // ONE LOADING STATE FOR EVERY DATA TABLE, and it is skeleton rows alone.
+    //
+    // It used to be a progress bar over a caption, and the Queue drew BOTH that and skeleton rows
+    // beneath it — three signals answering one question. Skeletons win on their own for two
+    // reasons a bar cannot match:
+    //
+    //   * THEY HOLD THE TABLE OPEN. A single bar row collapses the table to about 60px, so the
+    //     pager and the footnote jump up the page and back down again when the rows land. That
+    //     movement is the most noticeable thing about the wait, and it is pure artefact.
+    //   * THEY SAY WHERE. A bar says "something is happening"; skeleton rows say "rows are coming,
+    //     roughly this many, in this shape", which is the actual question being asked.
+    //
+    // The usual argument for keeping a bar — that a static placeholder looks frozen on a long
+    // wait — does not apply: daisyUI .skeleton animates, so it already reads as working.
+    //
+    // A skeleton says nothing to a screen reader, though, so the caption survives as sr-only text
+    // and the row carries aria-busy. Sighted users get the shimmer, assistive tech gets the words.
+    window.__tableLoading = (cols, what, rows) => {
+      const n = rows || 6;
+      const head = '<tr class="border-0" aria-busy="true"><td colspan="' + cols + '" class="py-2.5">'
+        + '<span class="sr-only">Loading ' + what + '&hellip;</span>'
+        + '<div class="skeleton h-7 w-full"></div></td></tr>';
+      // The rest vary in width so the block reads as rows of content rather than as a grey slab.
+      const w = ['w-full', 'w-11/12', 'w-full', 'w-10/12', 'w-full'];
+      let out = head;
+      for (let i = 1; i < n; i++) {
+        out += '<tr class="border-0"><td colspan="' + cols + '" class="py-2.5">'
+             + '<div class="skeleton h-7 ' + w[(i - 1) % w.length] + '"></div></td></tr>';
+      }
+      return out;
+    };
 
     const etDate = (v, o) => new Date(v).toLocaleDateString('en-US', { timeZone: ET_TZ, ...(o||{}) });
     const etTime = (v, o) => new Date(v).toLocaleTimeString('en-US', { timeZone: ET_TZ, ...(o||{}) });
@@ -5067,17 +5091,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         });
       }
 
-      // Shown while the queue is in flight: an indeterminate bar so the wait reads as work in
-      // progress, over skeleton rows so the table keeps its height instead of collapsing and
-      // shoving the pager up the page when the real rows land.
-      function loadingRows(){
-        const skeleton = Array.from({length:6}, () =>
-          '<tr class="border-0"><td colspan="9" class="py-2"><div class="skeleton h-6 w-full"></div></td></tr>').join('');
-        return `<tr class="border-0"><td colspan="9" class="pt-6 pb-3">
-            <progress class="progress progress-primary w-full"></progress>
-            <div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div>
-          </td></tr>${skeleton}`;
-      }
+      // The queue had its own copy of this — a bar AND a caption AND skeleton rows, which was
+      // where the doubling was most obvious. It uses the shared one now, so all four tables wait
+      // the same way.
+      function loadingRows(){ return window.__tableLoading(9, 'queue'); }
 
       function render(){
         const tb = el('q-rows');
