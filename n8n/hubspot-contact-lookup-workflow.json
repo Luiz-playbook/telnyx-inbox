@@ -1,5 +1,5 @@
 {
-  "name": "HubSpot contact lookup by email (AI-971)",
+  "name": "HubSpot contact lookup: contact, companies and deals (AI-971)",
   "nodes": [
     {
       "parameters": {},
@@ -103,21 +103,6 @@
     },
     {
       "parameters": {
-        "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({\n  found: true,\n  source: 'mirror',\n  contact: {\n    hs_object_id: Number($json.hs_object_id),   // bigint arrives quoted; keep one type across both paths\n    email: $json.email,\n    firstname: $json.firstname,\n    lastname: $json.lastname,\n    company: $json.company,\n    state: $json.state,\n    lifecyclestage: $json.lifecyclestage,\n    hs_lastmodifieddate: $json.hs_lastmodifieddate,\n    synced_at: $json.synced_at\n  }\n}) }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        1120,
-        0
-      ],
-      "id": "1a2b3c4d-0006-4000-8000-000000000006",
-      "name": "Respond: from the mirror"
-    },
-    {
-      "parameters": {
         "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
         "method": "POST",
         "sendBody": true,
@@ -204,21 +189,6 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({ found: true, source: 'hubspot', cached: true, contact: $('Shape the HubSpot result').first().json.contact }) }}",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [
-        2016,
-        96
-      ],
-      "id": "1a2b3c4d-000b-4000-8000-00000000000b",
-      "name": "Respond: fetched and cached"
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
         "responseBody": "={{ JSON.stringify({ found: false, source: 'hubspot', email: $json.email_in, reason: 'No HubSpot contact has this email address.' }) }}",
         "options": {
           "responseCode": 200
@@ -284,6 +254,231 @@
       ],
       "id": "1a2b3c4d-000e-4000-8000-00000000000e",
       "name": "Respond: bad request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// WHERE THE TWO BRANCHES MEET. A contact is either already mirrored or was just fetched and\n// cached, and from here on the work is identical — so the enrichment is written once rather\n// than duplicated down both paths.\n//\n// \"Look in the mirror first\" runs on EVERY request, so it can be read directly. \"Shape the\n// HubSpot result\" only runs on the miss branch, and referencing a node that did not execute\n// throws — hence the guard rather than an if on some flag.\nconst pick = fn => { try { return fn(); } catch (e) { return null; } };\n\nconst mirror = pick(() => $('Look in the mirror first').first().json) || {};\nconst fetched = pick(() => $('Shape the HubSpot result').first().json);\n\nlet contact = null, source = null;\nif (mirror.found) {\n  source = 'mirror';\n  contact = {\n    hs_object_id: Number(mirror.hs_object_id),\n    email: mirror.email, firstname: mirror.firstname, lastname: mirror.lastname,\n    company: mirror.company, state: mirror.state, lifecyclestage: mirror.lifecyclestage,\n    hs_lastmodifieddate: mirror.hs_lastmodifieddate, synced_at: mirror.synced_at,\n  };\n} else if (fetched && fetched.found) {\n  source = 'hubspot';\n  contact = fetched.contact;\n}\n\n// Unreachable in practice — both inbound branches carry a contact — but returning [] here would\n// stop the chain and leave the caller waiting on a response that never comes, which is the one\n// failure this workflow must not have.\nif (!contact) return [{ json: { found: false, email: mirror.email_in || null } }];\n\nconst email = String(contact.email || mirror.email_in || '').toLowerCase();\nreturn [{ json: { found: true, source, contact, contact_id: contact.hs_object_id, email } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        96
+      ],
+      "id": "1a2b3c4d-0020-4000-8000-000000000020",
+      "name": "Contact to enrich"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v4/associations/contacts/companies/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: [{ id: String($json.contact_id) }] }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1792,
+        0
+      ],
+      "id": "1a2b3c4d-0021-4000-8000-000000000021",
+      "name": "HubSpot: Companies on this contact",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v4/associations/contacts/deals/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ inputs: [{ id: String($('Contact to enrich').first().json.contact_id) }] }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2016,
+        0
+      ],
+      "id": "1a2b3c4d-0022-4000-8000-000000000022",
+      "name": "HubSpot: Deals on this contact",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// v4 batch read answers { results: [ { from: { id }, to: [ { toObjectId, associationTypes } ] } ] }\n// One entry per association TYPE, so the same company appears twice when it is both the primary\n// and a labelled association. De-duplicated here.\nconst ids = items => {\n  const out = new Set();\n  for (const item of items) {\n    for (const r of ((item.json || {}).results || [])) {\n      for (const t of (r.to || [])) { const n = Number(t.toObjectId); if (Number.isFinite(n)) out.add(n); }\n    }\n  }\n  return [...out];\n};\n\nconst src = $('Contact to enrich').first().json;\nconst companyIds = ids($('HubSpot: Companies on this contact').all());\nconst dealIds = ids($input.all());\n\n// THE SENTINEL IS WHY THERE IS NO IF NODE HERE. A batch read with an empty `inputs` array is a\n// 400, and a contact with no deals is the common case, not an edge one. Id 0 cannot exist, so\n// HubSpot answers 207 with it listed under `errors` and the real results alongside — which reads\n// identically to \"none found\" and costs one call either way. Branching to avoid it would mean two\n// paths converging again before the response, and a node that did not run throws when referenced.\n// Batch read takes 100 ids; the heaviest contact in this portal has 25 deals.\nconst guard = a => (a.length ? a.slice(0, 100).map(String) : ['0']);\n\nreturn [{ json: {\n  contact_id: src.contact_id, email: src.email, source: src.source, contact: src.contact,\n  company_ids: companyIds, deal_ids: dealIds,\n  company_inputs: guard(companyIds), deal_inputs: guard(dealIds),\n} }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2240,
+        0
+      ],
+      "id": "1a2b3c4d-0023-4000-8000-000000000023",
+      "name": "Collect the associated ids"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/companies/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: ['name','domain','state','lifecyclestage','hs_lastmodifieddate'], inputs: $json.company_inputs.map(id => ({ id })) }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2464,
+        0
+      ],
+      "id": "1a2b3c4d-0024-4000-8000-000000000024",
+      "name": "HubSpot: Read those companies",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "url": "https://api.hubapi.com/crm/v3/objects/deals/batch/read",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ properties: ['dealname','pipeline','dealstage','amount','closedate','hs_lastmodifieddate'], inputs: $('Collect the associated ids').first().json.deal_inputs.map(id => ({ id })) }) }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2688,
+        0
+      ],
+      "id": "1a2b3c4d-0025-4000-8000-000000000025",
+      "name": "HubSpot: Read those deals",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "jsCode": "// Into the exact row shape hubspot.hubspot_companies and hubspot.hubspot_deals hold, so the\n// on-demand path and the scheduled sync write identical rows and can never disagree about the\n// format. Both carry the contact we looked up in associated_contact_ids; the upsert merges it in.\nconst src = $('Collect the associated ids').first().json;\nconst cid = Number(src.contact_id);\nconst now = new Date().toISOString();\n\n// The sentinel id comes back under `errors`, never `results`, so nothing extra has to be filtered.\nconst results = items => items.flatMap(i => ((i.json || {}).results || []));\n\nconst companies = results($('HubSpot: Read those companies').all()).map(r => {\n  const p = r.properties || {};\n  return {\n    hs_object_id: Number(r.id),\n    name: p.name || null, domain: p.domain || null, state: p.state || null,\n    lifecyclestage: p.lifecyclestage || null,\n    associated_contact_ids: [cid],\n    hs_lastmodifieddate: p.hs_lastmodifieddate || null, synced_at: now,\n  };\n});\n\nconst deals = results($input.all()).map(r => {\n  const p = r.properties || {};\n  return {\n    hs_object_id: Number(r.id),\n    dealname: p.dealname || null, pipeline: p.pipeline || null, dealstage: p.dealstage || null,\n    // Empty string is what HubSpot sends for an unset number, and Number('') is 0 — which would\n    // invent a zero-value deal rather than record that the amount is unknown.\n    amount: (p.amount === '' || p.amount == null) ? null : Number(p.amount),\n    closedate: p.closedate || null,\n    associated_contact_ids: [cid],\n    // Every company this contact is on. A deal reached through the contact is, in practice, a\n    // deal at one of their companies, and the resolver needs the company edge for its fallback.\n    associated_company_ids: (src.company_ids || []).map(Number),\n    hs_lastmodifieddate: p.hs_lastmodifieddate || null, synced_at: now,\n  };\n});\n\nreturn [{ json: { companies, deals, contact: src.contact, contact_id: cid, email: src.email, source: src.source } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2912,
+        0
+      ],
+      "id": "1a2b3c4d-0026-4000-8000-000000000026",
+      "name": "Shape company and deal rows"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_companies as t\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_companies, $1::jsonb)\non conflict (hs_object_id) do update set\n  name = excluded.name,\n  domain = excluded.domain,\n  state = excluded.state,\n  lifecyclestage = excluded.lifecyclestage,\n  -- MERGED, NOT REPLACED. This path knows only the ONE contact that was just looked up, so\n  -- assigning excluded.associated_contact_ids would erase every other contact a previous\n  -- lookup had cached on this row. The full sync may replace the array outright — it reads the\n  -- complete set from HubSpot — but an on-demand lookup only ever adds to it.\n  associated_contact_ids = (\n    select coalesce(array_agg(distinct x), '{}'::bigint[])\n      from unnest(t.associated_contact_ids || excluded.associated_contact_ids) as x\n  ),\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($json.companies) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3136,
+        0
+      ],
+      "id": "1a2b3c4d-0027-4000-8000-000000000027",
+      "name": "Cache the companies"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "insert into hubspot.hubspot_deals as t\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_deals, $1::jsonb)\non conflict (hs_object_id) do update set\n  dealname = excluded.dealname,\n  pipeline = excluded.pipeline,\n  dealstage = excluded.dealstage,\n  amount = excluded.amount,\n  closedate = excluded.closedate,\n  -- MERGED, NOT REPLACED. This path knows only the ONE contact that was just looked up, so\n  -- assigning excluded.associated_contact_ids would erase every other contact a previous\n  -- lookup had cached on this row. The full sync may replace the array outright — it reads the\n  -- complete set from HubSpot — but an on-demand lookup only ever adds to it.\n  associated_contact_ids = (\n    select coalesce(array_agg(distinct x), '{}'::bigint[])\n      from unnest(t.associated_contact_ids || excluded.associated_contact_ids) as x\n  ),\n  associated_company_ids = (\n    select coalesce(array_agg(distinct x), '{}'::bigint[])\n      from unnest(t.associated_company_ids || excluded.associated_company_ids) as x\n  ),\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "options": {
+          "queryReplacement": "={{ JSON.stringify($('Shape company and deal rows').first().json.deals) }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3360,
+        0
+      ],
+      "id": "1a2b3c4d-0028-4000-8000-000000000028",
+      "name": "Cache the deals"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- ALWAYS RETURNS EXACTLY ONE ROW, even when nothing resolves — the same reason the mirror lookup\n-- above is written this way. A bare select returns no rows for a contact with no deal and no\n-- company, an n8n node with no input items does not run, and the response node would never be\n-- reached: the caller would get HTTP 200, an empty body, and no way to tell a miss from a hang.\n-- The lateral join against a one-row subquery makes \"no deal\" an explicit null instead of an\n-- absence.\n--\n-- ONE implementation of the fallback chain, in migration 065, called rather than reimplemented in\n-- JavaScript: the contact own deals first, newest hs_lastmodifieddate winning, and only then the\n-- deals of the contact companies. deal_via says which branch answered, because \"their deal\" and\n-- \"a deal at their club\" are different claims.\n--\n-- Read back from the database rather than from the rows just written, deliberately: the company\n-- fallback can draw on deals cached by earlier lookups or by the scheduled sync, which this\n-- request never saw.\nselect q.e            as email_in,\n       r.hs_object_id as contact_id,\n       r.company_ids,\n       r.deal_id,\n       r.deal_via\n  from (select $1::text as e) q\n  left join lateral (select * from public.hubspot_deal_for_emails(array[q.e])) r on true;",
+        "options": {
+          "queryReplacement": "={{ $('Shape company and deal rows').first().json.email }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3584,
+        0
+      ],
+      "id": "1a2b3c4d-0029-4000-8000-000000000029",
+      "name": "Resolve the deal"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify((() => {\n  const shaped = $('Shape company and deal rows').first().json;\n  const resolved = $json || {};\n  return {\n    found: true,\n    source: shaped.source,\n    contact: shaped.contact,\n    companies: shaped.companies,\n    deals: shaped.deals,\n    deal_id: resolved.deal_id != null ? Number(resolved.deal_id) : null,\n    deal_via: resolved.deal_via || null,\n    deal: (shaped.deals || []).find(d => String(d.hs_object_id) === String(resolved.deal_id)) || null,\n  };\n})()) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3808,
+        0
+      ],
+      "id": "1a2b3c4d-002a-4000-8000-00000000002a",
+      "name": "Respond: contact, companies and deal"
     }
   ],
   "connections": {
@@ -335,7 +530,7 @@
       "main": [
         [
           {
-            "node": "Respond: from the mirror",
+            "node": "Contact to enrich",
             "type": "main",
             "index": 0
           }
@@ -393,7 +588,7 @@
       "main": [
         [
           {
-            "node": "Respond: fetched and cached",
+            "node": "Contact to enrich",
             "type": "main",
             "index": 0
           }
@@ -412,6 +607,116 @@
         [
           {
             "node": "Respond: bad request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact to enrich": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Companies on this contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Companies on this contact": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Deals on this contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Deals on this contact": {
+      "main": [
+        [
+          {
+            "node": "Collect the associated ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect the associated ids": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Read those companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Read those companies": {
+      "main": [
+        [
+          {
+            "node": "HubSpot: Read those deals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot: Read those deals": {
+      "main": [
+        [
+          {
+            "node": "Shape company and deal rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape company and deal rows": {
+      "main": [
+        [
+          {
+            "node": "Cache the companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache the companies": {
+      "main": [
+        [
+          {
+            "node": "Cache the deals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache the deals": {
+      "main": [
+        [
+          {
+            "node": "Resolve the deal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve the deal": {
+      "main": [
+        [
+          {
+            "node": "Respond: contact, companies and deal",
             "type": "main",
             "index": 0
           }

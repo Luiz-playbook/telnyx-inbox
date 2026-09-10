@@ -5,7 +5,10 @@
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
-      "position": [0, 0],
+      "position": [
+        0,
+        0
+      ],
       "id": "a1b2c3d4-0001-4000-8000-000000000001",
       "name": "When clicking ‘Execute workflow’"
     },
@@ -18,7 +21,10 @@
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
-      "position": [0, 192],
+      "position": [
+        0,
+        192
+      ],
       "id": "a1b2c3d4-0002-4000-8000-000000000002",
       "name": "Webhook: Sync now",
       "webhookId": "4d8b1c07-59a2-4e36-9f14-6c2a7b0e5d31",
@@ -42,7 +48,10 @@
       },
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
-      "position": [0, 384],
+      "position": [
+        0,
+        384
+      ],
       "id": "a1b2c3d4-0003-4000-8000-000000000003",
       "name": "Every 6 hours"
     },
@@ -54,7 +63,10 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [224, 192],
+      "position": [
+        224,
+        192
+      ],
       "id": "a1b2c3d4-0004-4000-8000-000000000004",
       "name": "Read how current the mirror is"
     },
@@ -64,11 +76,13 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [448, 192],
+      "position": [
+        448,
+        192
+      ],
       "id": "a1b2c3d4-0005-4000-8000-000000000005",
       "name": "Prepare the since timestamps"
     },
-
     {
       "parameters": {
         "url": "https://api.hubapi.com/crm/v3/objects/deals/search",
@@ -94,16 +108,23 @@
               "paginationCompleteWhen": "other",
               "completeExpression": "={{ !$response.body.paging?.next?.after }}",
               "limitPagesFetched": true,
-              "maxRequestsPerPage": 100
+              "maxRequestsPerPage": 100,
+              "requestInterval": 400
             }
           }
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [672, 96],
+      "position": [
+        672,
+        96
+      ],
       "id": "a1b2c3d4-0006-4000-8000-000000000006",
-      "name": "HubSpot: Get deals changed since"
+      "name": "HubSpot: Get deals changed since",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -111,7 +132,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [896, 96],
+      "position": [
+        896,
+        96
+      ],
       "id": "a1b2c3d4-0007-4000-8000-000000000007",
       "name": "Prepare deal rows"
     },
@@ -121,7 +145,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 96],
+      "position": [
+        1120,
+        96
+      ],
       "id": "a1b2c3d4-0008-4000-8000-000000000008",
       "name": "Chunk deal ids"
     },
@@ -134,13 +161,26 @@
         "jsonBody": "={{ JSON.stringify({ inputs: $json.ids.map(id => ({ id: String(id) })) }) }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
-        "options": {}
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1344, 96],
+      "position": [
+        1344,
+        96
+      ],
       "id": "a1b2c3d4-0009-4000-8000-000000000009",
-      "name": "HubSpot: Deal → contact associations"
+      "name": "HubSpot: Deal → contact associations",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -151,13 +191,26 @@
         "jsonBody": "={{ JSON.stringify({ inputs: $('Chunk deal ids').item.json.ids.map(id => ({ id: String(id) })) }) }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
-        "options": {}
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1568, 96],
+      "position": [
+        1568,
+        96
+      ],
       "id": "a1b2c3d4-000a-4000-8000-00000000000a",
-      "name": "HubSpot: Deal → company associations"
+      "name": "HubSpot: Deal → company associations",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -165,7 +218,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1792, 96],
+      "position": [
+        1792,
+        96
+      ],
       "id": "a1b2c3d4-000b-4000-8000-00000000000b",
       "name": "Attach deal associations"
     },
@@ -179,11 +235,13 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [2016, 96],
+      "position": [
+        2016,
+        96
+      ],
       "id": "a1b2c3d4-000c-4000-8000-00000000000c",
       "name": "Upsert deals"
     },
-
     {
       "parameters": {
         "url": "https://api.hubapi.com/crm/v3/objects/companies/search",
@@ -209,16 +267,23 @@
               "paginationCompleteWhen": "other",
               "completeExpression": "={{ !$response.body.paging?.next?.after }}",
               "limitPagesFetched": true,
-              "maxRequestsPerPage": 100
+              "maxRequestsPerPage": 100,
+              "requestInterval": 400
             }
           }
         }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [672, 384],
+      "position": [
+        672,
+        384
+      ],
       "id": "a1b2c3d4-000d-4000-8000-00000000000d",
-      "name": "HubSpot: Get companies changed since"
+      "name": "HubSpot: Get companies changed since",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -226,7 +291,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [896, 384],
+      "position": [
+        896,
+        384
+      ],
       "id": "a1b2c3d4-000e-4000-8000-00000000000e",
       "name": "Prepare company rows"
     },
@@ -236,7 +304,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 384],
+      "position": [
+        1120,
+        384
+      ],
       "id": "a1b2c3d4-000f-4000-8000-00000000000f",
       "name": "Chunk company ids"
     },
@@ -249,13 +320,26 @@
         "jsonBody": "={{ JSON.stringify({ inputs: $json.ids.map(id => ({ id: String(id) })) }) }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
-        "options": {}
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 300
+            }
+          }
+        }
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1344, 384],
+      "position": [
+        1344,
+        384
+      ],
       "id": "a1b2c3d4-0010-4000-8000-000000000010",
-      "name": "HubSpot: Company → contact associations"
+      "name": "HubSpot: Company → contact associations",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
     },
     {
       "parameters": {
@@ -263,7 +347,10 @@
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1568, 384],
+      "position": [
+        1568,
+        384
+      ],
       "id": "a1b2c3d4-0011-4000-8000-000000000011",
       "name": "Attach company associations"
     },
@@ -277,64 +364,195 @@
       },
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1792, 384],
+      "position": [
+        1792,
+        384
+      ],
       "id": "a1b2c3d4-0012-4000-8000-000000000012",
       "name": "Upsert companies"
     }
   ],
   "connections": {
     "When clicking ‘Execute workflow’": {
-      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read how current the mirror is",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Webhook: Sync now": {
-      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read how current the mirror is",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Every 6 hours": {
-      "main": [[{ "node": "Read how current the mirror is", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Read how current the mirror is",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Read how current the mirror is": {
-      "main": [[{ "node": "Prepare the since timestamps", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare the since timestamps",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare the since timestamps": {
-      "main": [[
-        { "node": "HubSpot: Get deals changed since", "type": "main", "index": 0 },
-        { "node": "HubSpot: Get companies changed since", "type": "main", "index": 0 }
-      ]]
+      "main": [
+        [
+          {
+            "node": "HubSpot: Get deals changed since",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HubSpot: Get companies changed since",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-
     "HubSpot: Get deals changed since": {
-      "main": [[{ "node": "Prepare deal rows", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare deal rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare deal rows": {
-      "main": [[{ "node": "Chunk deal ids", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Chunk deal ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Chunk deal ids": {
-      "main": [[{ "node": "HubSpot: Deal → contact associations", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HubSpot: Deal → contact associations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HubSpot: Deal → contact associations": {
-      "main": [[{ "node": "HubSpot: Deal → company associations", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HubSpot: Deal → company associations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HubSpot: Deal → company associations": {
-      "main": [[{ "node": "Attach deal associations", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Attach deal associations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Attach deal associations": {
-      "main": [[{ "node": "Upsert deals", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Upsert deals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
-
     "HubSpot: Get companies changed since": {
-      "main": [[{ "node": "Prepare company rows", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare company rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare company rows": {
-      "main": [[{ "node": "Chunk company ids", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Chunk company ids",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Chunk company ids": {
-      "main": [[{ "node": "HubSpot: Company → contact associations", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "HubSpot: Company → contact associations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "HubSpot: Company → contact associations": {
-      "main": [[{ "node": "Attach company associations", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Attach company associations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Attach company associations": {
-      "main": [[{ "node": "Upsert companies", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Upsert companies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "settings": {
