@@ -903,7 +903,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                          silently reached 300 rows you cannot see is how bulk actions go wrong.
                          Selecting everything the filters match is a separate, named offer in the
                          bar below. -->
-                    <th class="w-[58px] col-tight">
+                    <!-- THE CONTROL COLUMN: select, expand, act. All three are things you do TO a
+                         row; every column after this one is data ABOUT the game.
+
+                         Actions lives here rather than at the far end because this column cannot be
+                         scrolled away from. It sat in the last column of a ten-column table wider
+                         than most windows, which is what Josh complained about; parking it in the
+                         Status cell only fixed that for as long as the table happens to fit, and
+                         put a button in a cell that also carries a status badge and a sub-line. -->
+                    <th class="w-[86px] col-tight">
                       <input id="q-all" type="checkbox" class="checkbox checkbox-xs align-middle" aria-label="Select every blast on this page" title="Select every blast on this page">
                     </th>
                     <!-- Columns 2-7 mirror Campaigns by Event so the same blast reads the same on
@@ -4954,7 +4962,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 : `<button class="btn btn-xs btn-outline btn-error justify-start" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
                    <button class="btn btn-xs btn-ghost text-base-content/50 justify-start" data-del="${esc(r.id)}" title="Delete this blast outright — for mistakes and test rows. Unlike Reject it teaches the decider nothing.">Delete</button>`,
         ].filter(Boolean).join('');
-        return `<button class="btn btn-xs btn-outline" data-qmenu="${esc(r.id)}">Actions &#9662;</button>
+        // A BARE ELLIPSIS, not "Actions ▾". It is the conventional row-menu affordance, needs no
+        // label to be understood, and costs ~22px where the labelled button spent ~90 — which is
+        // what makes it affordable in a column shared with a checkbox and a caret.
+        return `<button class="btn btn-ghost btn-xs px-1 text-base-content/50" data-qmenu="${esc(r.id)}" title="Actions for this blast" aria-label="Actions for this blast">&#8943;</button>
                 <div class="q-menu hidden" data-qmenufor="${esc(r.id)}">${items}</div>`;
       }
 
@@ -5222,6 +5233,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="col-tight"><div class="flex items-center gap-0.5">
               <input type="checkbox" class="checkbox checkbox-xs" data-pick="${esc(r.id)}" ${isPicked ? 'checked' : ''} aria-label="Select this blast">
               <button class="btn btn-ghost btn-xs px-1" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button>
+              ${actionsMenu(r, { sent, rejected, archived })}
             </div></td>
             <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td>${priceCell}</td>
@@ -5231,7 +5243,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${blockedRow ? blockedReachCell(r.sms, reachOf(r,'sms')) : reachCell(r.sms, reachOf(r,'sms'))}</td>
             <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toEtInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''} title="US Eastern"></td>
             <td class="whitespace-nowrap">
-              <div class="flex items-center gap-1.5">${statusParts(r).badge}${actionsMenu(r, { sent, rejected, archived })}</div>
+              <div class="flex items-center gap-1.5">${statusParts(r).badge}</div>
               ${statusParts(r).note}${cooldownNote(r)}</td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
@@ -5349,7 +5361,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const rect = b.getBoundingClientRect(), mh = menu.offsetHeight, mw = menu.offsetWidth;
           const below = window.innerHeight - rect.bottom;
           menu.style.top  = (below < mh + 8 ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4) + 'px';
-          menu.style.left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8)) + 'px';
+          // ALIGNED TO THE TRIGGER LEFT EDGE, not its right. The trigger used to be the last thing
+          // in the last column, so hanging the menu off its right edge kept it on screen; from the
+          // FIRST column that same maths threw it back past the window edge and into the clamp.
+          menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8)) + 'px';
         }));
         // Day-band headers narrow to that single day (and clicking the active one clears it).
         tb.querySelectorAll('[data-dayjump]').forEach(b=>b.addEventListener('click', e => {
