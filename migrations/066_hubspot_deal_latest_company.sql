@@ -18,7 +18,21 @@
 -- hypothetical: 540 of the 930 rows in public.deals_hubspot carry no usable timestamp at all, and
 -- a resolver that returned a different deal on each refresh would be worse than one returning none.
 
-create or replace function public.hubspot_deal_for_emails(p_emails text[])
+-- DROPPED, NOT REPLACED. 065 returned (email, hs_object_id, company_ids, deal_id, deal_via);
+-- this adds company_id, and Postgres refuses to change the OUT columns of an existing function:
+--   42P13: cannot change return type of existing function
+-- Both are dropped first so a re-run is clean either way. hubspot_deals_for_emails goes first
+-- because it calls the other — the body is a quoted string so Postgres tracks no dependency
+-- between them, but dropping the caller first is the order that stays correct if that ever
+-- changes.
+--
+-- Safe to drop: both are read-only helpers, called from api/market-history.js and the n8n lookup
+-- over the service role. Nothing stores state in them, and they are recreated below in the same
+-- transaction.
+drop function if exists public.hubspot_deals_for_emails(text[]);
+drop function if exists public.hubspot_deal_for_emails(text[]);
+
+create function public.hubspot_deal_for_emails(p_emails text[])
 returns table (
   email        text,
   hs_object_id bigint,
@@ -94,7 +108,7 @@ grant execute on function public.hubspot_deal_for_emails(text[]) to service_role
 -- Kept separate from hubspot_deal_for_emails rather than widening it: that one answers "which
 -- deal", is called by the n8n lookup, and should stay narrow. This one is for the screen.
 -- ------------------------------------------------------------------------------------------------
-create or replace function public.hubspot_deals_for_emails(p_emails text[])
+create function public.hubspot_deals_for_emails(p_emails text[])
 returns table (
   email          text,
   hs_object_id   bigint,
