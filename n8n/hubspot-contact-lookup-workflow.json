@@ -30,7 +30,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// POST {\"email\":\"someone@club.org\"}\n//\n// DOES NOT THROW ON BAD INPUT. Throwing here errors the workflow, and with responseMode\n// \"responseNode\" no response node is ever reached — so the caller gets HTTP 200 with an empty\n// body and no way to tell what went wrong. Verified against the live webhook (Vhea,\n// 2026-09-09). Invalid input is routed to a proper 400 instead.\n//\n// Lower-cased and trimmed so the mirror lookup, the HubSpot search and the response all speak\n// about the same string: addresses arrive from replies, CSV pastes and typed input, and\n// \"Someone@Club.org \" is the same person.\nconst body = ($json && $json.body) || $json || {};\nconst raw = String(body.email || '');\nconst email = raw.trim().toLowerCase();\nconst valid = !!email && /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email);\nreturn [{ json: { email, valid, given: raw } }];"
+        "jsCode": "// POST {\"email\":\"someone@club.org\"}\n//\n// DOES NOT THROW ON BAD INPUT. Throwing here errors the workflow, and with responseMode\n// \"responseNode\" no response node is ever reached — so the caller gets HTTP 200 with an empty\n// body and no way to tell what went wrong. Verified against the live webhook (Vhea,\n// 2026-09-09). Invalid input is routed to a proper 400 instead.\n//\n// Lower-cased and trimmed so the mirror lookup, the HubSpot search and the response all speak\n// about the same string: addresses arrive from replies, CSV pastes and typed input, and\n// \"Someone@Club.org \" is the same person.\nconst body = ($json && $json.body) || $json || {};\nconst raw = String(body.email || '');\nconst email = raw.trim().toLowerCase();\nconst valid = !!email && /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email);\n// POST {\"email\":\"...\",\"force\":true} re-reads the contact from HubSpot even when the mirror\n// already holds them. Without it a resync is impossible: the mirror branch answers first and\n// nothing ever goes back out to check whether the record changed.\nconst force = body.force === true || String(body.force) === 'true';\n\nreturn [{ json: { email, valid, given: raw, force } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -76,7 +76,7 @@
           "conditions": [
             {
               "id": "cond-found-in-mirror",
-              "leftValue": "={{ $json.found }}",
+              "leftValue": "={{ $json.found && !$('Prepare the email to search').first().json.force }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",

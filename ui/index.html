@@ -6871,34 +6871,69 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       //
       // The lines span the whole row rather than sitting inside the 11rem name column, because
       // HubSpot stage names run long: "Missed Demo- Need to Reschedule" was being cut mid-word.
-      function dealLine(c){
+      // THE RECIPIENT RECORD, one labelled line per fact. Every row has one, including the rows
+      // we know nothing about: drawing the panel only where there was something to show left a
+      // ragged column that read as a rendering fault, and it hid the most useful fact on this
+      // tab — that most of the roster is not in the mirror yet.
+      //
+      // The empty message separates the two reasons, because only one of them is about the
+      // contact:
+      //   * not in the mirror   — we have never fetched them, so we cannot know
+      //   * in the mirror, bare — we have them and nothing is linked, or the deal sync has
+      //                            not reached them yet
+      //
+      // It never says "no deal" flatly. hubspot_deals is nearly empty until the CRM sync runs,
+      // so that would be a claim about HubSpot made from an absence in our own copy.
+      function recordPanel(c){
         const d = c && c.deal;
-        if(!d && !(c && c.company_name)) return '';
-        const out = [];
+        const rows = [];
+        const line = (label, val, extra) =>
+          `<div class="rec-meta"><span class="prev-label">${label}</span>${extra || ""}`
+          + `<span class="rec-meta-val text-base-content/50" title="${esc(val)}">${esc(val)}</span></div>`;
+
+        // The address moved in here from the row. It is what identifies the person when the name
+        // is blank or a duplicate, but it is not what you scan a hundred rows for.
+        if(c && c.email) rows.push(line('Email', c.email));
 
         if(d){
           const name = d.name ? `<span class="font-semibold text-[#133b49]">${esc(d.name)}</span>` : '';
-          out.push(`<div class="rec-meta"><span class="prev-label">Deal</span>`
+          rows.push(`<div class="rec-meta"><span class="prev-label">Deal</span>`
             + dealTag(d)
             + `<span class="rec-meta-val" title="${esc(d.name || "")}">${name}</span></div>`);
         }
 
-        // DEALS HERE ARE OFTEN NAMED AFTER THE CLUB — "Cut Shot Volleyball" the deal at "Cut Shot
-        // Volleyball" the company — so the company line is dropped when it would only repeat the
-        // deal name directly above it.
+        // DEALS HERE ARE OFTEN NAMED AFTER THE CLUB — "Cut Shot Volleyball" the deal at "Cut
+        // Shot Volleyball" the company — so the company line is dropped when it would only
+        // repeat the deal name directly above it.
         const sameName = d && d.name && c.company_name
           && String(d.name).trim().toLowerCase() === String(c.company_name).trim().toLowerCase();
-        if(c.company_name && !sameName){
-          // "+2" when the contact sits on more than one company. The latest-modified one is shown
-          // and is what the deal fallback keyed on, so the rest are acknowledged rather than
-          // silently dropped.
+        if(c && c.company_name && !sameName){
+          // "+2" when the contact sits on more than one company. The latest-modified one is the
+          // one shown and the one the deal fallback keyed on, so the rest are acknowledged.
           const extra = (c.company_count > 1)
             ? `<span class="text-base-content/30" title="On ${c.company_count} companies; the most recently modified is shown."> +${c.company_count - 1}</span>`
             : '';
-          out.push(`<div class="rec-meta"><span class="prev-label">Company</span><span class="rec-meta-val text-base-content/50" title="${esc(c.company_name)}">${esc(c.company_name)}${extra}</span></div>`);
+          rows.push(`<div class="rec-meta"><span class="prev-label">Company</span><span class="rec-meta-val text-base-content/50" title="${esc(c.company_name)}">${esc(c.company_name)}${extra}</span></div>`);
         }
-        return out.join('');
+
+        if(!d && !(c && c.company_name)){
+          rows.push(line('CRM', (c && c.in_mirror)
+            ? 'We have this contact, but nothing is linked to them yet.'
+            : 'Not in our HubSpot copy yet, so their company and deal cannot be looked up.'));
+        }
+        // REFRESH, ON THE RECORD IT REFRESHES. A mirrored contact is a snapshot: deals move stage,
+        // people change company, and nothing here re-checks on its own. Offered only when there is
+        // an address to look up with, and only for contacts we already hold — for the rest the
+        // row still carries Find in HubSpot, which does the same job under the name that fits.
+        if(c && c.email && c.in_mirror){
+          rows.push(`<div class="rec-meta"><span class="prev-label"></span>
+            <button class="btn btn-ghost btn-xs text-base-content/50" data-hsresync="${esc(c.email)}"
+              title="Fetch this contact, their companies and their deals from HubSpot again, and replace what we have cached.">&#8635; Refresh from HubSpot</button></div>`);
+        }
+        return rows.join('');
       }
+      // The old name, kept so the on-demand lookup path reads the same as the render path.
+      const dealLine = recordPanel;
       function engStrip(r){
         const e = r.engagement || {};
         if(!e.available) return '';
@@ -7296,24 +7331,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             //
             // The caret is only drawn when there IS detail, so it doubles as the indicator: an
             // arrow means we know something about this person, no arrow means we do not.
-            + st.contacts.map(c => {
-              const detail = dealLine(c);
-              const key = (c.email || String(c.hubspot_id || '')).toLowerCase();
-              const open = detail && RECIP_OPEN.has(key);
+            + st.contacts.map((c, i) => {
+              const detail = recordPanel(c);
+              // Indexed fallback: a few list rows carry neither an address nor an id, and without
+              // it they would all share the key "" and toggle one another.
+              const key = (c.email || String(c.hubspot_id || '') || 'row-' + i).toLowerCase();
+              const open = RECIP_OPEN.has(key);
               return `<div class="grid items-center gap-x-2 border-b border-base-200 py-1.5" data-crow
-                 style="grid-template-columns: 16px minmax(0,11rem) minmax(0,1fr) auto auto">
-                 ${detail
-                   ? `<button class="rec-caret${open ? " open" : ""}" data-rtoggle="${esc(key)}" aria-expanded="${open ? "true" : "false"}" title="${open ? "Hide" : "Show"} the CRM record">&#9654;</button>`
-                   : `<span></span>`}
+                 style="grid-template-columns: 16px minmax(0,1fr) auto auto">
+                 <button class="rec-caret${open ? " open" : ""}" data-rtoggle="${esc(key)}" aria-expanded="${open ? "true" : "false"}" title="${open ? "Hide" : "Show"} this contact&#39;s record">&#9654;</button>
                  <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
-                 <span class="text-xs text-base-content/45 truncate" title="${esc(c.email || '')}">${esc(c.email || '')}</span>
                  <span class="text-xs ${c.status && c.status !== "active" ? "text-warning" : "text-base-content/40"}">${esc(c.status || '')}</span>
                  ${c.hubspot_id
                    ? `<a class="text-xs link" target="_blank" rel="noopener" href="${hsLink(c.hubspot_id)}">HubSpot</a>`
                    : (c.email
-                       ? `<button class="btn btn-ghost btn-xs" data-hslookup="${esc(c.email)}">Find in HubSpot</button>`
+                       ? `<button class="btn btn-outline btn-xs whitespace-nowrap" data-hslookup="${esc(c.email)}" title="Look this address up in HubSpot and cache the record">Find in HubSpot</button>`
                        : '')}
-                 ${detail ? `<div class="rec-detail${open ? "" : " hidden"}" data-rdetail="${esc(key)}">${detail}</div>` : ''}
+                 <div class="rec-detail${open ? "" : " hidden"}" data-rdetail="${esc(key)}">${detail}</div>
                </div>`;
             }).join('')
             + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
@@ -7322,6 +7356,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // obvious response was to press it again, which fetches the same page twice.
           // Toggling does NOT re-render: paint() rebuilds a hundred rows and would drop the scroll
           // position every time somebody opened one.
+          // SAME REQUEST AS FIND, WITH force=1. Kept as one handler so the two controls cannot
+          // drift: the only difference is that a resync tells the webhook to skip its own mirror
+          // check and go back to HubSpot.
+          host.querySelectorAll('[data-hsresync]').forEach(btn => btn.addEventListener('click', async () => {
+            const email = btn.dataset.hsresync;
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Refreshing' + '\u2026';
+            try{
+              const rs = await fetch(`/api/market-history?lookup=${encodeURIComponent(email)}&force=1`, { headers: await apiHeaders() });
+              const d = await rs.json().catch(()=>({}));
+              if(!rs.ok) throw new Error(d.error || ('HTTP ' + rs.status));
+              const panel = btn.closest('[data-rdetail]');
+              if(panel){
+                panel.innerHTML = recordPanel({
+                  email, in_mirror: true,
+                  deal: d.deal || null,
+                  company_name: d.company_name || (d.contact && d.contact.company) || null,
+                  company_count: d.company_count || 0,
+                });
+                // The panel was just replaced, so the new button needs its own listener. Rebinding
+                // the whole list would close every other open row.
+                const again = panel.querySelector('[data-hsresync]');
+                if(again) again.addEventListener('click', () => location.reload());
+                const rowEl = panel.closest('[data-crow]');
+                if(rowEl){
+                  rowEl.classList.add('bh-found');
+                  setTimeout(() => rowEl.classList.remove('bh-found'), 2700);
+                }
+              }
+            }catch(e){
+              btn.disabled = false; btn.innerHTML = orig;
+              btn.title = String((e && e.message) || e);
+            }
+          }));
+
           host.querySelectorAll('[data-rtoggle]').forEach(btn => btn.addEventListener('click', () => {
             const key = btn.dataset.rtoggle;
             const panel = host.querySelector(`[data-rdetail="${CSS.escape(key)}"]`);
@@ -7366,7 +7436,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               // renderer — so a row filled in by clicking is indistinguishable from one that
               // arrived already resolved. company_name is the latest-modified of the companies the
               // webhook found, which is the one the deal fallback keys on.
-              const dealHtml = dealLine({
+              // email and in_mirror included: the panel draws an Email line, and the contact is by
+              // definition in the mirror now — the webhook just cached them.
+              const dealHtml = recordPanel({
+                email: b.dataset.hslookup || c.email || null,
+                in_mirror: true,
                 deal: d.deal || null,
                 company_name: d.company_name || c.company || null,
                 company_count: d.company_count || 0,
@@ -7384,35 +7458,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 //
                 // Opened straight away. The click that produced this WAS the request to see it,
                 // so making the operator open it again would be asking twice.
-                if(dealHtml && !rowEl.querySelector('[data-rdetail]')){
-                  const key = (b.dataset.hslookup || '').toLowerCase();
-                  RECIP_OPEN.add(key);
-
-                  const panel = document.createElement('div');
-                  panel.className = 'rec-detail';
-                  panel.setAttribute('data-rdetail', key);
+                // EVERY ROW ALREADY HAS A CARET AND A PANEL, so this refreshes the one it has and
+                // opens it. The click that produced the result WAS the request to see it.
+                const key = (b.dataset.hslookup || '').toLowerCase();
+                const panel = rowEl.querySelector('[data-rdetail]');
+                const caret = rowEl.querySelector('[data-rtoggle]');
+                if(dealHtml && panel){
                   panel.innerHTML = dealHtml;
-                  rowEl.appendChild(panel);
-
-                  const slot = rowEl.firstElementChild;
-                  if(slot && slot.tagName === 'SPAN' && !slot.textContent.trim()){
-                    const caret = document.createElement('button');
-                    caret.className = 'rec-caret open';
-                    caret.setAttribute('data-rtoggle', key);
+                  panel.classList.remove('hidden');
+                  RECIP_OPEN.add(key);
+                  if(caret){
+                    caret.classList.add('open');
                     caret.setAttribute('aria-expanded', 'true');
-                    caret.title = 'Hide the CRM record';
-                    caret.innerHTML = '&#9654;';
-                    // Bound here rather than left for the next paint(): until something forces a
-                    // re-render this is the only caret on the page with no listener on it.
-                    caret.addEventListener('click', () => {
-                      const nowOpen = !RECIP_OPEN.has(key);
-                      if(nowOpen) RECIP_OPEN.add(key); else RECIP_OPEN.delete(key);
-                      caret.classList.toggle('open', nowOpen);
-                      caret.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
-                      caret.title = (nowOpen ? 'Hide' : 'Show') + ' the CRM record';
-                      panel.classList.toggle('hidden', !nowOpen);
-                    });
-                    slot.replaceWith(caret);
+                    caret.title = 'Hide this contact record';
                   }
                 }
                 rowEl.classList.add('bh-found');

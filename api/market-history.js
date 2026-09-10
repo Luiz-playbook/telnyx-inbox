@@ -120,7 +120,10 @@ export default async function handler(req, res) {
           // already speaks it and nothing here has to change.
           'x-inbox-secret': process.env.REPLY_SECRET || '',
         },
-        body: JSON.stringify({ email: wantLookup }),
+        // ?force=1 re-reads the contact from HubSpot even when the mirror already holds them.
+        // Records go stale — a deal moves stage, a contact changes company — and without this
+        // the mirror branch answers first and nothing ever checks.
+        body: JSON.stringify({ email: wantLookup, force: String(req.query?.force || '') === '1' }),
       });
       const d = await hr.json().catch(() => null);
       if (!hr.ok) {
@@ -268,6 +271,12 @@ export default async function handler(req, res) {
             for (const c of contacts) {
               const d = c.email && byEmail.get(c.email.toLowerCase());
               if (!d) continue;
+              // WHETHER THE MIRROR KNOWS THEM AT ALL, which is not the same as whether the row has
+              // a HubSpot link. Half of these contacts carry a recordid from CakeMail, so they link
+              // out fine while being entirely absent from hubspot.hubspot_contacts — and for
+              // those no company or deal can be resolved at all. The panel has to be able to say
+              // "we do not know this person" rather than "this person has no deal".
+              c.in_mirror = true;
               // The id comes back here too, so a contact the mirror knows gets its link even if
               // the pass above was skipped because CakeMail had already supplied one.
               if (!c.hubspot_id && d.hs_object_id != null) { c.hubspot_id = String(d.hs_object_id); c.from_mirror = true; }
