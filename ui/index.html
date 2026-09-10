@@ -58,6 +58,12 @@
              background:#fff; border:1px solid #e3e8ef; border-radius:10px; padding:6px;
              box-shadow:0 10px 30px rgba(19,59,73,.18); min-width:132px; }
     .q-menu.hidden{ display:none; }
+    /* SQUARER THAN daisyUI DEFAULTS. --rounded-btn is 0.5rem, which on a 24px btn-xs is nearly a
+       capsule — beside the genuinely pill-shaped status badge it read as two competing rounded
+       things. 5px keeps the button legible as a button and lets the badge be the only pill. */
+    .btn.btn-xs[data-qmenu]{ border-radius:5px; }
+    .q-menu{ border-radius:8px; }
+    .q-menu .btn{ border-radius:5px; }
     /* A PICKED ROW. Same warm tint as the bulk bar above the table, on purpose: "what is
        selected" and "what the Actions menu will act on" have to read as one thing, or a
        selection spanning two pages becomes a guess. The left edge is marked as well as the
@@ -93,6 +99,10 @@
     .rec-meta{ display:flex; align-items:baseline; gap:6px; margin-top:3px; min-width:0; }
     .rec-meta > .prev-label{ flex:0 0 3.6rem; }
     .rec-meta-val{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; }
+    /* The refresh control is not a FACT about the contact, so it does not get a label column and
+       an empty slot pretending to be one. It sits under the facts, behind a hairline, aligned
+       with them rather than indented past a label that is not there. */
+    .rec-actions{ margin-top:6px; padding-top:5px; border-top:1px solid #edf2f9; }
     .camp-row.q-picked > td{ background:#fdf3ec; }
     .camp-row.q-picked > td:first-child{ box-shadow:inset 3px 0 0 #e8935a; }
     /* Hover states for the action buttons, stated outright instead of inherited.
@@ -4670,6 +4680,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span>${slotLine(r)}`;
       }
 
+      // THE CHIP AND ITS SUB-LINE, SEPARATELY. Actions was placed next to statusCell(), which
+      // returns a badge AND the line under it ("sends Tue 4pm", a reject reason, a failure).
+      // Flexing those two against the button centred it against a two-line block, so it floated
+      // beside the gap rather than sitting next to the chip.
+      //
+      // Derived from statusCell rather than duplicating its eight branches: every note in there
+      // begins with a <div> and no badge contains one, so the first <div> is the split point. If a
+      // branch ever puts a div inside a badge, this is where it would show up.
+      function statusParts(r){
+        const html = statusCell(r);
+        const i = html.indexOf('<div');
+        return i < 0 ? { badge: html, note: '' } : { badge: html.slice(0, i), note: html.slice(i) };
+      }
+
       // Actions, collapsed into one menu so the row costs ~90px instead of ~280px of buttons.
       //
       // The buttons inside are BYTE-FOR-BYTE the ones that used to sit in the cell, with the
@@ -5206,7 +5230,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td>${blockedRow ? blockedReachCell(r.email, reachOf(r,'email')) : reachCell(r.email, reachOf(r,'email'))}</td>
             <td>${blockedRow ? blockedReachCell(r.sms, reachOf(r,'sms')) : reachCell(r.sms, reachOf(r,'sms'))}</td>
             <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toEtInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''} title="US Eastern"></td>
-            <td class="whitespace-nowrap"><div class="flex items-center gap-2">${statusCell(r)}${actionsMenu(r, { sent, rejected, archived })}</div>${cooldownNote(r)}</td>
+            <td class="whitespace-nowrap">
+              <div class="flex items-center gap-1.5">${statusParts(r).badge}${actionsMenu(r, { sent, rejected, archived })}</div>
+              ${statusParts(r).note}${cooldownNote(r)}</td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
           // bubble directly, so the row costs one block per channel instead of a textarea
@@ -5233,6 +5259,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // and the email grows to match it. Long email — the row is the email's own height, the
           // SMS is left alone, and the body scrolls once it hits the .copy-pane ceiling. Header,
           // subject line and segment counter stay shrink-0; only the copy moves.
+          // THE FOOTER BELONGS TO THE PANEL IT ACTS ON. Both buttons used to sit in one strip under
+          // both panels, so "Save SMS" was as close to the email editor as to the bubble it would
+          // write. Each panel now owns its own, inside its own border.
+          //
+          // UNDO SITS BESIDE SAVE because they answer the same question — "I have changed this,
+          // now what" — and it appears on exactly the same condition: while the editor differs
+          // from what is stored. Once saved, neither is offered, because there is nothing to save
+          // and nothing to undo.
+          const panelFoot = (which, id) => sent ? '' : `<div class="shrink-0 flex items-center gap-2 px-3 py-2 border-t border-base-300 bg-base-200/30">
+               <button class="btn btn-xs btn-primary hidden" data-save${which}="${esc(id)}">Save ${which === "email" ? "email" : "SMS"}</button>
+               <button class="btn btn-xs btn-ghost text-base-content/50 hidden" data-undo${which}="${esc(id)}" title="Put the ${which === "email" ? "subject and body" : "message"} back to what is stored. Nothing has been saved yet.">Undo changes</button>
+               <span class="text-xs text-base-content/50" data-copystatus${which}="${esc(id)}"></span>
+             </div>`;
           const offNote = what => `<div class="flex-1 p-4 text-xs text-base-content/45 leading-relaxed">
             ${sent ? `No ${what} went out with this blast.` : `Not sending ${what} on this blast. Choose a sender above to turn it back on.`}</div>`;
           const panelHead = (label, sel, via) => `<div class="shrink-0 flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
@@ -5245,28 +5284,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </div>
               <div class="mail-body copy-pane flex-1 min-h-20 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
+            ${panelFoot('email', r.id)}
           </section>`;
-          const smsPanel = `<section class="min-w-0 self-start flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
+          // FULL HEIGHT, NOT self-start. Cole asked for the opposite in 2026-08-04 — the SMS box
+          // sized to its bubble and the email grew to match — but two white boxes of visibly
+          // different heights side by side read as a layout fault rather than as a deliberate fit.
+          // Vhea, 2026-09-10. The bubble still sits at the top; the panel just fills the row.
+          const smsPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
             ${panelHead('SMS', smsSel, r.sms ? smsMethodOf(curSms) : '')}
             ${r.sms ? `<div class="copy-pane p-3"><div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
-              <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>`
+              <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>
+              <div class="flex-1"></div>`
               : offNote('SMS')}
+            ${panelFoot('sms', r.id)}
           </section>`;
           const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="8" class="py-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${emailPanel}${smsPanel}</div>
-            <!-- ONE BUTTON PER CHANNEL, AND ONLY WHEN THERE IS SOMETHING TO SAVE.
-
-                 A single "Save copy" wrote both channels at once, so fixing a typo in the SMS
-                 also rewrote the email — and it sat there permanently enabled, which after a
-                 save looked like the save had not taken. Each button now appears only while its
-                 own channel differs from what is stored, and disappears again when it matches:
-                 present means unsaved, absent means saved, with nothing to interpret. -->
-            ${sent?'':`<div class="mt-2 flex items-center gap-2 flex-wrap">
-                 <button class="btn btn-xs btn-primary hidden" data-saveemail="${esc(r.id)}">Save email</button>
-                 <button class="btn btn-xs btn-primary hidden" data-savesms="${esc(r.id)}">Save SMS</button>
-                 <span class="text-xs text-base-content/50" data-copystatus="${esc(r.id)}"></span>
-                 <span class="text-xs text-base-content/40 ml-auto">Click the subject, the body or the bubble to edit.</span>
-               </div>`}
+            <!-- The save controls moved INTO each panel (see panelFoot). What is left here is the
+                 one line that is about neither channel in particular. -->
+            ${sent?'':`<div class="mt-2 text-xs text-base-content/40">Click the subject, the body or the bubble to edit.</div>`}
           </td></tr>`;
           return dayHead + main + detail;
         }).join('');
@@ -5485,7 +5521,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Editing happens IN the preview, so nothing has to be mirrored — only the SMS
         // segment counter needs recomputing as you type. Unsaved edits are called out,
         // because the copy that sends is the stored one, not what's on screen.
-        const markDirty = id => { const st = tb.querySelector(`[data-copystatus="${id}"]`); if(st) st.textContent = 'Unsaved changes'; };
+        // markDirty wrote "Unsaved changes" into a single shared status slot. That slot is gone —
+        // each panel now carries its own, next to its own Save and Undo — and the presence of
+        // those two buttons already says the same thing without a word. It is now just the repaint.
+        const markDirty = id => paintSave(id);
         tb.querySelectorAll('[data-copy-email]').forEach(t=>t.addEventListener('input', ()=> markDirty(t.dataset.copyEmail)));
         tb.querySelectorAll('[data-subject]').forEach(t=>t.addEventListener('input', ()=> markDirty(t.dataset.subject)));
         tb.querySelectorAll('[data-copy-sms]').forEach(t=>t.addEventListener('input', ()=>{
@@ -5519,15 +5558,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return { row, em, sm, sub, emailDirty, smsDirty };
         }
 
+        // Undo appears on exactly the same condition as Save: while the editor differs from what
+        // is stored. An Undo with nothing to undo is the same lie as a Save with nothing to save.
         function paintSave(id){
           const { emailDirty, smsDirty } = copyState(id);
-          const be = tb.querySelector(`[data-saveemail="${id}"]`);
-          const bs = tb.querySelector(`[data-savesms="${id}"]`);
-          if(be) be.classList.toggle('hidden', !emailDirty);
-          if(bs) bs.classList.toggle('hidden', !smsDirty);
-          // A stale "Saved" beside a field being edited again is worse than no message at all.
-          const st = tb.querySelector(`[data-copystatus="${id}"]`);
-          if(st && (emailDirty || smsDirty)) st.textContent = '';
+          const pair = (which, dirty) => {
+            const sv = tb.querySelector(`[data-save${which}="${id}"]`);
+            const un = tb.querySelector(`[data-undo${which}="${id}"]`);
+            if(sv) sv.classList.toggle('hidden', !dirty);
+            if(un) un.classList.toggle('hidden', !dirty);
+            // A stale "Saved" beside a field being edited again is worse than no message at all.
+            const st = tb.querySelector(`[data-copystatus${which}="${id}"]`);
+            if(st && dirty) st.textContent = '';
+          };
+          pair('email', emailDirty);
+          pair('sms', smsDirty);
+        }
+
+        // PUTS THE EDITOR BACK TO THE STORED ROW, and nothing else. It writes no database call:
+        // an unsaved edit only ever existed on screen, so undoing one is a screen operation.
+        // The SMS segment counter is recomputed because it is derived from the text, not stored.
+        function undoCopy(id, which){
+          const { row, em, sm, sub: subEl } = copyState(id);
+          if(which === 'email'){
+            if(em) em.innerHTML = nl2br(row.email_copy || '');
+            if(subEl) subEl.textContent = storedSubject(row);
+          } else {
+            if(sm) sm.textContent = row.sms_copy || '';
+            const c = tb.querySelector(`[data-smscount="${id}"]`);
+            if(c){ const i = smsInfo(row.sms_copy || ''); c.textContent = smsCountLabel(i); c.className = smsCountClass(i); }
+          }
+          paintSave(id);
         }
 
         tb.querySelectorAll('[data-copy-email],[data-copy-sms],[data-subject]').forEach(node => {
@@ -5539,7 +5600,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // queue_set_copy writes both columns, so passing the live editor value would let
         // "Save email" quietly commit an SMS edit the operator had not chosen to save.
         async function saveCopy(b, id, which){
-          const st = tb.querySelector(`[data-copystatus="${id}"]`);
+          const st = tb.querySelector(`[data-copystatus${which}="${id}"]`);
           const { row, em, sm, sub } = copyState(id);
           const emailCopy = which === 'email' ? readCopy(em) : (row.email_copy ?? null);
           const smsCopy   = which === 'sms'   ? readCopy(sm) : (row.sms_copy   ?? null);
@@ -5578,6 +5639,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           b.addEventListener('click', () => saveCopy(b, b.dataset.saveemail, 'email')));
         tb.querySelectorAll('[data-savesms]').forEach(b =>
           b.addEventListener('click', () => saveCopy(b, b.dataset.savesms, 'sms')));
+        tb.querySelectorAll('[data-undoemail]').forEach(b =>
+          b.addEventListener('click', () => undoCopy(b.dataset.undoemail, 'email')));
+        tb.querySelectorAll('[data-undosms]').forEach(b =>
+          b.addEventListener('click', () => undoCopy(b.dataset.undosms, 'sms')));
       }
 
       // Toast + confirm are the Campaigns tab's; if that module never ran, fall back to natives
@@ -6926,7 +6991,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // an address to look up with, and only for contacts we already hold — for the rest the
         // row still carries Find in HubSpot, which does the same job under the name that fits.
         if(c && c.email && c.in_mirror){
-          rows.push(`<div class="rec-meta"><span class="prev-label"></span>
+          rows.push(`<div class="rec-actions">
             <button class="btn btn-ghost btn-xs text-base-content/50" data-hsresync="${esc(c.email)}"
               title="Fetch this contact, their companies and their deals from HubSpot again, and replace what we have cached.">&#8635; Refresh from HubSpot</button></div>`);
         }
