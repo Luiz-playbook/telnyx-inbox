@@ -76,6 +76,14 @@
     /* Reached through the company rather than the contact. Dashed, because the claim is weaker:
        a deal at their club is not their deal. */
     .deal-pill.via-company{ border-style:dashed; }
+    /* THE LINES UNDER A RECIPIENT, LABELLED. The first version put the deal and the company in
+       one slot and told them apart by styling alone — a pill for the stage, grey text for the
+       company. That reads as "some rows have a badge and some do not", which is exactly what it
+       was asked. The labels are 10.5px and muted: free to skip once you know them, and they
+       answer the question permanently for anyone who does not. */
+    .rec-meta{ display:flex; align-items:baseline; gap:6px; margin-top:3px; min-width:0; }
+    .rec-meta > .prev-label{ flex:0 0 3.6rem; }
+    .rec-meta-val{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; }
     .camp-row.q-picked > td{ background:#fdf3ec; }
     .camp-row.q-picked > td:first-child{ box-shadow:inset 3px 0 0 #e8935a; }
     /* Hover states for the action buttons, stated outright instead of inherited.
@@ -6840,34 +6848,48 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : 'A deal associated with this contact directly.')
           + (d.pipeline_label ? '\n\nPipeline: ' + d.pipeline_label : '')
           + (label ? '\nStage: ' + label : '');
-        return `<span class="deal-pill${kind}${via}" title="${esc(title)}">${esc(label || "deal")}</span>`;
+        // Clipped, with the whole stage in the tooltip. "Closed Lost - Wait for POS Inventory" as
+        // a full-width pill leaves no room for the deal name beside it.
+        return `<span class="deal-pill${kind}${via}" title="${esc(title)}">${esc(clip(label || "deal", 24))}</span>`;
       }
 
       // The line under the name. Deal first, company after it and muted. Returns NOTHING when
       // there is neither — most of a list is unknown until the mirror fills, and a row repeating
       // "no deal" hundreds of times is noise, not information.
+      // TWO LABELLED LINES, NOT ONE AMBIGUOUS SLOT. DEAL and COMPANY are written out, each on its
+      // own line, so a row states what it is holding instead of leaving the reader to infer it
+      // from whether a pill happens to be present.
+      //
+      // The lines span the whole row rather than sitting inside the 11rem name column, because
+      // HubSpot stage names run long: "Missed Demo- Need to Reschedule" was being cut mid-word.
       function dealLine(c){
         const d = c && c.deal;
         if(!d && !(c && c.company_name)) return '';
-        const bits = [];
-        if(d) bits.push(dealTag(d) + (d.name ? ` <span class="font-semibold text-[#133b49]">${esc(clip(d.name, 32))}</span>` : ''));
-        // DEALS IN THIS PORTAL ARE OFTEN NAMED AFTER THE CLUB — "Cut Shot Volleyball" the deal
-        // at "Cut Shot Volleyball" the company — so printing both produced the same words twice
-        // with a separator between them. The company is reference data; when it adds nothing it
-        // is dropped rather than repeated.
+        const out = [];
+
+        if(d){
+          const name = d.name ? `<span class="font-semibold text-[#133b49]">${esc(d.name)}</span>` : '';
+          out.push(`<div class="rec-meta"><span class="prev-label">Deal</span>`
+            + dealTag(d)
+            + `<span class="rec-meta-val" title="${esc(d.name || "")}">${name}</span></div>`);
+        }
+
+        // DEALS HERE ARE OFTEN NAMED AFTER THE CLUB — "Cut Shot Volleyball" the deal at "Cut Shot
+        // Volleyball" the company — so the company line is dropped when it would only repeat the
+        // deal name directly above it.
         const sameName = d && d.name && c.company_name
           && String(d.name).trim().toLowerCase() === String(c.company_name).trim().toLowerCase();
         if(c.company_name && !sameName){
-          // "+2" when the contact sits on more than one company: the latest-modified is the one
-          // shown and the one the deal fallback keyed on, so the others have to be acknowledged
-          // rather than silently dropped.
-          const extra = (c.company_count > 1) ? `<span class="text-base-content/30" title="On ${c.company_count} companies; the most recently modified one is shown."> +${c.company_count - 1}</span>` : '';
-          bits.push(`<span class="text-base-content/40">${esc(clip(c.company_name, 26))}</span>${extra}`);
+          // "+2" when the contact sits on more than one company. The latest-modified one is shown
+          // and is what the deal fallback keyed on, so the rest are acknowledged rather than
+          // silently dropped.
+          const extra = (c.company_count > 1)
+            ? `<span class="text-base-content/30" title="On ${c.company_count} companies; the most recently modified is shown."> +${c.company_count - 1}</span>`
+            : '';
+          out.push(`<div class="rec-meta"><span class="prev-label">Company</span><span class="rec-meta-val text-base-content/50" title="${esc(c.company_name)}">${esc(c.company_name)}${extra}</span></div>`);
         }
-        const sep = ' <span class="text-base-content/25">&middot;</span> ';
-        return `<div class="text-[11px] leading-tight mt-0.5 truncate">${bits.join(sep)}</div>`;
+        return out.join('');
       }
-
       function engStrip(r){
         const e = r.engagement || {};
         if(!e.available) return '';
@@ -7256,10 +7278,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // the first. The name column also widens, since it now holds two things.
             + st.contacts.map(c => `<div class="grid items-start gap-x-2 border-b border-base-200 py-1.5" data-crow
                  style="grid-template-columns: minmax(0,11rem) minmax(0,1fr) auto auto">
-                 <div class="min-w-0">
-                   <span class="font-semibold text-[#133b49] truncate block" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
-                   ${dealLine(c)}
-                 </div>
+                 <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
                  <span class="text-xs text-base-content/45 truncate" title="${esc(c.email || '')}">${esc(c.email || '')}</span>
                  <span class="text-xs ${c.status && c.status !== 'active' ? 'text-warning' : 'text-base-content/40'}">${esc(c.status || '')}</span>
                  ${c.hubspot_id
@@ -7270,6 +7289,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    : (c.email
                        ? `<button class="btn btn-ghost btn-xs" data-hslookup="${esc(c.email)}">Find in HubSpot</button>`
                        : '')}
+                 <!-- Spans every column so a long stage name has the panel width, not 11rem. -->
+                 <div style="grid-column: 1 / -1">${dealLine(c)}</div>
                </div>`).join('')
             + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
           // A page is 100 contacts from CakeMail plus a mirror lookup for the ones without an
