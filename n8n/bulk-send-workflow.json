@@ -46,7 +46,7 @@
         "nodeCredentialType": "httpBearerAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ from: \"+16158050766\", to: $json.to, text: $json.text, webhook_url: \"https://playbooksports.app.n8n.cloud/webhook/telnyx-inbound\" }) }}",
+        "jsonBody": "={{ JSON.stringify({ from: $json.from || \"+16158050766\", to: $json.to, text: $json.text, webhook_url: \"https://playbooksports.app.n8n.cloud/webhook/telnyx-inbound\" }) }}",
         "options": {
           "batching": { "batch": { "batchSize": 5, "batchInterval": 1100 } }
         }
