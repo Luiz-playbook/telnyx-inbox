@@ -1,4 +1,4 @@
--- 058: the status column from 053, applied on its own.
+-- 070: the status column from 053, applied on its own.
 --
 -- WHY THIS FILE EXISTS AT ALL. 053_event_cancellations.sql was committed (a90ee28) but never
 -- reached the database: two migrations were numbered 053, and the runner took
