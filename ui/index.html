@@ -58,11 +58,51 @@
              background:#fff; border:1px solid #e3e8ef; border-radius:10px; padding:6px;
              box-shadow:0 10px 30px rgba(19,59,73,.18); min-width:132px; }
     .q-menu.hidden{ display:none; }
+    /* SQUARER THAN daisyUI DEFAULTS. --rounded-btn is 0.5rem, which on a 24px btn-xs is nearly a
+       capsule — beside the genuinely pill-shaped status badge it read as two competing rounded
+       things. 5px keeps the button legible as a button and lets the badge be the only pill. */
+    .btn.btn-xs[data-qmenu]{ border-radius:5px; }
+    .q-menu{ border-radius:8px; }
+    .q-menu .btn{ border-radius:5px; }
     /* A PICKED ROW. Same warm tint as the bulk bar above the table, on purpose: "what is
        selected" and "what the Actions menu will act on" have to read as one thing, or a
        selection spanning two pages becomes a guess. The left edge is marked as well as the
        fill — banded rows already carry a background, and a tint alone is easy to miss on the
        grey day-band stripe. */
+    /* A resolved deal on a recipient row. The STAGE gets the pill because that is what people
+       scan for; the deal name sits beside it and the company goes in the same quiet line, muted
+       — the deal is the answer, the company is reference. */
+    .deal-pill{ display:inline-flex; align-items:center; border-radius:9999px; padding:1px 7px;
+                font-size:10px; font-weight:800; letter-spacing:.02em; white-space:nowrap;
+                background:#eaf0fe; color:#2f6bff; border:1px solid #d3def8; }
+    /* Won and lost are the two stages worth telling apart at a glance. Everything else is
+       in-flight and shares the neutral blue rather than being colour-guessed. */
+    .deal-pill.won{ background:#e6f6ea; color:#067523; border-color:#c7e9d1; }
+    .deal-pill.lost{ background:#f4f6f8; color:#8695a7; border-color:#e3e8ef; }
+    /* Reached through the company rather than the contact. Dashed, because the claim is weaker:
+       a deal at their club is not their deal. */
+    .deal-pill.via-company{ border-style:dashed; }
+    /* THE LINES UNDER A RECIPIENT, LABELLED. The first version put the deal and the company in
+       one slot and told them apart by styling alone — a pill for the stage, grey text for the
+       company. That reads as "some rows have a badge and some do not", which is exactly what it
+       was asked. The labels are 10.5px and muted: free to skip once you know them, and they
+       answer the question permanently for anyone who does not. */
+    /* The disclosure caret. Rendered ONLY on rows that have something under them, so its
+       presence is the signal that there is anything to open — a caret on an empty row is a
+       control that does nothing, and with 100 rows on screen that is 100 of them. */
+    .rec-caret{ width:14px; height:14px; line-height:14px; text-align:center; font-size:9px;
+                color:#8695a7; background:none; border:0; padding:0; cursor:pointer;
+                transition:transform .12s ease; }
+    .rec-caret:hover{ color:#133b49; }
+    .rec-caret.open{ transform:rotate(90deg); }
+    .rec-detail{ grid-column:1 / -1; padding:6px 0 4px 22px; }
+    .rec-meta{ display:flex; align-items:baseline; gap:6px; margin-top:3px; min-width:0; }
+    .rec-meta > .prev-label{ flex:0 0 3.6rem; }
+    .rec-meta-val{ min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11.5px; }
+    /* The refresh control is not a FACT about the contact, so it does not get a label column and
+       an empty slot pretending to be one. It sits under the facts, behind a hairline, aligned
+       with them rather than indented past a label that is not there. */
+    .rec-actions{ margin-top:6px; padding-top:5px; border-top:1px solid #edf2f9; }
     .camp-row.q-picked > td{ background:#fdf3ec; }
     .camp-row.q-picked > td:first-child{ box-shadow:inset 3px 0 0 #e8935a; }
     /* Hover states for the action buttons, stated outright instead of inherited.
@@ -428,6 +468,7 @@
           <a href="#" data-tab="history">Market History</a>
           <a href="#" data-tab="templates">Templates</a>
           <a href="#" data-tab="rules">Cole Rules</a>
+          <a href="#" data-tab="reports">Reports</a>
         </nav>
         <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
              so a logged-out visitor never sees an empty account chip on the way to /login. -->
@@ -552,6 +593,8 @@
                   <option value="has">Has ticket price</option>
                   <option value="no">No price yet</option>
                 </select>
+                <!-- Only once something is filtered, as on every other tab. -->
+                <button id="cbs-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
               </div>
             </div>
             <!-- Toolbar row 2 — the actions and the settings they read sit on one line,
@@ -603,7 +646,7 @@
                       <th>Phone #s</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0"><td colspan="8" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading events&hellip;</div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="8" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="8" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="8" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -825,6 +868,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <input id="q-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Scheduled to">
                   <button id="q-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
+                <!-- Only once something is filtered — see syncDateClear(). This queue carries
+                     seven filters plus a search box, so getting back to "everything" by hand is
+                     eight controls; that is the case Clear exists for. -->
+                <button id="q-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
@@ -857,12 +904,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                          silently reached 300 rows you cannot see is how bulk actions go wrong.
                          Selecting everything the filters match is a separate, named offer in the
                          bar below. -->
-                    <th class="w-[58px] col-tight">
+                    <!-- THE CONTROL COLUMN: select and expand. Both are things you do TO a row;
+                         every column after this one is data ABOUT the game.
+
+                         Actions USED to live here too. It began in the last column of a
+                         ten-column table wider than most windows — Josh's original complaint —
+                         then moved here because this column cannot be scrolled away from. Josh
+                         has since asked for it directly after the blast name instead, which is
+                         where it now sits: still left of the horizontal scroll, and next to the
+                         thing it acts on rather than next to the checkbox. -->
+                    <th class="w-[62px] col-tight">
                       <input id="q-all" type="checkbox" class="checkbox checkbox-xs align-middle" aria-label="Select every blast on this page" title="Select every blast on this page">
                     </th>
-                    <!-- Columns 2-7 mirror Campaigns by Event so the same blast reads the same on
+                    <!-- Columns 2-8 mirror Campaigns by Event so the same blast reads the same on
                          both tabs; the rest are queue-only (when it goes, how it is doing). -->
                     <th>Blast</th>
+                    <!-- Per Josh: between the blast name and the price. -->
+                    <th class="col-tight w-[52px]">Actions</th>
                     <th>Cheapest</th>
                     <th>Sport</th>
                     <!-- Market is one metro word ("Chicago") over its state/country code, so it
@@ -881,7 +939,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                          scrolling sideways past everything else to find it. -->
                     <th>Status</th>
                   </tr></thead>
-                  <tbody id="q-rows"><tr class="border-0"><td colspan="9" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div></td></tr></tbody>
+                  <tbody id="q-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading queue&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -959,6 +1017,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <input id="bh-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Sent to">
                   <button id="bh-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
+                <!-- Same rule as Ticket Prices: rendered only once something is actually
+                     filtered. A permanently visible Clear on an unfiltered table is a control
+                     that does nothing, sitting next to four that do. -->
+                <button id="bh-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
               </div>
             </div>
             <div class="flex items-center gap-2 flex-wrap justify-end">
@@ -985,7 +1047,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <thead class="sticky top-0 z-10"><tr class="border-b border-base-300 bg-base-100">
                     <th class="w-8"></th><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Source</th><th>Recipients</th><th>Sent</th><th>Opens</th><th>Clicks</th>
                   </tr></thead>
-                  <tbody id="bh-rows"><tr class="border-0"><td colspan="10" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading blast history&hellip;</div></td></tr></tbody>
+                  <tbody id="bh-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading blast history&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <div class="flex items-center justify-between flex-wrap gap-3 px-4 py-2.5 border-t border-base-300">
@@ -1010,6 +1072,205 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           </div>
 
           <!-- ===== COLE RULES ===== -->
+          <!-- ===== Reports =====
+               A list of independent reports, each its own collapsible panel. Adding a report
+               means adding one <details> sibling below — no layout to rework, and nothing
+               about the others changes.
+
+               <details>/<summary> rather than a JS accordion: the open/closed state is the
+               browser's, it survives without any of our code running, and it stays keyboard-
+               and screen-reader-operable for free. They are deliberately NOT grouped by a
+               shared name attribute — these are unrelated reports, so opening one should not
+               collapse another someone is reading. -->
+          <div data-view id="view-reports" class="hidden space-y-3">
+
+            <!-- Telnyx 10DLC volume vs the carrier cap.
+                 Deliberately NOT called "SMS volume". It answers a compliance question — how
+                 close is the 10DLC brand to being throttled — and that number will not agree
+                 with the reach figures on Market History, which also count CakeMail and
+                 Salesmsg. Two different questions, two different totals. -->
+            <details id="tu-strip" class="collapse collapse-arrow border border-base-300 bg-base-100 hidden" open>
+              <summary class="collapse-title min-h-0 py-3">
+                <div class="flex items-baseline justify-between flex-wrap gap-2 pr-6">
+                  <span class="font-semibold text-sm">Telnyx SMS volume &mdash; all carriers, and the one cap</span>
+                  <span class="text-xs text-base-content/50" id="tu-prov"></span>
+                </div>
+              </summary>
+              <div class="collapse-content">
+                <div class="flex flex-col gap-3 pb-1">
+
+                  <!-- TWO QUESTIONS, SIDE BY SIDE, LABELLED AS TWO.
+                       This block used to lead with the T-Mobile figure alone, which made the
+                       whole report look like a T-Mobile report — the biggest number on the
+                       page was a fifth of what we actually send. Total volume now leads, and
+                       the cap is a clearly separated second panel rather than the headline. -->
+                  <div class="flex items-stretch gap-5 flex-wrap">
+                    <div class="min-w-[9rem]">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">Sent today</div>
+                      <div class="text-3xl font-bold leading-tight tabular-nums" id="tu-sent">&mdash;</div>
+                      <div class="text-xs text-base-content/60" id="tu-sent-sub">all carriers</div>
+                    </div>
+
+                    <div class="border-l border-base-300"></div>
+
+                    <!-- Everything right of the divider is about the cap, and says so. -->
+                    <div class="grow min-w-[20rem]">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">
+                        Against the only cap &mdash; T&#8209;Mobile
+                      </div>
+                      <div class="flex items-baseline gap-4 flex-wrap mt-0.5">
+                        <div>
+                          <span class="text-2xl font-semibold tabular-nums" id="tu-today">&mdash;</span>
+                          <span class="text-xs text-base-content/60">used</span>
+                        </div>
+                        <div>
+                          <span class="text-2xl font-semibold tabular-nums" id="tu-left">&mdash;</span>
+                          <span class="text-xs text-base-content/60">left</span>
+                        </div>
+                      </div>
+                      <div class="h-2.5 w-full bg-base-200 rounded-sm overflow-hidden mt-1.5">
+                        <div id="tu-bar" class="h-full bg-success" style="width:0%"></div>
+                      </div>
+                      <div class="flex justify-between text-[11px] text-base-content/50 mt-1 tabular-nums">
+                        <span id="tu-today-sub">&nbsp;</span><span id="tu-cap">&mdash;</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- WHERE THE REST WENT. Without this, "3,429 sent / 696 T-Mobile" reads as
+                       though 2,700 messages went missing. They went to carriers that impose no
+                       daily ceiling, so they cost nothing against the cap — which is only
+                       obvious once you can see them. -->
+                  <div class="border border-base-300 rounded-md p-3">
+                    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">
+                        Where messages went
+                      </div>
+                      <div class="join">
+                        <button class="btn btn-xs join-item" data-tu-range="today">Today</button>
+                        <button class="btn btn-xs join-item btn-active" data-tu-range="window">Last 14 days</button>
+                      </div>
+                    </div>
+                    <div class="flex flex-wrap gap-1.5" id="tu-carriers"></div>
+                    <p class="text-[11px] text-base-content/50 mt-2">
+                      Only T&#8209;Mobile sets a daily volume cap. The rest have no ceiling to use up &mdash;
+                      these are running totals, not allowances.
+                    </p>
+                  </div>
+
+                  <!-- Fourteen days. Bars are scaled to the busiest day, not to the cap: at
+                       ~3% of allowance every bar against the cap would be an invisible sliver
+                       and the shape of the fortnight would be lost. Colour still encodes cap
+                       pressure, so a genuinely heavy day reads amber or red regardless.
+                       Each bar carries its own figure, so the chart is readable without
+                       hovering — the tooltip adds the cap percentage on top. -->
+                  <div class="border border-base-300 rounded-md p-3">
+                    <div class="flex items-baseline justify-between flex-wrap gap-2 mb-2">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">
+                        Messages per day &middot; last 14 days
+                      </div>
+                      <div class="flex items-center gap-3 text-[11px] text-base-content/60">
+                        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 bg-success"></span>T&#8209;Mobile (capped)</span>
+                        <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 bg-base-300"></span>Everyone else</span>
+                      </div>
+                    </div>
+                    <div class="flex items-end gap-[3px] h-24" id="tu-days"></div>
+                    <div class="flex justify-between text-[11px] text-base-content/50 mt-1">
+                      <span id="tu-from"></span><span id="tu-to"></span>
+                    </div>
+                  </div>
+
+                  <!-- TWO TABLES, TWO DIFFERENT QUESTIONS, and they were being mistaken for one
+                       another. Each now carries a numbered eyebrow saying what it answers, and
+                       the brand table is tinted and boxed because it is the one that decides
+                       whether we get throttled — the inbox table underneath is a plain
+                       breakdown of who did the sending. -->
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="bg-base-200 px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">1 &middot; The limit</div>
+                      <div class="text-sm font-semibold">By brand &mdash; who has how much allowance <span class="font-normal text-base-content/50">&middot; last 14 days</span></div>
+                      <div class="text-[11px] text-base-content/60">
+                        The cap is set per brand and resets at midnight UTC. Sent and T&#8209;Mobile are
+                        fortnight totals; Busiest day is the single worst day against that brand's own ceiling.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Brand</th><th class="text-right">Score</th><th class="text-right">Cap/day</th>
+                          <th class="text-right">Senders</th><th class="text-right">Sent</th>
+                          <th class="text-right">T&#8209;Mobile</th><th class="text-right">Busiest day</th>
+                        </tr></thead>
+                        <tbody id="tu-brands"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2 hidden" id="tu-idle"></p>
+                  </div>
+
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">2 &middot; The usage</div>
+                      <div class="text-sm font-semibold">By inbox &mdash; who did the sending <span class="font-normal text-base-content/50">&middot; last 14 days</span></div>
+                      <div class="text-[11px] text-base-content/60">
+                        A rolling fortnight, not today &mdash; the oldest day drops off as a new one is added.
+                        Every number that sent, and the brand whose allowance it drew on.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Inbox</th><th>Number</th><th>Brand</th>
+                          <th class="text-right">Sent</th>
+                          <th class="text-right" title="The only carrier with a daily cap.">T&#8209;Mobile</th>
+                          <th class="text-right">AT&amp;T</th><th class="text-right">Verizon</th>
+                          <th class="text-right" title="Every other carrier combined — none of them cap daily volume.">Other</th>
+                          <th class="text-right">Segments</th>
+                        </tr></thead>
+                        <tbody id="tu-inbox"></tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <!-- The four limits, in the same panel as the numbers they govern. They get
+                       confused constantly, because "rate limit" means four different things
+                       depending on who set it — and only ONE of them is a daily quantity that
+                       can run out. The other three are speeds. Two rows follow the brand's
+                       vetting score and are read live; two have no API at all and are recorded
+                       from the Telnyx portal. -->
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">3 &middot; The rules</div>
+                      <div class="text-sm font-semibold">Sending limits &mdash; what we may send, and how fast</div>
+                      <div class="text-[11px] text-base-content/60">
+                        Four separate limits. They are not nested &mdash; only the T&#8209;Mobile row is a daily
+                        quantity that runs out; the other three are speeds.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Limit</th><th>Kind</th><th>Set by</th><th class="text-right">Ceiling</th>
+                          <th>Applies to</th><th class="text-right">Our usage</th>
+                        </tr></thead>
+                        <tbody id="tu-limits-rows"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2" id="tu-limits-note"></p>
+                  </div>
+
+                  <p class="text-[11px] text-base-content/50" id="tu-note"></p>
+                </div>
+              </div>
+            </details>
+
+            <!-- Shown only when nothing rendered, so an empty Reports tab explains itself
+                 rather than looking broken. -->
+            <div id="rep-empty" class="text-sm text-base-content/50 hidden">
+              No reports could be loaded. The Telnyx volume report needs
+              <code>api/telnyx-usage-sync</code> to have run at least once.
+            </div>
+          </div>
+
           <div data-view id="view-rules" class="hidden space-y-5">
             <!-- HOW THE RULES ABOVE ARE ACTUALLY USED. The three inputs on this page decide which
                  events can be blasted, but nothing on screen said where in the chain they act —
@@ -1251,6 +1512,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <span class="tooltip tooltip-bottom tooltip-wide tooltip-sm" data-tip="Re-reads what is already stored and repaints the table. Free, and instant — it looks nothing up. Use Refresh prices to go and fetch new prices.">
                   <button id="tp-reload" class="btn btn-outline btn-sm gap-1">&#8635; Reload</button>
                 </span>
+              </div>
+            </div>
+            <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
+                 They are read live from Cole Rules, so this line changes when the knobs do. -->
+            <div id="tp-thresholds" class="text-xs text-base-content/50 -mt-2"></div>
+            <!-- What the last refresh actually covered, and the two controls that act on it.
+
+                 THE BUTTONS BELONG TO THIS LINE, NOT TO THE FILTERS. Refresh prices and Sheet
+                 sat in the filter row, where every neighbour narrows what you are looking at and
+                 neither of these does — one spends money fetching new prices and the other opens
+                 the mirror. The sentence they answer to ("Last price refresh 1h ago · covered all
+                 leagues · 113 priced · $0.40") was directly underneath them, reading as caption
+                 to the table instead of as the state those buttons change.
+
+                 With per-league refreshes (AI-968) a timestamp alone is not enough: "3h ago" can
+                 mean one league was pulled and the rest are as stale as they were. -->
+            <div class="flex items-center justify-between flex-wrap gap-x-3 gap-y-2">
+              <div id="tp-lastrun" class="text-xs text-base-content/50"></div>
+              <div class="flex items-center gap-2 flex-wrap justify-end">
                 <!-- Reload re-reads what is stored; this goes and looks the prices up again, and
                      costs money. Kept visually distinct for that reason, and it carries the last
                      run's cost in its tooltip. -->
@@ -1264,13 +1544,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    title="Open the pricing sheet this table syncs to">&#128203; Sheet</a>
               </div>
             </div>
-            <!-- The numbers behind the flag, stated rather than left to be inferred from a colour.
-                 They are read live from Cole Rules, so this line changes when the knobs do. -->
-            <div id="tp-thresholds" class="text-xs text-base-content/50 -mt-2"></div>
-            <!-- What the last refresh actually covered. With per-league refreshes (AI-968) a
-                 timestamp alone is not enough: "3h ago" can mean one league was pulled and the
-                 rest are as stale as they were. -->
-            <div id="tp-lastrun" class="text-xs text-base-content/50"></div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div class="overflow-auto max-h-[calc(100vh-330px)]">
                 <table class="camp-table w-full min-w-[1180px]">
@@ -1285,7 +1558,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Venue</th>
                     <th class="col-tight w-[150px]">Eligibility</th>
                   </tr></thead>
-                  <tbody id="tp-rows"><tr class="border-0"><td colspan="9" class="pt-6 pb-3"><progress class="progress progress-primary w-full"></progress><div class="text-center text-base-content/50 text-sm mt-2">Loading ticket prices&hellip;</div></td></tr></tbody>
+                  <tbody id="tp-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading ticket prices&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager, same shape and defaults as the Campaigns table. 4,080 rows in one
@@ -1370,13 +1643,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const ts = wall - etOffset(wall);
       return wall - etOffset(ts);
     }
-    // One loading state for every data table — a full-width progress bar over a caption. The
-    // tables used to disagree (Queue had this, Campaigns and Market History had bare text), which
-    // made the same wait look like three different kinds of slow.
-    window.__tableLoading = (cols, what) =>
-      '<tr class="border-0"><td colspan="' + cols + '" class="pt-6 pb-3">'
-      + '<progress class="progress progress-primary w-full"></progress>'
-      + '<div class="text-center text-base-content/50 text-sm mt-2">Loading ' + what + '&hellip;</div></td></tr>';
+    // ONE LOADING STATE FOR EVERY DATA TABLE, and it is skeleton rows alone.
+    //
+    // It used to be a progress bar over a caption, and the Queue drew BOTH that and skeleton rows
+    // beneath it — three signals answering one question. Skeletons win on their own for two
+    // reasons a bar cannot match:
+    //
+    //   * THEY HOLD THE TABLE OPEN. A single bar row collapses the table to about 60px, so the
+    //     pager and the footnote jump up the page and back down again when the rows land. That
+    //     movement is the most noticeable thing about the wait, and it is pure artefact.
+    //   * THEY SAY WHERE. A bar says "something is happening"; skeleton rows say "rows are coming,
+    //     roughly this many, in this shape", which is the actual question being asked.
+    //
+    // The usual argument for keeping a bar — that a static placeholder looks frozen on a long
+    // wait — does not apply: daisyUI .skeleton animates, so it already reads as working.
+    //
+    // A skeleton says nothing to a screen reader, though, so the caption survives as sr-only text
+    // and the row carries aria-busy. Sighted users get the shimmer, assistive tech gets the words.
+    window.__tableLoading = (cols, what, rows) => {
+      const n = rows || 6;
+      const head = '<tr class="border-0" aria-busy="true"><td colspan="' + cols + '" class="py-2.5">'
+        + '<span class="sr-only">Loading ' + what + '&hellip;</span>'
+        + '<div class="skeleton h-7 w-full"></div></td></tr>';
+      // The rest vary in width so the block reads as rows of content rather than as a grey slab.
+      const w = ['w-full', 'w-11/12', 'w-full', 'w-10/12', 'w-full'];
+      let out = head;
+      for (let i = 1; i < n; i++) {
+        out += '<tr class="border-0"><td colspan="' + cols + '" class="py-2.5">'
+             + '<div class="skeleton h-7 ' + w[(i - 1) % w.length] + '"></div></td></tr>';
+      }
+      return out;
+    };
 
     const etDate = (v, o) => new Date(v).toLocaleDateString('en-US', { timeZone: ET_TZ, ...(o||{}) });
     const etTime = (v, o) => new Date(v).toLocaleTimeString('en-US', { timeZone: ET_TZ, ...(o||{}) });
@@ -2102,7 +2399,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     });
 
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', rules:'view-rules' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', reports:'view-reports', rules:'view-rules' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -2111,6 +2408,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'rules') loadRules();
       if(tab === 'queue' && window.__loadQueue) window.__loadQueue();
       if(tab === 'history' && window.__loadBlastHistory) window.__loadBlastHistory();
+      if(tab === 'reports' && window.__loadTelnyxUsage) window.__loadTelnyxUsage();
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
@@ -2987,8 +3285,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // EVERY league, including the four with no schedule feed. Rescanning one of those is
       // harmless and honest: the route answers "no upcoming events stored for this league" with
       // nothing checked, which is a better way to learn it than a chip that cannot be pressed.
+      // Still every league, still every one of them pickable — a rescan of a feedless league is
+      // harmless and answers "no upcoming events stored for this league", which is a better way
+      // to learn it than a chip that cannot be pressed.
+      //
+      // But it no longer starts TICKED. "All 11" quietly meant "seven that can be checked and
+      // four that will report nothing", so the run always ended with four empty results to read
+      // past. Unticked and greyed says the same thing before the run instead of after it, and
+      // ticking one back is one click.
       const rescanLeagueOptions = () => KNOWN_LEAGUES
-        .map(p => ({ code: p[0], label: p[1], feed: p[3], note: p[3] ? null : 'no feed' }));
+        .map(p => ({
+          code: p[0], label: p[1], feed: p[3], note: p[3] ? null : 'no feed',
+          off: !p[3], preselect: p[3],
+          why: p[3] ? null : 'No schedule feed is connected for this league, so a rescan has nothing to check it against. Tick it to try anyway.',
+        }));
 
       (function wireBulkRescan(){
         const btn = el('rescan-schedules');
@@ -3267,21 +3577,35 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // Any filter change puts you back on page 1 — page 7 of the old result set means nothing
       // once the set changes.
-      el('cbs-search').addEventListener('input', e => { filter = e.target.value; page = 1; render(); });
-      el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; page = 1; render(); });
-      el('cbs-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; render(); });
-      el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; page = 1; render(); });
-      el('cbs-window')?.addEventListener('change', e => { windowF = e.target.value; page = 1; render(); });
-      el('cbs-date-from')?.addEventListener('change', e => { dateFromF = e.target.value; page = 1; render(); });
-      el('cbs-date-to')?.addEventListener('change', e => { dateToF = e.target.value; page = 1; render(); });
+      // Both clears are painted from the STATE, so they describe what the table is filtered by
+      // rather than what the controls happen to be showing.
+      const cbsClears = () => {
+        const d = el('cbs-date-clear'); if(d) d.classList.toggle('hidden', !(dateFromF || dateToF));
+        const b = el('cbs-clear');
+        if(b) b.classList.toggle('hidden',
+          !(filter || sportF || leagueF || stateF || windowF || dateFromF || dateToF || priceF || segF));
+      };
+      el('cbs-search').addEventListener('input', e => { filter = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-state')?.addEventListener('change', e => { stateF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-window')?.addEventListener('change', e => { windowF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-date-from')?.addEventListener('change', e => { dateFromF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-date-to')?.addEventListener('change', e => { dateToF = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-date-clear')?.addEventListener('click', () => {
         dateFromF = ''; dateToF = '';
         if(el('cbs-date-from')) el('cbs-date-from').value = '';
         if(el('cbs-date-to'))   el('cbs-date-to').value   = '';
-        page = 1; render();
+        page = 1; cbsClears(); render();
       });
-      el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; render(); });
-      el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; render(); });
+      el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; cbsClears(); render(); });
+      el('cbs-clear')?.addEventListener('click', () => {
+        filter = sportF = leagueF = stateF = windowF = dateFromF = dateToF = priceF = segF = '';
+        ['cbs-search','cbs-sport','cbs-league','cbs-state','cbs-window','cbs-date-from','cbs-date-to','cbs-price','cbs-segment']
+          .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        page = 1; cbsClears(); render();
+      });
       // Click cycles cheapest-first, most-expensive-first, then back to the default event order.
       el('cbs-sort-price')?.addEventListener('click', () => {
         sortDir = sortDir === '' ? 'asc' : sortDir === 'asc' ? 'desc' : '';
@@ -3394,8 +3718,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>
                  <div class="pbw-chips" data-chips>
                    ${leagues.map(l => `
-                     <label class="pbw-chip ${l.disabled ? 'pbw-chip-off' : ''}" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}"${l.why ? ` title="${esc(l.why)}"` : ''}>
-                       <input type="checkbox" data-lg value="${esc(l.code)}"${l.disabled ? ' disabled' : ' checked'}>
+                     <label class="pbw-chip ${(l.disabled || l.off) ? 'pbw-chip-off' : ''}" data-chip="${esc(l.code)}" data-feed="${l.feed ? 1 : 0}"${l.why ? ` title="${esc(l.why)}"` : ''}>
+                       <!-- THREE SEPARATE FLAGS, deliberately. A disabled league cannot be pressed,
+                            an off one is only greyed, and preselect:false merely starts it unticked.
+                            They used to be one flag, so a league could not be shown as unpromising
+                            without also being made unpickable. Options that set none of the three —
+                            the price-refresh dialog ones — behave exactly as before.
+                            (No backticks in here: this comment lives inside a template literal.) -->
+                       <input type="checkbox" data-lg value="${esc(l.code)}"${l.disabled ? ' disabled' : (l.preselect === false ? '' : ' checked')}>
                        <span class="pbw-tick" aria-hidden="true"></span>
                        <span>${esc(l.label)}</span>
                        <span class="pbw-n" data-n>${l.note ? esc(l.note) : ""}</span>
@@ -4586,6 +4916,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return `<span class="badge badge-warning badge-sm">Pending</span>${slotLine(r)}`;
       }
 
+      // THE CHIP AND ITS SUB-LINE, SEPARATELY. Actions was placed next to statusCell(), which
+      // returns a badge AND the line under it ("sends Tue 4pm", a reject reason, a failure).
+      // Flexing those two against the button centred it against a two-line block, so it floated
+      // beside the gap rather than sitting next to the chip.
+      //
+      // Derived from statusCell rather than duplicating its eight branches: every note in there
+      // begins with a <div> and no badge contains one, so the first <div> is the split point. If a
+      // branch ever puts a div inside a badge, this is where it would show up.
+      function statusParts(r){
+        const html = statusCell(r);
+        const i = html.indexOf('<div');
+        return i < 0 ? { badge: html, note: '' } : { badge: html.slice(0, i), note: html.slice(i) };
+      }
+
       // Actions, collapsed into one menu so the row costs ~90px instead of ~280px of buttons.
       //
       // The buttons inside are BYTE-FOR-BYTE the ones that used to sit in the cell, with the
@@ -4846,7 +5190,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 : `<button class="btn btn-xs btn-outline btn-error justify-start" data-reject="${esc(r.id)}" title="Refuse this blast. It leaves the queue, frees its slot, and the decider will not suggest this game for this segment again for 21 days.">Reject</button>
                    <button class="btn btn-xs btn-ghost text-base-content/50 justify-start" data-del="${esc(r.id)}" title="Delete this blast outright — for mistakes and test rows. Unlike Reject it teaches the decider nothing.">Delete</button>`,
         ].filter(Boolean).join('');
-        return `<button class="btn btn-xs btn-outline" data-qmenu="${esc(r.id)}">Actions &#9662;</button>
+        // A BARE ELLIPSIS, not "Actions ▾". It is the conventional row-menu affordance, needs no
+        // label to be understood, and costs ~22px where the labelled button spent ~90 — which is
+        // what makes it affordable in a column shared with a checkbox and a caret.
+        return `<button class="btn btn-ghost btn-xs px-1 text-base-content/50" data-qmenu="${esc(r.id)}" title="Actions for this blast" aria-label="Actions for this blast">&#8943;</button>
                 <div class="q-menu hidden" data-qmenufor="${esc(r.id)}">${items}</div>`;
       }
 
@@ -4948,17 +5295,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         });
       }
 
-      // Shown while the queue is in flight: an indeterminate bar so the wait reads as work in
-      // progress, over skeleton rows so the table keeps its height instead of collapsing and
-      // shoving the pager up the page when the real rows land.
-      function loadingRows(){
-        const skeleton = Array.from({length:6}, () =>
-          '<tr class="border-0"><td colspan="9" class="py-2"><div class="skeleton h-6 w-full"></div></td></tr>').join('');
-        return `<tr class="border-0"><td colspan="9" class="pt-6 pb-3">
-            <progress class="progress progress-primary w-full"></progress>
-            <div class="text-center text-base-content/50 text-sm mt-2">Loading queue&hellip;</div>
-          </td></tr>${skeleton}`;
-      }
+      // The queue had its own copy of this — a bar AND a caption AND skeleton rows, which was
+      // where the doubling was most obvious. It uses the shared one now, so all four tables wait
+      // the same way.
+      function loadingRows(){ return window.__tableLoading(9, 'queue'); }
 
       function render(){
         const tb = el('q-rows');
@@ -4967,7 +5307,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
         // keeps advertising counts from the last load.
         paintStatusCounts();
-        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="9" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
+        if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
         const rows = visibleRows();
         // PRUNE TO WHAT THE FILTERS LEAVE. Without this you could tick six rows, change the
         // status filter, and then apply an action to rows that are no longer on screen — the
@@ -5010,7 +5350,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : 'No blasts match these filters.';
           const clear = (dateFrom || dateTo)
             ? ' <button data-dateclear class="link link-primary">Clear the date filter</button>' : '';
-          tb.innerHTML = `<tr><td colspan="9" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
+          tb.innerHTML = `<tr><td colspan="10" class="text-center text-base-content/50 py-10">${msg}${clear}</td></tr>`;
           tb.querySelector('[data-dateclear]')?.addEventListener('click', clearDateFilter);
           lastRows = lastPaged = []; paintBulk();
           return;
@@ -5045,7 +5385,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // quietly reaching across the pager.
             const dayIds = paged.filter(x => sendYmd(x.scheduled_for) === day).map(x => x.id);
             const dayOn  = dayIds.length > 0 && dayIds.every(id => picked.has(id));
-            dayHead = `<tr class="bg-base-200/70"><td colspan="9" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
+            dayHead = `<tr class="bg-base-200/70"><td colspan="10" class="py-1.5 text-xs font-bold text-[#133b49] uppercase tracking-wide">
               <input type="checkbox" class="checkbox checkbox-xs align-middle mr-2" data-pickday="${esc(day)}" ${dayOn ? 'checked' : ''} title="Select every blast on this page going out on this day" aria-label="Select this day">
               <button data-dayjump="${esc(day)}" class="hover:underline decoration-dotted underline-offset-2 uppercase tracking-wide" title="${isOnly ? 'Showing this day only — click to clear the date filter' : 'Show only this day'}">${esc(sendDateShort(r.scheduled_for))}</button>
               <span class="font-normal normal-case text-base-content/50">· ${n} blast${n===1?'':'s'}</span>${isOnly?' <span class="badge badge-xs badge-ghost font-normal normal-case">only this day</span>':''}</td></tr>`;
@@ -5116,13 +5456,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <button class="btn btn-ghost btn-xs px-1" data-toggle="${esc(r.id)}">${open?'&#9662;':'&#9656;'}</button>
             </div></td>
             <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
+            <td class="col-tight">${actionsMenu(r, { sent, rejected, archived })}</td>
             <td>${priceCell}</td>
             <td>${sportCell}</td>
             <td class="col-tight">${marketCell}</td>
             <td>${blockedRow ? blockedReachCell(r.email, reachOf(r,'email')) : reachCell(r.email, reachOf(r,'email'))}</td>
             <td>${blockedRow ? blockedReachCell(r.sms, reachOf(r,'sms')) : reachCell(r.sms, reachOf(r,'sms'))}</td>
             <td class="col-tight whitespace-nowrap"><input type="datetime-local" class="input input-bordered input-xs w-[176px] px-1.5" value="${esc(toEtInput(r.scheduled_for))}" data-schedule="${esc(r.id)}" ${sent?'disabled':''} title="US Eastern"></td>
-            <td class="whitespace-nowrap"><div class="flex items-center gap-2">${statusCell(r)}${actionsMenu(r, { sent, rejected, archived })}</div>${cooldownNote(r)}</td>
+            <td class="whitespace-nowrap">
+              <div class="flex items-center gap-1.5">${statusParts(r).badge}</div>
+              ${statusParts(r).note}${cooldownNote(r)}</td>
           </tr>`;
           // The preview IS the editor: you type into the rendered email body and the SMS
           // bubble directly, so the row costs one block per channel instead of a textarea
@@ -5149,6 +5492,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // and the email grows to match it. Long email — the row is the email's own height, the
           // SMS is left alone, and the body scrolls once it hits the .copy-pane ceiling. Header,
           // subject line and segment counter stay shrink-0; only the copy moves.
+          // THE FOOTER BELONGS TO THE PANEL IT ACTS ON. Both buttons used to sit in one strip under
+          // both panels, so "Save SMS" was as close to the email editor as to the bubble it would
+          // write. Each panel now owns its own, inside its own border.
+          //
+          // UNDO SITS BESIDE SAVE because they answer the same question — "I have changed this,
+          // now what" — and it appears on exactly the same condition: while the editor differs
+          // from what is stored. Once saved, neither is offered, because there is nothing to save
+          // and nothing to undo.
+          const panelFoot = (which, id) => sent ? '' : `<div class="shrink-0 flex items-center gap-2 px-3 py-2 border-t border-base-300 bg-base-200/30">
+               <button class="btn btn-xs btn-primary hidden" data-save${which}="${esc(id)}">Save ${which === "email" ? "email" : "SMS"}</button>
+               <button class="btn btn-xs btn-ghost text-base-content/50 hidden" data-undo${which}="${esc(id)}" title="Put the ${which === "email" ? "subject and body" : "message"} back to what is stored. Nothing has been saved yet.">Undo changes</button>
+               <span class="text-xs text-base-content/50" data-copystatus${which}="${esc(id)}"></span>
+             </div>`;
           const offNote = what => `<div class="flex-1 p-4 text-xs text-base-content/45 leading-relaxed">
             ${sent ? `No ${what} went out with this blast.` : `Not sending ${what} on this blast. Choose a sender above to turn it back on.`}</div>`;
           const panelHead = (label, sel, via) => `<div class="shrink-0 flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
@@ -5161,28 +5517,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </div>
               <div class="mail-body copy-pane flex-1 min-h-20 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
+            ${panelFoot('email', r.id)}
           </section>`;
-          const smsPanel = `<section class="min-w-0 self-start flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
+          // FULL HEIGHT, NOT self-start. Cole asked for the opposite in 2026-08-04 — the SMS box
+          // sized to its bubble and the email grew to match — but two white boxes of visibly
+          // different heights side by side read as a layout fault rather than as a deliberate fit.
+          // Vhea, 2026-09-10. The bubble still sits at the top; the panel just fills the row.
+          const smsPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
             ${panelHead('SMS', smsSel, r.sms ? smsMethodOf(curSms) : '')}
             ${r.sms ? `<div class="copy-pane p-3"><div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
-              <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>`
+              <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>
+              <div class="flex-1"></div>`
               : offNote('SMS')}
+            ${panelFoot('sms', r.id)}
           </section>`;
-          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="8" class="py-3">
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${emailPanel}${smsPanel}</div>
-            <!-- ONE BUTTON PER CHANNEL, AND ONLY WHEN THERE IS SOMETHING TO SAVE.
-
-                 A single "Save copy" wrote both channels at once, so fixing a typo in the SMS
-                 also rewrote the email — and it sat there permanently enabled, which after a
-                 save looked like the save had not taken. Each button now appears only while its
-                 own channel differs from what is stored, and disappears again when it matches:
-                 present means unsaved, absent means saved, with nothing to interpret. -->
-            ${sent?'':`<div class="mt-2 flex items-center gap-2 flex-wrap">
-                 <button class="btn btn-xs btn-primary hidden" data-saveemail="${esc(r.id)}">Save email</button>
-                 <button class="btn btn-xs btn-primary hidden" data-savesms="${esc(r.id)}">Save SMS</button>
-                 <span class="text-xs text-base-content/50" data-copystatus="${esc(r.id)}"></span>
-                 <span class="text-xs text-base-content/40 ml-auto">Click the subject, the body or the bubble to edit.</span>
-               </div>`}
+            <!-- The save controls moved INTO each panel (see panelFoot). What is left here is the
+                 one line that is about neither channel in particular. -->
+            ${sent?'':`<div class="mt-2 text-xs text-base-content/40">Click the subject, the body or the bubble to edit.</div>`}
           </td></tr>`;
           return dayHead + main + detail;
         }).join('');
@@ -5229,7 +5582,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const rect = b.getBoundingClientRect(), mh = menu.offsetHeight, mw = menu.offsetWidth;
           const below = window.innerHeight - rect.bottom;
           menu.style.top  = (below < mh + 8 ? Math.max(8, rect.top - mh - 4) : rect.bottom + 4) + 'px';
-          menu.style.left = Math.max(8, Math.min(rect.right - mw, window.innerWidth - mw - 8)) + 'px';
+          // ALIGNED TO THE TRIGGER LEFT EDGE, not its right. The trigger used to be the last thing
+          // in the last column, so hanging the menu off its right edge kept it on screen; from the
+          // FIRST column that same maths threw it back past the window edge and into the clamp.
+          menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - mw - 8)) + 'px';
         }));
         // Day-band headers narrow to that single day (and clicking the active one clears it).
         tb.querySelectorAll('[data-dayjump]').forEach(b=>b.addEventListener('click', e => {
@@ -5401,7 +5757,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Editing happens IN the preview, so nothing has to be mirrored — only the SMS
         // segment counter needs recomputing as you type. Unsaved edits are called out,
         // because the copy that sends is the stored one, not what's on screen.
-        const markDirty = id => { const st = tb.querySelector(`[data-copystatus="${id}"]`); if(st) st.textContent = 'Unsaved changes'; };
+        // markDirty wrote "Unsaved changes" into a single shared status slot. That slot is gone —
+        // each panel now carries its own, next to its own Save and Undo — and the presence of
+        // those two buttons already says the same thing without a word. It is now just the repaint.
+        const markDirty = id => paintSave(id);
         tb.querySelectorAll('[data-copy-email]').forEach(t=>t.addEventListener('input', ()=> markDirty(t.dataset.copyEmail)));
         tb.querySelectorAll('[data-subject]').forEach(t=>t.addEventListener('input', ()=> markDirty(t.dataset.subject)));
         tb.querySelectorAll('[data-copy-sms]').forEach(t=>t.addEventListener('input', ()=>{
@@ -5435,15 +5794,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return { row, em, sm, sub, emailDirty, smsDirty };
         }
 
+        // Undo appears on exactly the same condition as Save: while the editor differs from what
+        // is stored. An Undo with nothing to undo is the same lie as a Save with nothing to save.
         function paintSave(id){
           const { emailDirty, smsDirty } = copyState(id);
-          const be = tb.querySelector(`[data-saveemail="${id}"]`);
-          const bs = tb.querySelector(`[data-savesms="${id}"]`);
-          if(be) be.classList.toggle('hidden', !emailDirty);
-          if(bs) bs.classList.toggle('hidden', !smsDirty);
-          // A stale "Saved" beside a field being edited again is worse than no message at all.
-          const st = tb.querySelector(`[data-copystatus="${id}"]`);
-          if(st && (emailDirty || smsDirty)) st.textContent = '';
+          const pair = (which, dirty) => {
+            const sv = tb.querySelector(`[data-save${which}="${id}"]`);
+            const un = tb.querySelector(`[data-undo${which}="${id}"]`);
+            if(sv) sv.classList.toggle('hidden', !dirty);
+            if(un) un.classList.toggle('hidden', !dirty);
+            // A stale "Saved" beside a field being edited again is worse than no message at all.
+            const st = tb.querySelector(`[data-copystatus${which}="${id}"]`);
+            if(st && dirty) st.textContent = '';
+          };
+          pair('email', emailDirty);
+          pair('sms', smsDirty);
+        }
+
+        // PUTS THE EDITOR BACK TO THE STORED ROW, and nothing else. It writes no database call:
+        // an unsaved edit only ever existed on screen, so undoing one is a screen operation.
+        // The SMS segment counter is recomputed because it is derived from the text, not stored.
+        function undoCopy(id, which){
+          const { row, em, sm, sub: subEl } = copyState(id);
+          if(which === 'email'){
+            if(em) em.innerHTML = nl2br(row.email_copy || '');
+            if(subEl) subEl.textContent = storedSubject(row);
+          } else {
+            if(sm) sm.textContent = row.sms_copy || '';
+            const c = tb.querySelector(`[data-smscount="${id}"]`);
+            if(c){ const i = smsInfo(row.sms_copy || ''); c.textContent = smsCountLabel(i); c.className = smsCountClass(i); }
+          }
+          paintSave(id);
         }
 
         tb.querySelectorAll('[data-copy-email],[data-copy-sms],[data-subject]').forEach(node => {
@@ -5455,7 +5836,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // queue_set_copy writes both columns, so passing the live editor value would let
         // "Save email" quietly commit an SMS edit the operator had not chosen to save.
         async function saveCopy(b, id, which){
-          const st = tb.querySelector(`[data-copystatus="${id}"]`);
+          const st = tb.querySelector(`[data-copystatus${which}="${id}"]`);
           const { row, em, sm, sub } = copyState(id);
           const emailCopy = which === 'email' ? readCopy(em) : (row.email_copy ?? null);
           const smsCopy   = which === 'sms'   ? readCopy(sm) : (row.sms_copy   ?? null);
@@ -5494,6 +5875,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           b.addEventListener('click', () => saveCopy(b, b.dataset.saveemail, 'email')));
         tb.querySelectorAll('[data-savesms]').forEach(b =>
           b.addEventListener('click', () => saveCopy(b, b.dataset.savesms, 'sms')));
+        tb.querySelectorAll('[data-undoemail]').forEach(b =>
+          b.addEventListener('click', () => undoCopy(b.dataset.undoemail, 'email')));
+        tb.querySelectorAll('[data-undosms]').forEach(b =>
+          b.addEventListener('click', () => undoCopy(b.dataset.undosms, 'sms')));
       }
 
       // Toast + confirm are the Campaigns tab's; if that module never ran, fall back to natives
@@ -5668,12 +6053,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         schedDir = schedDir === 'asc' ? 'desc' : schedDir === 'desc' ? null : 'asc';
         page = 1; render();
       });
-      el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
-      el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; render(); });
-      el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; render(); });
-      el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; render(); });
-      el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; render(); });
-      el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
+      el('q-clear')?.addEventListener('click', clearQueueFilters);
+      el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
+      el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; syncDateClear(); render(); });
       // Scheduled-date range. Each end applies on its own, so both listeners just re-render.
       // The bounds are NOT auto-corrected if the operator inverts them (from after to): an
       // inverted range legitimately matches nothing, and silently swapping the values would
@@ -5687,6 +6073,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function syncDateClear(){
         const btn = el('q-date-clear');
         if(btn) btn.classList.toggle('hidden', !(dateFrom || dateTo));
+        // Painted from the state, not from the inputs: the two can differ for a moment during a
+        // programmatic reset, and the button has to describe what the TABLE is filtered by.
+        const all = el('q-clear');
+        if(all) all.classList.toggle('hidden',
+          !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo));
+      }
+      // Everything at once, including the search box. The per-filter dropdowns each go back to
+      // their "All …" option rather than being emptied of options.
+      function clearQueueFilters(){
+        qFilter = statusF = segF = sportF = leagueF = stateF = chanF = dateFrom = dateTo = '';
+        ['q-search','q-status','q-segment','q-sport','q-league','q-state','q-channel','q-date-from','q-date-to']
+          .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        page = 1; syncDateClear(); render();
       }
       function clearDateFilter(){
         dateFrom = ''; dateTo = '';
@@ -5741,7 +6140,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function refresh(){
         const { data, error } = await sb.rpc('get_campaign_queue');
-        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="9" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
+        if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         LOADED = true;
         // Make the stored sender match the one the row is shown with — for a retired value
@@ -5774,7 +6173,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         render();
       }
       async function loadQueue(){
-        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
         // Salesmsg numbers, live from the API. A failure here is NOT fatal: the dropdown falls
         // back to Telnyx only. Better a shorter list than an option that looks real and routes
@@ -6602,6 +7001,294 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Reads EVERY blast, from whichever platform sent it, via /api/market-history: the blast log
     // (Textable/CakeMail history, and the decider's cooldown source) merged with the Salesmsg
     // broadcast sync. Rows expand to show the copy that was sent. "Sync now" still pulls Salesmsg.
+    // ===== Telnyx 10DLC volume vs carrier cap — the strip above Market History =====
+    //
+    // Telnyx publishes what a brand may send and never what it has sent against that, so the
+    // remaining figure is computed on our side: cached usage_reports volume from
+    // api/telnyx-usage-sync.js, compared to the cap that sync derives from the brand's
+    // vetting score. /api/telnyx-usage does the arithmetic; this only draws it.
+    //
+    // Fails QUIETLY by hiding the strip. It sits on top of a tab that works without it, and a
+    // red error bar over Cole's send history — for a compliance readout he did not ask for —
+    // would be worse than the strip simply not being there.
+    (function telnyxUsageModule(){
+      const strip = document.getElementById('tu-strip');
+      if(!strip) return;
+      const $ = id => document.getElementById(id);
+      const nf = n => (Number(n)||0).toLocaleString();
+      const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      const shortDate = d => { const [y,m,dd] = String(d).split('-'); return `${dd}/${m}`; };
+
+      let loaded = false;
+
+      window.__loadTelnyxUsage = async function(force){
+        // The tab can be re-entered many times in a session and this number moves once a day.
+        if(loaded && !force) return;
+        const empty = document.getElementById('rep-empty');
+        try{
+          const r = await fetch('/api/telnyx-usage?days=14', { headers: await apiHeaders() });
+          if(!r.ok) throw new Error(r.status);
+          const j = await r.json();
+          if(!j || !j.ok) throw new Error('not ok');
+          render(j);
+          loaded = true;
+          strip.classList.remove('hidden');
+          if(empty) empty.classList.add('hidden');
+        }catch{
+          // On its own tab the strip is the whole page, so failing silently would leave
+          // Reports blank with no explanation. Say why instead.
+          if(empty) empty.classList.remove('hidden');
+        }
+      };
+
+      // Chips repaint on the Today/Last-14-days toggle without refetching — both figures come
+      // back in the same response, so switching is free.
+      let lastCarriers = [];
+      let lastCap = 0;
+      let carrierRange = 'window';
+
+      function paintCarriers(){
+        const el = document.getElementById('tu-carriers');
+        if(!el) return;
+        const isToday = carrierRange === 'today';
+        const val = c => isToday ? (Number(c.today) || 0) : (Number(c.total) || 0);
+        // A carrier with nothing today is dropped rather than shown as 0 — on a quiet morning
+        // that would be eighteen empty chips burying the two that did send.
+        const rows = lastCarriers.filter(c => val(c) > 0).sort((a, b) => val(b) - val(a));
+        const sum = rows.reduce((s, c) => s + val(c), 0);
+
+        el.innerHTML = rows.length ? rows.map(c => {
+          const n = val(c);
+          const share = sum ? (n / sum * 100).toFixed(1) : 0;
+          const name = c.carrier === 'unidentified'
+            ? '<span class="opacity-60" title="Telnyx returned no carrier for these — usually landlines, VoIP, or numbers it could not resolve.">unidentified</span>'
+            : esc(c.carrier);
+          const cls = c.capped
+            ? 'badge badge-sm bg-success/15 border-success/40 text-success-content'
+            : 'badge badge-sm badge-ghost';
+          const tip = c.capped
+            ? `${c.carrier} — the only carrier with a daily cap. ${nf(c.today)} today of ${nf(lastCap)} allowed, `
+              + `${nf(Math.max(0, lastCap - (Number(c.today) || 0)))} left. ${nf(c.total)} over the window.`
+            : `${c.carrier} — no daily volume cap, so this is a running total rather than a share of any allowance. `
+              + `${nf(c.today)} today, ${nf(c.total)} over the window.`;
+          return `<span class="${cls}" title="${esc(tip)}">${name}
+                    <span class="tabular-nums font-semibold ml-1">${nf(n)}</span>
+                    <span class="opacity-60 ml-1">${share}%</span>
+                  </span>`;
+        }).join('')
+          : `<span class="text-base-content/50 text-xs">Nothing sent ${isToday ? 'yet today' : 'in this window'}.</span>`;
+      }
+
+      document.querySelectorAll('[data-tu-range]').forEach(b => b.addEventListener('click', () => {
+        carrierRange = b.dataset.tuRange;
+        document.querySelectorAll('[data-tu-range]').forEach(x => x.classList.toggle('btn-active', x === b));
+        paintCarriers();
+      }));
+
+      // Recorded from Telnyx portal → Messaging → Programmable Messaging → Rate Limits, which
+      // is the ONLY place these appear — there is no API that returns an account rate limit.
+      // Re-check them if throughput ever changes; nothing here can detect them going stale.
+      const PORTAL_CHECKED = '11 Sep 2026';
+      const ACCOUNT_PER_MIN = 3000;
+      // n8n bulk-send sends batchSize 5 every 1100ms. Kept next to the ceiling it is measured
+      // against, because the only reason to know the ceiling is to decide whether to raise this.
+      const OUR_PER_MIN = Math.round(5 / 1.1 * 60);   // ≈273
+
+      // The four limits people keep conflating. Two follow the brand's vetting score and are
+      // read live; two are fixed and recorded by hand.
+      function renderLimits(j){
+        const tb = document.getElementById('tu-limits-rows');
+        if(!tb) return;
+        const cap = Number(j.cap && j.cap.tmobile_daily) || 0;
+        const att = Number(j.cap && j.cap.att_tpm) || 0;
+        const peak = j.peak ? Number(j.peak.pct_of_cap) || 0 : 0;
+        const pctOf = (used, ceiling) => ceiling ? `${(used / ceiling * 100).toFixed(0)}%` : '—';
+
+        // "Kind" is the column that stops the whole table being misread. A daily quantity and
+        // a per-minute speed are different things: only the quantity can be used up, and none
+        // of these sits inside any of the others.
+        const QTY = { label: 'Daily quantity', cls: 'badge-warning', tip: 'A bucket. Fills through the day, empties at midnight. This one can run out.' };
+        const SPD = { label: 'Speed', cls: 'badge-ghost', tip: 'A pace, not a total. It never runs out — you either exceed it in a given minute or you do not.' };
+
+        const rows = [
+          { name: 'T‑Mobile daily volume', kind: QTY, by: 'T‑Mobile, via 10DLC', ceiling: `${nf(cap)} / day`,
+            applies: 'T‑Mobile-bound messages, per brand',
+            usage: `${peak}% on the busiest day`, live: true },
+          { name: 'Account rate limit', kind: SPD, by: 'Telnyx', ceiling: `${nf(ACCOUNT_PER_MIN)} / min`,
+            applies: 'Everything we send, every number, every carrier',
+            // The one that runs out FIRST when the send rate is raised: AT&T's ceiling counts
+            // only AT&T-bound segments, this one counts the lot.
+            note: 'Shared — inboxes sending at once split it between them',
+            usage: `${nf(OUR_PER_MIN)} / min · ${pctOf(OUR_PER_MIN, ACCOUNT_PER_MIN)}` },
+          { name: 'AT&T throughput', kind: SPD, by: 'AT&T, via 10DLC', ceiling: `${nf(att)} segments / min`,
+            applies: 'AT&T-bound segments only (~21% of our traffic)',
+            usage: '~11% at current send rate', live: true },
+          { name: 'Unregistered long code', kind: SPD, by: 'Telnyx / industry', ceiling: '0.1 / sec ≈ 6 / min',
+            applies: 'Any number on no 10DLC campaign',
+            usage: '+1 615 805 0766', warn: true },
+        ];
+
+        tb.innerHTML = rows.map(r => `<tr>
+          <td class="font-medium">${esc(r.name)}${r.live ? ' <span class="badge badge-ghost badge-xs align-middle" title="Read live from the brand’s vetting score on every sync.">live</span>' : ''}</td>
+          <td><span class="badge badge-sm ${r.kind.cls}" title="${esc(r.kind.tip)}">${esc(r.kind.label)}</span></td>
+          <td class="opacity-70">${esc(r.by)}</td>
+          <td class="text-right tabular-nums whitespace-nowrap">${esc(r.ceiling)}</td>
+          <td class="opacity-70">${esc(r.applies)}${r.note ? `<div class="text-[11px] opacity-70">${esc(r.note)}</div>` : ''}</td>
+          <td class="text-right tabular-nums whitespace-nowrap ${r.warn ? 'text-error' : ''}">${esc(r.usage)}</td>
+        </tr>`).join('');
+
+        document.getElementById('tu-limits-note').innerHTML =
+          `Go over a <b>speed</b> limit and nothing is lost straight away — Telnyx holds the excess `
+          + `in a queue and releases it as fast as the limit allows. That queue holds about `
+          + `<b>1 hour</b> of messages; past that it refuses the rest with error <code>40318</code>. `
+          + `Go over the <b>daily</b> limit and there is no queue: T‑Mobile stops accepting until midnight UTC.<br>`
+          + `Rows marked live follow the brand’s vetting score. The account and long-code figures `
+          + `have no API and were read from the Telnyx portal on ${PORTAL_CHECKED}.`;
+      }
+
+      function render(j){
+        const cap = Number(j.cap && j.cap.tmobile_daily) || 0;
+        const today = j.today || { tmobile:0, total:0 };
+        const pct = cap ? (today.tmobile / cap * 100) : 0;
+
+        const tmoToday = Number(today.tmobile) || 0;
+        const allToday = Number(today.total) || 0;
+
+        // Total volume leads. This is the figure that was left unpopulated when the summary
+        // was split in two — the element existed and nothing ever wrote to it, so it sat on
+        // its em-dash placeholder next to a live T-Mobile count.
+        $('tu-sent').textContent = nf(allToday);
+        $('tu-sent-sub').textContent = allToday
+          ? `all carriers · ${nf(allToday - tmoToday)} of it uncapped`
+          : 'all carriers';
+
+        // The number the report exists for: ceiling minus what today has already spent.
+        const left = Math.max(0, cap - tmoToday);
+        $('tu-left').textContent = nf(left);
+        $('tu-today').textContent = nf(tmoToday);
+        $('tu-today-sub').textContent = cap ? `${pct.toFixed(2)}% used` : '';
+        $('tu-cap').textContent = `${nf(cap)} cap`;
+
+        const bar = $('tu-bar');
+        // Sub-1% still has to be visible as a sliver, or a working day reads as a broken bar.
+        bar.style.width = Math.max(pct, today.tmobile > 0 ? 0.6 : 0) + '%';
+        // Semantic, and separate from the app's accent: green under half, amber past 50%,
+        // red past 80% — the point at which a blast could still push the day over.
+        bar.className = 'h-full ' + (pct >= 80 ? 'bg-error' : pct >= 50 ? 'bg-warning' : 'bg-success');
+
+        const c = j.cap || {};
+        const when = c.checked_at ? new Date(c.checked_at).toLocaleDateString() : 'never';
+        $('tu-prov').textContent =
+          `${pct.toFixed(2)}% of cap · ${nf(cap)}/day from vetting score ${c.vetting_score == null ? 'unvetted' : c.vetting_score}`
+          + `${c.brand ? ' (' + c.brand + ')' : ''} · checked ${when}`;
+
+        // ── 14-day bars, scaled to the busiest day ──
+        // STACKED: full bar is everything we sent that day, the coloured foot is the
+        // T-Mobile portion. Showing T-Mobile alone made this look like a T-Mobile report and
+        // hid four fifths of the volume; showing only the total hid the part that can get us
+        // throttled. One bar answers both.
+        const days = j.by_day || [];
+        const max = Math.max(1, ...days.map(d => Number(d.total) || 0));
+        $('tu-days').innerHTML = days.map(d => {
+          const tot = Number(d.total) || 0, tmo = Number(d.tmobile) || 0;
+          // Bars top out at 78% of the track so the figure above them always has room; a bar
+          // drawn to 100% would push its own label out of the box.
+          const h = Math.max(tot > 0 ? 4 : 1.5, Math.round(tot / max * 78));
+          // Colour the T-Mobile foot on cap PRESSURE: pct_of_cap is already the worst-affected
+          // brand that day, measured against that brand's own allowance.
+          const p = Number(d.pct_of_cap) || 0;
+          const tone = p >= 80 ? 'bg-error' : p >= 50 ? 'bg-warning' : 'bg-success';
+          // Share of the bar, not of the track — so the foot reads as a proportion of that
+          // day's sending regardless of how tall the day was.
+          const foot = tot ? Math.min(100, Math.round(tmo / tot * 100)) : 0;
+          const tip = `${d.date} — ${nf(tot)} sent in total · ${nf(tmo)} to T‑Mobile`
+            + (d.worst_brand ? ` (${p}% of ${d.worst_brand}’s cap)` : '')
+            + ` · ${nf(tot - tmo)} to carriers with no cap`;
+          // A zero prints as 0 rather than blank: an empty gap over a flat bar reads as
+          // missing data, and "we sent nothing that day" is a fact, not a hole.
+          return `<div class="grow flex flex-col justify-end items-center gap-1 h-full" title="${esc(tip)}">
+                    <span class="text-[10px] leading-none tabular-nums ${tot ? 'text-base-content/70' : 'text-base-content/30'}">${nf(tot)}</span>
+                    <div class="w-full bg-base-300 flex flex-col justify-end" style="height:${h}%">
+                      <div class="w-full ${tone}" style="height:${foot}%"></div>
+                    </div>
+                  </div>`;
+        }).join('');
+        if(days.length){
+          $('tu-from').textContent = shortDate(days[0].date);
+          $('tu-to').textContent = shortDate(days[days.length-1].date);
+        }
+
+        // ── Per carrier ──
+        // The capped one is called out; everything else is deliberately quiet, because its
+        // only job is to account for the difference between "sent" and "T‑Mobile".
+        lastCarriers = j.by_carrier || [];
+        lastCap = cap;
+        paintCarriers();
+
+        // ── Per brand ──
+        // Utilisation is measured against each brand's OWN cap. An earlier cut compared every
+        // brand to the lowest cap on the account and read 70.8% where the truth was 3.5%.
+        const brands = j.by_brand || [];
+        $('tu-brands').innerHTML = brands.length ? brands.map(b => {
+          const p = Number(b.peak_pct_of_cap) || 0;
+          const tone = p >= 80 ? 'text-error font-semibold' : p >= 50 ? 'text-warning' : '';
+          const score = b.vetting_score == null
+            ? '<span class="text-warning" title="No external vetting on this brand — it sits in the bottom band: 2,000 messages/day to T‑Mobile and 240 segments/minute to AT&amp;T.">unvetted</span>'
+            : esc(b.vetting_score);
+          return `<tr>
+            <td>${esc(b.brand || '—')}</td>
+            <td class="text-right tabular-nums">${score}</td>
+            <td class="text-right tabular-nums">${nf(b.tmobile_daily_cap)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(b.numbers)}</td>
+            <td class="text-right tabular-nums">${nf(b.total)}</td>
+            <td class="text-right tabular-nums">${nf(b.tmobile)}</td>
+            <td class="text-right tabular-nums ${tone}">${b.peak_day ? esc(b.peak_day) + ' · ' + p + '%' : '—'}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="7" class="text-base-content/50">No brand sent anything in this window.</td></tr>';
+
+        // Say what was left out, so a one-row table is not mistaken for "we only have one brand".
+        const idle = j.idle_brands || [];
+        const idleEl = $('tu-idle');
+        if(idleEl){
+          idleEl.textContent = idle.length
+            ? `Not shown: ${idle.join(', ')} — registered, but sent nothing in this window.`
+            : '';
+          idleEl.classList.toggle('hidden', !idle.length);
+        }
+
+        // ── Per inbox ──
+        const rows = j.by_inbox || [];
+        $('tu-inbox').innerHTML = rows.length ? rows.map(x => {
+          // A number with no row in telnyx_senders is sending without anyone having claimed
+          // it. That is worth seeing, not hiding behind the bare digits.
+          const label = x.label ? esc(x.label) : '<span class="text-warning">unlabelled</span>';
+          // Not registered to a campaign means carrier filtering and a 0.1 MPS per-number
+          // ceiling regardless of brand tier — the loudest thing this table can say.
+          const brand = x.registered
+            ? `<span class="opacity-70">${esc(x.brand || '—')}</span>`
+              + (x.campaign ? ` <span class="opacity-40 text-[11px] font-mono">${esc(x.campaign)}</span>` : '')
+            : '<span class="badge badge-error badge-sm text-white" title="This number is not registered to any 10DLC campaign. Carriers filter unregistered long codes, and it is capped at 0.1 messages/second by the number itself — the brand tier does not apply.">not registered</span>';
+          return `<tr>
+            <td>${label}</td>
+            <td class="font-mono text-[11px] opacity-70">${esc(x.number)}</td>
+            <td>${brand}</td>
+            <td class="text-right tabular-nums font-semibold">${nf(x.total)}</td>
+            <td class="text-right tabular-nums bg-success/5">${nf(x.tmobile)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(x.att)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(x.verizon)}</td>
+            <td class="text-right tabular-nums opacity-70">${nf(x.other)}</td>
+            <td class="text-right tabular-nums opacity-50">${nf(x.segments)}</td>
+          </tr>`;
+        }).join('') : '<tr><td colspan="9" class="text-base-content/50">Nothing sent in this window.</td></tr>';
+
+        renderLimits(j);
+
+        $('tu-note').textContent =
+          `Last ${j.days} days. The cap counts T‑Mobile-bound messages only — it is a carrier limit, not a reach figure, `
+          + `so it will not match the totals below. ${j.excludes || ''}`;
+      }
+    })();
+
     (function blastHistoryModule(){
       const el = (id) => document.getElementById(id);
       if(!el('bh-rows')) return;
@@ -6729,6 +7416,113 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // achieved; bounces, unsubscribes and spam are what it cost. Rendered at one weight they
       // read as a wall of figures and the eye has to hunt for the two that answer "did this
       // work?" — so those get size, and the rest a quiet line underneath.
+      // ONE RENDERER, TWO CALLERS. The recipients page resolves deals in bulk and the Find button
+      // resolves one on demand; both draw the same thing, and drawing it twice is how the two
+      // drift apart.
+      //
+      // Stage text arrives as an internal id on some pipelines and as a label on others ("Closed
+      // Lost - Never Launched"), so the won/lost test is on the text and anything unrecognised
+      // stays neutral rather than being guessed at.
+      // Local, because this module never had one. eventTargetsModule and queueModule each define
+      // their own clip() and neither is in scope here — dealLine called it and threw
+      // "clip is not defined" the moment a recipient row carried a deal.
+      const clip = (t, n = 17) => { t = (t == null ? '' : t).toString(); return t.length > n ? t.slice(0, n - 1) + '…' : t; };
+
+      function dealTag(d){
+        if(!d) return '';
+        // THE LABEL, NOT THE ID. HubSpot stores dealstage as an opaque id — "1607069",
+        // "37bf5e8e-93c2-...". migration 067 maps it through hubspot.hubspot_deal_stages, and
+        // stage_label falls back to the raw id when that table has not been synced yet: an
+        // unreadable id is worse than a word but far better than an empty pill hiding a deal.
+        const label = String(d.stage_label || d.stage || '');
+        // WON AND LOST COME FROM HUBSPOT, NOT FROM THE TEXT. A stage carries isClosed and a
+        // probability, and this portal proves why that matters: the stage whose id is literally
+        // "closedlost" is labelled "Initial Interest" and is OPEN at probability 0.5. Reading
+        // either the id or the label gets it exactly backwards.
+        const kind = d.is_won ? ' won' : d.is_lost ? ' lost' : '';
+        const via = d.via === 'company' ? ' via-company' : '';
+        const title = (d.via === 'company'
+          ? 'A deal at this contact\u2019s latest-modified company, not on the contact themselves.'
+          : 'A deal associated with this contact directly.')
+          + (d.pipeline_label ? '\n\nPipeline: ' + d.pipeline_label : '')
+          + (label ? '\nStage: ' + label : '');
+        // Clipped, with the whole stage in the tooltip. "Closed Lost - Wait for POS Inventory" as
+        // a full-width pill leaves no room for the deal name beside it.
+        return `<span class="deal-pill${kind}${via}" title="${esc(title)}">${esc(clip(label || "deal", 24))}</span>`;
+      }
+
+      // The line under the name. Deal first, company after it and muted. Returns NOTHING when
+      // there is neither — most of a list is unknown until the mirror fills, and a row repeating
+      // "no deal" hundreds of times is noise, not information.
+      // TWO LABELLED LINES, NOT ONE AMBIGUOUS SLOT. DEAL and COMPANY are written out, each on its
+      // own line, so a row states what it is holding instead of leaving the reader to infer it
+      // from whether a pill happens to be present.
+      //
+      // The lines span the whole row rather than sitting inside the 11rem name column, because
+      // HubSpot stage names run long: "Missed Demo- Need to Reschedule" was being cut mid-word.
+      // THE RECIPIENT RECORD, one labelled line per fact. Every row has one, including the rows
+      // we know nothing about: drawing the panel only where there was something to show left a
+      // ragged column that read as a rendering fault, and it hid the most useful fact on this
+      // tab — that most of the roster is not in the mirror yet.
+      //
+      // The empty message separates the two reasons, because only one of them is about the
+      // contact:
+      //   * not in the mirror   — we have never fetched them, so we cannot know
+      //   * in the mirror, bare — we have them and nothing is linked, or the deal sync has
+      //                            not reached them yet
+      //
+      // It never says "no deal" flatly. hubspot_deals is nearly empty until the CRM sync runs,
+      // so that would be a claim about HubSpot made from an absence in our own copy.
+      function recordPanel(c){
+        const d = c && c.deal;
+        const rows = [];
+        const line = (label, val, extra) =>
+          `<div class="rec-meta"><span class="prev-label">${label}</span>${extra || ""}`
+          + `<span class="rec-meta-val text-base-content/50" title="${esc(val)}">${esc(val)}</span></div>`;
+
+        // The address moved in here from the row. It is what identifies the person when the name
+        // is blank or a duplicate, but it is not what you scan a hundred rows for.
+        if(c && c.email) rows.push(line('Email', c.email));
+
+        if(d){
+          const name = d.name ? `<span class="font-semibold text-[#133b49]">${esc(d.name)}</span>` : '';
+          rows.push(`<div class="rec-meta"><span class="prev-label">Deal</span>`
+            + dealTag(d)
+            + `<span class="rec-meta-val" title="${esc(d.name || "")}">${name}</span></div>`);
+        }
+
+        // DEALS HERE ARE OFTEN NAMED AFTER THE CLUB — "Cut Shot Volleyball" the deal at "Cut
+        // Shot Volleyball" the company — so the company line is dropped when it would only
+        // repeat the deal name directly above it.
+        const sameName = d && d.name && c.company_name
+          && String(d.name).trim().toLowerCase() === String(c.company_name).trim().toLowerCase();
+        if(c && c.company_name && !sameName){
+          // "+2" when the contact sits on more than one company. The latest-modified one is the
+          // one shown and the one the deal fallback keyed on, so the rest are acknowledged.
+          const extra = (c.company_count > 1)
+            ? `<span class="text-base-content/30" title="On ${c.company_count} companies; the most recently modified is shown."> +${c.company_count - 1}</span>`
+            : '';
+          rows.push(`<div class="rec-meta"><span class="prev-label">Company</span><span class="rec-meta-val text-base-content/50" title="${esc(c.company_name)}">${esc(c.company_name)}${extra}</span></div>`);
+        }
+
+        if(!d && !(c && c.company_name)){
+          rows.push(line('CRM', (c && c.in_mirror)
+            ? 'We have this contact, but nothing is linked to them yet.'
+            : 'Not in our HubSpot copy yet, so their company and deal cannot be looked up.'));
+        }
+        // REFRESH, ON THE RECORD IT REFRESHES. A mirrored contact is a snapshot: deals move stage,
+        // people change company, and nothing here re-checks on its own. Offered only when there is
+        // an address to look up with, and only for contacts we already hold — for the rest the
+        // row still carries Find in HubSpot, which does the same job under the name that fits.
+        if(c && c.email && c.in_mirror){
+          rows.push(`<div class="rec-actions">
+            <button class="btn btn-ghost btn-xs text-base-content/50" data-hsresync="${esc(c.email)}"
+              title="Fetch this contact, their companies and their deals from HubSpot again, and replace what we have cached.">&#8635; Refresh from HubSpot</button></div>`);
+        }
+        return rows.join('');
+      }
+      // The old name, kept so the on-demand lookup path reads the same as the render path.
+      const dealLine = recordPanel;
       function engStrip(r){
         const e = r.engagement || {};
         if(!e.available) return '';
@@ -7092,6 +7886,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }catch(e){ host.innerHTML = `<div class="text-sm text-error p-2">${esc((e&&e.message)||e)}</div>`; }
       }
 
+      // WHICH ROWS ARE OPEN, BY EMAIL. Held outside loadRecipients because paint() rebuilds the
+      // whole list on every page: keeping this in the render would slam every expanded row shut
+      // the moment you pressed Load more.
+      const RECIP_OPEN = new Set();
+
       async function loadRecipients(cid, host, more, row){
         if(!cid || !host) return;
         const st = RECIP_CACHE.get(cid) || { contacts: [], next: null, done: false, note: '' };
@@ -7112,24 +7911,86 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // A GRID, NOT A FLEX ROW. Flex let a two-word name wrap onto a second line and push
             // the whole row out of alignment with its neighbours. Fixed tracks with truncation
             // keep every row the same height, and the full value stays available on hover.
-            + st.contacts.map(c => `<div class="grid items-baseline gap-x-2 border-b border-base-200 py-1.5" data-crow
-                 style="grid-template-columns: minmax(0,9rem) minmax(0,1fr) auto auto">
+            // items-START, not items-baseline. A row carrying a deal line is two lines tall, and
+            // baseline would leave the email and the link aligned to the second line instead of
+            // the first. The name column also widens, since it now holds two things.
+            // AN ACCORDION. The roster is the thing being scanned — a hundred names, who they are
+            // and whether we can reach them — so the row stays one line and the CRM detail goes
+            // underneath a caret. Two-line rows made a long list hard to read past.
+            //
+            // The caret is only drawn when there IS detail, so it doubles as the indicator: an
+            // arrow means we know something about this person, no arrow means we do not.
+            + st.contacts.map((c, i) => {
+              const detail = recordPanel(c);
+              // Indexed fallback: a few list rows carry neither an address nor an id, and without
+              // it they would all share the key "" and toggle one another.
+              const key = (c.email || String(c.hubspot_id || '') || 'row-' + i).toLowerCase();
+              const open = RECIP_OPEN.has(key);
+              return `<div class="grid items-center gap-x-2 border-b border-base-200 py-1.5" data-crow
+                 style="grid-template-columns: 16px minmax(0,1fr) auto auto">
+                 <button class="rec-caret${open ? " open" : ""}" data-rtoggle="${esc(key)}" aria-expanded="${open ? "true" : "false"}" title="${open ? "Hide" : "Show"} this contact&#39;s record">&#9654;</button>
                  <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
-                 <span class="text-xs text-base-content/45 truncate" title="${esc(c.email || '')}">${esc(c.email || '')}</span>
-                 <span class="text-xs ${c.status && c.status !== 'active' ? 'text-warning' : 'text-base-content/40'}">${esc(c.status || '')}</span>
+                 <span class="text-xs ${c.status && c.status !== "active" ? "text-warning" : "text-base-content/40"}">${esc(c.status || '')}</span>
                  ${c.hubspot_id
                    ? `<a class="text-xs link" target="_blank" rel="noopener" href="${hsLink(c.hubspot_id)}">HubSpot</a>`
-                   // ABOUT HALF THE ROSTER HAS NO recordid — 15 of 30 in the sample — so half
-                   // these rows would otherwise end in nothing at all. The address is the only
-                   // thing known about them, and it is enough to find the record.
                    : (c.email
-                       ? `<button class="btn btn-ghost btn-xs" data-hslookup="${esc(c.email)}">Find in HubSpot</button>`
+                       ? `<button class="btn btn-outline btn-xs whitespace-nowrap" data-hslookup="${esc(c.email)}" title="Look this address up in HubSpot and cache the record">Find in HubSpot</button>`
                        : '')}
-               </div>`).join('')
+                 <div class="rec-detail${open ? "" : " hidden"}" data-rdetail="${esc(key)}">${detail}</div>
+               </div>`;
+            }).join('')
             + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
           // A page is 100 contacts from CakeMail plus a mirror lookup for the ones without an
           // id — comfortably over a second. Without this the button just sat there and the
           // obvious response was to press it again, which fetches the same page twice.
+          // Toggling does NOT re-render: paint() rebuilds a hundred rows and would drop the scroll
+          // position every time somebody opened one.
+          // SAME REQUEST AS FIND, WITH force=1. Kept as one handler so the two controls cannot
+          // drift: the only difference is that a resync tells the webhook to skip its own mirror
+          // check and go back to HubSpot.
+          host.querySelectorAll('[data-hsresync]').forEach(btn => btn.addEventListener('click', async () => {
+            const email = btn.dataset.hsresync;
+            const orig = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Refreshing' + '\u2026';
+            try{
+              const rs = await fetch(`/api/market-history?lookup=${encodeURIComponent(email)}&force=1`, { headers: await apiHeaders() });
+              const d = await rs.json().catch(()=>({}));
+              if(!rs.ok) throw new Error(d.error || ('HTTP ' + rs.status));
+              const panel = btn.closest('[data-rdetail]');
+              if(panel){
+                panel.innerHTML = recordPanel({
+                  email, in_mirror: true,
+                  deal: d.deal || null,
+                  company_name: d.company_name || (d.contact && d.contact.company) || null,
+                  company_count: d.company_count || 0,
+                });
+                // The panel was just replaced, so the new button needs its own listener. Rebinding
+                // the whole list would close every other open row.
+                const again = panel.querySelector('[data-hsresync]');
+                if(again) again.addEventListener('click', () => location.reload());
+                const rowEl = panel.closest('[data-crow]');
+                if(rowEl){
+                  rowEl.classList.add('bh-found');
+                  setTimeout(() => rowEl.classList.remove('bh-found'), 2700);
+                }
+              }
+            }catch(e){
+              btn.disabled = false; btn.innerHTML = orig;
+              btn.title = String((e && e.message) || e);
+            }
+          }));
+
+          host.querySelectorAll('[data-rtoggle]').forEach(btn => btn.addEventListener('click', () => {
+            const key = btn.dataset.rtoggle;
+            const panel = host.querySelector(`[data-rdetail="${CSS.escape(key)}"]`);
+            const nowOpen = !RECIP_OPEN.has(key);
+            if(nowOpen) RECIP_OPEN.add(key); else RECIP_OPEN.delete(key);
+            btn.classList.toggle('open', nowOpen);
+            btn.setAttribute('aria-expanded', nowOpen ? 'true' : 'false');
+            btn.title = (nowOpen ? 'Hide' : 'Show') + ' the CRM record';
+            if(panel) panel.classList.toggle('hidden', !nowOpen);
+          }));
           const moreBtn = host.querySelector('[data-more]');
           moreBtn?.addEventListener('click', () => {
             moreBtn.disabled = true;
@@ -7159,13 +8020,48 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               // wide. The company is new information, so that stays.
               const wrap = document.createElement('span');
               wrap.className = 'text-xs whitespace-nowrap';
-              wrap.innerHTML = (c.company ? `<span class="text-base-content/45 mr-1.5">${esc(c.company)}</span>` : '')
-                + `<a class="link" target="_blank" rel="noopener" href="${hsLink(c.hs_object_id)}">HubSpot</a>`;
+              wrap.innerHTML = `<a class="link" target="_blank" rel="noopener" href="${hsLink(c.hs_object_id)}">HubSpot</a>`;
+              // THE DEAL GOES WHERE THE BULK-RESOLVED ONES GO — under the name, through the same
+              // renderer — so a row filled in by clicking is indistinguishable from one that
+              // arrived already resolved. company_name is the latest-modified of the companies the
+              // webhook found, which is the one the deal fallback keys on.
+              // email and in_mirror included: the panel draws an Email line, and the contact is by
+              // definition in the mirror now — the webhook just cached them.
+              const dealHtml = recordPanel({
+                email: b.dataset.hslookup || c.email || null,
+                in_mirror: true,
+                deal: d.deal || null,
+                company_name: d.company_name || c.company || null,
+                company_count: d.company_count || 0,
+              });
               // Read the row BEFORE the swap: replaceWith detaches the button, and a detached
               // node has no ancestors left to walk up to.
               const rowEl = b.closest('[data-crow]');
               b.replaceWith(wrap);
               if(rowEl){
+                // A ROW THAT HAD NOTHING TO SHOW HAS NO CARET AND NO DETAIL PANEL — it was
+                // rendered without them, which is the whole point of drawing the caret only where
+                // there is something under it. Finding a deal has to build both: the placeholder
+                // <span> in the first cell becomes a real caret, and the panel is appended to the
+                // row (it spans every column through .rec-detail).
+                //
+                // Opened straight away. The click that produced this WAS the request to see it,
+                // so making the operator open it again would be asking twice.
+                // EVERY ROW ALREADY HAS A CARET AND A PANEL, so this refreshes the one it has and
+                // opens it. The click that produced the result WAS the request to see it.
+                const key = (b.dataset.hslookup || '').toLowerCase();
+                const panel = rowEl.querySelector('[data-rdetail]');
+                const caret = rowEl.querySelector('[data-rtoggle]');
+                if(dealHtml && panel){
+                  panel.innerHTML = dealHtml;
+                  panel.classList.remove('hidden');
+                  RECIP_OPEN.add(key);
+                  if(caret){
+                    caret.classList.add('open');
+                    caret.setAttribute('aria-expanded', 'true');
+                    caret.title = 'Hide this contact record';
+                  }
+                }
                 rowEl.classList.add('bh-found');
                 // Removed once the fade has played, so the class is not left on a row that will
                 // be re-rendered later and would flash a second time for no reason.
@@ -7213,14 +8109,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         closePanel();
       });
 
-      el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; render(); });
-      el('bh-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; render(); });
-      el('bh-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; render(); });
+      el('bh-search')?.addEventListener('input',  e => { filter  = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; bhDates(); render(); });
       // Either end alone is a valid filter — "everything since the 1st" is as common a question
       // as a closed range.
-      const bhDates = () => { const c = el('bh-date-clear'); if(c) c.classList.toggle('hidden', !fromF && !toF); };
+      // The date group keeps its own × for the dates alone; Clear resets every filter. Both are
+      // painted from the STATE rather than from the inputs, so they cannot disagree with what the
+      // table is actually filtered by.
+      const bhDates = () => {
+        const c = el('bh-date-clear'); if(c) c.classList.toggle('hidden', !fromF && !toF);
+        const b = el('bh-clear');
+        if(b) b.classList.toggle('hidden', !(filter || chanF || statusF || fromF || toF));
+      };
       el('bh-from')?.addEventListener('change', e => { fromF = e.target.value; page = 1; bhDates(); render(); });
       el('bh-to')?.addEventListener('change',   e => { toF   = e.target.value; page = 1; bhDates(); render(); });
+      el('bh-clear')?.addEventListener('click', () => {
+        filter = chanF = statusF = fromF = toF = '';
+        ['bh-search','bh-channel','bh-status','bh-from','bh-to'].forEach(id => { const e = el(id); if(e) e.value = ''; });
+        page = 1; bhDates(); render();
+      });
       el('bh-date-clear')?.addEventListener('click', () => {
         fromF = ''; toF = '';
         const f = el('bh-from'), t = el('bh-to');

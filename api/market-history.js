@@ -15,7 +15,7 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { cakemailGet, cakemailKey } from '../lib/cakemail.js';
+import { cakemailGet, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 
 export const config = { maxDuration: 30 };
 
@@ -52,12 +52,32 @@ function defangHtml(html) {
 }
 
 function accountLabels() {
-  const map = {};
+  // Seeded with the live ids so an account can still be NAMED on a deploy that is missing its
+  // environment — which is the deploy most likely to be raising an error about it. Built only
+  // from the *_ACCOUNT_ID vars, this map was empty in exactly the case it was needed for, and
+  // the error fell back to "account 1679383". These ids mirror FALLBACK_ACCOUNT_ENV in
+  // lib/cakemail.js, which resolves the same three the same way and for the same reason.
+  // Anything the environment declares still wins, so moving a sub-account is a deployment
+  // change and not a code change.
+  const map = {
+    '1679383': 'Playbook Sports - Cole',
+    '1761047': 'Playbook Sports - Josh',
+    '1679456': 'Test',
+  };
   const put = (env, label) => { const id = (process.env[env] || '').trim(); if (id) map[id] = label; };
   put('PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Cole');
   put('PBSPORTS_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Josh');
   put('PBTESTACCOUNT_CAKEMAIL_ACCOUNT_ID', 'Test');
   return map;
+}
+
+// Said in the two places a missing PAT surfaces — the HTML preview and the recipient roster.
+// The account is NAMED rather than numbered, because the id is a lookup for the reader and the
+// name is what every other part of this tab shows. cakemailKeyEnvName exists to state the exact
+// variable to set, so the message carries the diagnosis and the fix together.
+function missingKeyError(accountId) {
+  const name = accountLabels()[String(accountId || '')] || (accountId ? `account ${accountId}` : 'this account');
+  return `no CakeMail key for ${name} — set ${cakemailKeyEnvName(accountId)} on this deployment`;
 }
 
 export default async function handler(req, res) {
@@ -100,7 +120,10 @@ export default async function handler(req, res) {
           // already speaks it and nothing here has to change.
           'x-inbox-secret': process.env.REPLY_SECRET || '',
         },
-        body: JSON.stringify({ email: wantLookup }),
+        // ?force=1 re-reads the contact from HubSpot even when the mirror already holds them.
+        // Records go stale — a deal moves stage, a contact changes company — and without this
+        // the mirror branch answers first and nothing ever checks.
+        body: JSON.stringify({ email: wantLookup, force: String(req.query?.force || '') === '1' }),
       });
       const d = await hr.json().catch(() => null);
       if (!hr.ok) {
@@ -112,8 +135,49 @@ export default async function handler(req, res) {
         });
         return;
       }
+      // THE WEBHOOK RETURNS MORE THAN THE CONTACT NOW — it fetches and caches the contact's
+      // companies and deals in the same request, and resolves which deal applies. Those fields
+      // were being dropped here, so the work was done, cached, and then thrown away before it
+      // reached the browser.
+      //
+      // Every field is optional: an older lookup workflow that answers with the contact alone
+      // still works, and the row simply shows what it always showed.
+      // The webhook answers with the raw HubSpot deal, where dealstage is an opaque id. The
+      // batch path resolves it through hubspot.hubspot_deal_stages; this one has to as well, or
+      // a row filled in by clicking shows "1607069" beside neighbours reading "Closed".
+      let stageMap = null;
+      if (d && d.deal && d.deal.dealstage) {
+        try {
+          const sr = await fetch(`${url}/rest/v1/rpc/hubspot_stage_labels`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_stage_ids: [String(d.deal.dealstage)] }),
+          });
+          if (sr.ok) { const rows = await sr.json().catch(() => []); stageMap = Array.isArray(rows) ? rows[0] : null; }
+        } catch { /* the raw id still renders; a label is an improvement, not a requirement */ }
+      }
+      const deal = d && d.deal ? {
+        id: String(d.deal.hs_object_id != null ? d.deal.hs_object_id : d.deal_id),
+        name: d.deal.dealname || null,
+        stage: d.deal.dealstage || null,
+        stage_label: (stageMap && stageMap.stage_label) || d.deal.dealstage || null,
+        is_won: !!(stageMap && stageMap.is_won),
+        is_lost: !!(stageMap && stageMap.is_lost),
+        pipeline: d.deal.pipeline || null,
+        pipeline_label: (stageMap && stageMap.pipeline_label) || null,
+        amount: d.deal.amount == null ? null : Number(d.deal.amount),
+        closedate: d.deal.closedate || null,
+        modified: d.deal.hs_lastmodifieddate || null,
+        via: d.deal_via || null,
+      } : null;
+      // The latest-modified company, which is the one the deal fallback keys on. The webhook
+      // sends every company it found; the newest is the one worth naming.
+      const comps = Array.isArray(d && d.companies) ? d.companies.slice() : [];
+      comps.sort((a, b) => String(b.hs_lastmodifieddate || '').localeCompare(String(a.hs_lastmodifieddate || '')));
       res.status(200).json({ ok: true, available: true, found: !!(d && d.found),
         source: d && d.source, contact: (d && d.contact) || null,
+        deal,
+        company_name: comps.length ? (comps[0].name || null) : null,
+        company_count: comps.length,
         reason: d && d.reason });
     } catch (e) {
       res.status(502).json({ error: String((e && e.message) || e) });
@@ -140,7 +204,7 @@ export default async function handler(req, res) {
     if (!row) { res.status(404).json({ error: `campaign ${wantRecips} is not in blast history` }); return; }
     if (!row.list_id) { res.status(200).json({ ok: true, available: false, reason: 'This campaign has no list recorded, so its recipients cannot be looked up.' }); return; }
     const accountId = String(row.account_id || '');
-    if (!cakemailKey(accountId)) { res.status(502).json({ error: `no CakeMail key for account ${accountId}` }); return; }
+    if (!cakemailKey(accountId)) { res.status(502).json({ error: missingKeyError(accountId) }); return; }
     try {
       const cur = String(req.query?.cursor || '').trim();
       const q = new URLSearchParams({ per_page: '100' });
@@ -183,6 +247,66 @@ export default async function handler(req, res) {
             }
           }
         } catch { /* leave them unresolved; the Find button still works */ }
+      }
+
+      // THE DEAL, FOR THE WHOLE PAGE, IN ONE CALL. The deal is the thing worth seeing on a
+      // recipient — "is this person attached to a live account, and which" — so it is resolved
+      // for everyone we can name, not only for the rows somebody thinks to click. A page is 100
+      // contacts; asking per person would be 100 round trips to paint one screen.
+      //
+      // Deliberately not fatal. A missing migration, an empty mirror or a slow database leaves
+      // every row exactly as it was — the roster is still useful without deal data, and losing
+      // the whole tab because an enrichment failed would be the wrong trade.
+      const withEmail = contacts.filter(c => c.email).map(c => c.email);
+      if (withEmail.length) {
+        try {
+          const dr = await fetch(`${url}/rest/v1/rpc/hubspot_deals_for_emails`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_emails: withEmail }),
+          });
+          if (dr.ok) {
+            const rows2 = await dr.json().catch(() => []);
+            const byEmail = new Map((Array.isArray(rows2) ? rows2 : [])
+              .map(r => [String(r.email || '').toLowerCase(), r]));
+            for (const c of contacts) {
+              const d = c.email && byEmail.get(c.email.toLowerCase());
+              if (!d) continue;
+              // WHETHER THE MIRROR KNOWS THEM AT ALL, which is not the same as whether the row has
+              // a HubSpot link. Half of these contacts carry a recordid from CakeMail, so they link
+              // out fine while being entirely absent from hubspot.hubspot_contacts — and for
+              // those no company or deal can be resolved at all. The panel has to be able to say
+              // "we do not know this person" rather than "this person has no deal".
+              c.in_mirror = true;
+              // The id comes back here too, so a contact the mirror knows gets its link even if
+              // the pass above was skipped because CakeMail had already supplied one.
+              if (!c.hubspot_id && d.hs_object_id != null) { c.hubspot_id = String(d.hs_object_id); c.from_mirror = true; }
+              // Company is REFERENCE, deal is the answer — both are sent, and the UI ranks them.
+              c.company_name = d.company_name || null;
+              c.company_id = d.company_id != null ? String(d.company_id) : null;
+              c.company_count = d.company_count || 0;
+              if (d.deal_id != null) {
+                c.deal = {
+                  id: String(d.deal_id),
+                  name: d.deal_name || null,
+                  stage: d.deal_stage || null,
+                  // The readable form, plus HubSpot's own won/lost flags — see migration 067.
+                  // The UI must never infer either of those from the text.
+                  stage_label: d.deal_stage_label || null,
+                  is_won: !!d.deal_is_won,
+                  is_lost: !!d.deal_is_lost,
+                  pipeline: d.deal_pipeline || null,
+                  pipeline_label: d.deal_pipeline_label || null,
+                  amount: d.deal_amount == null ? null : Number(d.deal_amount),
+                  closedate: d.deal_closedate || null,
+                  modified: d.deal_modified || null,
+                  // "their deal" and "a deal at their company" are different claims and the row
+                  // must not present them identically.
+                  via: d.deal_via || null,
+                };
+              }
+            }
+          }
+        } catch { /* deal data is an enrichment; the roster stands without it */ }
       }
 
       res.status(200).json({
@@ -293,7 +417,7 @@ export default async function handler(req, res) {
     const row = Array.isArray(rows) ? rows[0] : null;
     if (!row) { res.status(404).json({ error: `campaign ${wantHtml} is not in blast history` }); return; }
     const accountId = String(row.account_id || '');
-    if (!cakemailKey(accountId)) { res.status(502).json({ error: `no CakeMail key for account ${accountId}` }); return; }
+    if (!cakemailKey(accountId)) { res.status(502).json({ error: missingKeyError(accountId) }); return; }
     try {
       const raw = await cakemailGet(`/campaigns/${wantHtml}/render-html`, { accountId, raw: true });
       const html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
