@@ -4671,10 +4671,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // resolvers.
       //
       // TO PUT IT BACK: set to true. One line, takes effect on the next deploy.
-      const SEND_NOW_DISABLED = false;
-      const SEND_NOW_DISABLED_TIP = 'Send now is disabled. Test mode is off, so every market now '
-        + 'resolves to real recipients and a click here would be a live blast. Re-enable via '
-        + 'SEND_NOW_DISABLED in ui/index.html.';
+      // AI-959: driven by SEND_DISABLED in the build config, not hardcoded, so QA can be quiet
+      // while production keeps sending. Set SEND_DISABLED=true on Vercel's Preview scope.
+      // Defaults to FALSE — an env var that fails to arrive must not silently stop production
+      // sending, which is the more dangerous of the two failure directions here.
+      const SEND_NOW_DISABLED = !!(window.INBOX_CONFIG && window.INBOX_CONFIG.SEND_DISABLED);
+      const SEND_NOW_DISABLED_TIP = 'Send now is turned off in this environment. Sending is '
+        + 'enabled in production; this build has SEND_DISABLED set so a click here cannot put a '
+        + 'real blast on the wire.';
 
       // False until the first get_campaign_queue call comes back. render() can run before that
       // (refreshTestMode resolving, a filter change), and an empty QUEUE at that point means

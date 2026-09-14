@@ -32,9 +32,25 @@ const cfg = {
   // and access is enforced by Google, not by knowing the URL.
   PRICING_SHEET_URL: process.env.PRICING_SHEET_URL
     || 'https://docs.google.com/spreadsheets/d/1djGg7A5bddBV59Vl8OY2X4n1x44Y9bD8bbaiPmYEj-8/edit',
+  // AI-959: turn "Send now" off in QA while leaving it on in production.
+  //
+  // Set SEND_DISABLED=true on the PREVIEW scope in Vercel and leave it unset on Production.
+  // Both environments then build from the same source with different behaviour, instead of a
+  // hardcoded flag someone has to remember to flip back before merging.
+  //
+  // This governs the BUTTON only. Two other things already keep QA quiet: Vercel runs cron jobs
+  // for production deployments only, so the hourly send tick never fires on a preview; and the
+  // API routes still require their own secrets. It is not a substitute for AI-977's sandbox —
+  // the QA build still talks to production Supabase, Telnyx and CakeMail, so anything that does
+  // reach those providers is real.
+  SEND_DISABLED: String(process.env.SEND_DISABLED || '').toLowerCase() === 'true',
 };
 
-const missing = Object.entries(cfg).filter(([, v]) => !v).map(([k]) => k);
+// SEND_DISABLED is excluded: it is a boolean whose normal value is false, and listing it
+// as "missing" on every production build would train people to ignore this warning.
+const missing = Object.entries(cfg)
+  .filter(([k, v]) => !v && k !== 'SEND_DISABLED')
+  .map(([k]) => k);
 if (missing.length) console.warn('gen-config: missing env vars -> ' + missing.join(', '));
 
 fs.writeFileSync('ui/config.js', `window.INBOX_CONFIG = ${JSON.stringify(cfg, null, 2)};\n`);
