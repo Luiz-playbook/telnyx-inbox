@@ -31,7 +31,7 @@ const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
 
 const SYSTEM = [
   'You are the send-decider for Playbook\'s ticket-marketing blasts. You are given a list of markets that have ALREADY passed every hard rule (cooldown, forward-looking window, fill %, opt-out health, has prior history) — so every candidate is safe to send. Your job is to choose which ones to actually blast right now, and in what order, to maximize return.',
-  'Rank the strongest opportunities first. Prefer markets with proven historical performance (higher open / click rates over more prior blasts), lower current fill % (more seats to move), and a healthy opt-out rate. A game that is closer (fewer days until) is more urgent. You MAY veto a candidate you think is a poor use of a send right now — but only from the given list.',
+  'Rank the strongest opportunities first. Prefer markets with proven historical performance (higher open / click rates over more prior blasts), lower current fill % (more seats to move) WHERE A FILL FIGURE IS GIVEN, and a healthy opt-out rate. A candidate with no filled_pct key has NO occupancy data — that is unknown, not empty, and it must not be treated as a market with seats to move; rank it on its history, its urgency and its reach instead, and do not mention fill in its reason. A game that is closer (fewer days until) is more urgent. You MAY veto a candidate you think is a poor use of a send right now — but only from the given list.',
   'HARD CONSTRAINTS: never invent an event_id — only use ones provided. Never add a market that is not in the candidate list. Cite the concrete numbers you were given in each one-sentence reason (e.g. "18% open / 8% CTR over 3 blasts, only 20% filled"). Return picks best-first.',
   'Each market splits into three audience segments — ICP, SCP and Other — and each one you choose becomes its own blast with its own copy and its own recipients. ICP IS THE PRIMARY TARGET: always include it when it has recipients, and never drop it in favour of the other two. Consider all three on every pick, and include SCP and Other when their reach makes them worth a separate send. Exclude a segment only when it has no recipients or you can say why it is a poor send; you are given each segment\'s email and SMS reach to judge that.',
   // AI-960. The operator's typed instruction arrives as a preamble ABOVE this list of
@@ -257,7 +257,12 @@ export default async function handler(req, res) {
       try {
         const payload = candidates.map(c => ({
           event_id: c.event_id, team: c.team, market: c.market_label,
-          filled_pct: c.filled_pct, days_until: c.days_until, n_blasts: c.n_blasts,
+          // Migration 072. filled_pct is NULL for every game until real occupancy data
+          // exists, so the key is OMITTED rather than sent as null. A null in a payload
+          // of numbers invites the model to read it as zero or as 'low', which is the
+          // exact misreading the migration removed from the database side.
+          ...(c.filled_pct == null ? {} : { filled_pct: c.filled_pct }),
+          days_until: c.days_until, n_blasts: c.n_blasts,
           open_rate: c.open_rate_w, ctr: c.ctr_w, unsub_rate: c.unsub_rate,
           best_template: c.best_template, best_weekday: c.best_dow,
           email_recipients: c.email_count, sms_recipients: c.phone_count,

@@ -8593,9 +8593,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // the "game already played" guard would read no date and fail open.
       //
       // rpc_event_recommendations() is the bridge we already have. It returns one row per
-      // upcoming FIXTURE, keyed by events_master id, carrying market_key and event_date — and it
-      // already performs this same team+date join internally to attach filled_pct. Reusing it
-      // means no new SQL and no second matcher to keep in step with the decider's.
+      // upcoming FIXTURE, keyed by events_master id, carrying market_key and event_date.
+      // Reusing it means no new SQL and no second matcher to keep in step with the decider's.
+      //
+      // IT NO LONGER ATTACHES filled_pct (migration 072). This comment used to say the RPC ran
+      // "this same team+date join internally", offered as reassurance that the matching here was
+      // proven. It was not: that join matched ZERO of the 82 icp_events rows carrying a fill
+      // figure, because the two tables spell teams differently, and the decider silently read
+      // every miss as a 0% — an empty stadium. The join is gone and filled_pct is now NULL.
+      //
+      // The matching BELOW still has to exist, and still has the same problem to solve; it just
+      // no longer has a working precedent to point at. Treat it as its own matcher.
       // NOT the normTeam above (line ~8351) — that one strips "(group)" and "@..." for the
       // Offers nickname lookup and is used by two other callers. This is a separate, looser
       // normalisation for matching offer team names against fixture feed names, where the
