@@ -8433,13 +8433,179 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function priceOf(e){ const p=(e.price_per_person!=null)?e.price_per_person:null; return p!=null?`$${p}/ticket`:''; }
       function suiteDate(e){ const d=e.updated_at||e.created_at; if(!d) return '—'; return new Date(d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); }
 
+      // AI-964: the fixture bridge.
+      //
+      // An offer lives in icp_events (suite inventory: team, date, fill %, price per person).
+      // The queue stores a REAL events_master id and resolves game, date and price through it.
+      // The two tables share no keys — 0 of 213 ids match — so an offer cannot be queued by its
+      // own id: the row would join to nothing and show blank game, blank date, blank price, and
+      // the "game already played" guard would read no date and fail open.
+      //
+      // rpc_event_recommendations() is the bridge we already have. It returns one row per
+      // upcoming FIXTURE, keyed by events_master id, carrying market_key and event_date — and it
+      // already performs this same team+date join internally to attach filled_pct. Reusing it
+      // means no new SQL and no second matcher to keep in step with the decider's.
+      // NOT the normTeam above (line ~8351) — that one strips "(group)" and "@..." for the
+      // Offers nickname lookup and is used by two other callers. This is a separate, looser
+      // normalisation for matching offer team names against fixture feed names, where the
+      // difference is "University of Tennessee" vs "tennessee".
+      function fixtureTeamKey(t){
+        return String(t||'').toLowerCase().trim()
+          .replace(/^(university of|univ of|the)\s+/,'')
+          .replace(/[^a-z0-9 ]/g,'').trim();
+      }
+      // Offer -> fixture. Exact day first, then +/- 1 day, because a 7pm game reads as the next
+      // day in the feed's timezone and that alone accounts for about half the near-misses. Only
+      // ever returns a fixture when exactly ONE candidate matches: two candidates means we do not
+      // know which game the suite is for, and guessing would queue a blast for the wrong night.
+      function fixtureFor(e){
+        const t = fixtureTeamKey(e.team_name);
+        if(!t || !e.event_date) return { fixture: null, why: 'no team or date on this offer' };
+        const day = d => { const x = new Date(d + 'T12:00:00Z'); return x; };
+        const target = day(e.event_date).getTime();
+        const near = (state.fixtures||[]).filter(f => {
+          const ft = fixtureTeamKey(f.team);
+          if(!(ft === t || ft.includes(t) || t.includes(ft))) return false;
+          return Math.abs(day(f.event_date).getTime() - target) <= 864e5;
+        });
+        const exact = near.filter(f => f.event_date === e.event_date);
+        const hits = exact.length ? exact : near;
+        if(hits.length === 1) return { fixture: hits[0], why: null };
+        if(hits.length > 1)   return { fixture: null, why: hits.length + ' fixtures match this team and date — cannot tell which game this suite is for' };
+        return { fixture: null, why: 'no scheduled fixture matches this team and date' };
+      }
+
+      // AI-964: queue one offer straight from the list.
+      //
+      // Deliberately NOT a new send path. It calls queue_enqueue_test — the same function the
+      // Trigger Blast flow calls — so the row lands 'pending' + is_placeholder and goes through
+      // the same review, suppression and accept/reject flow as an agent-queued row. The trigger
+      // flow is untouched.
+      function addToQueueDialog({ offer, fixture, segments, defaultWhen }){
+        return new Promise(resolve => {
+          const money = v => v == null ? '—' : ('$' + Number(v).toFixed(2));
+          const game = fixture.opponent ? (fixture.opponent + ' at ' + fixture.team) : fixture.team;
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          ov.innerHTML =
+            '<div class="pb-modal-card" role="dialog" aria-modal="true" style="max-width:30rem">' +
+              '<div class="flex items-start gap-2 mb-3">' +
+                '<span class="text-xl leading-none text-[#e55608]">&#9889;</span>' +
+                '<div class="font-extrabold text-lg text-[#133b49]">Add to Queue</div>' +
+              '</div>' +
+              '<dl class="text-sm mb-4 grid grid-cols-[7rem_1fr] gap-y-1">' +
+                '<dt class="text-base-content/50">Game</dt><dd class="font-semibold text-[#133b49]">' + esc(game) + '</dd>' +
+                '<dt class="text-base-content/50">Date</dt><dd>' + esc(fixture.event_date) + '</dd>' +
+                '<dt class="text-base-content/50">Market</dt><dd>' + esc(fixture.market_label || fixture.market_key || '—') + '</dd>' +
+                '<dt class="text-base-content/50">Ticket price</dt><dd>' + esc(money(offer.price_per_person)) + '</dd>' +
+              '</dl>' +
+              '<label class="text-xs font-semibold text-base-content/60">Audience segment</label>' +
+              '<select data-seg class="select select-bordered select-sm w-full mb-3">' +
+                segments.map(function(x){ return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('') +
+              '</select>' +
+              '<label class="text-xs font-semibold text-base-content/60">Send at</label>' +
+              '<input data-when type="datetime-local" class="input input-bordered input-sm w-full mb-4" value="' + esc(defaultWhen) + '">' +
+              '<div class="flex justify-end gap-2">' +
+                '<button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>' +
+                '<button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Add to Queue</button>' +
+              '</div>' +
+            '</div>';
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const onKey = e => { if(e.key === 'Escape') done(null); };
+          ov.querySelector('[data-ok]').addEventListener('click', () => {
+            const when = ov.querySelector('[data-when]').value;
+            if(!when) return;
+            done({ segment: ov.querySelector('[data-seg]').value, when });
+          });
+          ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+          ov.addEventListener('click', e => { if(e.target === ov) done(null); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-when]').focus();
+        });
+      }
+
+      // The segment shown on an offer row is decorative — segOf() derives it from a hash of the
+      // row id, not from anyone's lead data — so it must NOT be carried into the queue, where the
+      // segment decides who actually receives the blast and which cooldown applies. The operator
+      // picks a real one. These three are the only values queue_enqueue_test accepts.
+      const QUEUE_SEGMENTS = ['ICP', 'SCP', 'Other'];
+
+      async function addOfferToQueue(e){
+        const todayEt = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        if(e.event_date && e.event_date < todayEt){
+          window.__pbToast && window.__pbToast({ type: 'err', title: 'That game has already been played',
+            lines: ['An offer whose game date has passed cannot be queued.'] });
+          return;
+        }
+        const found = fixtureFor(e);
+        if(!found.fixture){
+          window.__pbToast && window.__pbToast({ type: 'err', title: 'No matching fixture',
+            lines: [ found.why || 'This offer has no fixture to attach to.',
+                     'A queued blast needs a real game so the date, the price and the already-played guard resolve. Fixtures are published about a season ahead, so offers further out than that cannot be queued yet.' ] });
+          return;
+        }
+        const fixture = found.fixture;
+        // Duplicate check before opening the dialog, so a segment that is already spoken for is
+        // never offered. Mirrors queue_enqueue_test's own key: (event_id, segment), live rows only.
+        const liveFor = seg => (state.queued || []).some(q =>
+          q.event_id === fixture.event_id && q.status !== 'sent' && q.status !== 'rejected' &&
+          (!q.segment || !seg || q.segment === seg));
+        const free = QUEUE_SEGMENTS.filter(sgt => !liveFor(sgt));
+        if(!free.length){
+          window.__pbToast && window.__pbToast({ type: 'err', title: 'Already queued',
+            lines: ['This offer is already queued for that date.'] });
+          return;
+        }
+        const soon = new Date(Date.now() + 864e5);
+        const pad = n => String(n).padStart(2, '0');
+        const defaultWhen = soon.getFullYear() + '-' + pad(soon.getMonth() + 1) + '-' + pad(soon.getDate()) + 'T10:00';
+        const picked = await addToQueueDialog({ offer: e, fixture: fixture, segments: free, defaultWhen: defaultWhen });
+        if(!picked) return;
+
+        const game = fixture.opponent ? (fixture.opponent + ' at ' + fixture.team) : fixture.team;
+        const row = {
+          title: game + ' — ' + (fixture.market_label || fixture.market_key || '') +
+                 (picked.segment ? ' · ' + picked.segment : ''),
+          state_code: fixture.market_key || null,
+          state_name: fixture.market_label || null,
+          event_id: fixture.event_id,
+          segment: picked.segment,
+          email: true, sms: true,
+          scheduled_for: new Date(picked.when).toISOString(),
+        };
+        const ins = await sb.rpc('queue_enqueue_test', { p_rows: [row] });
+        if(ins.error){
+          window.__pbToast && window.__pbToast({ type: 'err', title: 'Could not queue this offer', lines: [ ins.error.message ] });
+          return;
+        }
+        // queue_enqueue_test SKIPS a duplicate silently rather than raising — it returns no row
+        // for one it refused. Zero rows back therefore means "already queued", which is exactly
+        // the case the ticket asks about, and nothing was created.
+        if(!(ins.data || []).length){
+          window.__pbToast && window.__pbToast({ type: 'err', title: 'Already queued',
+            lines: ['This offer is already queued for that date.'] });
+          return;
+        }
+        state.queued = (state.queued || []).concat(ins.data);
+        window.__pbToast && window.__pbToast({ type: 'ok', title: 'Added to the queue',
+          lines: [ row.title, 'Pending review — it will not send until someone confirms it.' ] });
+        render();
+      }
+
       async function loadAll(){
         if(!sb) return;
-        const [{data,error}, blastRes, numRes] = await Promise.all([
+        const [{data,error}, blastRes, numRes, recRes, qRes] = await Promise.all([
           sb.from('icp_events').select('*'),
           sb.from('blast_templates').select('list_name,name,sent_emails,open_rate,click_rate,clickthru_rate,scheduled_for'),
           sb.from('telnyx_numbers').select('phone_number,label,active,sort_order').order('sort_order',{ascending:true}),
+          sb.rpc('rpc_event_recommendations'),
+          sb.rpc('get_campaign_queue'),
         ]);
+        // Neither is fatal: without them Add to Queue explains itself per row and the rest of the
+        // tab is unaffected, which beats blanking a working page over a secondary feature.
+        state.fixtures = recRes && !recRes.error ? (recRes.data || []) : [];
+        state.queued   = qRes   && !qRes.error   ? (qRes.data   || []) : [];
         if(error){ toast('Load failed: '+error.message,'err'); el('rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-10">'+esc(error.message)+'</td></tr>'; return; }
         if(blastRes.error){ toast('Templates unavailable: '+blastRes.error.message,'err'); }
         if(numRes.error){ toast('Numbers unavailable: '+numRes.error.message,'err'); }
@@ -8483,6 +8649,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const confirmBtn = confirmed
           ? `<span class="badge badge-success badge-sm gap-1 font-semibold">&#10003; ${st==='Sent'?'Sent':'Confirmed'}</span>`
           : `<button class="btn btn-xs btn-outline btn-info rounded-full px-3" data-confirm="${esc(e.id)}">Confirm</button>`;
+        // AI-964. The button states its own reason rather than failing on click: an offer is only
+        // queueable when the game is still ahead AND it resolves to one fixture, and "which of
+        // these can I act on" is the thing the operator is scanning for.
+        const todayEt = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+        const past = !!(e.event_date && e.event_date < todayEt);
+        const fx = past ? { fixture: null, why: 'this game has already been played' } : fixtureFor(e);
+        const queueBtn = fx.fixture
+          ? `<button class="btn btn-xs btn-outline rounded-full px-3" data-addqueue="${esc(e.id)}" title="Queue this offer for a send">+ Queue</button>`
+          : `<button class="btn btn-xs btn-outline rounded-full px-3 btn-disabled opacity-50" disabled title="${esc('Cannot queue: ' + (fx.why || 'no matching fixture') + '.')}">+ Queue</button>`;
         return `<tr class="camp-row" data-row="${esc(e.id)}">
           <td><input type="checkbox" class="checkbox checkbox-xs" data-select="${esc(e.id)}" ${sel?'checked':''}/></td>
           ${c.event?`<td>
@@ -8492,6 +8667,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <div class="text-xs text-base-content/50 mt-0.5">${esc(shortDate(e.event_date))}${priceOf(e)?` · <span class="text-primary font-semibold">${esc(priceOf(e))}</span>`:''}</div>
               </div>
               ${confirmBtn}
+              ${queueBtn}
             </div></td>`:''}
           ${c.market?`<td><div class="flex items-center gap-2"><span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(marketOf(e))}</span><span class="seg ${segClass(seg)}">${esc(seg)}</span></div></td>`:''}
           ${c.sport?`<td><span class="sport-pill">${esc(sportOf(e))}</span></td>`:''}
@@ -8518,6 +8694,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         wireRows(); applyColVisibility();
       }
       function wireRows(){
+        // AI-964. Disabled buttons carry no data-addqueue, so they never match here.
+        document.querySelectorAll('[data-addqueue]').forEach(n=>n.addEventListener('click',()=>{
+          const e = state.events.find(x => x.id === n.dataset.addqueue);
+          if(e) addOfferToQueue(e);
+        }));
         document.querySelectorAll('[data-confirm]').forEach(n=>n.addEventListener('click',()=>{
           const e=state.events.find(x=>x.id===n.dataset.confirm); if(!e) return;
           setStatus(e,'Confirmed'); toast(`Confirmed “${eventTitle(e)}”`,'ok'); render();
