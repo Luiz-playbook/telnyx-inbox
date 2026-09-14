@@ -34,6 +34,15 @@ const SYSTEM = [
   'Rank the strongest opportunities first. Prefer markets with proven historical performance (higher open / click rates over more prior blasts), lower current fill % (more seats to move), and a healthy opt-out rate. A game that is closer (fewer days until) is more urgent. You MAY veto a candidate you think is a poor use of a send right now — but only from the given list.',
   'HARD CONSTRAINTS: never invent an event_id — only use ones provided. Never add a market that is not in the candidate list. Cite the concrete numbers you were given in each one-sentence reason (e.g. "18% open / 8% CTR over 3 blasts, only 20% filled"). Return picks best-first.',
   'Each market splits into three audience segments — ICP, SCP and Other — and each one you choose becomes its own blast with its own copy and its own recipients. ICP IS THE PRIMARY TARGET: always include it when it has recipients, and never drop it in favour of the other two. Consider all three on every pick, and include SCP and Other when their reach makes them worth a separate send. Exclude a segment only when it has no recipients or you can say why it is a poor send; you are given each segment\'s email and SMS reach to judge that.',
+  // AI-960. The operator's typed instruction arrives as a preamble ABOVE this list of
+  // candidates, and this paragraph is what stops the model treating it as a suggestion.
+  //
+  // It is scoped deliberately: steering WITHIN the candidate list, never a way past the hard
+  // rules. "Add a few NHL games in Toronto" must reorder and re-weight; it must not resurrect a
+  // market the cooldown or the fill-% rule already excluded, because those rules are the reason
+  // a candidate list is safe to send at all. A free-text box that could talk its way past them
+  // would be a hole straight through every guard in api/queue-tick.js.
+  'You may be given OPERATOR INSTRUCTIONS at the top of the user message — what a human wants out of this particular run, in their own words ("a few NHL games in Toronto and Montreal, then West Coast hockey, plus one football org each coast"). Follow them as the primary steer: they outrank your own ranking preferences wherever the two disagree. But they steer ONLY within the candidate list you are given — they can never justify inventing an event_id, adding a market that is not listed, or exceeding the number of picks you were asked for. If an instruction cannot be satisfied from the candidates (no Toronto NHL game is eligible today), pick the nearest thing that can be and say so plainly in that pick's reason.',
   'You may also be given RECENTLY REJECTED blasts: ones a human operator refused to send, sometimes with a written reason. Those exact games are already filtered out of your candidate list, so you do not need to avoid them — read them for the PATTERN. If the operator keeps refusing a kind of matchup, a market, or a price point, weight similar candidates down and say so in your reason. Treat a written reason as a stronger signal than a bare rejection.',
 ].join('\n');
 
@@ -99,6 +108,11 @@ export default async function handler(req, res) {
 
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
+
+  // AI-960. Free text, so it is bounded here rather than trusted: 2000 characters is far more
+  // than the examples in the ticket need and still small beside the candidate payload, so a
+  // pasted document cannot crowd the actual candidates out of the model's context window.
+  const instructions = String(req.body?.instructions || '').trim().slice(0, 2000);
 
   const through = req.body?.through || null;
   const days = windowDays(through);
@@ -258,7 +272,14 @@ export default async function handler(req, res) {
             model: target.model, ...target.body, max_tokens: 2000,
             messages: [
               { role: 'system', content: SYSTEM },
-              { role: 'user', content: `Choose up to ${need} markets to blast across the next ${days.length} day(s) — ${perDay} per day, best-first. Candidates:\n`
+              // The preamble goes FIRST, before the task line and the candidates. Instructions
+              // buried under a few hundred candidate objects get skimmed; what the operator asked
+              // for is the frame the rest is read through, so it is stated before the rest exists.
+              //
+              // Empty box => empty string => this message is byte-for-byte what it was before
+              // AI-960, which is the ticket's requirement that an empty box behave as today.
+              { role: 'user', content: (instructions ? `OPERATOR INSTRUCTIONS for this run — follow these as the primary steer, within the candidate list below:\n${instructions}\n\n` : '')
+                + `Choose up to ${need} markets to blast across the next ${days.length} day(s) — ${perDay} per day, best-first. Candidates:\n`
                 + JSON.stringify(payload)
                 // Capped: this is context, not the task, and a long tail of stale refusals
                 // would crowd out the candidates it is meant to inform. Newest first out of
@@ -347,6 +368,9 @@ export default async function handler(req, res) {
     res.status(200).json({
       ok: true, evaluated: recs.length, llm, candidates: candidates.length,
       per_day: perDay, through: days[days.length - 1], days: days.length,
+      // Echoed, not assumed: if the endpoint truncated or ignored the text, the summary
+      // and the stored copy should show what actually steered the run.
+      instructions: instructions || null,
       cap: need, need, plan, already_queued: alreadyQueued,
       // Held back because the operator refused them, as distinct from held back by a rule.
       // Reported separately so the Trigger Blast summary can say which is which.
