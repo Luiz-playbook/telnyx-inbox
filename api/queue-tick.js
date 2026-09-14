@@ -24,6 +24,7 @@
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
+import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 60 };
@@ -190,6 +191,10 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
+      // AI-976: recipients to write to HubSpot once this row's sends are done. Collected
+      // rather than logged inline so the CRM write never sits between resolving an audience
+      // and putting the messages on the wire.
+      const hubspotLog = [];
       if (r.sms && phones.length) {
         // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
         // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
@@ -204,6 +209,13 @@ export default async function handler(req, res) {
             const out = await sendSmsBulk({ teamId: sm.teamId, to: phones, message: r.sms_copy || '' });
             if (out.sent) sent.push(`SMS ${out.sent} (Salesmsg ${sm.phone})`);
             if (out.failed.length) failed.push(`Salesmsg: ${out.failed.length} of ${out.total} failed — ${out.failed[0].error}`);
+            // AI-976. Salesmsg reports per number, so only the ones it actually accepted are
+            // logged — writing a HubSpot interaction for a number it refused would put a message
+            // on someone's timeline that never left the building.
+            hubspotLog.push(...(out.sentNumbers || []).map(to => ({
+              to, from: sm.phone, body: r.sms_copy || '', sentAt: new Date().toISOString(),
+              outcome: 'sent via Salesmsg',
+            })));
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
@@ -226,6 +238,19 @@ export default async function handler(req, res) {
           (rr.ok ? sent : failed).push(rr.ok
             ? `SMS ${messages.length} handed off (delivery unconfirmed)`
             : `SMS failed (HTTP ${rr.status})`);
+          // AI-976. Only on a successful handoff — a rejected webhook means nothing was queued to
+          // send, and logging it would be recording an interaction that did not happen.
+          //
+          // The outcome is recorded as "handed off", NOT "delivered", for the same reason the
+          // status string above says so: this 200 is n8n accepting the payload, not Telnyx
+          // accepting a message. A HubSpot timeline claiming delivery we cannot evidence would
+          // spread the very confusion GAPS.md gap 2 is about.
+          if (rr.ok) {
+            hubspotLog.push(...phones.map(to => ({
+              to, from: r.sms_from || undefined, body: r.sms_copy || '',
+              sentAt: new Date().toISOString(), outcome: 'handed off to Telnyx',
+            })));
+          }
         } else {
           failed.push('No SMS route: the row has no Salesmsg sender and BULK_SEND_WEBHOOK_URL is unset');
         }
@@ -307,7 +332,21 @@ export default async function handler(req, res) {
           p_segment: r.segment || null,
         });
       }
-      results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined, recipients: summary, cooldown_overridden: cooling || undefined });
+      // AI-976: log to HubSpot LAST, and never let it change what happened.
+      //
+      // It runs after queue_mark_sent and log_market_blast deliberately. The messages are already
+      // gone; a CRM outage must not turn a delivered blast into a reported failure, delay the
+      // next row, or — worst — throw between the send and the mark and leave a row that sent but
+      // reads as unsent, which the hourly tick would then send again.
+      let hubspot;
+      if (hubspotLog.length && hubspotConfigured()) {
+        try {
+          hubspot = await logOutboundSmsBatch(hubspotLog);
+        } catch (e) {
+          hubspot = { error: String((e && e.message) || e) };
+        }
+      }
+      results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined, recipients: summary, cooldown_overridden: cooling || undefined, hubspot });
     }
 
     res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS } });
