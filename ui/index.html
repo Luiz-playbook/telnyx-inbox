@@ -3858,7 +3858,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             type: 'ok',
             title: `${queued.length} blast${queued.length===1?'':'s'} added to the queue`,
             lines: [
-              `Scheduled for ${ans.label} · added as ${ans.status === 'confirmed' ? 'confirmed' : 'pending'}.`,
+              ans.immediate
+                ? `Queued to go as soon as possible · confirmed.`
+                : `Scheduled for ${ans.label} · added as ${ans.status === 'confirmed' ? 'confirmed' : 'pending'}.`,
+              // "As soon as possible" queues; it does not fire the send itself. Said plainly,
+              // because the gap between "queued to go now" and "gone" is an hour at worst and
+              // nobody should have to guess which one just happened.
+              ans.immediate && !SENDING_PAUSED
+                ? `The hourly send picks these up on its next run — up to an hour away. Use Send now on a row to go immediately.`
+                : ``,
               // Says what will actually happen, which depends on the hold — not on the status.
               SENDING_PAUSED
                 ? `Sending is paused, so these will wait however they are marked.`
@@ -3905,12 +3913,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  <span class="text-xl leading-none text-[#e55608]">&#9889;</span>
                  <div class="font-extrabold text-lg text-[#133b49]">Add ${rows.length} to the queue</div>
                </div>
-               <div class="text-sm text-base-content/70 mb-3">Each one becomes its own blast, with its own copy and its own recipients. They are queued as <b>pending</b> — nothing sends until someone confirms it.</div>
+               <div class="text-sm text-base-content/70 mb-3">Each one becomes its own blast, with its own copy and its own recipients. Only a <b>confirmed</b> blast goes out on schedule &mdash; a pending one waits for a person.</div>
                <div class="pbw-panel mb-3">
+                 <!-- WHEN (Vhea, 2026-09-16). Was a date alone, pinned to 10:00 ET. Two things
+                      were missing: sending straight away, and any say over the hour — a market
+                      whose audience reads email at 07:00 was stuck with mid-morning. -->
                  <div class="pbw-row">
-                   <span class="pbw-label">Send on</span>
-                   <input type="date" data-day class="input input-bordered input-sm w-44" value="${day}" min="${todayYmd()}">
-                   <span class="text-xs text-base-content/50 ml-auto">10:00 US Eastern</span>
+                   <span class="pbw-label">Send</span>
+                   <select data-when class="select select-bordered select-sm w-44">
+                     <option value="schedule" selected>At a set time</option>
+                     <option value="now">As soon as possible</option>
+                   </select>
+                   <span class="text-xs text-base-content/50 ml-auto" data-whennote></span>
+                 </div>
+                 <div class="pbw-row mt-2" data-schedrow>
+                   <span class="pbw-label">On</span>
+                   <input type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${todayYmd()}">
+                   <input type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">
+                   <!-- The zone is stated because it is NOT the browser's. Every send slot is
+                        pinned to the house clock (etInstant) so one queue means one thing
+                        wherever it was filled in from. -->
+                   <span class="text-xs text-base-content/50 ml-auto">US Eastern</span>
                  </div>
                  <div class="pbw-rule"></div>
                  <!-- STATUS AT THE MOMENT OF ADDING (Vhea, 2026-09-16). Queueing something you
@@ -3945,23 +3968,66 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // the one thing someone pre-approving twenty blasts needs to be sure of.
           const note = ov.querySelector('[data-statusnote]');
           const sel  = ov.querySelector('[data-status]');
+          const when = ov.querySelector('[data-when]');
+          const whenNote = ov.querySelector('[data-whennote]');
+          const schedRow = ov.querySelector('[data-schedrow]');
+
+          // "As soon as possible" IMPLIES APPROVAL, so it forces Confirmed and says why rather
+          // than leaving a combination that cannot mean anything — a row asking to go now and
+          // simultaneously waiting for review is a contradiction the queue would have to resolve
+          // silently, and it would resolve it by not sending.
           const paintNote = () => {
+            const now = when.value === 'now';
+            // INLINE STYLE, NOT el.hidden. .pbw-row sets display:flex, and a class rule beats the
+            // browser's default [hidden]{display:none} — the row would have stayed visible with
+            // its inputs still reachable by Tab. An inline style is the one thing that wins here.
+            schedRow.style.display = now ? 'none' : 'flex';
+            if(now){
+              sel.value = 'confirmed';
+              sel.disabled = true;
+            } else {
+              sel.disabled = false;
+            }
+            whenNote.textContent = now
+              ? (SENDING_PAUSED ? 'Held — sending is paused' : 'Goes at the next hourly tick')
+              : '';
             note.textContent = sel.value === 'confirmed'
               ? (SENDING_PAUSED ? 'Approved, and still held — sending is paused' : 'Approved — goes at its slot')
               : 'Waits for review';
           };
           sel.addEventListener('change', paintNote);
+          when.addEventListener('change', paintNote);
           paintNote();
 
           ov.querySelector('[data-ok]').addEventListener('click', () => {
+            // AS SOON AS POSSIBLE means a slot already in the past, not a separate code path.
+            // queue-tick sends anything confirmed whose slot has passed, so a timestamp of now
+            // is picked up by the very next hourly tick — no special-casing, and the row behaves
+            // like every other row in the queue.
+            //
+            // It is NOT an instant send: this queues, it does not call the send endpoint. "Send
+            // now" on a queue row is the control that fires immediately, and conflating the two
+            // here would make a bulk Add to Queue capable of blasting twenty markets on one
+            // click. The label says "as soon as possible" for that reason.
+            if(when.value === 'now'){
+              done({ whenIso: new Date().toISOString(), status: 'confirmed', immediate: true,
+                     label: 'as soon as possible' });
+              return;
+            }
             const v = ov.querySelector('[data-day]').value || day;
             const [y,m,dd] = v.split('-').map(Number);
+            // Time of day, from the picker. Falls back to 10:00 — the old fixed slot — if the
+            // field is blank or unparseable, so a cleared input cannot produce midnight.
+            const tv = (ov.querySelector('[data-time]').value || '').match(/^(\d{1,2}):(\d{2})$/);
+            const hh = tv ? Math.min(23, Number(tv[1])) : 10;
+            const mi = tv ? Math.min(59, Number(tv[2])) : 0;
             // 10:00 US EASTERN, not the browser's 10:00 — the same rule and the same helper
             // Trigger Blast uses. queue-tick fires on the stored instant, so a browser-local
             // time would send a Texas blast at 04:00 local when queued from Europe.
-            done({ whenIso: new Date(etInstant(y, m, dd, 10, 0)).toISOString(),
+            done({ whenIso: new Date(etInstant(y, m, dd, hh, mi)).toISOString(),
                    status: sel.value,
-                   label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) });
+                   label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+                          + ` at ${String(hh).padStart(2,'0')}:${String(mi).padStart(2,'0')} ET` });
           });
           ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
           ov.addEventListener('click', e => { if(e.target===ov) done(null); });
