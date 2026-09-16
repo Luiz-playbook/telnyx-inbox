@@ -1,8 +1,24 @@
 // Auto-send tick for the daily blast queue (Vercel Cron).
 //
-// A queued blast sends when its scheduled slot arrives — confirmed or not (approval is
-// optional, not blocking). Placeholder/demo rows (is_placeholder=true) are NEVER auto-sent
-// — this endpoint is dormant until real blasts are queued.
+// TWO WAYS A BLAST GOES OUT, and they answer to different rules (Vhea, 2026-09-16):
+//
+//   AUTOMATIC, on the cron — the row must be CONFIRMED and its scheduled slot must have passed.
+//   MANUAL, "Send now" from the Queue — one named row, on an operator's explicit click, at once.
+//
+// APPROVAL IS NOW A GATE ON THE AUTOMATIC PATH. It was not: a row sent at its slot "confirmed or
+// not", and this file labelled that case scheduled-unactioned. That was survivable only because
+// every row was is_placeholder and nothing sent at all; migration 074 made rows real, and an
+// unread blast going out on a timer is not what "pending" means to anyone reading the Queue.
+//
+// So pending now means waiting for a person, and confirmed means approved to go at its slot.
+// That is the whole point of being able to add a row as confirmed: pre-approve it, and it goes
+// on schedule without anyone opening it again.
+//
+// MANUAL SEND IS NOT GATED BY STATUS, deliberately. Send now IS the approval — it is a person
+// naming one row and asking for it, which is a stronger signal than the flag. What it does not
+// skip is rejected and archived (see sendable): those mean no, however the send was triggered.
+//
+// Placeholder/demo rows (is_placeholder=true) are NEVER auto-sent.
 //
 // The old rule also fired any row left unactioned 48h after it was QUEUED, ignoring
 // scheduled_for. With the multi-day queue (four days lined up at once, migration 030) that
@@ -226,7 +242,11 @@ export default async function handler(req, res) {
                        && r.status !== 'rejected' && !r.archived_at;
     const due = onlyId
       ? q.filter(r => r.id === onlyId && sendable(r))
-      : q.filter(r => !r.is_placeholder && sendable(r) && new Date(r.scheduled_for).getTime() <= now);
+      // CONFIRMED ONLY on the cron. A pending row waits for a person however long its slot has
+      // been and gone — it is not late, it is unapproved. 'snoozed' is excluded by the same
+      // test, which is right: snoozing is a decision to not send yet.
+      : q.filter(r => !r.is_placeholder && sendable(r) && r.status === 'confirmed'
+                      && new Date(r.scheduled_for).getTime() <= now);
     if (onlyId && !due.length) {
       const row = q.find(r => r.id === onlyId);
       res.status(row ? 409 : 404).json({ error: row ? `blast is already ${row.status}` : 'blast not found', id: onlyId });
@@ -284,7 +304,12 @@ export default async function handler(req, res) {
         held.push({ id: r.id, title: r.title, market: mkt, reason: `game-${off}`, event_date: r.event_date });
         continue;
       }
-      const reason = onlyId ? 'manual-send-now' : (r.status === 'confirmed' ? 'scheduled' : 'scheduled-unactioned');
+      // 'scheduled-unactioned' is gone from the cron path — it cannot reach here unconfirmed any
+      // more. It survives for the manual path, where sending an unconfirmed row is legitimate
+      // and worth recording as exactly that.
+      const reason = onlyId
+        ? (r.status === 'confirmed' ? 'manual-send-now' : 'manual-send-now-unconfirmed')
+        : 'scheduled';
       let phones = [], emails = [];
       // p_segment null = the whole market, every segment — which is exactly what a row with no
       // segment means, and what every row queued before migration 050 is.

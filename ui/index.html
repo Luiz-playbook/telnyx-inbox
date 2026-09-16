@@ -988,7 +988,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             <!-- Explanatory note sits under the table: it's reference material, not something
                  to read before every glance at the queue. -->
-            <p class="text-xs text-base-content/50 leading-relaxed">What the agent thinks should go out, banded by send day. Unactioned blasts <strong>still go at their scheduled slot</strong> — approval is optional, not blocking. <strong>Confirm</strong> approves without changing the send time; <strong>Send now</strong> moves the slot to right now and fires the send immediately; <strong>Snooze</strong> pushes the schedule 7 days out and keeps it queued. Placeholder <span class="font-semibold">[TEST]</span> rows never send.</p>
+            <p class="text-xs text-base-content/50 leading-relaxed">What the agent thinks should go out, banded by send day. <strong>Only confirmed blasts send on schedule</strong> — a pending one waits for a person, however long its slot has been and gone. <strong>Confirm</strong> approves it to go at its existing send time; <strong>Send now</strong> sends one immediately whether or not it was confirmed, because asking for it IS the approval; <strong>Snooze</strong> pushes the schedule 7 days out and keeps it queued. Rejected and archived blasts never send by either route.</p>
           </div>
 
           <!-- ===== TEMPLATES ===== -->
@@ -3864,7 +3864,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 ? `Sending is paused, so these will wait however they are marked.`
                 : (ans.status === 'confirmed'
                     ? `These will go out at their slot without further action.`
-                    : `A pending blast also goes out at its slot — approval is optional, not a gate.`),
+                    : `Pending blasts wait for someone to confirm them — they will not go out on their own.`),
               confirmFailed ? `${confirmFailed} could not be confirmed — they are queued as pending, confirm them in the Queue.` : ``,
               skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
               past.length ? `${past.length} skipped — the game has already been played.` : ``,
@@ -5418,9 +5418,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // ONLY thing the row said, so a blast that quietly reached nobody looked identical to one
       // still waiting its turn. Every unsent branch below asks this and changes tense.
       const slotPassed = r => !!r.scheduled_for && new Date(r.scheduled_for).getTime() < Date.now();
-      const slotLine = r => slotPassed(r)
-        ? `<div class="text-[11px] text-[#c94d07] font-semibold mt-0.5">was due ${esc(whenLabel(r.scheduled_for))}</div>`
-        : `<div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
+      // "sends <when>" IS A PROMISE, and only a confirmed row can keep it. Since approval became
+      // a gate (2026-09-16) a pending row does not send at its slot — it waits — so saying
+      // "sends Tue 10am" on one would be the screen stating the old rule while the server
+      // follows the new one. Pending rows say what they are waiting for instead.
+      const slotLine = (r, gated) => gated
+        ? (slotPassed(r)
+            ? `<div class="text-[11px] text-[#c94d07] font-semibold mt-0.5">slot passed ${esc(whenLabel(r.scheduled_for))} — confirm to send</div>`
+            : `<div class="text-[11px] text-base-content/50 mt-0.5">slot ${esc(whenLabel(r.scheduled_for))} — confirm to send</div>`)
+        : slotPassed(r)
+          ? `<div class="text-[11px] text-[#c94d07] font-semibold mt-0.5">was due ${esc(whenLabel(r.scheduled_for))}</div>`
+          : `<div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
 
       function statusCell(r){
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
@@ -5441,17 +5449,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(r.status!=='rejected' && !r.archived_at && !hasAudience(r)){
           const which = [ r.email && reachOf(r,'email')===0 ? 'email' : '', r.sms && reachOf(r,'sms')===0 ? 'SMS' : '' ].filter(Boolean).join(' and ');
           return `<span class="badge badge-error badge-sm text-white" title="No ${esc(which||'recipients')} resolve for ${esc(r.state_code||'this market')}${r.segment?' · '+esc(r.segment):''}. The hourly send will find nobody, deliver nothing, and leave this row untouched — it will not be marked sent.">No audience</span>`
-               + slotLine(r);
+               // Gated on the same rule as everywhere else: an unconfirmed row with no audience
+               // is waiting for a person AND has nobody to reach, and the sub-line should not
+               // quietly promise a send on either count.
+               + slotLine(r, r.status !== 'confirmed');
         }
         if(r.status==='confirmed')return `<span class="badge badge-success badge-sm text-white">Confirmed</span>${slotLine(r)}`;
-        if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] ${slotPassed(r)?'text-[#c94d07] font-semibold':'text-base-content/50'} mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))}</div>`;
+        // Snoozed is unapproved too, so it does not send at the new slot either — the snooze
+        // moved the date, it did not approve the blast.
+        if(r.status==='snoozed')  return `<span class="badge badge-info badge-sm" title="Pushed out, and still unapproved — confirm it when the new slot suits.">Snoozed${r.snooze_count>1?' ×'+r.snooze_count:''}</span><div class="text-[11px] ${slotPassed(r)?'text-[#c94d07] font-semibold':'text-base-content/50'} mt-0.5">&rarr; ${esc(whenLabel(r.scheduled_for))} — confirm to send</div>`;
         // The reason is shown, not just the fact — it is why the row was kept at all, and it is
         // what the decider is being fed. Seeing it here is how you notice it says "n/a".
         if(r.status==='rejected') return `<span class="badge badge-error badge-sm text-white">Rejected</span>`
           + `<div class="text-[11px] text-base-content/50 mt-0.5">${r.reject_note ? esc(clip(r.reject_note, 40)) : 'no reason given'}</div>`;
-        // Approval stays optional — an unactioned row still goes at its slot, not 48h after
-        // it was queued (a blast scheduled 4 days out must not fire early).
-        return `<span class="badge badge-warning badge-sm">Pending</span>${slotLine(r)}`;
+        // Pending means WAITING FOR A PERSON (Vhea, 2026-09-16). It used to mean "will send at
+        // its slot, approved or not" — api/queue-tick.js called that scheduled-unactioned — which
+        // was survivable only while every row was a placeholder and nothing sent at all. Since
+        // migration 074 rows are real, and an unread blast going out on a timer is not what this
+        // badge says to anyone looking at it. Confirmed rows send on schedule; these wait.
+        // gated: this row will NOT go at its slot until someone confirms it.
+        return `<span class="badge badge-warning badge-sm" title="Waiting for a person. A pending blast does not send on schedule — confirm it to let it go at its slot, or use Send now.">Pending</span>${slotLine(r, true)}`;
       }
 
       // THE CHIP AND ITS SUB-LINE, SEPARATELY. Actions was placed next to statusCell(), which
