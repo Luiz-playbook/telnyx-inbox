@@ -40,6 +40,56 @@ export default async function handler(req, res) {
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn, body) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
 
+  // EVERY RECIPIENT, NOT THE FIRST THOUSAND.
+  //
+  // PostgREST caps any single response at 1,000 rows. market_phones / market_emails were called
+  // once and whatever came back was treated as the audience, so a blast to Minnesota resolved
+  // 1,000 of its 3,753 numbers, sent to those, marked the row sent and put the market on a
+  // 14-day cooldown. The other 2,753 people were never contacted and nothing said so — the UI
+  // reads its counts from market_counts, which queries the table directly and is not capped, so
+  // the operator approved "3,753 phone numbers" and 1,000 were reached.
+  //
+  // Measured across the live markets before this fix: 18 of 52 markets truncated on phone and
+  // 22 on email — 15,853 of 45,855 numbers and 23,890 of 56,331 addresses silently unreachable.
+  //
+  // Migration 054 was meant to have removed this. It removed the `limit 1000` written inside the
+  // SQL; it could not remove the cap sitting one layer above, in PostgREST itself. Two caps, one
+  // fixed, and the second kept doing the same job unnoticed.
+  //
+  // THE SAME BUG WAS ALREADY FOUND AND FIXED ONCE, in the Offers tab (ui/index.html,
+  // fetchAllEvents) — where it presented as NFL and NHL missing from the table because the first
+  // 1,000 rows were all MLB. The fix here is the same shape, so the two read alike.
+  //
+  // WHY QUERY PARAMS AND NOT A Range HEADER: Range is ignored on an RPC POST, as the Offers-tab
+  // comment records. limit/offset go on the URL.
+  //
+  // OFFSET PAGING IS SAFE HERE ONLY BECAUSE BOTH FUNCTIONS END IN AN ORDER BY (migration 054:
+  // `order by mc.phone` / `order by mc.email`). Paging an unordered result loses rows — Postgres
+  // may return them differently per request, so a row can slip between pages. Ties on the same
+  // value can still shuffle across a page boundary, but every row sharing a value is contiguous
+  // in the ordering, so a shuffle can only repeat a value, never lose a distinct one; the caller
+  // dedupes through a Set. Remove either ORDER BY and this becomes lossy again.
+  //
+  // A FAILED PAGE THROWS. It must never return what it has so far: a partial audience that reads
+  // as a complete one is the exact failure this function exists to end, and it would be worse
+  // than the bug — the row would be marked sent for an audience nobody chose.
+  const PAGE = 1000, MAX_ROWS = 100000;   // MAX_ROWS is a runaway guard, not an expected ceiling
+  async function rpcAll(fn, body) {
+    const out = [];
+    for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+      const url = `${supaUrl}/rest/v1/rpc/${fn}?limit=${PAGE}&offset=${offset}`;
+      const r = await fetch(url, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
+      if (!r.ok) throw new Error(`${fn} page at offset ${offset} failed: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+      const page = await r.json();
+      if (!Array.isArray(page)) throw new Error(`${fn} returned ${typeof page} at offset ${offset}`);
+      out.push(...page);
+      // A short page is the last page. An exactly-full final page costs one extra empty request,
+      // which is the right trade against guessing the total up front.
+      if (page.length < PAGE) return out;
+    }
+    throw new Error(`${fn} exceeded ${MAX_ROWS} rows — refusing to send to a guessed audience`);
+  }
+
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
   const onlyId = body && typeof body.id === 'string' ? body.id : null;
@@ -183,8 +233,9 @@ export default async function handler(req, res) {
       // p_segment null = the whole market, every segment — which is exactly what a row with no
       // segment means, and what every row queued before migration 050 is.
       const seg = r.segment || null;
-      if (r.sms && r.state_code)   { const d = await (await rpc('market_phones', { p_code: r.state_code, p_segment: seg })).json(); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
-      if (r.email && r.state_code) { const d = await (await rpc('market_emails', { p_code: r.state_code, p_segment: seg })).json(); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
+      // rpcAll, not rpc: see the note on the helper. A single call returned at most 1,000.
+      if (r.sms && r.state_code)   { const d = await rpcAll('market_phones', { p_code: r.state_code, p_segment: seg }); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
+      if (r.email && r.state_code) { const d = await rpcAll('market_emails', { p_code: r.state_code, p_segment: seg }); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
 
       // sent = channels that actually delivered; failed = channels that did not. The two were
       // one list, so "CakeMail failed: …" counted as a send: the row was marked sent, the
