@@ -619,6 +619,8 @@
                 <input id="tb-through" type="date">
               </div>
               <div class="flex items-center gap-2 flex-wrap justify-end">
+                <!-- Disabled state is applied in script (see THE SEND HOLD), not baked in here,
+                     so lifting the hold is one constant rather than a markup edit as well. -->
                 <button id="trigger-blast" class="btn btn-warning btn-sm gap-1 text-white hover:text-white">&#9889; Trigger Blast</button>
                 <!-- Runs the same job as the 12-hourly cron. It costs money per run, so the
                      endpoint's own 6h cooldown is respected rather than forced by default. -->
@@ -1662,6 +1664,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // The instant at which the ET wall clock reads y-m-d hh:mm. Two passes: the first guesses
     // the offset from the wall time, the second re-reads it at the instant that guess lands on,
     // so a time near a DST boundary resolves against the offset actually in force then.
+    // ===== THE SEND HOLD (Vhea, 2026-09-16) =====
+    //
+    // Nothing leaves the building while this is true. Read by the Queue's Send now, by Trigger
+    // Blast, and mirrored by SENDING_PAUSED in api/queue-tick.js which is the half that actually
+    // stops the hourly cron.
+    //
+    // WHY IT IS ON. Migration 074 made queued rows real for the first time since June, and the
+    // same day it emerged that approval is not a gate: queue-tick sends a row at its slot
+    // "confirmed or not" (its own label for it is scheduled-unactioned). So anything queued now
+    // would go out on schedule whether or not a person had read it. The hold buys the time to
+    // rebuild the queue deliberately and to decide whether approval SHOULD be mandatory.
+    //
+    // TO LIFT IT: set this to false AND SENDING_PAUSED in api/queue-tick.js to false, in one
+    // commit. Either alone leaves the product lying to somebody — a live cron behind greyed
+    // buttons, or dead buttons over a cron that is willing.
+    //
+    // Hardcoded, not env-driven, and deliberately unlike AI-959's SEND_DISABLED. That one
+    // defaults to false so a missing variable cannot silently stop production sending. This one
+    // fails CLOSED: a deliberate hold must survive a config that did not arrive, and lifting it
+    // should be a visible commit rather than a dashboard toggle nobody can find later.
+    const SENDING_PAUSED = true;
+
     function etInstant(y, m, d, hh = 0, mm = 0){
       const wall = Date.UTC(y, m-1, d, hh, mm, 0);
       const ts = wall - etOffset(wall);
@@ -3797,6 +3821,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(ins.error) throw new Error(ins.error.message);
           const queued = ins.data || [];
 
+          // CONFIRM AS A SECOND STEP, not a new argument to the insert. queue_enqueue_test hard-
+          // codes status 'pending' and teaching it another status would mean another migration
+          // for a function three callers share; queue_confirm already exists and is the same RPC
+          // the Queue's own Confirm button uses, so a row pre-approved here is indistinguishable
+          // from one approved by hand.
+          //
+          // Reported rather than thrown: the rows ARE queued. A failure here leaves them pending,
+          // which is the safe direction and fixable with one click in the Queue.
+          let confirmFailed = 0;
+          if(ans.status === 'confirmed' && queued.length){
+            for(const row of queued){
+              const c = await sb.rpc('queue_confirm', { p_id: row.id });
+              if(c.error) confirmFailed++;
+            }
+          }
+
           // Copy, from the same endpoint Trigger Blast uses. A failure is REPORTED, not thrown:
           // the rows are queued either way and their copy is editable in the Queue.
           let drafted = null;
@@ -3818,7 +3858,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             type: 'ok',
             title: `${queued.length} blast${queued.length===1?'':'s'} added to the queue`,
             lines: [
-              `Scheduled for ${ans.label}. Pending review — nothing sends until someone confirms it.`,
+              `Scheduled for ${ans.label} · added as ${ans.status === 'confirmed' ? 'confirmed' : 'pending'}.`,
+              // Says what will actually happen, which depends on the hold — not on the status.
+              SENDING_PAUSED
+                ? `Sending is paused, so these will wait however they are marked.`
+                : (ans.status === 'confirmed'
+                    ? `These will go out at their slot without further action.`
+                    : `A pending blast also goes out at its slot — approval is optional, not a gate.`),
+              confirmFailed ? `${confirmFailed} could not be confirmed — they are queued as pending, confirm them in the Queue.` : ``,
               skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
               past.length ? `${past.length} skipped — the game has already been played.` : ``,
               drafted && !drafted.error
@@ -3866,6 +3913,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    <span class="text-xs text-base-content/50 ml-auto">10:00 US Eastern</span>
                  </div>
                  <div class="pbw-rule"></div>
+                 <!-- STATUS AT THE MOMENT OF ADDING (Vhea, 2026-09-16). Queueing something you
+                      have already decided on and then opening every row to confirm it is two
+                      jobs where there is one. Bulk-adding twenty rows made that obvious.
+                      Pending stays the default: pre-confirming is the deliberate choice. -->
+                 <div class="pbw-row">
+                   <span class="pbw-label">Add as</span>
+                   <select data-status class="select select-bordered select-sm w-44">
+                     <option value="pending" selected>Pending — review later</option>
+                     <option value="confirmed">Confirmed — already approved</option>
+                   </select>
+                   <span class="text-xs text-base-content/50 ml-auto" data-statusnote></span>
+                 </div>
+                 <div class="pbw-rule"></div>
                  <div class="text-xs text-base-content/60 leading-relaxed">
                    ${list}
                    ${rows.length > 8 ? `<div class="text-base-content/40 mt-1">…and ${rows.length - 8} more</div>` : ''}
@@ -3879,6 +3939,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
              </div>`;
           const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
           const onKey = e => { if(e.key==='Escape') done(null); };
+
+          // What each choice actually means is stated as it is made. "Confirmed" does NOT mean
+          // "send now" — and while the hold is on it does not mean "will send" either, which is
+          // the one thing someone pre-approving twenty blasts needs to be sure of.
+          const note = ov.querySelector('[data-statusnote]');
+          const sel  = ov.querySelector('[data-status]');
+          const paintNote = () => {
+            note.textContent = sel.value === 'confirmed'
+              ? (SENDING_PAUSED ? 'Approved, and still held — sending is paused' : 'Approved — goes at its slot')
+              : 'Waits for review';
+          };
+          sel.addEventListener('change', paintNote);
+          paintNote();
+
           ov.querySelector('[data-ok]').addEventListener('click', () => {
             const v = ov.querySelector('[data-day]').value || day;
             const [y,m,dd] = v.split('-').map(Number);
@@ -3886,6 +3960,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // Trigger Blast uses. queue-tick fires on the stored instant, so a browser-local
             // time would send a Texas blast at 04:00 local when queued from Europe.
             done({ whenIso: new Date(etInstant(y, m, dd, 10, 0)).toISOString(),
+                   status: sel.value,
                    label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) });
           });
           ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
@@ -4811,8 +4886,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return { ok:true, evaluated: all.length, llm:false, picks, vetoed:[], skipBy, plan, per_day: perDay, through, instructions: instructions || null, instructions_applied: false };
       }
 
+      // THE SEND HOLD, applied to Trigger Blast. Greyed, disabled and re-labelled, because a
+      // button that looks live and does nothing is worse than one that says it is off.
+      //
+      // Trigger Blast is held rather than merely warned about because it is the one control that
+      // fills the queue in bulk — and since migration 074 a queued row sends at its slot with or
+      // without anyone confirming it. It is also the expensive one: a run calls the model.
+      (function holdTriggerBlast(){
+        const b = el('trigger-blast');
+        if(!b || !SENDING_PAUSED) return;
+        b.disabled = true;
+        b.classList.add('btn-disabled', 'opacity-50');
+        b.classList.remove('btn-warning', 'text-white', 'hover:text-white');
+        b.innerHTML = '&#9889; Trigger Blast <span class="text-[10px] font-normal">(paused)</span>';
+        b.title = 'Sending is paused. Trigger Blast fills the queue in bulk and a queued blast '
+                + 'goes out at its slot on its own, so it is held closed with the rest of sending. '
+                + 'Add to Queue still works — rows will wait.';
+      })();
+
       el('trigger-blast')?.addEventListener('click', async () => {
         const btn = el('trigger-blast');
+        // Belt and braces: the button is disabled above, but a handler that would still fire a
+        // paid run if something re-enabled it is not a hold, it is a hope.
+        if(SENDING_PAUSED){
+          pbToast({ type:'err', title:'Sending is paused',
+            lines:['Trigger Blast is held closed while the queue is rebuilt. Add to Queue still works, and those rows will wait.'] });
+          return;
+        }
         if(!sb){ pbToast({ type:'err', title:'Cannot reach the decider', lines:['config.js is not filled in.'] }); return; }
         // Seeded from the hidden inputs, which carry the last run's choice and throughInput()'s
         // roll-forward. The dialog edits them and writes back on OK, so the settings persist
@@ -5083,10 +5183,36 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // while production keeps sending. Set SEND_DISABLED=true on Vercel's Preview scope.
       // Defaults to FALSE — an env var that fails to arrive must not silently stop production
       // sending, which is the more dangerous of the two failure directions here.
-      const SEND_NOW_DISABLED = !!(window.INBOX_CONFIG && window.INBOX_CONFIG.SEND_DISABLED);
-      const SEND_NOW_DISABLED_TIP = 'Send now is turned off in this environment. Sending is '
-        + 'enabled in production; this build has SEND_DISABLED set so a click here cannot put a '
-        + 'real blast on the wire.';
+      //
+      // SENDING_PAUSED (Vhea, 2026-09-16) sits ON TOP of that, everywhere including production.
+      //
+      // Migration 074 made queued rows real for the first time since June. The same day it came
+      // out that approval is NOT a gate — api/queue-tick.js sends a row at its scheduled slot
+      // "confirmed or not", and labels the case scheduled-unactioned. So the moment 074 landed,
+      // anything queued would go out on schedule whether or not a person had looked at it.
+      //
+      // Sending is therefore held closed while the queue is rebuilt deliberately: queue as much
+      // as you like, decide each row's status, and nothing leaves until this is flipped.
+      //
+      // HARDCODED RATHER THAN ENV-DRIVEN, on purpose and unlike AI-959's flag. AI-959 defaults
+      // to false so a missing variable cannot silently stop production sending — the right
+      // default for an environment switch. This is the opposite kind of switch: a deliberate
+      // hold that must survive a config that did not arrive, a new preview, or a Vercel setting
+      // nobody remembers. It fails CLOSED, and turning it off has to be a visible commit.
+      //
+      // THE UI IS NOT THE LOCK. Greying a button stops a person, not the hourly cron. The real
+      // hold is the matching constant in api/queue-tick.js; this is its visible half, so the
+      // screen tells the truth about what the server will do. Flip BOTH, or neither.
+      // SENDING_PAUSED is declared at top level (search: "THE SEND HOLD") because Trigger Blast
+      // lives in a different IIFE and must read the same value. One switch, two screens.
+      const SEND_NOW_DISABLED = SENDING_PAUSED || !!(window.INBOX_CONFIG && window.INBOX_CONFIG.SEND_DISABLED);
+      const SEND_NOW_DISABLED_TIP = SENDING_PAUSED
+        ? 'Sending is paused. The queue is being rebuilt, and nothing goes out — the hourly send '
+          + 'is held closed on the server too, not just here. Queue and confirm as normal; the '
+          + 'rows will wait.'
+        : 'Send now is turned off in this environment. Sending is '
+          + 'enabled in production; this build has SEND_DISABLED set so a click here cannot put a '
+          + 'real blast on the wire.';
 
       // False until the first get_campaign_queue call comes back. render() can run before that
       // (refreshTestMode resolving, a filter change), and an empty QUEUE at that point means

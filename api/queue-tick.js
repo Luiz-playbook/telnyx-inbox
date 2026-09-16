@@ -32,6 +32,28 @@ export const config = { maxDuration: 60 };
 const normPhone = p => { let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; };
 const validPhone = p => /^\+\d{10,15}$/.test(p||'');
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
+
+// ===== THE SEND HOLD (Vhea, 2026-09-16) =====
+//
+// Nothing leaves the building while this is true. This is the half that matters: the greyed
+// buttons in ui/index.html stop a person, this stops the hourly cron, and the cron is what
+// would actually have sent.
+//
+// WHY IT IS ON. Migration 074 made queued rows real for the first time since June — before it,
+// every row was is_placeholder and the send was dormant whatever anyone pressed. The same day it
+// emerged that approval is NOT a gate: a row goes at its scheduled slot "confirmed or not", and
+// this file's own label for that case is scheduled-unactioned. Together those mean anything
+// queued now would go out on schedule with nobody having read it. The hold buys the time to
+// rebuild the queue deliberately, and to decide whether approval SHOULD be mandatory.
+//
+// IT REFUSES EVERY PATH, cron and manual Send now alike. A hold that a button can step around is
+// not a hold, and "I only pressed Send now on one" is exactly how a pause gets discovered to
+// have never been one.
+//
+// TO LIFT IT: set this to false AND SENDING_PAUSED in ui/index.html to false, in the same
+// commit. Either alone leaves the product lying to somebody — a live cron behind dead buttons,
+// or greyed buttons over a cron that is willing.
+const SENDING_PAUSED = true;
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
@@ -163,6 +185,18 @@ export default async function handler(req, res) {
   // 1679383 is gone from this list with cole@ — the sender still exists in CakeMail, but no
   // option sends from it, and reporting a key for an account nothing uses is just noise.
   const CAKEMAIL_ACCOUNTS = ['1679456', '1761047'].filter(id => !!cakemailKey(id));
+
+  // The hold, checked before the queue is even read. Nothing is resolved, no recipients are
+  // fetched, no webhook is called. 200 rather than an error: a paused system is working as
+  // configured, and a cron that logs a failure every hour trains everyone to ignore it.
+  if (SENDING_PAUSED) {
+    res.status(200).json({
+      ok: true, paused: true, sent: 0, results: [],
+      note: 'Sending is paused (SENDING_PAUSED in api/queue-tick.js). No blast was resolved or '
+          + 'delivered. Queued rows are untouched and will send once the hold is lifted.',
+    });
+    return;
+  }
 
   try {
     const q = await (await rpc('get_campaign_queue')).json();
