@@ -636,10 +636,26 @@
               </div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <!-- BULK BAR (AI-964). Same shell, same classes and the same rules as the Queue's
+                   #q-bulk: hidden until something is ticked, inside the panel and above the
+                   scroll box so it cannot scroll away from the checkboxes it describes. Copied
+                   deliberately — two tables that select rows should not feel like two products. -->
+              <div id="cbs-bulk" class="hidden items-center gap-3 flex-wrap px-4 py-2.5 border-b border-base-300 bg-[#fdeee4]">
+                <span class="text-sm font-bold text-[#133b49]"><span id="cbs-bulk-n">0</span> selected</span>
+                <span id="cbs-bulk-off" class="text-xs text-base-content/60"></span>
+                <div class="ml-auto flex items-center gap-2">
+                  <button id="cbs-bulk-clear" class="btn btn-xs btn-ghost">Clear</button>
+                  <button id="cbs-bulk-add" class="btn btn-xs btn-warning text-white hover:text-white">Add to Queue</button>
+                </div>
+              </div>
               <div class="overflow-auto max-h-[calc(100vh-280px)]">
                 <table class="camp-table w-full min-w-[1100px]">
                   <thead class="sticky top-0 z-10">
                     <tr class="border-b border-base-300 bg-base-100">
+                      <!-- Narrow, and it owns its own column rather than riding inside Event:
+                           a checkbox sharing a cell with a link is a mis-click waiting to
+                           happen, and the Queue already puts it in a column of its own. -->
+                      <th class="w-8"><input type="checkbox" id="cbs-all" class="checkbox checkbox-xs align-middle" title="Select every row on this page" aria-label="Select all on this page"></th>
                       <th>Event</th>
                       <!-- Sort lives on the column itself. Events with no price yet always sink
                            to the bottom — an unknown price is not the cheapest. -->
@@ -654,7 +670,7 @@
                       <th>Phone #s</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="8" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="8" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="8" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -3051,6 +3067,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const reachCell = n => (Number(n)||0)
         ? fmt(n)
         : '<span class="text-[#c94d07] font-semibold" title="No recipients resolve for this market">0</span>';
+      // AI-964 / AI-1003. Multi-select, and the queue rows it produces.
+      //
+      // WHY THIS TAB AND NOT THE OTHER ONE. A first attempt at "Add to Queue from the offers
+      // list" was built in the legacy campaignsModule below, which reads icp_events. That module
+      // is inert — its #rows markup was removed, so its IIFE returns at the guard and none of it
+      // has ever run. It also had to MATCH an icp_events offer to a fixture by team name and
+      // date, and measured live that resolved 5 offers out of 97.
+      //
+      // Here there is nothing to match. event_targets() rows already carry the events_master
+      // event_id, which is the same id campaign_queue stores, so an offer IS a queue row minus a
+      // date. That is what AI-1003 was about, and why it blocked this: with the two sides on one
+      // spine, the whole matching layer disappears.
+      //
+      // KEY = event_id|segment, deliberately: it is queue_enqueue_test's own de-dupe key and it
+      // is what one queue row means. Anything coarser (event alone) would make three segment
+      // rows of the same game indistinguishable in a selection.
+      const pickKey = e => `${e.event_id || ''}|${e.segment || ''}`;
+      const picked = new Set();
+      // Keys already live in the queue. Read once per load; the RPC would skip them anyway, but
+      // offering a checkbox that silently does nothing is worse than not offering one.
+      let QUEUED = new Set();
+      let lastShown = [];          // the rows currently rendered, for the header checkbox
       let ROWS = [], REGIONS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '', segF = '';
       let dateFromF = '', dateToF = '';
       let page = 1, pageSize = 50;   // 0 = show everything
@@ -3127,6 +3165,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(page > pages) page = pages;
         const start = (page - 1) * size;
         const shown = view.slice(start, start + size);
+        lastShown = shown;
         const rng = el('cbs-range');
         if(rng) rng.textContent = items.length
           ? `${(start + 1).toLocaleString()}–${Math.min(start + size, items.length).toLocaleString()} of ${items.length.toLocaleString()}${pageSize > 0 ? ` · page ${page} of ${pages}` : ''}`
@@ -3142,13 +3181,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const k = lg ? known.find(p => p[0] === lg) : null;
           const hasRows = lg && ROWS.some(e => String(e.league || '').toLowerCase() === lg);
           tb.innerHTML = (k && !hasRows)
-            ? '<tr><td colspan="8" class="text-center py-10">'
+            ? '<tr><td colspan="9" class="text-center py-10">'
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
               + (k[3] ? 'The schedule loads on its own, once a week &mdash; these will appear within a week of the fixtures being published.'
                       : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
-            : '<tr><td colspan="8" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
+            : '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
           return;
         }
         const today = todayYmd();
@@ -3166,7 +3205,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const sendTag = !testOn ? ''
             : allowed ? ' <span class="badge badge-success badge-sm text-white align-middle">&#10003; sendable</span>'
                       : ' <span class="badge badge-ghost badge-sm align-middle" title="Test mode — this market is blocked, a send resolves to 0 recipients">&#128683; blocked</span>';
+          // AI-964. The selection key is event + segment, which is EXACTLY the key
+          // queue_enqueue_test de-dupes on and exactly what one queue row is. So a ticked row
+          // here maps one-to-one onto a row there, with no matching or guessing in between —
+          // this is what made rebuilding it in this tab so much smaller than the first attempt.
+          const pk = pickKey(e);
+          // A row already in the queue cannot be queued again (the RPC would skip it), so it is
+          // shown as already handled rather than offered and silently ignored.
+          const already = QUEUED.has(pk);
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
+          <td>${already
+            ? '<span class="text-[#067523] font-bold" title="Already in the queue for this segment">&#10003;</span>'
+            : `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-pick="${esc(pk)}" ${picked.has(pk)?'checked':''} aria-label="Select this offer">`}</td>
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}${rescanBtn(e)}</div></td>
           <td>${e.ticket_price!=null?`${window.__priceLink ? window.__priceLink(e) : `<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}`+`${window.__staleTag?.(e)||''}`+`${window.__priceManualBadge?.(e)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A game with no price is the one MOST worth an edit, not the least: price-refresh
@@ -3181,6 +3231,37 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <td>${reachCell(e.phones)}</td>
         </tr>`;
         }).join('');
+        paintPick();
+      }
+
+      // AI-964. The bulk bar, mirroring the Queue's paintBulk — including the indeterminate
+      // header checkbox, which matters: without it a part-selected page shows an empty box that
+      // reads as "nothing selected here" and invites a click that clears everything.
+      function paintPick(){
+        const bar = el('cbs-bulk'); if(!bar) return;
+        const n = picked.size;
+        bar.classList.toggle('hidden', n === 0);
+        bar.classList.toggle('flex',   n > 0);
+        const nEl = el('cbs-bulk-n'); if(nEl) nEl.textContent = n;
+
+        // Only rows that are actually selectable count toward the header box — an already-queued
+        // row renders a tick, not a checkbox, so treating it as "unselected" would leave the box
+        // permanently indeterminate on a page where everything selectable is ticked.
+        const box = el('cbs-all');
+        if(box){
+          const keys = lastShown.map(pickKey).filter(k => !QUEUED.has(k));
+          const on = keys.filter(k => picked.has(k)).length;
+          box.checked = keys.length > 0 && on === keys.length;
+          box.indeterminate = on > 0 && on < keys.length;
+          box.disabled = keys.length === 0;
+        }
+
+        // A selection reaching past this page has to say so, or acting on it looks like it did
+        // more than was asked. Same rule as the Queue.
+        const here = new Set(lastShown.map(pickKey));
+        const off = [...picked].filter(k => !here.has(k)).length;
+        const offEl = el('cbs-bulk-off');
+        if(offEl) offEl.textContent = off ? `${off} on other pages` : '';
       }
       // Re-read one game from the schedule feed it came from (Marx, 2026-08-07). It lives here
       // rather than on the Queue because the question is about the FIXTURE, not about a blast —
@@ -3545,11 +3626,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="8" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
-        const [ev, rg] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions') ]);
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="8" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        const [ev, rg, q] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue') ]);
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
+        // AI-964. What is already queued, so those rows show a tick instead of a checkbox.
+        // NOT fatal if it fails: the table is about offers, and queue_enqueue_test de-dupes
+        // server-side regardless, so the worst case is a checkbox that turns out to be a no-op.
+        // 'sent' and 'rejected' rows do NOT count as queued — a rejected blast gave its slot
+        // back and the same game may legitimately be queued again (migration 048).
+        QUEUED = new Set(((q && !q.error ? q.data : null) || [])
+          .filter(r => r.event_id && r.status !== 'sent' && r.status !== 'rejected')
+          .map(r => `${r.event_id}|${r.segment || ''}`));
         // A row is an event × segment, so events must be counted distinctly — the row count
         // would read three times too high.
         const events = new Set(ROWS.map(e => e.event_id).filter(Boolean));
@@ -3622,6 +3711,190 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('cbs-pagesize')?.addEventListener('change', e => { pageSize = Number(e.target.value) || 0; page = 1; render(); });
       el('cbs-prev')?.addEventListener('click', () => { if(page > 1){ page--; render(); } });
       el('cbs-next')?.addEventListener('click', () => { page++; render(); });
+
+      // ===== AI-964: multi-select Add to Queue =====
+      //
+      // SELECTION SURVIVES FILTERING AND PAGING, and is deliberately never pruned when the
+      // filters change. The Queue prunes (a bulk action there mutates rows you may no longer be
+      // looking at, which is how a bulk control does something nobody asked for). Here the
+      // opposite is right: picking three hockey games, switching the filter to football and
+      // picking two more is a REASON to have multi-select, not an accident. The count and the
+      // "N on other pages" note keep it honest, and the confirm dialog lists every row by name
+      // before anything is written.
+
+      // Ticking a row. Delegated, because the tbody is re-rendered on every filter keystroke.
+      el('cbs-rows')?.addEventListener('change', ev => {
+        const box = ev.target.closest('[data-pick]');
+        if(!box) return;
+        const k = box.getAttribute('data-pick');
+        if(box.checked) picked.add(k); else picked.delete(k);
+        paintPick();
+      });
+
+      // Header box: this page only, and only rows that can actually be selected.
+      el('cbs-all')?.addEventListener('change', ev => {
+        const keys = lastShown.map(pickKey).filter(k => !QUEUED.has(k));
+        if(ev.target.checked) keys.forEach(k => picked.add(k));
+        else keys.forEach(k => picked.delete(k));
+        render();
+      });
+
+      el('cbs-bulk-clear')?.addEventListener('click', () => { picked.clear(); render(); });
+
+      el('cbs-bulk-add')?.addEventListener('click', async () => {
+        const btn = el('cbs-bulk-add');
+        // Resolved from ROWS, not from lastShown: the selection may reach across pages and
+        // filters, and the rows behind it must all be found or the count in the dialog would be
+        // a promise the write cannot keep.
+        const byKey = new Map(ROWS.map(e => [pickKey(e), e]));
+        const rows = [...picked].map(k => byKey.get(k)).filter(Boolean);
+        if(!rows.length){ picked.clear(); render(); return; }
+
+        // A game that has already been played cannot be blasted — the copy names a date in the
+        // past and queue-tick holds the row back anyway. Caught here so it is explained once, up
+        // front, rather than as a row that silently never sends.
+        const today = todayYmd();
+        const past = rows.filter(e => e.event_date && e.event_date < today);
+        const live = rows.filter(e => !(e.event_date && e.event_date < today));
+        if(!live.length){
+          pbToast({ type:'err', title:'Those games have already been played',
+            lines:['A blast cannot be queued for a game in the past.'] });
+          return;
+        }
+
+        const ans = await addOffersDialog({ rows: live, skipped: past.length });
+        if(!ans) return;
+
+        btn.disabled = true;
+        const orig = btn.textContent;
+        btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Queueing…';
+        try {
+          const payload = live.map(e => ({
+            scheduled_for: ans.whenIso,
+            // Matches the Queue's own title convention — "<away> at <home> — <market> · <segment>"
+            // — so a row added here is indistinguishable from one Trigger Blast produced. No
+            // '[TEST]' prefix: test mode is off and labelling a real queued blast as a test is
+            // the kind of small lie that outlives whoever wrote it.
+            title: evTitle(e) + ' — ' + (e.state_name || prettyMetro(e.market_key || '') || '') + (e.segment ? ' · ' + e.segment : ''),
+            // state_code, NOT market_key. market_phones/market_emails look up
+            // market_contacts.code, which is the two-letter state — 'MN'. market_key is the metro
+            // slug ('ottawa') and resolves to nobody. The dead first attempt used market_key here;
+            // this tab carries both fields, which is one more reason it belongs in this one.
+            state_code: e.state_code || null,
+            state_name: e.state_name || null,
+            event_id: e.event_id || null,
+            segment: e.segment || null,
+            email: true, sms: true,
+            // Reach as this tab measured it. Since migration 073 these are distinct sendable
+            // recipients, so what the operator saw on the row is what the queue will record.
+            email_count: Number(e.emails) || 0,
+            phone_count: Number(e.phones) || 0,
+            sms_count:   Number(e.phones) || 0,
+            // email_copy / sms_copy left null on purpose — /api/queue-draft writes real copy from
+            // Cole's templates below, exactly as Trigger Blast does.
+          }));
+          const ins = await sb.rpc('queue_enqueue_test', { p_rows: payload });
+          if(ins.error) throw new Error(ins.error.message);
+          const queued = ins.data || [];
+
+          // Copy, from the same endpoint Trigger Blast uses. A failure is REPORTED, not thrown:
+          // the rows are queued either way and their copy is editable in the Queue.
+          let drafted = null;
+          if(queued.length){
+            try {
+              const dr = await fetch('/api/queue-draft', {
+                method:'POST', headers: await apiHeaders(),
+                body: JSON.stringify({ ids: queued.map(q => q.id) }),
+              });
+              drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+            } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
+          }
+
+          // The RPC silently skips anything already queued, so the difference is reported rather
+          // than left for the operator to notice by counting rows.
+          const skipped = live.length - queued.length;
+          picked.clear();
+          pbToast({
+            type: 'ok',
+            title: `${queued.length} blast${queued.length===1?'':'s'} added to the queue`,
+            lines: [
+              `Scheduled for ${ans.label}. Pending review — nothing sends until someone confirms it.`,
+              skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
+              past.length ? `${past.length} skipped — the game has already been played.` : ``,
+              drafted && !drafted.error
+                ? `Copy drafted for ${(drafted.written||[]).length} of ${queued.length} from Cole's templates.${(drafted.errors||[]).length ? ` ${drafted.errors.length} failed — edit them in the Queue.` : ''}`
+                : (drafted ? `Rows are queued, but copy was not drafted: ${esc(drafted.error)}. Write it in the Queue.` : ``),
+            ],
+            chips: queued.slice(0, 12).map(q => esc(q.title || 'blast')),
+            foot: queued.length ? 'Opening the Queue…' : 'Nothing was added.',
+          });
+          await load();              // re-read, so the added rows now show a tick not a checkbox
+          if(queued.length){
+            document.querySelector('.pb-tabs [data-tab="queue"]')?.click();
+            if(typeof window.__loadQueue === 'function') await window.__loadQueue();
+          }
+        } catch(e){
+          pbToast({ type:'err', title:'Could not queue these offers', lines:[ esc((e && e.message) || String(e)) ] });
+        } finally {
+          btn.disabled = false; btn.textContent = orig;
+        }
+      });
+
+      // Confirm, and choose when. One date for the whole selection — a per-row schedule is a
+      // different feature (that is what Trigger Blast's multi-day planner is for), and pretending
+      // to offer it in a bulk dialog would make a simple action feel like a form.
+      function addOffersDialog({ rows, skipped }){
+        return new Promise(resolve => {
+          const pad = n => String(n).padStart(2, '0');
+          const d = new Date(Date.now() + 864e5);          // tomorrow, the earliest sensible slot
+          const day = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          const list = rows.slice(0, 8).map(e =>
+            `<div class="truncate">${esc(evTitle(e))} <span class="text-base-content/50">· ${esc(e.segment || 'Other')} · ${esc(e.state_name || '')}</span></div>`).join('');
+          ov.innerHTML =
+            `<div class="pb-modal-card" role="dialog" aria-modal="true" style="max-width:32rem">
+               <div class="flex items-start gap-2 mb-1">
+                 <span class="text-xl leading-none text-[#e55608]">&#9889;</span>
+                 <div class="font-extrabold text-lg text-[#133b49]">Add ${rows.length} to the queue</div>
+               </div>
+               <div class="text-sm text-base-content/70 mb-3">Each one becomes its own blast, with its own copy and its own recipients. They are queued as <b>pending</b> — nothing sends until someone confirms it.</div>
+               <div class="pbw-panel mb-3">
+                 <div class="pbw-row">
+                   <span class="pbw-label">Send on</span>
+                   <input type="date" data-day class="input input-bordered input-sm w-44" value="${day}" min="${todayYmd()}">
+                   <span class="text-xs text-base-content/50 ml-auto">10:00 US Eastern</span>
+                 </div>
+                 <div class="pbw-rule"></div>
+                 <div class="text-xs text-base-content/60 leading-relaxed">
+                   ${list}
+                   ${rows.length > 8 ? `<div class="text-base-content/40 mt-1">…and ${rows.length - 8} more</div>` : ''}
+                 </div>
+               </div>
+               ${skipped ? `<div class="text-xs text-[#c94d07] mb-3">${skipped} selected row${skipped===1?' is':'s are'} for a game that has already been played and will be skipped.</div>` : ''}
+               <div class="flex justify-end gap-2">
+                 <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
+                 <button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Add to queue</button>
+               </div>
+             </div>`;
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const onKey = e => { if(e.key==='Escape') done(null); };
+          ov.querySelector('[data-ok]').addEventListener('click', () => {
+            const v = ov.querySelector('[data-day]').value || day;
+            const [y,m,dd] = v.split('-').map(Number);
+            // 10:00 US EASTERN, not the browser's 10:00 — the same rule and the same helper
+            // Trigger Blast uses. queue-tick fires on the stored instant, so a browser-local
+            // time would send a Texas blast at 04:00 local when queued from Europe.
+            done({ whenIso: new Date(etInstant(y, m, dd, 10, 0)).toISOString(),
+                   label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) });
+          });
+          ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+          ov.addEventListener('click', e => { if(e.target===ov) done(null); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-ok]').focus();
+        });
+      }
 
       // Rich result toast (daisyUI card, auto-dismiss + manual close).
       function pbToast({ type='ok', title, lines=[], chips=[], foot }){
@@ -8450,7 +8723,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     })();
 
     // ===== (inert) legacy Campaigns scheduler — its #rows markup was removed, so the
-    // IIFE below returns immediately at its `if(!el('rows')) return;` guard. Kept for reference. =====
+    // IIFE below returns immediately at its `if(!el('rows')) return;` guard. Kept for reference.
+    //
+    // NOTHING IN HERE RUNS. Read that before using anything below as a model.
+    //
+    // An earlier attempt at AI-964 ("Add to Queue from the offers list") was built in this
+    // module — fixtureTeamKey, fixtureFor, addToQueueDialog, addOfferToQueue, the data-addqueue
+    // button. It shipped to production and has never executed, because of the guard below. That
+    // is on me, and the header above said "inert" at the time.
+    //
+    // It is left in place rather than deleted because it is the record of an approach that does
+    // not work, not just of code that does not run: it reads offers from icp_events and has to
+    // MATCH each one to a fixture by team name and date. Measured live, that resolved 5 offers
+    // out of 97 — the two tables spell teams differently and icp_events covers a season the
+    // fixture feed does not. Anyone tempted to revive it should read that number first.
+    //
+    // THE LIVE IMPLEMENTATION IS IN eventTargetsModule (search: "AI-964: multi-select Add to
+    // Queue"), against event_targets(), where every row already carries the events_master
+    // event_id that campaign_queue stores. There is no matching step there at all. =====
     (function campaignsModule(){
       const el = (id) => document.getElementById(id);
       if(!el('rows')) return; // compose markup not present — nothing to wire
