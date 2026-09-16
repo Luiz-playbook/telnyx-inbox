@@ -146,8 +146,11 @@ export default async function handler(req, res) {
   // Manual "Send now" from the Queue posts { id } and targets exactly that row. It is an
   // explicit operator action on one blast, so it skips the two gates the CRON pass needs and
   // the operator has already answered for: the scheduled slot (that's the whole point) and
-  // is_placeholder (every row Trigger Blast queues is a placeholder, so the cron must never
-  // fire them on its own — but the operator asking for this one is not the cron).
+  // is_placeholder (a demo row is not something the cron should ever fire on its own — but the
+  // operator asking for this one is not the cron).
+  //
+  // IT DOES NOT SKIP sendable(), and must not: rejected and archived mean "no" however the send
+  // was triggered. Pressing Send now on a blast someone else rejected should fail, not deliver.
   //
   // What it does NOT skip is send_allowlist: while that list is non-empty, market_emails /
   // market_phones resolve to zero rows for any market not on it, so a real market still
@@ -167,7 +170,26 @@ export default async function handler(req, res) {
 
     // due = real, not already sent, and its scheduled slot has arrived — unless one row was
     // named, in which case that row IS the work.
-    const sendable = r => r.status !== 'sent' && r.status !== 'sending';
+    // WHAT MAY NEVER BE SENT.
+    //
+    // 'sent' and 'sending' were the only exclusions here, which was safe ONLY because every row
+    // was is_placeholder = true and the cron therefore never reached this test at all. Migration
+    // 074 makes queued rows real, and that turns this line into the thing standing between a
+    // refused blast and a delivered one — so the two states that mean "no" are now named.
+    //
+    // REJECTED. An operator read the blast and refused it, with a written reason (migration 048).
+    // Without this, a rejected row whose slot had passed would have been picked up by the next
+    // hourly tick and sent — the operator's decision reversed by a filter that never knew about
+    // it. Of the 83 rows in the queue when 074 was written, 9 were rejected.
+    //
+    // ARCHIVED. "Not now, but keep it" (migration 045). Archiving hides a row from the Queue, so
+    // sending one would deliver a blast nobody can see in the UI — invisible and unstoppable.
+    // All 82 open rows were archived immediately before 074 to clear the queue; had this guard
+    // not gone in with it, the first tick after the migration would have sent the lot.
+    //
+    // NOT status 'snoozed' — snoozing moves scheduled_for, so the slot check already holds it.
+    const sendable = r => r.status !== 'sent' && r.status !== 'sending'
+                       && r.status !== 'rejected' && !r.archived_at;
     const due = onlyId
       ? q.filter(r => r.id === onlyId && sendable(r))
       : q.filter(r => !r.is_placeholder && sendable(r) && new Date(r.scheduled_for).getTime() <= now);
