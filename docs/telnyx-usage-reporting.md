@@ -183,8 +183,33 @@ sibling. Contents, in order:
    unregistered numbers badged.
 6. **3 · The rules** — the four limits from §2, two read live and two recorded from the portal.
 
-Everything below the headline is a **rolling 14 days**, not today. Only the cap resets, at
-midnight UTC — which is mid-morning in Manila, so "today" flips during the working day.
+Everything below the headline follows the **period selector** (AI-1004): Today, a recent day,
+this or last month, or the rolling 14/30 days this panel was originally built around. `period=day`
+and `period=month` with `offset=` choose it; `days=N` keeps the rolling behaviour for anything that
+already called the endpoint.
+
+**Days are ET, the allowance is UTC.** Both come from `telnyx_usage_hourly` (migration 078). The
+panel first read `usage_reports` with the `date` dimension, which buckets whole UTC days and cannot
+be re-cut — so the tab showed UTC days while the rest of Playbook showed ET, and everything sent
+between 8pm and midnight ET landed on the next day's figure. `date_time` returns the same
+aggregates by hour, and ET is a whole-hour offset, so hours re-bucket exactly. Measured on the live
+account: ET and UTC days really do differ — 13 Sep 209 vs 177, 14 Sep 9,702 vs 9,678, 15 Sep 6,145
+vs 6,223. The **allowance** arithmetic still groups those same hours by UTC day, because midnight
+UTC is when T-Mobile resets; the response reports `day_basis` and `cap_basis` so the UI can say
+which is which, and falls back to whole UTC days (labelled) if 078 has not been applied.
+
+**Allowance is daily, and belongs to the brand.** Two consequences the tab has to state rather than
+paper over:
+
+- For a **single day**, `used` / `left` are that day's figures against the cap.
+- For a **month**, they describe the **busiest single day** in it. A month's volume against one
+  day's allowance would be nonsense — an early cut of the per-number column did exactly that and
+  reported a number as "603% of brand use".
+- **No number has an allowance of its own.** Telnyx caps the brand; every number on it draws from
+  the same pot. Each row therefore shows its brand's allowance, what the brand has left, and that
+  number's share of the brand's traffic. Rows are tinted when the shared pot is ≥70% (amber) or
+  ≥90% (red) full **and the number actually sent** — a number sending 5% of a pot that is 95% full
+  is the one in danger, and tinting idle numbers buried the two rows that mattered.
 
 The panel is deliberately **not** called "SMS volume". It answers a compliance question, and its
 numbers will not agree with Market History, which also counts CakeMail and Salesmsg.
@@ -214,6 +239,28 @@ percent of the traffic and report all-clear while the brand filled up.
 [`api/queue-tick.js`](../api/queue-tick.js) never touches Telnyx and runs under Salesmsg's own
 10DLC brand. It cannot appear in this report at any date range, and its volume doesn't consume
 the Telnyx cap.
+
+**The nightly sync was silently dead for a week** (found 2026-09-17, AI-1004).
+`telnyx_usage_daily` stopped at 2026-09-10 while Telnyx still had the data — 9,678 messages on
+09-14 were missing from the tab entirely. Cause: `api/telnyx-usage-sync.js` authenticated through
+`gate()`, which treats `CRON_SECRET` as the cron's identity, and **`CRON_SECRET` is deliberately
+unset on Vercel** because it is what `api/queue-tick.js` needs to sweep the queue — leaving it
+unset is what stops blasts going out by accident. So every nightly call answered 401. The sync now
+takes its own `USAGE_CRON_SECRET`, exactly as the price crons do, so reporting can run without
+handing anything the power to send. Unset means open, which is safe for a route that only reads
+usage totals and writes counts.
+
+**POSTGREST TRUNCATES AT 1,000 ROWS**, whatever `limit=` says, and it cuts the END of an ordered
+result. The hourly read hit it immediately: 2026-09-16 and 09-17 rendered as zero while the table
+held 4,948 and 173, and 09-15 came back 6,066 against a true 6,228. Every range read in
+`api/telnyx-usage.js` is now paged to exhaustion. Worth remembering anywhere else that reads a
+range — a silent undercount on a compliance figure is worse than an error.
+
+**Coverage is a rolling window.** The sync keeps `?days=` (30 by default), so a period reaching
+further back is unsynced rather than quiet — August read 34,764 against a true 64,071 before a
+`?days=90` backfill. The endpoint returns `usage_from` and a `partial` flag, and the tab says
+"partial — synced from <date>" rather than presenting a floor as a total. A backfill takes ~73s for
+90 days, which is why the route allows 300s.
 
 Open items, none of them blocking the report:
 
