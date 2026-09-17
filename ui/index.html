@@ -6257,7 +6257,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           }
         }));
         tb.querySelectorAll('[data-confirm]').forEach(b=>b.addEventListener('click', async ()=>{
-          b.disabled=true; await sb.rpc('queue_confirm',{p_id:b.dataset.confirm}); await refresh();
+          // AI-967. The result is READ now. It used to be discarded — `await sb.rpc(...)` and
+          // straight on to refresh() — so a refused confirm did nothing at all and said nothing
+          // either: the row simply came back unchanged and the operator was left to guess
+          // whether the click had registered.
+          //
+          // Migration 076 makes one confirm genuinely refusable (a rejected blast cannot be
+          // confirmed back into sending), so silence here would now hide a real answer.
+          b.disabled=true;
+          const c = await sb.rpc('queue_confirm',{p_id:b.dataset.confirm});
+          if(c.error) pbToast({ type:'err', title:'Could not confirm this blast', lines:[ esc(c.error.message) ] });
+          b.disabled=false;
+          await refresh();
         }));
         tb.querySelectorAll('[data-snooze]').forEach(b=>b.addEventListener('click', async ()=>{
           const id = b.dataset.snooze, r = QUEUE.find(x => x.id === id);
