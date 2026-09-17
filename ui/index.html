@@ -1150,7 +1150,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    carries a form control is a summary you cannot click without thinking, and the
                    provenance ("40,000/day from vetting score 63") means nothing until the panel
                    it explains is on screen. -->
-              <summary class="collapse-title min-h-0 py-3">
+              <!-- Default collapse-title metrics, deliberately: daisyUI positions the arrow against
+                   its own padding and min-height, so the `min-h-0 py-3` that used to sit here left the
+                   chevron floating below the title. -->
+              <summary class="collapse-title">
                 <span class="font-semibold text-sm">Telnyx SMS volume</span>
               </summary>
               <div class="collapse-content">
@@ -8406,11 +8409,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // AI-1004: every label follows the chosen period, so a prior month cannot be read as today.
         const p = j.period || { kind: 'rolling', days: j.days, start: '', end: '' };
         const sameDay = p.start === p.end;
+        // Days are ET once the hourly sync is in (migration 078); until then the endpoint falls back
+        // to whole UTC days and says so, because a day labelled ET that is really UTC is worse than
+        // one honestly labelled UTC.
+        const tz = p.day_basis === 'utc' ? 'UTC' : 'ET';
         const rangeLabel = p.kind === 'day'
-          ? (p.current ? `today · ${p.start} UTC` : `${p.start} UTC`)
+          ? (p.current ? `today · ${p.start} ${tz}` : `${p.start} ${tz}`)
           : p.kind === 'month'
-            ? `${p.start} to ${p.end} UTC${p.current ? ' (month so far)' : ''}`
-            : `last ${p.days} days UTC`;
+            ? `${p.start} to ${p.end} ${tz}${p.current ? ' (month so far)' : ''}`
+            : `last ${p.days} days ${tz}`;
         const setText = (id, v) => { const el = $(id); if(el) el.textContent = v; };
         // WHY THESE DAYS ARE UTC AND NOTHING ELSE IN THE APP IS.
         //
@@ -8435,10 +8442,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         setText('tu-days-range', '· ' + rangeLabel);
         $('tu-note').textContent =
           `${p.kind === 'rolling' ? `Last ${p.days} days` : rangeLabel}. `
-          // The rest of Playbook is ET; this panel is the exception and has to say why.
-          + (p.kind === 'day'
-              ? `Days here are UTC because the allowance resets at midnight UTC — this one covers ${etWindow(p.start)}. `
-              : 'Days here are UTC because the allowance resets at midnight UTC, so they do not line up with ET dates elsewhere in the app. ')
+          // Days are counted ET like everything else; the ALLOWANCE is still a UTC-day figure,
+          // because that is the reset the carrier enforces. Saying both is the only honest option.
+          + (p.day_basis === 'utc'
+              ? (p.kind === 'day'
+                  ? `Days are UTC here — the hourly sync has not run yet, so this one covers ${etWindow(p.start)}. `
+                  : 'Days are UTC here — the hourly sync has not run yet, so they do not line up with ET dates elsewhere in the app. ')
+              : 'Days are Eastern, like the rest of Playbook. Used and left are measured against the carrier\'s own day, which resets at midnight UTC. ')
           + (p.kind === 'day'
               ? 'Allowance, used and left are this day\'s figures. '
               : 'The allowance is a DAILY one, so used and left describe the busiest single day in this period, not the period total. ')

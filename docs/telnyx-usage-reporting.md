@@ -186,8 +186,17 @@ sibling. Contents, in order:
 Everything below the headline follows the **period selector** (AI-1004): Today, a recent day,
 this or last month, or the rolling 14/30 days this panel was originally built around. `period=day`
 and `period=month` with `offset=` choose it; `days=N` keeps the rolling behaviour for anything that
-already called the endpoint. All of it is UTC, because that is when the cap resets — mid-morning in
-Manila, so "today" flips during the working day.
+already called the endpoint.
+
+**Days are ET, the allowance is UTC.** Both come from `telnyx_usage_hourly` (migration 078). The
+panel first read `usage_reports` with the `date` dimension, which buckets whole UTC days and cannot
+be re-cut — so the tab showed UTC days while the rest of Playbook showed ET, and everything sent
+between 8pm and midnight ET landed on the next day's figure. `date_time` returns the same
+aggregates by hour, and ET is a whole-hour offset, so hours re-bucket exactly. Measured on the live
+account: ET and UTC days really do differ — 13 Sep 209 vs 177, 14 Sep 9,702 vs 9,678, 15 Sep 6,145
+vs 6,223. The **allowance** arithmetic still groups those same hours by UTC day, because midnight
+UTC is when T-Mobile resets; the response reports `day_basis` and `cap_basis` so the UI can say
+which is which, and falls back to whole UTC days (labelled) if 078 has not been applied.
 
 **Allowance is daily, and belongs to the brand.** Two consequences the tab has to state rather than
 paper over:

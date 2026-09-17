@@ -41,32 +41,44 @@ export default async function handler(req, res) {
   // one before it, and so on. ?days=N is kept for the rolling window the compliance strip has
   // always drawn, and stays the default so nothing that already calls this changes shape.
   //
-  // UTC throughout, because that is when the cap resets — mid-morning in Manila. A "day" here is
-  // the carrier's day, not the operator's, or the remaining figure would be wrong for the hours
-  // in between.
+  // ET, like the rest of Playbook (AI-1004). Days are counted Eastern; only the allowance, which
+  // the carrier resets at midnight UTC, is still grouped by UTC day — both come from the same
+  // hourly rows, and the response says which is which.
+  const ET = 'America/New_York';
+  const etYmd = d => d.toLocaleDateString('en-CA', { timeZone: ET });
+  // The UTC instant of ET midnight for a given ET date. The offset is -4 or -5 depending on DST,
+  // so rather than hardcode either, try both and keep the one that really is that day's first hour.
+  const etMidnightUtc = dstr => {
+    for (const off of [4, 5]) {
+      const t = new Date(Date.parse(dstr + 'T00:00:00Z') + off * 3600000);
+      if (etYmd(t) === dstr && etYmd(new Date(t.getTime() - 1)) !== dstr) return t;
+    }
+    return new Date(Date.parse(dstr + 'T05:00:00Z'));
+  };
+  const etShift = (dstr, deltaDays) => etYmd(new Date(etMidnightUtc(dstr).getTime() + deltaDays * 86400000 + 43200000));
   const ymd = d => d.toISOString().slice(0, 10);
   const period = String(req.query.period || '').toLowerCase();
   const offset = Math.min(Math.max(parseInt(req.query.offset, 10) || 0, 0), 24);
   const nowUtc = new Date();
-  const todayUtc = ymd(nowUtc);
+  const todayUtc = etYmd(nowUtc);      // "today" means today in ET, as everywhere else in the app
 
   let since, until, periodMeta;
   if (period === 'day' || period === 'month') {
     if (period === 'day') {
-      const d = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate() - offset));
-      since = until = ymd(d);
+      since = until = etShift(todayUtc, -offset);
     } else {
-      const first = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth() - offset, 1));
-      const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
-      since = ymd(first);
+      const [y, m] = todayUtc.split('-').map(Number);
+      const firstOfMonth = new Date(Date.UTC(y, m - 1 - offset, 1));
+      const lastOfMonth = new Date(Date.UTC(firstOfMonth.getUTCFullYear(), firstOfMonth.getUTCMonth() + 1, 0));
+      since = ymd(firstOfMonth);
       // A month in progress ends today: quoting a month-end date for a period still running
       // invites reading a part-month total as the whole month.
-      until = ymd(last) > todayUtc ? todayUtc : ymd(last);
+      until = ymd(lastOfMonth) > todayUtc ? todayUtc : ymd(lastOfMonth);
     }
     periodMeta = { kind: period, offset, start: since, end: until, current: offset === 0, days: Math.round((Date.parse(until) - Date.parse(since)) / 86400000) + 1 };
   } else {
     const d = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 90);
-    since = new Date(Date.now() - (d - 1) * 86400000).toISOString().slice(0, 10);
+    since = etShift(todayUtc, -(d - 1));
     until = todayUtc;
     periodMeta = { kind: 'rolling', offset: 0, start: since, end: until, current: true, days: d };
   }
@@ -74,15 +86,42 @@ export default async function handler(req, res) {
 
   try {
     const [uR, sR, bR] = await Promise.all([
-      get(`telnyx_usage_daily?select=usage_date,sending_number,carrier,direction,msg_count,segments,cost`
-        + `&direction=eq.outbound&usage_date=gte.${since}&usage_date=lte.${until}&order=usage_date.asc&limit=20000`),
+      // Hourly (migration 078) is what makes ET days possible: whole UTC days cannot be re-cut.
+      // The ET window is converted to the UTC instants that bound it.
+      get(`telnyx_usage_hourly?select=usage_hour,sending_number,carrier,direction,msg_count,segments,cost`
+        + `&direction=eq.outbound&usage_hour=gte.${etMidnightUtc(since).toISOString()}`
+        + `&usage_hour=lt.${new Date(etMidnightUtc(until).getTime() + 86400000).toISOString()}`
+        + `&order=usage_hour.asc&limit=100000`),
       get(`telnyx_senders?select=phone_number,label,active,sort_order,notes,brand_id,tcr_campaign_id,assignment_status&order=sort_order.asc`),
       get(`telnyx_brands?select=brand_id,tcr_brand_id,brand_name,vetting_score,tmo_daily_cap,att_tpm,identity_status,checked_at`),
     ]);
-    for (const r of [uR, sR, bR]) {
+    for (const r of [sR, bR]) {
       if (!r.ok) { res.status(502).json({ error: 'supabase read failed', detail: (await r.text()).slice(0, 400) }); return; }
     }
-    const usage = await uR.json(), senders = await sR.json(), brands = await bR.json();
+    const senders = await sR.json(), brands = await bR.json();
+
+    // Hourly is preferred; the daily table is the fallback for a database where migration 078 has
+    // not run yet. Falling back silently would be worse than the UTC days it returns, so the basis
+    // is reported and the UI says which one it is looking at.
+    let usage = [], dayBasis = 'et';
+    if (uR.ok) {
+      usage = (await uR.json()).map(r => ({
+        ...r,
+        // The ET day this hour belongs to, and the UTC day the carrier counts it against.
+        usage_date: etYmd(new Date(r.usage_hour)),
+        cap_date: String(r.usage_hour).slice(0, 10),
+      }));
+    }
+    if (!uR.ok || !usage.length) {
+      const dR = await get(`telnyx_usage_daily?select=usage_date,sending_number,carrier,direction,msg_count,segments,cost`
+        + `&direction=eq.outbound&usage_date=gte.${since}&usage_date=lte.${until}&order=usage_date.asc&limit=20000`);
+      if (!dR.ok) { res.status(502).json({ error: 'supabase read failed', detail: (await dR.text()).slice(0, 400) }); return; }
+      const daily = await dR.json();
+      // Only call it a fallback when there was really nothing hourly to use — an hourly window that
+      // is legitimately empty (a quiet day) must not relabel the whole panel as UTC.
+      if (!uR.ok) dayBasis = 'utc';
+      usage = daily.map(r => ({ ...r, cap_date: String(r.usage_date).slice(0, 10) }));
+    }
 
     // THE CAP IS PER BRAND, so the comparison has to be too. An earlier cut compared all
     // volume to the lowest cap on the account and read Playbook's 1,416 T-Mobile messages
@@ -107,6 +146,18 @@ export default async function handler(req, res) {
     // Day totals stay account-wide (that is the business number), but cap pressure is tracked
     // per brand and the day's headline percentage is the WORST brand on that day — the one
     // closest to being throttled.
+    // Grouped by the UTC day the carrier resets on, for the allowance arithmetic only.
+    const capMap = new Map();
+    for (const r of usage) {
+      const d = String(r.cap_date || r.usage_date).slice(0, 10);
+      const cur = capMap.get(d) || { date: d, perBrand: {} };
+      if (isTmobile(r.carrier)) {
+        const bid = brandFor[r.sending_number] || UNASSIGNED;
+        cur.perBrand[bid] = (cur.perBrand[bid] || 0) + (Number(r.msg_count) || 0);
+      }
+      capMap.set(d, cur);
+    }
+
     const dayMap = new Map();
     for (const r of usage) {
       const d = String(r.usage_date).slice(0, 10);
@@ -139,9 +190,11 @@ export default async function handler(req, res) {
 
     // Gap-fill. A day with no sends must render as a zero bar, not vanish and let the strip
     // imply the days either side were adjacent.
+    // Across the SELECTED period. This used to count back from today regardless, so choosing a past
+    // day drew today's (empty) bar and took the brand's "busiest day" from it.
     const byDay = [];
     for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      const d = etShift(until, -i);
       const v = dayMap.get(d) || { date: d, total: 0, tmobile: 0, segments: 0, cost: 0, perBrand: {} };
       const w = worstOn(v.perBrand);
       byDay.push({
@@ -163,8 +216,9 @@ export default async function handler(req, res) {
         total += n;
         if (isTmobile(r.carrier)) tmo += n;
       }
-      const peakDay = byDay.reduce((m, d) => {
-        const n = (dayMap.get(d.date) || { perBrand: {} }).perBrand[b.brand_id] || 0;
+      // The busiest CAP day — grouped by UTC, because that is the day the allowance resets on.
+      const peakDay = [...capMap.values()].reduce((m, d) => {
+        const n = d.perBrand[b.brand_id] || 0;
         return n > (m ? m.n : -1) ? { date: d.date, n } : m;
       }, null);
       // ALLOWANCE IS A DAILY THING. T-Mobile's cap resets every midnight UTC, so "remaining" only
@@ -172,7 +226,12 @@ export default async function handler(req, res) {
       // BUSIEST day — how close the brand came to the ceiling at its worst — and that is what is
       // reported, labelled so nobody reads a month of volume against one day's allowance.
       const cap = Number(b.tmo_daily_cap) || 0;
-      const usedAgainstCap = periodMeta.kind === 'day' ? tmo : (peakDay ? peakDay.n : 0);
+      // For a single ET day, the allowance figure is that day's UTC cap-day — ~20 of the ET day's 24
+      // hours fall inside it, and it is the reset the carrier actually enforces.
+      const capDayForPeriod = periodMeta.kind === 'day'
+        ? ((capMap.get(since) || { perBrand: {} }).perBrand[b.brand_id] || 0)
+        : (peakDay ? peakDay.n : 0);
+      const usedAgainstCap = capDayForPeriod;
       const basis = periodMeta.kind === 'day' ? 'day' : 'peak-day';
       return {
         brand_id: b.brand_id, brand: b.brand_name,
@@ -323,7 +382,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       ok: true,
       days,
-      period: periodMeta,
+      period: { ...periodMeta, day_basis: dayBasis, cap_basis: 'utc' },
       // The cap and where it came from — so the strip can say "40,000, from a vetting score of
       // 63 checked on <date>" rather than presenting a bare number nobody can audit.
       cap: {

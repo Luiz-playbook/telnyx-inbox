@@ -206,36 +206,52 @@ export default async function handler(req, res) {
   // on the next run with no catch-up job. Longer ranges are chunked (see usageReport), so
   // ?days=90 works for a one-off backfill.
   const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 180);
+  let hourlyError = null;
 
   try {
+    // BY HOUR, NOT BY DAY (AI-1004). `date` buckets in whole UTC days, and a UTC day cannot be
+    // re-cut into an ET one — the volume inside it is already summed. `date_time` returns the same
+    // aggregates per hour, and ET is a whole-hour offset, so hours re-bucket into ET days exactly.
+    // Measured: 166 rows for a busy day, ~3,400 a month. Both tables are written from this one read.
     const raw = await usageReport(
       key,
-      ['date', 'tn', 'direction', 'normalized_carrier'],
+      ['date_time', 'tn', 'direction', 'normalized_carrier'],
       ['count', 'parts', 'cost'],
       days,
     );
 
     // Collapse to the primary key. Telnyx can return the same tuple more than once across
     // pages when a day is still settling, and a plain map would keep only the last of them.
+    // Two collapses from one read: hourly (what the Reports tab groups into ET days) and the daily
+    // UTC rollup telnyx_usage_daily has always held.
+    const byHour = new Map();
     const byKey = new Map();
     for (const r of raw) {
-      const date = String(r.date || '').slice(0, 10);
+      const at = String(r.date_time || '').trim();
       const tn = String(r.tn || '').trim();
       const dir = String(r.direction || '').trim();
-      if (!date || !tn || (dir !== 'inbound' && dir !== 'outbound')) continue;
+      if (!at || !tn || (dir !== 'inbound' && dir !== 'outbound')) continue;
+      const iso = new Date(at).toISOString();
+      if (Number.isNaN(Date.parse(at))) continue;
+      const date = iso.slice(0, 10);                       // the UTC day this hour belongs to
       const carrier = String(r.normalized_carrier == null ? '' : r.normalized_carrier);
-      const k = `${date}|${tn}|${carrier}|${dir}`;
-      const prev = byKey.get(k);
-      const row = prev || {
-        usage_date: date, sending_number: tn, carrier, direction: dir,
-        msg_count: 0, segments: 0, cost: 0,
+      const add = (map, k, seed) => {
+        const row = map.get(k) || seed;
+        row.msg_count += Number(r.count) || 0;
+        row.segments += Number(r.parts) || 0;
+        row.cost += Number(r.cost) || 0;
+        map.set(k, row);
+        return row;
       };
-      row.msg_count += Number(r.count) || 0;
-      row.segments += Number(r.parts) || 0;
-      row.cost += Number(r.cost) || 0;
-      byKey.set(k, row);
+      add(byHour, `${iso}|${tn}|${carrier}|${dir}`, {
+        usage_hour: iso, sending_number: tn, carrier, direction: dir, msg_count: 0, segments: 0, cost: 0,
+      });
+      add(byKey, `${date}|${tn}|${carrier}|${dir}`, {
+        usage_date: date, sending_number: tn, carrier, direction: dir, msg_count: 0, segments: 0, cost: 0,
+      });
     }
     const rows = [...byKey.values()].map(r => ({ ...r, cost: Number(r.cost.toFixed(4)) }));
+    const hourRows = [...byHour.values()].map(r => ({ ...r, cost: Number(r.cost.toFixed(4)) }));
 
     // Chunked so one oversized request cannot fail the whole night's sync.
     let written = 0;
@@ -252,6 +268,26 @@ export default async function handler(req, res) {
         return;
       }
       written += chunk.length;
+    }
+
+    // Hourly, the table the Reports tab actually reads. Written after the daily rollup so a failure
+    // here cannot cost the run its daily figures, which is what everything before AI-1004 used.
+    let writtenHourly = 0;
+    for (let i = 0; i < hourRows.length; i += 500) {
+      const chunk = hourRows.slice(i, i + 500);
+      const up = await fetch(`${supaUrl}/rest/v1/telnyx_usage_hourly`, {
+        method: 'POST',
+        headers: { ...sh, Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(chunk),
+      });
+      if (!up.ok) {
+        const detail = await up.text();
+        // Migration 078 not applied yet is the one failure worth surviving: the daily rows are
+        // already in, so the run reports what it managed rather than throwing all of it away.
+        hourlyError = detail.slice(0, 300);
+        break;
+      }
+      writtenHourly += chunk.length;
     }
 
     // Every number that actually sent, mapped to its brand. Discovering them from the traffic
@@ -310,6 +346,11 @@ export default async function handler(req, res) {
       ok: true,
       days,
       usage_rows: written,
+      // Hourly is what the Reports tab reads (AI-1004). A null error with a row count means the
+      // ET-day view has fresh data; an error here means migration 078 has not been applied and the
+      // tab is still working from whatever it had.
+      hourly_rows: writtenHourly,
+      hourly_error: hourlyError,
       brands: brands.map(b => ({
         name: b.brand_name, score: b.vetting_score, tmo_daily_cap: b.tmo_daily_cap,
       })),
