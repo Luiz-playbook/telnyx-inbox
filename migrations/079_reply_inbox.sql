@@ -159,7 +159,12 @@ as $function$
   where (p_channel is null or p_channel = 'sms')
     and coalesce(c.last_direction, 'inbound') = 'inbound'
 
-  order by received_at desc nulls last;
+  -- BY POSITION, NOT BY NAME. `received_at` is also the name of one of this function's RETURNS
+  -- TABLE output columns, and those names are in scope inside the body — so a bare
+  -- `order by received_at` can resolve to the output parameter instead of the union's column,
+  -- or be rejected outright as ambiguous. Position 5 is unambiguous and cannot drift silently,
+  -- which name-based ordering across a UNION can.
+  order by 5 desc nulls last;
 $function$;
 
 comment on function public.reply_inbox(text) is
