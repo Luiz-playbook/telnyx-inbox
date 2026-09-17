@@ -3709,7 +3709,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const isToday = e.event_date === today;
           const market = e.state_name
             ? `<span class="font-semibold text-[#133b49] whitespace-nowrap">${esc(e.state_name)} <span class="text-[10px] font-bold uppercase text-base-content/40 ml-1">${esc(e.country||'')}</span></span>${e.market_key?`<div class="text-xs text-base-content/50">${esc(prettyMetro(e.market_key))}</div>`:''}`
-            : '<span class="text-base-content/40">Unassigned</span>';
+            // NO MARKET = CANNOT BE BLASTED, said plainly (Vhea, 2026-09-17). It used to read
+            // "Unassigned", which sounds like paperwork — something someone will get to. It is
+            // not: 565 of 3,723 upcoming games belong to teams the market map has never covered
+            // (Nashville, Vegas, Green Bay, Columbus, Indianapolis…), and without a market there
+            // is no audience to resolve, so the game can never be queued or sent at all.
+            //
+            // Not a fault to fix per row: a market only exists where there are BOTH games and
+            // contacts, and most of these have no contacts. Marked so it is visible rather than
+            // hidden, and so nobody wonders why a fixture never appears in a blast.
+            : '<span class="badge badge-sm bg-[#fdeee4] text-[#c94d07] border-[#f6cfae]" title="No market covers this team, so there is no audience to send to and this game cannot be queued. A market needs both fixtures and contacts; this one has no contacts.">no market</span>';
           const sport = e.sport
             ? `<span class="sport-pill">${esc(e.sport)}</span>${e.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(e.league)}</div>`:''}`
             : '<span class="text-base-content/40">—</span>';
@@ -3727,10 +3736,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // A row already in the queue cannot be queued again (the RPC would skip it), so it is
           // shown as already handled rather than offered and silently ignored.
           const already = QUEUED.has(pk);
+          // A row with no market cannot produce a sendable blast — queue_enqueue_test would take
+          // it, queue-tick would resolve nobody, and the row would sit in the queue forever
+          // looking queued. Multi-select made that reachable in one click, so it is blocked at
+          // the checkbox: the same treatment an already-queued row gets, for the same reason —
+          // never offer a control whose only outcome is a row that cannot work.
+          const noMkt = !e.state_code && !e.market_key;
           return `<tr class="camp-row${testOn && !allowed ? ' opacity-50' : ''}">
-          <td>${already
-            ? '<span class="text-[#067523] font-bold" title="Already in the queue for this segment">&#10003;</span>'
-            : `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-pick="${esc(pk)}" ${picked.has(pk)?'checked':''} aria-label="Select this offer">`}</td>
+          <td>${noMkt
+            ? '<span class="text-base-content/30" title="No market covers this team, so there is nobody to send to. It cannot be queued.">&mdash;</span>'
+            : already
+              ? '<span class="text-[#067523] font-bold" title="Already in the queue for this segment">&#10003;</span>'
+              : `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-pick="${esc(pk)}" ${picked.has(pk)?'checked':''} aria-label="Select this offer">`}</td>
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}${rescanBtn(e)}</div></td>
           <td>${e.ticket_price!=null?`${window.__priceLink ? window.__priceLink(e) : `<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}`+`${window.__staleTag?.(e)||''}`+`${window.__priceManualBadge?.(e)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A game with no price is the one MOST worth an edit, not the least: price-refresh
@@ -3763,7 +3780,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // permanently indeterminate on a page where everything selectable is ticked.
         const box = el('cbs-all');
         if(box){
-          const keys = lastShown.map(pickKey).filter(k => !QUEUED.has(k));
+          const keys = lastShown.filter(e => e.state_code || e.market_key).map(pickKey).filter(k => !QUEUED.has(k));
           const on = keys.filter(k => picked.has(k)).length;
           box.checked = keys.length > 0 && on === keys.length;
           box.indeterminate = on > 0 && on < keys.length;
@@ -4156,7 +4173,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // A row is an event × segment, so events must be counted distinctly — the row count
         // would read three times too high.
         const events = new Set(ROWS.map(e => e.event_id).filter(Boolean));
-        el('cbs-total').textContent = `${events.size.toLocaleString()} events`;
+        // The hidden third of the board, counted. A blind spot nobody can see is one nobody
+        // acts on — this went unnoticed for months because a game with no market looks exactly
+        // like a game with one until you try to blast it.
+        const noMarket = new Set(ROWS.filter(e => !e.state_code && !e.market_key).map(e => e.event_id).filter(Boolean));
+        el('cbs-total').innerHTML = `${events.size.toLocaleString()} events`
+          + (noMarket.size ? ` <span class="text-[#c94d07]" title="These belong to teams no market covers, so they have no audience and cannot be blasted. Nothing is wrong with them — a market needs contacts as well as fixtures.">· ${noMarket.size.toLocaleString()} with no market</span>` : '');
         fillFilter('cbs-sport',  e => e.sport);
         fillLeagues();
         fillStates();
@@ -4247,7 +4269,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // Header box: this page only, and only rows that can actually be selected.
       el('cbs-all')?.addEventListener('change', ev => {
-        const keys = lastShown.map(pickKey).filter(k => !QUEUED.has(k));
+        // No-market rows excluded here too. Select-all reaches rows the eye skips, and it is the
+        // one control that could put an unsendable game into the queue without anyone seeing it.
+        const keys = lastShown.filter(e => e.state_code || e.market_key).map(pickKey).filter(k => !QUEUED.has(k));
         if(ev.target.checked) keys.forEach(k => picked.add(k));
         else keys.forEach(k => picked.delete(k));
         render();
