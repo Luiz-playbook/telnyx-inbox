@@ -1092,6 +1092,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div id="bh-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
                   <div id="bh-panel-sub" class="text-xs text-base-content/50 mt-0.5"></div>
                 </div>
+                <!-- FOLLOW UP lives here, not in the row menu: this panel is where a blast is
+                     actually read, and deciding to go again is a decision you make having read
+                     it. Rendered by renderPanel so it can disable itself with a reason. -->
+                <button id="bh-followup" class="btn btn-xs btn-outline btn-info ml-auto shrink-0 hidden">&#8635; Follow up</button>
                 <button id="bh-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
               </div>
               <div id="bh-panel-body" class="bh-panel-body"></div>
@@ -9188,6 +9192,166 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // and a panel left at the old offset either floats or overhangs.
       window.addEventListener('resize', () => { if(selected) fitPanel(); });
 
+      // ===== FOLLOW UP FROM MARKET HISTORY (Vhea, 2026-09-17) =====
+      //
+      // Market History holds every blast that ever went out, which makes it where someone stands
+      // when they decide to contact a market again. Follow up was first built in the Queue, and
+      // that was wrong twice over: the Queue HIDES sent blasts by design ("the working list of
+      // what has NOT gone out"), so the action only existed behind a status filter — and once a
+      // sent row is archived it leaves the Queue for good.
+      //
+      // WHY THIS ASKS MORE THAN THE QUEUE VERSION DOES. A queue row carries its game, its segment
+      // and its copy, so following up there is only "when, and in what words". A history row
+      // carries none of it — checked against live data: of 11 SMS log rows and 306 CakeMail
+      // blasts, ZERO have an event_id and ZERO have a segment. The market is all that survives.
+      //
+      // So the game and the audience are asked for. That is not a workaround: following up with
+      // Boston in September is about the October fixture, not the June one. The templates also
+      // fill [GAME] and [DATE] from a real event — without one they leave unresolved tokens and
+      // api/queue-draft refuses the row outright.
+      let FU_EVENTS = null;      // upcoming fixtures, loaded once and reused
+      async function startHistoryFollowUp(r){
+        const mkt = (r.market || '').toLowerCase();
+        if(!FU_EVENTS){
+          const res = await sb.rpc('rpc_event_recommendations');
+          FU_EVENTS = res.error ? [] : (res.data || []);
+        }
+        // This market, games still ahead, soonest first. A follow-up about a game already played
+        // sells nothing, and the date cap in the dialog cannot express "not this one" on its own.
+        const today = etYmd();
+        const games = FU_EVENTS
+          .filter(e => String(e.market_key || '').toLowerCase() === mkt && e.event_date >= today)
+          .sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)));
+        if(!games.length){
+          toast({ type:'err', title:'No upcoming games in this market',
+            lines:[ prettyMetro(r.market) + ' has no fixture ahead to follow up about.',
+                    'Rescan schedules on the Offers tab if you expect one.' ] });
+          return;
+        }
+        const ans = await historyFollowUpDialog(r, games);
+        if(!ans) return;
+
+        const g = games.find(x => String(x.event_id) === String(ans.eventId));
+        if(!g) return;
+        try {
+          const ins = await sb.rpc('queue_enqueue_test', { p_rows: [{
+            scheduled_for: ans.whenIso,
+            title: 'Follow-up · ' + (g.opponent ? g.opponent + ' at ' + g.team : g.team)
+                   + ' — ' + (g.market_label || prettyMetro(r.market)) + ' · ' + ans.segment,
+            state_code: g.market_key || null,
+            state_name: g.market_label || null,
+            event_id: g.event_id,
+            segment: ans.segment,
+            email: true, sms: true,
+            // Copy left null on purpose: /api/queue-draft writes it from the chosen template
+            // below, and it will not overwrite existing copy — pre-filling would silently
+            // disable the wording picker.
+          }]});
+          if(ins.error) throw new Error(ins.error.message);
+          const made = (ins.data || [])[0];
+          if(!made){
+            toast({ type:'err', title:'Already queued',
+              lines:['There is already a blast waiting for that game and audience.'] });
+            return;
+          }
+          let drafted = null;
+          try {
+            const dr = await fetch('/api/queue-draft', {
+              method:'POST', headers: await apiHeaders(),
+              body: JSON.stringify({ ids: [made.id], variant: ans.variant }),
+            });
+            drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+          } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
+
+          if(ans.status === 'confirmed'){
+            const c = await sb.rpc('queue_confirm', { p_id: made.id });
+            if(c.error) toast({ type:'err', title:'Queued, but not confirmed', lines:[ c.error.message ] });
+          }
+          toast({ type:'ok', title:'Follow-up queued',
+            lines:[ (g.opponent ? g.opponent + ' at ' + g.team : g.team) + ' · ' + ans.segment,
+                    'Goes ' + ans.label + ' · ' + (ans.status === 'confirmed' ? 'confirmed' : 'pending review') + '.',
+                    drafted && !drafted.error
+                      ? 'Copy drafted from Cole’s "' + ans.variant + '" template.'
+                      : 'Queued, but the copy was not drafted' + (drafted ? ': ' + (drafted.error || '') : '') + '. Write it in the Queue.',
+                    'Find it on the Queue tab.' ] });
+        } catch(e){
+          toast({ type:'err', title:'Could not queue the follow-up', lines:[ (e && e.message) || String(e) ] });
+        }
+      }
+
+      function historyFollowUpDialog(r, games){
+        return new Promise(resolve => {
+          const pad = n => String(n).padStart(2,'0');
+          const base = new Date(Date.now() + 864e5);
+          const day  = base.getFullYear() + '-' + pad(base.getMonth()+1) + '-' + pad(base.getDate());
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          ov.innerHTML =
+            '<div class="pb-modal-card" role="dialog" aria-modal="true" style="max-width:34rem">'
+            + '<div class="flex items-start gap-2 mb-1">'
+            +   '<span class="text-xl leading-none text-[#e55608]">&#8635;</span>'
+            +   '<div class="font-extrabold text-lg text-[#133b49]">Follow up with ' + esc(prettyMetro(r.market)) + '</div>'
+            + '</div>'
+            + '<div class="text-sm text-base-content/70 mb-3">This blast went out on ' + esc(fmtDate(r.sent_at))
+            +   '. A follow-up is a new blast to the same market &mdash; choose which game it is about.</div>'
+            + '<div class="pbw-panel mb-3">'
+            +   '<div class="pbw-row"><span class="pbw-label">Game</span>'
+            +     '<select data-game class="select select-bordered select-sm flex-1">'
+            +       games.slice(0, 40).map(g => '<option value="' + esc(g.event_id) + '">'
+            +         esc(g.opponent ? g.opponent + ' at ' + g.team : g.team) + ' &middot; ' + esc(g.event_date)
+            +         '</option>').join('')
+            +     '</select></div>'
+            +   '<div class="pbw-row mt-2"><span class="pbw-label">Audience</span>'
+            +     '<select data-seg class="select select-bordered select-sm w-36">'
+            +       '<option value="ICP" selected>ICP</option><option value="SCP">SCP</option><option value="Other">Other</option>'
+            +     '</select>'
+            +     '<span class="pbw-label ml-auto">Wording</span>'
+            +     '<select data-variant class="select select-bordered select-sm w-48">'
+            +       '<option value="followup" selected>Follow-up</option>'
+            +       '<option value="playoffs">Playoffs</option>'
+            +       '<option value="season-opener">Season opener</option>'
+            +       '<option value="club-seats">Club seats</option>'
+            +     '</select></div>'
+            +   '<div class="pbw-rule"></div>'
+            +   '<div class="pbw-row"><span class="pbw-label">Send on</span>'
+            +     '<input type="date" data-day class="input input-bordered input-sm w-40" value="' + day + '" min="' + esc(etYmd()) + '">'
+            +     '<input type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">'
+            +     '<span class="text-xs text-base-content/50 ml-auto">US Eastern</span></div>'
+            +   '<div class="pbw-rule"></div>'
+            +   '<div class="pbw-row"><span class="pbw-label">Add as</span>'
+            +     '<select data-status class="select select-bordered select-sm w-44">'
+            +       '<option value="pending" selected>Pending &mdash; review later</option>'
+            +       '<option value="confirmed">Confirmed &mdash; already approved</option>'
+            +     '</select></div>'
+            + '</div>'
+            + '<div class="text-xs text-base-content/50 mb-3">It is queued as its own blast and appears on the Queue tab. Nothing sends until it is confirmed &mdash; and sending is paused at the moment.</div>'
+            + '<div class="flex justify-end gap-2">'
+            +   '<button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>'
+            +   '<button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Queue follow-up</button>'
+            + '</div></div>';
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const onKey = e => { if(e.key === 'Escape') done(null); };
+          ov.querySelector('[data-ok]').addEventListener('click', () => {
+            const v = ov.querySelector('[data-day]').value || day;
+            const parts = v.split('-').map(Number);
+            const tv = (ov.querySelector('[data-time]').value || '').match(/^(\d{1,2}):(\d{2})$/);
+            const hh = tv ? Math.min(23, Number(tv[1])) : 10, mi = tv ? Math.min(59, Number(tv[2])) : 0;
+            done({ eventId: ov.querySelector('[data-game]').value,
+                   segment: ov.querySelector('[data-seg]').value,
+                   variant: ov.querySelector('[data-variant]').value,
+                   status:  ov.querySelector('[data-status]').value,
+                   whenIso: new Date(etInstant(parts[0], parts[1], parts[2], hh, mi)).toISOString(),
+                   label: new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+                          + ' at ' + pad(hh) + ':' + pad(mi) + ' ET' });
+          });
+          ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+          ov.addEventListener('click', e => { if(e.target === ov) done(null); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-ok]').focus();
+        });
+      }
+
       function renderPanel(){
         const p = el('bh-panel'), body = el('bh-panel-body');
         if(!p || !body) return;
@@ -9196,6 +9360,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           p.classList.remove('open');
           p.setAttribute('aria-hidden', 'true');
           body.innerHTML = '';        // drops the iframe with it rather than leaving it loaded
+          const fuOff = el('bh-followup');
+          if(fuOff){ fuOff.classList.add('hidden'); fuOff.onclick = null; }
           return;
         }
 
@@ -9271,6 +9437,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }));
         if(panelTab === 'replies')    loadReplies(cid2, body.querySelector('[data-people]'));
         if(panelTab === 'recipients') loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+
+        // FOLLOW UP. Enabled only when the blast resolves to a market, because the market is
+        // what a follow-up is aimed at — everything else (which game, which segment, what
+        // wording) is asked in the dialog.
+        //
+        // SHOWN DISABLED RATHER THAN HIDDEN when it cannot be used. An absent button reads as
+        // "this panel does not do that", which would be wrong on the row right next to it; a
+        // disabled one with the reason in its tooltip says which blast is the problem. The
+        // reason is nearly always the same, and the panel already prints it: the CakeMail list
+        // is not bridged to a market (market_bridge_list), so nobody knows who this blast went
+        // to in our terms.
+        const fu = el('bh-followup');
+        if(fu){
+          fu.classList.remove('hidden');
+          const mkt = r.market || null;
+          fu.disabled = !mkt;
+          fu.classList.toggle('opacity-50', !mkt);
+          fu.title = mkt
+            ? `Queue a new blast to ${prettyMetro(mkt)} — you choose the game, the audience and the wording.`
+            : `This blast is not bridged to a market${r.list_name ? ` (list "${r.list_name}")` : ''}, so there is no audience to follow up with. Bridge the list on market_bridge_list first.`;
+          fu.onclick = () => { if(mkt) startHistoryFollowUp(r); };
+        }
 
         fitPanel();
         p.classList.add('open');
