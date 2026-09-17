@@ -8346,8 +8346,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(f.state !== 'red') return '';
         const tip = 'Last checked ' + agoLabel(f.hours) + ' — past the ' + (f.t ? f.t.red : '') + 'h limit for an event this close. '
           + 'Open Ticket Prices to check the listing before approving.';
-        return ' <span class="badge badge-sm align-middle" style="background:#fee2e2;color:#b91c1c;border-color:#fecaca"'
-          + ' title="' + esc2(tip) + '">price may be stale</span>';
+        // ITS OWN LINE, AND IT MUST NOT WRAP. This sits in the Cheapest column, which is about
+        // 90px wide — "price may be stale" is wider than that, so as an inline badge it wrapped
+        // INSIDE its own rounded pill and spilled over the "get-in" line underneath it. A
+        // warning that renders as a smear over the number it is warning about is worse than no
+        // warning: it makes the price harder to read, which is the one thing the operator is
+        // there to check.
+        //
+        // The label is shortened to fit rather than the column widened — the full sentence, with
+        // the age and the limit, is in the tooltip where it already was.
+        return '<div class="mt-0.5"><span class="badge badge-xs" style="background:#fee2e2;color:#b91c1c;'
+          + 'border-color:#fecaca;white-space:nowrap;font-size:10px;height:auto;padding:1px 6px"'
+          + ' title="' + esc2(tip) + '">stale price</span></div>';
       };
     })();
 
