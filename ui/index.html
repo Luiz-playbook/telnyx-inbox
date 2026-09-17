@@ -5787,6 +5787,91 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         await refresh();
       }
 
+      // The cooldown floor, from decider_rules. Hardcoded here because the Queue does not read
+      // that table and one number does not justify a round trip — but it is the SAME number
+      // api/queue-tick.js enforces through market_cooldowns, so if the rule is ever changed in
+      // Cole Rules this has to follow or the dialog will promise the wrong thing.
+      const COOLDOWN_DAYS = 14;
+
+      // FOLLOW-UP DIALOG. When, and whether it is already approved.
+      //
+      // Its real job is the cooldown warning: a date inside the window produces a row the hourly
+      // send will hold silently and indefinitely, which is indistinguishable from a broken
+      // feature. Stated before the choice is made, and restated in the result.
+      function followUpDialog(r){
+        return new Promise(resolve => {
+          const pad = n => String(n).padStart(2,'0');
+          // Default: one day past the cooldown, so the ordinary press produces a row that will
+          // actually go on its own.
+          const base = new Date(Date.now() + (COOLDOWN_DAYS + 1) * 864e5);
+          const day  = `${base.getFullYear()}-${pad(base.getMonth()+1)}-${pad(base.getDate())}`;
+          // Never past the game — a follow-up after kickoff sells nothing.
+          const maxDay = r.event_date || '';
+          const ov = document.createElement('div');
+          ov.className = 'pb-modal-overlay';
+          ov.innerHTML =
+            `<div class="pb-modal-card" role="dialog" aria-modal="true" style="max-width:32rem">
+               <div class="flex items-start gap-2 mb-1">
+                 <span class="text-xl leading-none text-[#e55608]">&#8635;</span>
+                 <div class="font-extrabold text-lg text-[#133b49]">Follow up on this blast</div>
+               </div>
+               <div class="text-sm text-base-content/70 mb-3">A second blast to <b>${esc(r.state_name || r.state_code || 'the same market')}${r.segment?' · '+esc(r.segment):''}</b> about the same game. It is queued as its own blast, with a copy of the original message for you to edit.</div>
+               <div class="pbw-panel mb-3">
+                 <div class="pbw-row">
+                   <span class="pbw-label">Send on</span>
+                   <input type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${esc(etYmd())}"${maxDay?` max="${esc(maxDay)}"`:''}>
+                   <input type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">
+                   <span class="text-xs text-base-content/50 ml-auto">US Eastern</span>
+                 </div>
+                 <div class="pbw-rule"></div>
+                 <div class="pbw-row">
+                   <span class="pbw-label">Add as</span>
+                   <select data-status class="select select-bordered select-sm w-44">
+                     <option value="pending" selected>Pending — review later</option>
+                     <option value="confirmed">Confirmed — already approved</option>
+                   </select>
+                 </div>
+               </div>
+               <div class="text-xs mb-3" data-cdnote></div>
+               <div class="flex justify-end gap-2">
+                 <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
+                 <button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Queue follow-up</button>
+               </div>
+             </div>`;
+          const dayEl = ov.querySelector('[data-day]');
+          const note  = ov.querySelector('[data-cdnote]');
+          const insideCooldown = () => {
+            const v = dayEl.value; if(!v) return false;
+            const days = Math.round((new Date(v+'T00:00:00') - new Date(etYmd()+'T00:00:00')) / 864e5);
+            return days < COOLDOWN_DAYS;
+          };
+          const paint = () => {
+            note.innerHTML = insideCooldown()
+              ? `<span class="text-[#c94d07] font-semibold">&#9888; Inside the ${COOLDOWN_DAYS}-day cooldown for this market.</span> <span class="text-base-content/60">The hourly send will hold it rather than deliver it. You can still send it by hand with <b>Send now</b> on the row &mdash; that overrides the cooldown and says so.</span>`
+              : `<span class="text-base-content/50">Past the ${COOLDOWN_DAYS}-day cooldown, so this will go on its own once confirmed.</span>`;
+          };
+          dayEl.addEventListener('input', paint); paint();
+          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+          const onKey = e => { if(e.key==='Escape') done(null); };
+          ov.querySelector('[data-ok]').addEventListener('click', () => {
+            const v = dayEl.value || day;
+            const [y,m,dd] = v.split('-').map(Number);
+            const tv = (ov.querySelector('[data-time]').value||'').match(/^(\d{1,2}):(\d{2})$/);
+            const hh = tv ? Math.min(23, Number(tv[1])) : 10, mi = tv ? Math.min(59, Number(tv[2])) : 0;
+            done({ whenIso: new Date(etInstant(y, m, dd, hh, mi)).toISOString(),
+                   status: ov.querySelector('[data-status]').value,
+                   insideCooldown: insideCooldown(),
+                   label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
+                          + ` at ${pad(hh)}:${pad(mi)} ET` });
+          });
+          ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+          ov.addEventListener('click', e => { if(e.target===ov) done(null); });
+          document.addEventListener('keydown', onKey);
+          document.body.appendChild(ov);
+          ov.querySelector('[data-ok]').focus();
+        });
+      }
+
       function actionsMenu(r, { sent, rejected, archived }){
         const items = [
           (sent||rejected) ? '' : `
@@ -5800,7 +5885,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : archived
               ? `<button class="btn btn-xs btn-outline justify-start" data-unarchive="${esc(r.id)}" title="Put this blast back in the working queue.">Restore</button>`
               : sent
-                ? `<button class="btn btn-xs btn-outline justify-start" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
+                // FOLLOW UP, on a sent blast only (Vhea, 2026-09-17). A second touch to the same
+                // market and segment about the same game — the thing you want a few days after
+                // the first one, while the game is still ahead and the seats are still there.
+                //
+                // Only offered on sent/partly-sent rows because a follow-up to a blast that has
+                // not gone out yet is not a follow-up, it is a duplicate. queue_enqueue_test's
+                // de-dupe agrees: it blocks a second live row for the same (event, segment) and
+                // only lets one through once the first is 'sent'.
+                ? `<button class="btn btn-xs btn-outline btn-info justify-start" data-followup="${esc(r.id)}" title="Queue a second blast to the same market and segment about this game.">Follow up</button>
+                   <button class="btn btn-xs btn-outline justify-start" data-archive="${esc(r.id)}" title="Hide this sent blast from the queue. The send record is kept — a sent blast cannot be deleted.">Archive</button>`
                 // Reject above Delete, and Delete rendered quietly: refusing a blast is the
                 // decision that teaches the decider, deleting is the one that throws the signal
                 // away. The prominent choice should be the useful one.
@@ -6352,6 +6446,97 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }));
         // Archive keeps the send record — that is what market_blast_log points at and what
         // the cooldown and performance model are built on.
+        // ===== FOLLOW UP (Vhea, 2026-09-17) =====
+        //
+        // A second blast to the same market and segment about the same game. It is a NEW queue
+        // row, not a re-send of the old one: the sent row is the record of what went out and
+        // must not be rewritten, and the follow-up gets its own slot, its own copy and its own
+        // approval.
+        //
+        // THE COOLDOWN IS THE WHOLE DIFFICULTY, and it is why this needs a dialog rather than a
+        // one-click action. api/queue-tick.js holds any market that has been blasted inside
+        // cooldown_floor_days (14, from decider_rules) — "the cron respects the cooldown
+        // absolutely". So a follow-up scheduled three days after the original is a row that sits
+        // there being held, every hour, saying nothing, until the fourteenth day. It would look
+        // exactly like a bug.
+        //
+        // So the date defaults past the cooldown, and choosing an earlier one says plainly what
+        // will happen. The choice is left open rather than blocked: Send now on the row ignores
+        // the cooldown (reported as cooldown_overridden), so an earlier follow-up IS deliverable
+        // by hand — it just will not go on its own.
+        tb.querySelectorAll('[data-followup]').forEach(b=>b.addEventListener('click', async ()=>{
+          const id = b.dataset.followup, r = QUEUE.find(x => x.id === id);
+          if(!r) return;
+          if(r.event_date && r.event_date < etYmd()){
+            toast({ type:'err', title:'That game has already been played',
+              lines:['A follow-up has nothing left to sell — the game is in the past.'] });
+            return;
+          }
+          const ans = await followUpDialog(r);
+          if(!ans) return;
+          b.disabled = true;
+          try {
+            const row = {
+              scheduled_for: ans.whenIso,
+              title: (r.title || 'Blast').replace(/^Follow-up · /, '') ,
+              state_code: r.state_code || null,
+              state_name: r.state_name || null,
+              event_id: r.event_id || null,
+              segment: r.segment || null,
+              email: !!r.email, sms: !!r.sms,
+              email_count: Number(r.email_count) || 0,
+              phone_count: Number(r.phone_count) || 0,
+              sms_count:   Number(r.sms_count)   || 0,
+              // THE ORIGINAL COPY IS CARRIED OVER, not redrafted. A follow-up has to differ from
+              // the message it follows, and only a person knows how — "last chance", a price
+              // that moved, seats that are nearly gone. Handing over the exact words that went
+              // out gives them something to edit; /api/queue-draft would hand back the same
+              // template the first blast already used and call it new.
+              email_copy: r.email_copy || null,
+              sms_copy: r.sms_copy || null,
+              // NOT email_subject — queue_enqueue_test does not accept it. Its insert lists
+              // fifteen columns and that is not one of them, so passing it here would be
+              // silently dropped and the follow-up would arrive with an empty subject line while
+              // its body looked complete. Set below, once the row exists.
+            };
+            row.title = 'Follow-up · ' + row.title;
+            const ins = await sb.rpc('queue_enqueue_test', { p_rows: [row] });
+            if(ins.error) throw new Error(ins.error.message);
+            const made = (ins.data || [])[0];
+            if(!made){
+              // queue_enqueue_test skipped it, which here means one thing: a live row for this
+              // (event, segment) already exists. Named, because "nothing happened" is the least
+              // useful thing an action can say.
+              toast({ type:'err', title:'Already queued',
+                lines:['There is already a blast waiting for this game and segment. Send or clear that one first.'] });
+              return;
+            }
+            // The subject, now that there is a row to put it on. Reported, not thrown: the
+            // blast is queued either way and the subject is editable in the Queue.
+            let subjectFailed = false;
+            if(r.email_subject){
+              const sres = await sb.rpc('queue_set_email_subject', { p_id: made.id, p_subject: r.email_subject });
+              subjectFailed = !!sres.error;
+            }
+            if(ans.status === 'confirmed'){
+              const c = await sb.rpc('queue_confirm', { p_id: made.id });
+              if(c.error) toast({ type:'err', title:'Queued, but not confirmed', lines:[ c.error.message ] });
+            }
+            toast({ type:'ok', title:'Follow-up queued',
+              lines:[ blastTitle(made) || row.title,
+                      `Goes ${ans.label} · ${ans.status === 'confirmed' ? 'confirmed' : 'pending review'}.`,
+                      ans.insideCooldown
+                        ? `This is inside the ${COOLDOWN_DAYS}-day cooldown for ${esc(r.state_code||'this market')}, so the hourly send will hold it. Use Send now on the row when you want it to go.`
+                        : ``,
+                      SENDING_PAUSED ? `Sending is paused, so it will wait regardless.` : ``,
+                      subjectFailed ? `The subject line did not carry over — set it in the Queue.` : ``,
+                      `The copy is a duplicate of the first blast — edit it before it goes.` ]});
+            await refresh();
+          } catch(e){
+            toast({ type:'err', title:'Could not queue the follow-up', lines:[ (e && e.message) || String(e) ] });
+          } finally { b.disabled = false; }
+        }));
+
         tb.querySelectorAll('[data-archive]').forEach(b=>b.addEventListener('click', async ()=>{
           const id = b.dataset.archive, r = QUEUE.find(x => x.id === id);
           const ok = await askConfirm({
