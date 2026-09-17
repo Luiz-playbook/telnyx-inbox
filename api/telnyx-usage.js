@@ -37,6 +37,25 @@ export default async function handler(req, res) {
   const sh = supabaseHeaders(supaK);
   const get = p => fetch(`${supaUrl}/rest/v1/${p}`, { headers: sh });
 
+  // PostgREST caps a response at its configured max-rows (1,000 here) no matter what `limit=`
+  // asks for, and it truncates the END of an ordered result. Reading usage that way silently
+  // dropped the newest days — 2026-09-16 and 09-17 read as zero while the table held 4,948 and
+  // 173, and 09-15 came back 6,066 against a true 6,145. A usage report that quietly undercounts
+  // is worse than one that errors, so every range read is paged to exhaustion.
+  const PAGE = 1000;
+  async function getAll(path) {
+    const out = [];
+    for (let offset = 0; offset < 200000; offset += PAGE) {
+      const r = await get(`${path}&limit=${PAGE}&offset=${offset}`);
+      if (!r.ok) return { ok: false, res: r };
+      const batch = await r.json();
+      if (!Array.isArray(batch)) return { ok: false, res: r };
+      out.push(...batch);
+      if (batch.length < PAGE) break;
+    }
+    return { ok: true, rows: out };
+  }
+
   // PERIOD SELECTION (AI-1004). ?period=day|month with ?offset=0 for the current one, 1 for the
   // one before it, and so on. ?days=N is kept for the rolling window the compliance strip has
   // always drawn, and stays the default so nothing that already calls this changes shape.
@@ -85,27 +104,38 @@ export default async function handler(req, res) {
   const days = periodMeta.days;
 
   try {
-    const [uR, sR, bR] = await Promise.all([
+    const [uR, sR, bR, fR, oR] = await Promise.all([
       // Hourly (migration 078) is what makes ET days possible: whole UTC days cannot be re-cut.
       // The ET window is converted to the UTC instants that bound it.
-      get(`telnyx_usage_hourly?select=usage_hour,sending_number,carrier,direction,msg_count,segments,cost`
+      getAll(`telnyx_usage_hourly?select=usage_hour,sending_number,carrier,direction,msg_count,segments,cost`
         + `&direction=eq.outbound&usage_hour=gte.${etMidnightUtc(since).toISOString()}`
         + `&usage_hour=lt.${new Date(etMidnightUtc(until).getTime() + 86400000).toISOString()}`
-        + `&order=usage_hour.asc&limit=100000`),
+        + `&order=usage_hour.asc`),
       get(`telnyx_senders?select=phone_number,label,active,sort_order,notes,brand_id,tcr_campaign_id,assignment_status&order=sort_order.asc`),
       get(`telnyx_brands?select=brand_id,tcr_brand_id,brand_name,vetting_score,tmo_daily_cap,att_tpm,identity_status,checked_at`),
+      // How current the cache is, regardless of which period is being viewed. Without it a quiet
+      // period and a sync that stopped running look identical — which is exactly how the nightly
+      // sync sat dead for a week before AI-1004.
+      get(`telnyx_usage_hourly?select=usage_hour&order=usage_hour.desc&limit=1`),
+      // The OLDEST hour held. The sync keeps a rolling window (30 days by default), so a period
+      // reaching further back is not quiet — it is unsynced, and would otherwise render as a real
+      // but much smaller total. Measured: August read 34,764 against the 53,670 the daily table had.
+      get(`telnyx_usage_hourly?select=usage_hour&order=usage_hour.asc&limit=1`),
     ]);
     for (const r of [sR, bR]) {
       if (!r.ok) { res.status(502).json({ error: 'supabase read failed', detail: (await r.text()).slice(0, 400) }); return; }
     }
     const senders = await sR.json(), brands = await bR.json();
+    // Null when migration 078 has not run, which the UI reads as "no hourly data yet".
+    const usageThrough = fR.ok ? ((await fR.json())[0] || {}).usage_hour || null : null;
+    const usageFrom = oR.ok ? ((await oR.json())[0] || {}).usage_hour || null : null;
 
     // Hourly is preferred; the daily table is the fallback for a database where migration 078 has
     // not run yet. Falling back silently would be worse than the UTC days it returns, so the basis
     // is reported and the UI says which one it is looking at.
     let usage = [], dayBasis = 'et';
     if (uR.ok) {
-      usage = (await uR.json()).map(r => ({
+      usage = uR.rows.map(r => ({
         ...r,
         // The ET day this hour belongs to, and the UTC day the carrier counts it against.
         usage_date: etYmd(new Date(r.usage_hour)),
@@ -113,10 +143,10 @@ export default async function handler(req, res) {
       }));
     }
     if (!uR.ok || !usage.length) {
-      const dR = await get(`telnyx_usage_daily?select=usage_date,sending_number,carrier,direction,msg_count,segments,cost`
-        + `&direction=eq.outbound&usage_date=gte.${since}&usage_date=lte.${until}&order=usage_date.asc&limit=20000`);
-      if (!dR.ok) { res.status(502).json({ error: 'supabase read failed', detail: (await dR.text()).slice(0, 400) }); return; }
-      const daily = await dR.json();
+      const dR = await getAll(`telnyx_usage_daily?select=usage_date,sending_number,carrier,direction,msg_count,segments,cost`
+        + `&direction=eq.outbound&usage_date=gte.${since}&usage_date=lte.${until}&order=usage_date.asc`);
+      if (!dR.ok) { res.status(502).json({ error: 'supabase read failed', detail: (await dR.res.text()).slice(0, 400) }); return; }
+      const daily = dR.rows;
       // Only call it a fallback when there was really nothing hourly to use — an hourly window that
       // is legitimately empty (a quiet day) must not relabel the whole panel as UTC.
       if (!uR.ok) dayBasis = 'utc';
@@ -403,6 +433,13 @@ export default async function handler(req, res) {
       by_inbox: byInbox,
       // Named so nobody reads this strip as total SMS reach: the Salesmsg route in
       // api/queue-tick.js never touches Telnyx and cannot appear here at any date range.
+      // Latest hour held, so the panel can say how fresh it is and offer a sync when it is not.
+      usage_through: usageThrough,
+      usage_from: usageFrom,
+      // True when the period starts before anything we hold, so the totals below are a floor and
+      // not the period's real volume. The UI says so rather than letting a short month read as a
+      // quiet one.
+      partial: !!(usageFrom && Date.parse(since + 'T00:00:00Z') < Date.parse(String(usageFrom).slice(0, 10) + 'T00:00:00Z')),
       excludes: 'Salesmsg — sent through Salesmsg’s own 10DLC brand, not visible to Telnyx.',
     });
   } catch (e) {

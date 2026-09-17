@@ -250,6 +250,18 @@ takes its own `USAGE_CRON_SECRET`, exactly as the price crons do, so reporting c
 handing anything the power to send. Unset means open, which is safe for a route that only reads
 usage totals and writes counts.
 
+**POSTGREST TRUNCATES AT 1,000 ROWS**, whatever `limit=` says, and it cuts the END of an ordered
+result. The hourly read hit it immediately: 2026-09-16 and 09-17 rendered as zero while the table
+held 4,948 and 173, and 09-15 came back 6,066 against a true 6,228. Every range read in
+`api/telnyx-usage.js` is now paged to exhaustion. Worth remembering anywhere else that reads a
+range — a silent undercount on a compliance figure is worse than an error.
+
+**Coverage is a rolling window.** The sync keeps `?days=` (30 by default), so a period reaching
+further back is unsynced rather than quiet — August read 34,764 against a true 64,071 before a
+`?days=90` backfill. The endpoint returns `usage_from` and a `partial` flag, and the tab says
+"partial — synced from <date>" rather than presenting a floor as a total. A backfill takes ~73s for
+90 days, which is why the route allows 300s.
+
 Open items, none of them blocking the report:
 
 - **`+1 615 805 0766` is on no 10DLC campaign** — 404 from the assignment endpoint, while it has

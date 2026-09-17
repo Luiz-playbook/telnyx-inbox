@@ -30,7 +30,10 @@
 import { supabaseKey, supabaseHeaders } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 
-export const config = { maxDuration: 60 };
+// 300s, not 60. The nightly 30-day run takes ~21s, but a backfill does not: ?days=90 measured 73s
+// (three Telnyx windows, paged, plus the upserts), which the old 60s ceiling would have killed
+// halfway — leaving a partly-filled table and no error worth reading.
+export const config = { maxDuration: 300 };
 
 const TELNYX = 'https://api.telnyx.com/v2';
 

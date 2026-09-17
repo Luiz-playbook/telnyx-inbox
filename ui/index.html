@@ -1164,7 +1164,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       <div class="text-sm font-semibold">Telnyx SMS volume &mdash; all carriers, and the one cap</div>
                       <div class="text-xs text-base-content/50" id="tu-prov"></div>
                     </div>
-                    <!-- AI-1004: period selection. Everything below follows it. -->
+                    <!-- AI-1004: period selection, and a manual pull for when the nightly sync has
+                         not run yet. The freshness line beside it is the point — a quiet period and
+                         a dead sync look identical without it, which is how the sync sat broken for
+                         a week. -->
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span class="text-[11px] text-base-content/50" id="tu-fresh"></span>
+                      <button class="btn btn-xs" id="tu-sync"
+                              title="Pull the last 7 days of usage from Telnyx now. The nightly sync covers 30 days; this is for when you do not want to wait for it.">
+                        &#8635; Sync now
+                      </button>
+                    </div>
                     <label class="flex items-center gap-2 shrink-0">
                       <span class="text-[11px] uppercase tracking-wide text-base-content/50">Period</span>
                       <select id="tu-period" class="select select-bordered select-xs w-44"
@@ -8138,6 +8148,44 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }
       };
 
+      // Manual sync (AI-1004). Seven days, not thirty: it takes ~7s against ~21s, and every run
+      // re-fetches and upserts its whole window, so a shorter pull still repairs a recent gap. The
+      // nightly cron keeps doing the full month.
+      (function bindSync(){
+        const btn = document.getElementById('tu-sync');
+        if(!btn) return;
+        btn.addEventListener('click', async e => {
+          e.stopPropagation();
+          const started = Date.now();
+          btn.disabled = true;
+          const tick = setInterval(() => {
+            btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Syncing… ${Math.round((Date.now() - started) / 1000)}s`;
+          }, 250);
+          try{
+            const r = await fetch('/api/telnyx-usage-sync?days=7', { headers: await apiHeaders() });
+            const j = await r.json().catch(() => ({}));
+            if(!r.ok || !j.ok) throw new Error(j.error || ('HTTP ' + r.status));
+            await window.__loadTelnyxUsage(true);
+            window.__pbToast?.({
+              type: j.hourly_error ? 'err' : 'ok',
+              title: j.hourly_error ? 'Synced, but the hourly table did not take it' : 'Usage synced',
+              lines: [
+                j.hourly_error
+                  ? String(j.hourly_error).slice(0, 180)
+                  : `${(j.hourly_rows || 0).toLocaleString()} hourly rows over the last ${j.days} days.`,
+                'Figures above now reflect what Telnyx holds.',
+              ],
+            });
+          }catch(err){
+            window.__pbToast?.({ type:'err', title:'Sync failed', lines:[ String((err && err.message) || err) ] });
+          }finally{
+            clearInterval(tick);
+            btn.disabled = false;
+            btn.innerHTML = '&#8635; Sync now';
+          }
+        });
+      })();
+
       // Switching period refetches — the allowance arithmetic is done server-side, per period.
       // The select lives inside a <summary>, where a click would otherwise collapse the panel.
       (function bindPeriod(){
@@ -8440,6 +8488,31 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         setText('tu-carrier-range', '· ' + rangeLabel);
         // One day selected means one bar; say so rather than leaving a fortnight's heading over it.
         setText('tu-days-range', '· ' + rangeLabel);
+
+        // How current the cache is. Anything past a day old is worth flagging: Telnyx has the data,
+        // we just have not pulled it — which is what the button beside this is for.
+        const fresh = $('tu-fresh');
+        if(fresh){
+          if(j.partial){
+            // The period reaches back further than anything synced, so these totals are a floor.
+            // Left unsaid, a half-synced month reads as a quiet one.
+            fresh.textContent = `partial — synced from ${etDate(new Date(j.usage_from), { month:'short', day:'numeric' })}`;
+            fresh.className = 'text-[11px] text-warning font-semibold';
+            fresh.title = 'Usage is only held from that date, so earlier days in this period count as zero. '
+              + 'The nightly sync keeps a rolling 30 days; a longer backfill needs api/telnyx-usage-sync?days=90.';
+          } else if(!j.usage_through){
+            fresh.textContent = 'no usage synced yet';
+            fresh.className = 'text-[11px] text-warning';
+          } else {
+            const t = new Date(j.usage_through);
+            const hrs = (Date.now() - t.getTime()) / 3600000;
+            fresh.textContent = `data through ${etDate(t, { month:'short', day:'numeric' })} ${etTime(t, { hour:'numeric' })} ET`;
+            fresh.className = 'text-[11px] ' + (hrs > 36 ? 'text-warning font-semibold' : 'text-base-content/50');
+            fresh.title = hrs > 36
+              ? 'The nightly sync has not run recently. Telnyx still has the data — press Sync now to pull it.'
+              : 'Telnyx reports usage by the hour; the most recent hour held is shown.';
+          }
+        }
         $('tu-note').textContent =
           `${p.kind === 'rolling' ? `Last ${p.days} days` : rangeLabel}. `
           // Days are counted ET like everything else; the ALLOWANCE is still a UTC-day figure,
