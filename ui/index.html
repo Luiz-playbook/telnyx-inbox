@@ -1787,7 +1787,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Blast, and mirrored by SENDING_PAUSED in api/queue-tick.js which is the half that actually
     // stops the hourly cron.
     //
-    // WHY IT IS ON. Migration 074 made queued rows real for the first time since June, and the
+    // LIFTED 2026-09-18, on Vhea's instruction, in the same commit as the server half — the two
+    // must move together or the product lies to somebody.
+    //
+    // WHY IT WAS ON. Migration 074 made queued rows real for the first time since June, and the
     // same day it emerged that approval is not a gate: queue-tick sends a row at its slot
     // "confirmed or not" (its own label for it is scheduled-unactioned). So anything queued now
     // would go out on schedule whether or not a person had read it. The hold buys the time to
@@ -1801,7 +1804,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // defaults to false so a missing variable cannot silently stop production sending. This one
     // fails CLOSED: a deliberate hold must survive a config that did not arrive, and lifting it
     // should be a visible commit rather than a dashboard toggle nobody can find later.
-    const SENDING_PAUSED = true;
+    const SENDING_PAUSED = false;   // lifted 2026-09-18
 
     function etInstant(y, m, d, hh = 0, mm = 0){
       const wall = Date.UTC(y, m-1, d, hh, mm, 0);

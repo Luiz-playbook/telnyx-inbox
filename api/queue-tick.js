@@ -55,7 +55,11 @@ const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
 // buttons in ui/index.html stop a person, this stops the hourly cron, and the cron is what
 // would actually have sent.
 //
-// WHY IT IS ON. Migration 074 made queued rows real for the first time since June — before it,
+// LIFTED 2026-09-18, on Vhea's instruction. Checked immediately before: the queue held 5 pending
+// rows and no confirmed ones, so nothing was due and the first tick after this sent nothing. From
+// here a blast goes out when someone confirms it and its slot arrives — which is the point.
+//
+// WHY IT WAS ON. Migration 074 made queued rows real for the first time since June — before it,
 // every row was is_placeholder and the send was dormant whatever anyone pressed. The same day it
 // emerged that approval is NOT a gate: a row goes at its scheduled slot "confirmed or not", and
 // this file's own label for that case is scheduled-unactioned. Together those mean anything
@@ -69,7 +73,7 @@ const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
 // TO LIFT IT: set this to false AND SENDING_PAUSED in ui/index.html to false, in the same
 // commit. Either alone leaves the product lying to somebody — a live cron behind dead buttons,
 // or greyed buttons over a cron that is willing.
-const SENDING_PAUSED = true;
+const SENDING_PAUSED = false;   // lifted 2026-09-18
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
