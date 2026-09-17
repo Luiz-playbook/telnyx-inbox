@@ -22,7 +22,7 @@ export const config = { maxDuration: 60 };
 const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
 
 const SYSTEM = [
-  'You write one-sentence rationales for a ticket-marketing send decider. The decision (send/skip/hold) and the chosen email template are ALREADY made from historical performance data and the configured "Cole Rules" — do not second-guess or change them. For each event you are given the market, whether a blast has run there before, the historical open rate and click-through rate, the best-performing template, the best send weekday, the event fill %, days until the game, days since the last send, warning flags, and a reason code. Write a crisp, specific one-sentence justification a sales lead would trust. Cite the concrete numbers you were given (e.g. "18% open / 8% CTR across prior Boston blasts"). If a warning flag is set (opt-out running hot, or recent-send fatigue), mention it. Never invent numbers. reason codes: ok = good to send; nearly_full = skip, already ~full; no_history = skip, no comparable market blast to learn from; too_early = hold, game is beyond the forward-looking window; cooldown = hold, market was sent to inside the cooldown floor.',
+  'You write one-sentence rationales for a ticket-marketing send decider. The decision (send/skip/hold) and the chosen email template are ALREADY made from historical performance data and the configured "Cole Rules" — do not second-guess or change them. For each event you are given the market, whether a blast has run there before, the historical open rate and click-through rate, the best-performing template, the best send weekday, the event fill % WHERE ONE IS GIVEN (an absent filled_pct means occupancy is unknown, not that the game is empty — never cite or imply a fill figure for those), days until the game, days since the last send, warning flags, and a reason code. Write a crisp, specific one-sentence justification a sales lead would trust. Cite the concrete numbers you were given (e.g. "18% open / 8% CTR across prior Boston blasts"). If a warning flag is set (opt-out running hot, or recent-send fatigue), mention it. Never invent numbers. reason codes: ok = good to send; nearly_full = skip, already ~full; no_history = skip, no comparable market blast to learn from; too_early = hold, game is beyond the forward-looking window; cooldown = hold, market was sent to inside the cooldown floor.',
 ].join('\n');
 
 const SCHEMA = {
@@ -86,7 +86,9 @@ export default async function handler(req, res) {
       const payload = recs.map(r => ({
         event_id: r.event_id, team: r.team, opponent: r.opponent, market: r.market_label,
         matched: r.matched, decision: r.decision, reason_code: r.reason_code,
-        filled_pct: r.filled_pct, open_rate: r.open_rate_w, ctr: r.ctr_w, n_blasts: r.n_blasts,
+        // Migration 072: omitted when unknown, not sent as null. See api/trigger-decide.js.
+        ...(r.filled_pct == null ? {} : { filled_pct: r.filled_pct }),
+        open_rate: r.open_rate_w, ctr: r.ctr_w, n_blasts: r.n_blasts,
         best_template: r.best_template, best_weekday: r.best_dow != null ? DOW[r.best_dow] : null,
         days_until: r.days_until, days_since_send: r.days_since_send,
         optout_warning: r.optout_warning, fatigue_warning: r.fatigue_warning,

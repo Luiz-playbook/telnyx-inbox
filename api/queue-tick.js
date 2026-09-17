@@ -1,8 +1,24 @@
 // Auto-send tick for the daily blast queue (Vercel Cron).
 //
-// A queued blast sends when its scheduled slot arrives — confirmed or not (approval is
-// optional, not blocking). Placeholder/demo rows (is_placeholder=true) are NEVER auto-sent
-// — this endpoint is dormant until real blasts are queued.
+// TWO WAYS A BLAST GOES OUT, and they answer to different rules (Vhea, 2026-09-16):
+//
+//   AUTOMATIC, on the cron — the row must be CONFIRMED and its scheduled slot must have passed.
+//   MANUAL, "Send now" from the Queue — one named row, on an operator's explicit click, at once.
+//
+// APPROVAL IS NOW A GATE ON THE AUTOMATIC PATH. It was not: a row sent at its slot "confirmed or
+// not", and this file labelled that case scheduled-unactioned. That was survivable only because
+// every row was is_placeholder and nothing sent at all; migration 074 made rows real, and an
+// unread blast going out on a timer is not what "pending" means to anyone reading the Queue.
+//
+// So pending now means waiting for a person, and confirmed means approved to go at its slot.
+// That is the whole point of being able to add a row as confirmed: pre-approve it, and it goes
+// on schedule without anyone opening it again.
+//
+// MANUAL SEND IS NOT GATED BY STATUS, deliberately. Send now IS the approval — it is a person
+// naming one row and asking for it, which is a stronger signal than the flag. What it does not
+// skip is rejected and archived (see sendable): those mean no, however the send was triggered.
+//
+// Placeholder/demo rows (is_placeholder=true) are NEVER auto-sent.
 //
 // The old rule also fired any row left unactioned 48h after it was QUEUED, ignoring
 // scheduled_for. With the multi-day queue (four days lined up at once, migration 030) that
@@ -24,6 +40,7 @@
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
+import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 60 };
@@ -31,6 +48,28 @@ export const config = { maxDuration: 60 };
 const normPhone = p => { let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; };
 const validPhone = p => /^\+\d{10,15}$/.test(p||'');
 const validEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e||'');
+
+// ===== THE SEND HOLD (Vhea, 2026-09-16) =====
+//
+// Nothing leaves the building while this is true. This is the half that matters: the greyed
+// buttons in ui/index.html stop a person, this stops the hourly cron, and the cron is what
+// would actually have sent.
+//
+// WHY IT IS ON. Migration 074 made queued rows real for the first time since June — before it,
+// every row was is_placeholder and the send was dormant whatever anyone pressed. The same day it
+// emerged that approval is NOT a gate: a row goes at its scheduled slot "confirmed or not", and
+// this file's own label for that case is scheduled-unactioned. Together those mean anything
+// queued now would go out on schedule with nobody having read it. The hold buys the time to
+// rebuild the queue deliberately, and to decide whether approval SHOULD be mandatory.
+//
+// IT REFUSES EVERY PATH, cron and manual Send now alike. A hold that a button can step around is
+// not a hold, and "I only pressed Send now on one" is exactly how a pause gets discovered to
+// have never been one.
+//
+// TO LIFT IT: set this to false AND SENDING_PAUSED in ui/index.html to false, in the same
+// commit. Either alone leaves the product lying to somebody — a live cron behind dead buttons,
+// or greyed buttons over a cron that is willing.
+const SENDING_PAUSED = true;
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
@@ -38,6 +77,56 @@ export default async function handler(req, res) {
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn, body) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
+
+  // EVERY RECIPIENT, NOT THE FIRST THOUSAND.
+  //
+  // PostgREST caps any single response at 1,000 rows. market_phones / market_emails were called
+  // once and whatever came back was treated as the audience, so a blast to Minnesota resolved
+  // 1,000 of its 3,753 numbers, sent to those, marked the row sent and put the market on a
+  // 14-day cooldown. The other 2,753 people were never contacted and nothing said so — the UI
+  // reads its counts from market_counts, which queries the table directly and is not capped, so
+  // the operator approved "3,753 phone numbers" and 1,000 were reached.
+  //
+  // Measured across the live markets before this fix: 18 of 52 markets truncated on phone and
+  // 22 on email — 15,853 of 45,855 numbers and 23,890 of 56,331 addresses silently unreachable.
+  //
+  // Migration 054 was meant to have removed this. It removed the `limit 1000` written inside the
+  // SQL; it could not remove the cap sitting one layer above, in PostgREST itself. Two caps, one
+  // fixed, and the second kept doing the same job unnoticed.
+  //
+  // THE SAME BUG WAS ALREADY FOUND AND FIXED ONCE, in the Offers tab (ui/index.html,
+  // fetchAllEvents) — where it presented as NFL and NHL missing from the table because the first
+  // 1,000 rows were all MLB. The fix here is the same shape, so the two read alike.
+  //
+  // WHY QUERY PARAMS AND NOT A Range HEADER: Range is ignored on an RPC POST, as the Offers-tab
+  // comment records. limit/offset go on the URL.
+  //
+  // OFFSET PAGING IS SAFE HERE ONLY BECAUSE BOTH FUNCTIONS END IN AN ORDER BY (migration 054:
+  // `order by mc.phone` / `order by mc.email`). Paging an unordered result loses rows — Postgres
+  // may return them differently per request, so a row can slip between pages. Ties on the same
+  // value can still shuffle across a page boundary, but every row sharing a value is contiguous
+  // in the ordering, so a shuffle can only repeat a value, never lose a distinct one; the caller
+  // dedupes through a Set. Remove either ORDER BY and this becomes lossy again.
+  //
+  // A FAILED PAGE THROWS. It must never return what it has so far: a partial audience that reads
+  // as a complete one is the exact failure this function exists to end, and it would be worse
+  // than the bug — the row would be marked sent for an audience nobody chose.
+  const PAGE = 1000, MAX_ROWS = 100000;   // MAX_ROWS is a runaway guard, not an expected ceiling
+  async function rpcAll(fn, body) {
+    const out = [];
+    for (let offset = 0; offset < MAX_ROWS; offset += PAGE) {
+      const url = `${supaUrl}/rest/v1/rpc/${fn}?limit=${PAGE}&offset=${offset}`;
+      const r = await fetch(url, { method: 'POST', headers: sh, body: JSON.stringify(body || {}) });
+      if (!r.ok) throw new Error(`${fn} page at offset ${offset} failed: HTTP ${r.status} ${(await r.text()).slice(0, 200)}`);
+      const page = await r.json();
+      if (!Array.isArray(page)) throw new Error(`${fn} returned ${typeof page} at offset ${offset}`);
+      out.push(...page);
+      // A short page is the last page. An exactly-full final page costs one extra empty request,
+      // which is the right trade against guessing the total up front.
+      if (page.length < PAGE) return out;
+    }
+    throw new Error(`${fn} exceeded ${MAX_ROWS} rows — refusing to send to a guessed audience`);
+  }
 
   let body = req.body;
   if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
@@ -95,8 +184,11 @@ export default async function handler(req, res) {
   // Manual "Send now" from the Queue posts { id } and targets exactly that row. It is an
   // explicit operator action on one blast, so it skips the two gates the CRON pass needs and
   // the operator has already answered for: the scheduled slot (that's the whole point) and
-  // is_placeholder (every row Trigger Blast queues is a placeholder, so the cron must never
-  // fire them on its own — but the operator asking for this one is not the cron).
+  // is_placeholder (a demo row is not something the cron should ever fire on its own — but the
+  // operator asking for this one is not the cron).
+  //
+  // IT DOES NOT SKIP sendable(), and must not: rejected and archived mean "no" however the send
+  // was triggered. Pressing Send now on a blast someone else rejected should fail, not deliver.
   //
   // What it does NOT skip is send_allowlist: while that list is non-empty, market_emails /
   // market_phones resolve to zero rows for any market not on it, so a real market still
@@ -110,16 +202,51 @@ export default async function handler(req, res) {
   // option sends from it, and reporting a key for an account nothing uses is just noise.
   const CAKEMAIL_ACCOUNTS = ['1679456', '1761047'].filter(id => !!cakemailKey(id));
 
+  // The hold, checked before the queue is even read. Nothing is resolved, no recipients are
+  // fetched, no webhook is called. 200 rather than an error: a paused system is working as
+  // configured, and a cron that logs a failure every hour trains everyone to ignore it.
+  if (SENDING_PAUSED) {
+    res.status(200).json({
+      ok: true, paused: true, sent: 0, results: [],
+      note: 'Sending is paused (SENDING_PAUSED in api/queue-tick.js). No blast was resolved or '
+          + 'delivered. Queued rows are untouched and will send once the hold is lifted.',
+    });
+    return;
+  }
+
   try {
     const q = await (await rpc('get_campaign_queue')).json();
     if (!Array.isArray(q)) { res.status(502).json({ error: 'queue fetch failed', detail: q }); return; }
 
     // due = real, not already sent, and its scheduled slot has arrived — unless one row was
     // named, in which case that row IS the work.
-    const sendable = r => r.status !== 'sent' && r.status !== 'sending';
+    // WHAT MAY NEVER BE SENT.
+    //
+    // 'sent' and 'sending' were the only exclusions here, which was safe ONLY because every row
+    // was is_placeholder = true and the cron therefore never reached this test at all. Migration
+    // 074 makes queued rows real, and that turns this line into the thing standing between a
+    // refused blast and a delivered one — so the two states that mean "no" are now named.
+    //
+    // REJECTED. An operator read the blast and refused it, with a written reason (migration 048).
+    // Without this, a rejected row whose slot had passed would have been picked up by the next
+    // hourly tick and sent — the operator's decision reversed by a filter that never knew about
+    // it. Of the 83 rows in the queue when 074 was written, 9 were rejected.
+    //
+    // ARCHIVED. "Not now, but keep it" (migration 045). Archiving hides a row from the Queue, so
+    // sending one would deliver a blast nobody can see in the UI — invisible and unstoppable.
+    // All 82 open rows were archived immediately before 074 to clear the queue; had this guard
+    // not gone in with it, the first tick after the migration would have sent the lot.
+    //
+    // NOT status 'snoozed' — snoozing moves scheduled_for, so the slot check already holds it.
+    const sendable = r => r.status !== 'sent' && r.status !== 'sending'
+                       && r.status !== 'rejected' && !r.archived_at;
     const due = onlyId
       ? q.filter(r => r.id === onlyId && sendable(r))
-      : q.filter(r => !r.is_placeholder && sendable(r) && new Date(r.scheduled_for).getTime() <= now);
+      // CONFIRMED ONLY on the cron. A pending row waits for a person however long its slot has
+      // been and gone — it is not late, it is unapproved. 'snoozed' is excluded by the same
+      // test, which is right: snoozing is a decision to not send yet.
+      : q.filter(r => !r.is_placeholder && sendable(r) && r.status === 'confirmed'
+                      && new Date(r.scheduled_for).getTime() <= now);
     if (onlyId && !due.length) {
       const row = q.find(r => r.id === onlyId);
       res.status(row ? 409 : 404).json({ error: row ? `blast is already ${row.status}` : 'blast not found', id: onlyId });
@@ -177,19 +304,29 @@ export default async function handler(req, res) {
         held.push({ id: r.id, title: r.title, market: mkt, reason: `game-${off}`, event_date: r.event_date });
         continue;
       }
-      const reason = onlyId ? 'manual-send-now' : (r.status === 'confirmed' ? 'scheduled' : 'scheduled-unactioned');
+      // 'scheduled-unactioned' is gone from the cron path — it cannot reach here unconfirmed any
+      // more. It survives for the manual path, where sending an unconfirmed row is legitimate
+      // and worth recording as exactly that.
+      const reason = onlyId
+        ? (r.status === 'confirmed' ? 'manual-send-now' : 'manual-send-now-unconfirmed')
+        : 'scheduled';
       let phones = [], emails = [];
       // p_segment null = the whole market, every segment — which is exactly what a row with no
       // segment means, and what every row queued before migration 050 is.
       const seg = r.segment || null;
-      if (r.sms && r.state_code)   { const d = await (await rpc('market_phones', { p_code: r.state_code, p_segment: seg })).json(); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
-      if (r.email && r.state_code) { const d = await (await rpc('market_emails', { p_code: r.state_code, p_segment: seg })).json(); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
+      // rpcAll, not rpc: see the note on the helper. A single call returned at most 1,000.
+      if (r.sms && r.state_code)   { const d = await rpcAll('market_phones', { p_code: r.state_code, p_segment: seg }); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
+      if (r.email && r.state_code) { const d = await rpcAll('market_emails', { p_code: r.state_code, p_segment: seg }); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
 
       // sent = channels that actually delivered; failed = channels that did not. The two were
       // one list, so "CakeMail failed: …" counted as a send: the row was marked sent, the
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
+      // AI-976: recipients to write to HubSpot once this row's sends are done. Collected
+      // rather than logged inline so the CRM write never sits between resolving an audience
+      // and putting the messages on the wire.
+      const hubspotLog = [];
       if (r.sms && phones.length) {
         // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
         // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
@@ -204,6 +341,13 @@ export default async function handler(req, res) {
             const out = await sendSmsBulk({ teamId: sm.teamId, to: phones, message: r.sms_copy || '' });
             if (out.sent) sent.push(`SMS ${out.sent} (Salesmsg ${sm.phone})`);
             if (out.failed.length) failed.push(`Salesmsg: ${out.failed.length} of ${out.total} failed — ${out.failed[0].error}`);
+            // AI-976. Salesmsg reports per number, so only the ones it actually accepted are
+            // logged — writing a HubSpot interaction for a number it refused would put a message
+            // on someone's timeline that never left the building.
+            hubspotLog.push(...(out.sentNumbers || []).map(to => ({
+              to, from: sm.phone, body: r.sms_copy || '', sentAt: new Date().toISOString(),
+              outcome: 'sent via Salesmsg',
+            })));
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
@@ -226,6 +370,19 @@ export default async function handler(req, res) {
           (rr.ok ? sent : failed).push(rr.ok
             ? `SMS ${messages.length} handed off (delivery unconfirmed)`
             : `SMS failed (HTTP ${rr.status})`);
+          // AI-976. Only on a successful handoff — a rejected webhook means nothing was queued to
+          // send, and logging it would be recording an interaction that did not happen.
+          //
+          // The outcome is recorded as "handed off", NOT "delivered", for the same reason the
+          // status string above says so: this 200 is n8n accepting the payload, not Telnyx
+          // accepting a message. A HubSpot timeline claiming delivery we cannot evidence would
+          // spread the very confusion GAPS.md gap 2 is about.
+          if (rr.ok) {
+            hubspotLog.push(...phones.map(to => ({
+              to, from: r.sms_from || undefined, body: r.sms_copy || '',
+              sentAt: new Date().toISOString(), outcome: 'handed off to Telnyx',
+            })));
+          }
         } else {
           failed.push('No SMS route: the row has no Salesmsg sender and BULK_SEND_WEBHOOK_URL is unset');
         }
@@ -307,7 +464,21 @@ export default async function handler(req, res) {
           p_segment: r.segment || null,
         });
       }
-      results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined, recipients: summary, cooldown_overridden: cooling || undefined });
+      // AI-976: log to HubSpot LAST, and never let it change what happened.
+      //
+      // It runs after queue_mark_sent and log_market_blast deliberately. The messages are already
+      // gone; a CRM outage must not turn a delivered blast into a reported failure, delay the
+      // next row, or — worst — throw between the send and the mark and leave a row that sent but
+      // reads as unsent, which the hourly tick would then send again.
+      let hubspot;
+      if (hubspotLog.length && hubspotConfigured()) {
+        try {
+          hubspot = await logOutboundSmsBatch(hubspotLog);
+        } catch (e) {
+          hubspot = { error: String((e && e.message) || e) };
+        }
+      }
+      results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined, recipients: summary, cooldown_overridden: cooling || undefined, hubspot });
     }
 
     res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS } });
