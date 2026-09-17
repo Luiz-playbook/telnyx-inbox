@@ -21,10 +21,18 @@
 // tracks which leagues each run covered so a one-league refresh cannot block a different one.
 // Leagues not selected are simply not queried — their stored prices are untouched, never cleared.
 //
-// Env: GEMINI_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js),
-//      optional CRON_SECRET/REPLY_SECRET.
+// SCRAPE FIRST (AI-969). Every game is first priced by scraping Gametime and TickPick
+// (lib/scrape-price.js): plain HTTP, then Crawl4AI, then Firecrawl, no model involved. Only the
+// games no marketplace page could price go to the search model below, so the model is now the
+// fallback rather than the source. PRICE_SCRAPE=off (env) or ?scrape=0 turns scraping off and
+// restores the model-only behaviour exactly.
+//
+// Env: GEMINI_API_KEY or OPENROUTER_GEMINI, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see
+//      lib/supabase.js), optional CRON_SECRET/REPLY_SECRET, and for scraping CRAWL4AI_URL,
+//      CRAWL4AI_API_TOKEN, FIRECRAWL_AUTHORIZATION_KEY, FIRECRAWL_HEADER_NAME.
 
 import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, OR_COST_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
+import { scrapeGamePrice, scrapeToPriceRow, newScrapeContext, errorCandidate } from '../lib/scrape-price.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };
@@ -41,10 +49,25 @@ const chunk = (a, n) => Array.from({ length: Math.ceil(a.length / n) }, (_, i) =
 // therefore overran Vercel's ceiling and returned 504, losing every price already paid for.
 const CONCURRENCY = 5;
 
+// Scraping runs first and gets most of the 200s run budget, leaving the model enough to price the
+// misses. Measured: 40 games in 38s at 6 in flight, nearly all over plain HTTP. Games the scrape
+// pass never reached are handed to the model rather than skipped — that is what every game cost
+// before this existed, so it can only be cheaper, never dearer.
+const SCRAPE_CONCURRENCY = 8;
+const SCRAPE_BUDGET_MS = 140e3;
+
+// For the pre-run ESTIMATE only: the share of games expected to fall through to the model. From
+// the 40-game test on 2026-09-15 — MLB 0/10 and NFL 0/10 missed, WNBA 5/10, CFB 3/10. Re-measure
+// from the run log (notes) once real runs exist.
+const SCRAPE_MISS_RATE_EST = 0.25;
+
 // One grounded pass over the batches; returns priced rows, batches that came back empty, and
 // any that were never attempted because the deadline arrived. Nothing is thrown on timeout:
 // a partial result that gets written beats a 504 that discards work already billed for.
-async function pricePass(batches, acc, deadline) {
+// `errs` (external_id -> reason) collects why a game the model was asked about has no price, so the
+// price editor can show "402 Insufficient credits" beside AI search instead of simply omitting it.
+// A later pass that prices the game removes its entry.
+async function pricePass(batches, acc, deadline, errs) {
   const priced = [], failedBatches = [], skipped = [];
   let next = 0;
   async function worker() {
@@ -52,14 +75,31 @@ async function pricePass(batches, acc, deadline) {
       const idx = next++;
       if (idx >= batches.length) return;
       const b = batches[idx];
-      if (Date.now() > deadline) { skipped.push(b); continue; }   // drain, don't start
+      if (Date.now() > deadline) {                                  // drain, don't start
+        skipped.push(b);
+        for (const g of b) if (!errs.has(g.external_id)) errs.set(g.external_id, { kind: 'error', error: 'Not reached before the run time limit' });
+        continue;
+      }
       const r = await callPrices(b);
-      if (!r.ok) { failedBatches.push(b); continue; }
+      if (!r.ok) {
+        failedBatches.push(b);
+        for (const g of b) errs.set(g.external_id, { kind: 'error', error: r.error || 'AI search request failed' });
+        continue;
+      }
       acc.inTok += r.inTok; acc.outTok += r.outTok; acc.groundedCalls++;
       // OpenRouter reports the exact charge per request; Google does not, so that route
       // still falls back to the estimate below. Mixing the two would double-count.
       if (typeof r.costUsd === 'number') { acc.exactCost += r.costUsd; acc.exactCalls++; }
       priced.push(...r.priced);
+      const got = new Set(r.priced.map(p => String(p.external_id)));
+      for (const g of b) {
+        if (got.has(String(g.external_id))) errs.delete(g.external_id);
+        // An answered call that found nothing is "not listed", not a failure — unless the retry
+        // model itself failed, which is.
+        else errs.set(g.external_id, r.fallbackError
+          ? { kind: 'error', error: r.fallbackError }
+          : { kind: 'not_listed', error: 'No price found by AI search' });
+      }
       if (r.priced.length === 0) failedBatches.push(b); // whole-batch miss -> retry candidate
     }
   }
@@ -77,7 +117,11 @@ export default async function handler(req, res) {
 
   const route = priceRoute();
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
-  if (!route.ok || !supaUrl || !supaKey) { res.status(500).json({ error: 'No price key (OPENROUTER_GEMINI or GEMINI_API_KEY) / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
+  const scrapeOn = String(process.env.PRICE_SCRAPE || 'on').trim().toLowerCase() !== 'off'
+    && req.query?.scrape !== '0' && req.query?.scrape !== 'false';
+  // A model key is only required when there is nothing else to price with. With scraping on, a
+  // missing key costs the fallback, not the run.
+  if (!supaUrl || !supaKey || (!route.ok && !scrapeOn)) { res.status(500).json({ error: 'No price key (OPENROUTER_GEMINI or GEMINI_API_KEY) / SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
@@ -171,7 +215,7 @@ export default async function handler(req, res) {
       // the most urgent games — the opposite of what either control is for.
       `&order=event_date.asc,id.asc` +
       // team_full feeds the SeatGeek /<team>-tickets fallback slug — "guardians" is not one.
-      `&select=id,external_id,league,team,team_full,opponent,event_date,venue,state_code,best_price,priced_at,price_url`, { headers: sh });
+      `&select=id,external_id,league,team,team_full,opponent,event_date,venue,state_code,best_price,priced_at,price_url,price_candidates`, { headers: sh });
     let games = await evR.json();
     if (!Array.isArray(games)) { res.status(502).json({ error: 'events fetch failed', detail: games }); return; }
 
@@ -212,7 +256,11 @@ export default async function handler(req, res) {
     // commits to spending. Free, and nothing is written or logged.
     if (req.query?.estimate === '1' || req.query?.estimate === 'true') {
       const wouldPrice = games.length;   // already narrowed above, or not, per `force`
-      const batchCount = Math.ceil(wouldPrice / BATCH);
+      // With scraping on, only the misses reach the model. The quote uses the measured miss rate
+      // and also states the ceiling, since a day when a site blocks everything prices like before.
+      const modelShare = scrapeOn ? Math.ceil(wouldPrice * SCRAPE_MISS_RATE_EST) : wouldPrice;
+      const batchCount = Math.ceil(modelShare / BATCH);
+      const perReq = route.grounded ? GROUNDING_PER_REQ : OR_COST_PER_REQ;
       res.status(200).json({
         ok: true, estimate: true, eligible: eligibleTotal, would_price: wouldPrice,
         // Which provider this deployment will actually use. Free to ask, and it is the only
@@ -224,7 +272,9 @@ export default async function handler(req, res) {
         // average on OpenRouter (see OR_COST_PER_REQ). This is what the confirm dialog quotes
         // before an operator agrees to spend, so it must never be null — the UI renders
         // Number(est_cost_usd || 0), which turned a missing estimate into "roughly $0.00".
-        est_cost_usd: Number((batchCount * (route.grounded ? GROUNDING_PER_REQ : OR_COST_PER_REQ)).toFixed(4)),
+        est_cost_usd: Number((batchCount * perReq).toFixed(4)),
+        est_cost_max_usd: Number((Math.ceil(wouldPrice / BATCH) * perReq).toFixed(4)),
+        scrape: scrapeOn,
         window_days: winDays,                            // the horizon ACTUALLY used
         window_default: Number(rules.price_window_days), // the stored rule, so the dialog can default to it
         // Echoed so the dialog can prove the quote it is showing matches the boxes that are
@@ -240,8 +290,42 @@ export default async function handler(req, res) {
       return;
     }
 
+    // ---- 1. Scrape pass ------------------------------------------------------------------------
+    const scrapeRows = [];
+    const scrapeResults = new Map();   // external_id -> scrape result, kept for its error rows
+    const scrapeStat = { tried: 0, priced: 0, not_reached: 0, gametime: 0, tickpick: 0, pages: 0, via: {}, firecrawl: 0 };
+    let modelGames = games;
+    if (scrapeOn && games.length) {
+      const ctx = newScrapeContext();
+      const scrapeDeadline = started + SCRAPE_BUDGET_MS;
+      const missed = [];
+      let nextGame = 0;
+      const scrapeWorker = async () => {
+        for (;;) {
+          const idx = nextGame++;
+          if (idx >= games.length) return;
+          const g = games[idx];
+          if (Date.now() > scrapeDeadline) { scrapeStat.not_reached++; missed.push(g); continue; }
+          scrapeStat.tried++;
+          // A scraper bug must cost one game, not the run.
+          const r = await scrapeGamePrice(g, ctx).catch(() => null);
+          if (r) scrapeResults.set(g.external_id, r);
+          const row = r && scrapeToPriceRow(r);
+          if (!row) { missed.push(g); continue; }
+          scrapeStat.priced++;
+          if (r.sources.find(x => x.source === 'Gametime')?.ok) scrapeStat.gametime++;
+          if (r.sources.find(x => x.source === 'TickPick')?.ok) scrapeStat.tickpick++;
+          scrapeRows.push(row);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(SCRAPE_CONCURRENCY, games.length) }, scrapeWorker));
+      scrapeStat.pages = ctx.stats.pages; scrapeStat.via = ctx.stats.byVia; scrapeStat.firecrawl = ctx.firecrawlCalls;
+      modelGames = missed;
+    }
+
+    // ---- 2. Model pass, over whatever the scrape could not price -------------------------------
     const acc = { inTok: 0, outTok: 0, groundedCalls: 0, exactCost: 0, exactCalls: 0 };
-    const batches = chunk(games, BATCH);
+    const batches = route.ok ? chunk(modelGames, BATCH) : [];
 
     // Stop starting new work with enough margin to still write, log and respond inside the
     // platform's 300s ceiling. Overrunning it returns 504 and loses every price already paid
@@ -250,7 +334,10 @@ export default async function handler(req, res) {
     const deadline = started + BUDGET_MS;
 
     // pass 1, then one retry pass over the batches that came back empty
-    const p1 = await pricePass(batches, acc, deadline);
+    const modelErrors = new Map();
+    // No model route at all: every game that reached this point fails for that one reason.
+    if (!route.ok) for (const g of modelGames) modelErrors.set(g.external_id, { kind: 'error', error: 'No AI search key set (OPENROUTER_GEMINI / GEMINI_API_KEY)' });
+    const p1 = await pricePass(batches, acc, deadline, modelErrors);
     let retriedBatches = 0;
     let allPriced = p1.priced;
     let skippedBatches = p1.skipped.length;
@@ -263,7 +350,7 @@ export default async function handler(req, res) {
       // costs nothing on a healthy run and gives a rate limit a chance to clear on a sick one.
       await new Promise(r => setTimeout(r, 2000));
       retriedBatches = p1.failedBatches.length;
-      const p2 = await pricePass(p1.failedBatches, acc, deadline);
+      const p2 = await pricePass(p1.failedBatches, acc, deadline, modelErrors);
       allPriced = allPriced.concat(p2.priced);
       skippedBatches += p2.skipped.length;
     }
@@ -276,8 +363,44 @@ export default async function handler(req, res) {
     // the model returns a usable link for roughly 60% of the games it prices — so the count is
     // reported as `unverified` rather than hidden.
     const all = [...byId.values()];
-    const priceRows = all.filter(r => r.url);
-    const unverified = all.length - priceRows.length;
+    const modelRows = all.filter(r => r.url);
+    const unverified = all.length - modelRows.length;
+    // Scraped rows first; a game is only ever in one pass, but the guard costs nothing.
+    const scrapedIds = new Set(scrapeRows.map(r => r.external_id));
+    const checkedAt = new Date().toISOString();
+    const scrapeErrorsFor = id => (scrapeResults.get(id) || {}).errors || [];
+    const aiSearchError = id => {
+      const e = modelErrors.get(id);
+      return e ? [errorCandidate('AI search', e)] : [];
+    };
+
+    // A model-priced game now carries a list too: the scrape sources that failed, then the model's
+    // price marked as chosen. It is labelled via: 'ai' so the editor can say it was found by search
+    // rather than read off a listing — there is no section, row or all-in behind it.
+    const modelPriceRows = modelRows.filter(r => !scrapedIds.has(r.external_id)).map(r => ({
+      ...r,
+      candidates: scrapeErrorsFor(r.external_id).concat([{
+        source: r.source, url: r.url, price: Number(r.price_usd), all_in: null, currency: r.currency || 'USD',
+        seats: r.seats, section: null, row: null, section_group: null, via: 'ai',
+        note: 'Found by AI search, not read from a listing.', checked_at: checkedAt,
+        chosen: true, chosen_by: 'refresh',
+      }]),
+    }));
+    const priceRows = scrapeRows.concat(modelPriceRows);
+
+    // Games no source could price. set_event_prices ignores a row without a price, so these are
+    // written straight to price_candidates — the stored price itself is left exactly as it was.
+    // The listings that price came from are kept (with their original "checked" times) and the
+    // new error rows are put after them, replacing the previous run's errors, so the editor shows
+    // both what the price is based on and why today's refresh could not improve on it.
+    const pricedIds = new Set(priceRows.map(r => String(r.external_id)));
+    const failedGames = games.filter(g => !pricedIds.has(String(g.external_id))
+      && (scrapeResults.has(g.external_id) || modelErrors.has(g.external_id)));
+    const errorOnly = failedGames.map(g => ({
+      id: g.id,
+      list: (Array.isArray(g.price_candidates) ? g.price_candidates.filter(c => c && c.price != null) : [])
+        .concat(scrapeErrorsFor(g.external_id), aiSearchError(g.external_id)),
+    })).filter(x => x.list.length);
 
     // Every league present, not just MLB. The old call passed p_league:'mlb' into a function
     // that filters `where league = p_league`, so an NFL or NHL price was paid for and then
@@ -291,6 +414,26 @@ export default async function handler(req, res) {
       const wBody = await wR.json().catch(() => null);
       if (!wR.ok) { writeError = (wBody && (wBody.message || wBody.error)) || `write failed (HTTP ${wR.status})`; }
       else { written = Number(wBody) || 0; }
+    }
+
+    // One PATCH per unpriced game — PostgREST cannot set a different value per row in one request.
+    // These are the minority (the misses), and a failure here never fails the run: the prices that
+    // did land are what matters, and the next run rewrites these lists anyway.
+    let errorListsWritten = 0;
+    if (!dry && errorOnly.length) {
+      let nextErr = 0;
+      const errWorker = async () => {
+        for (;;) {
+          const i = nextErr++;
+          if (i >= errorOnly.length) return;
+          const x = errorOnly[i];
+          const r = await fetch(`${supaUrl}/rest/v1/events_master?id=eq.${encodeURIComponent(x.id)}`, {
+            method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' }, body: JSON.stringify({ price_candidates: x.list }),
+          }).catch(() => null);
+          if (r && r.ok) errorListsWritten++;
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(8, errorOnly.length) }, errWorker));
     }
 
     // Which leagues this run actually touched — makes a league silently failing to write
@@ -315,6 +458,12 @@ export default async function handler(req, res) {
       batches: batches.length, retried_batches: retriedBatches,
       in_tokens: acc.inTok, out_tokens: acc.outTok, cost_usd: Number(cost.toFixed(4)),
       duration_ms: durationMs, dry_run: dry,
+      // record_price_run has no scrape columns; notes carries the split so a run can be read back.
+      notes: scrapeOn
+        ? `scrape: ${scrapeStat.priced}/${scrapeStat.tried} priced (gametime ${scrapeStat.gametime}, tickpick ${scrapeStat.tickpick}), `
+          + `${scrapeStat.not_reached} not reached, pages ${scrapeStat.pages} via ${JSON.stringify(scrapeStat.via)}, firecrawl ${scrapeStat.firecrawl}; `
+          + `model: ${modelGames.length} games, ${modelRows.length} priced`
+        : 'scrape: off',
       // What this run COVERED, which is not the same as by_league (what it happened to find).
       // A league with no eligible games still has to count as covered, or the cooldown would let
       // it be retried immediately and the tab would keep calling it stale. null = all leagues.
@@ -359,6 +508,14 @@ export default async function handler(req, res) {
       timed_out: skippedBatches > 0 || undefined,
       not_reached: skippedBatches ? skippedBatches * BATCH : undefined,
       write_error: writeError || undefined, ...runLog,
+      scrape: scrapeOn ? scrapeStat : undefined,
+      model_priced: modelRows.length,
+      // Why the model could not price what it was given, grouped — "402 Insufficient credits: 5".
+      model_errors: modelErrors.size
+        ? Object.entries([...modelErrors.values()].reduce((a, e) => (a[e.error] = (a[e.error] || 0) + 1, a), {})).map(([k, v]) => `${k}: ${v}`)
+        : undefined,
+      unpriced_with_errors: errorOnly.length || undefined,
+      error_lists_written: dry ? undefined : errorListsWritten,
     });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });

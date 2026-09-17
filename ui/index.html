@@ -156,6 +156,35 @@
                       font-size:13px; color:#2f4858; background:#fff; }
     .price-pop input:focus{ outline:none; box-shadow:0 0 0 2px #e8935a33; border-color:#e8935a; }
     .price-pop .pp-err{ color:#c0392b; font-size:11px; font-weight:600; }
+    /* Scraped prices (AI-969). The popover widens only when there is a list to show, so a game
+       priced by the model or by hand keeps the compact two-field box it always had. */
+    .price-pop.pp-wide{ width:380px; }
+    .price-pop .pp-ticket{ font-size:11px; color:#2f4858; background:#f6f9fc; border:1px solid #e5ebf1;
+                           border-radius:7px; padding:6px 8px; line-height:1.4; }
+    .price-pop .pp-ticket b{ color:#133b49; }
+    .price-pop details.pp-cands{ border:1px solid #e5ebf1; border-radius:7px; overflow:hidden; }
+    .price-pop details.pp-cands > summary{ cursor:pointer; list-style:none; display:flex; align-items:center;
+                           justify-content:space-between; padding:5px 8px; font-size:10px; font-weight:800;
+                           letter-spacing:.04em; text-transform:uppercase; color:#8695a7; }
+    .price-pop details.pp-cands > summary::-webkit-details-marker{ display:none; }
+    .price-pop details.pp-cands > summary .pp-caret{ transition:transform .12s; }
+    .price-pop details.pp-cands[open] > summary .pp-caret{ transform:rotate(90deg); }
+    .price-pop .pp-cands-body{ max-height:230px; overflow:auto; }
+    .price-pop .pp-cand{ display:flex; gap:7px; align-items:flex-start; padding:6px 8px; border-top:1px solid #eef2f6;
+                         font-size:11px; color:#2f4858; cursor:pointer; }
+    .price-pop .pp-cand:hover{ background:#fbfcfe; }
+    .price-pop .pp-cand.pp-sel{ background:#fdf6ef; }
+    /* .price-pop input is width:100% for the two text fields; a checkbox must not inherit that. */
+    .price-pop .pp-cand input[type=checkbox]{ width:auto; margin-top:2px; accent-color:#e8935a; flex:none; }
+    .price-pop .pp-cand-err{ cursor:default; }
+    .price-pop .pp-cand-err:hover{ background:transparent; }
+    .price-pop .pp-cand input[type=checkbox]:disabled{ opacity:.35; cursor:not-allowed; }
+    .price-pop .pp-errsign{ display:inline-block; font-size:10px; font-weight:800; color:#b45309; background:#fef3c7;
+                            border:1px solid #fde68a; border-radius:9999px; padding:0 6px; margin-left:3px; cursor:help; }
+    .price-pop .pp-nosign{ display:inline-block; font-size:10px; font-weight:700; color:#8695a7; margin-left:3px; cursor:help; }
+    .price-pop .pp-now{ display:inline-block; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+                        color:#067523; background:#eaf5ee; border:1px solid #cfe9d8; border-radius:9999px;
+                        padding:0 5px; margin-left:3px; vertical-align:middle; }
     .tb-email{ background:#eaf0fe; color:#2f6bff; border-color:#d3def8; }
     .tb-sms{ background:#eaf5ee; color:#067523; border-color:#cfe9d8; }
     .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
@@ -2817,7 +2846,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return ` <button class="price-edit" title="Edit the get-in price and listing link"
           data-priceedit="${esc2(r.event_id)}" data-pricescope="${esc2(scope)}"
           data-priceval="${r.ticket_price != null ? esc2(r.ticket_price) : ''}"
-          data-priceurl="${esc2(r.ticket_url || '')}">&#9998;</button>`;
+          data-priceurl="${esc2(r.ticket_url || '')}"
+          data-pricesrc="${esc2(r.price_source || '')}">&#9998;</button>`;
       }
 
       // A hand-typed figure and a model's are the same number on screen and very different
@@ -2842,6 +2872,60 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const priceBasis = r => r.price_seats === 2 ? 'a listing for 2 seats together'
         : r.price_seats === 1 ? 'a single-seat listing — no pair was available'
         : 'a listing whose seat count was not reported';
+
+      // ---- Scraped listings (AI-969) ----------------------------------------------------------
+      // A scraped price is a real listing, so it can say WHICH seats it is: section, row, the
+      // section group the marketplace files it under, and what it costs with fees. These helpers
+      // are shared by the info tooltip and the editor so the two describe a listing identically.
+      const ppMoney = n => (n == null || n === '') ? '—'
+        : '$' + (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n)));
+      const ppSeatDesc = c => [c.section ? `Section ${c.section}` : '', c.row ? `Row ${c.row}` : '', c.section_group || '']
+        .filter(Boolean).join(' · ');
+      const ppSeatsTxt = c => c.seats === 2 ? '2 seats together' : c.seats === 1 ? 'single seat'
+        : 'seat count not published';
+      // One line describing the seats. A listing with no seat data at all (TickPick) says so once,
+      // rather than "seat details not published · seat count not published".
+      // Seat numbers as a person reads them: consecutive runs collapse ("Seats 15–16", "Seats 1–8"),
+      // anything else is listed ("Seats 4, 7, 9"), and a long list is cut short so a row stays one line.
+      const ppSeatRange = nums => {
+        const n = nums.map(x => String(x).trim()).filter(Boolean);
+        const ints = n.map(Number);
+        if(n.length > 1 && ints.every(Number.isInteger) && ints.every((v, i) => i === 0 || v === ints[i - 1] + 1))
+          return `${n[0]}–${n[n.length - 1]}`;
+        return n.length > 6 ? `${n.slice(0, 6).join(', ')} +${n.length - 6}` : n.join(', ');
+      };
+      const ppSeatNums = c => (Array.isArray(c.seat_numbers) && c.seat_numbers.length)
+        ? `Seat${c.seat_numbers.length === 1 ? '' : 's'} ${ppSeatRange(c.seat_numbers)}`
+        : c.seats_hidden ? 'seat numbers shown after purchase' : '';
+      // How many tickets the seller will sell together — Gametime's "lots". [2,4] -> "buy 2 or 4".
+      const ppQty = c => {
+        const q = Array.isArray(c.quantities) ? [...new Set(c.quantities.map(Number).filter(v => v > 0))].sort((a, b) => a - b) : [];
+        if(!q.length) return '';
+        return 'buy ' + (q.length === 1 ? q[0] : q.slice(0, -1).join(', ') + ' or ' + q[q.length - 1]);
+      };
+      const ppListing = c => {
+        const seat = ppSeatDesc(c), nums = ppSeatNums(c), qty = ppQty(c);
+        if(!seat && !nums && !qty && c.seats !== 2 && c.seats !== 1) return 'Seats not published';
+        // The buy-quantity line says more than "2 seats together", so it replaces it when known.
+        return [seat, nums, qty || ppSeatsTxt(c)].filter(Boolean).join(' · ');
+      };
+      // Price line. When the before-fees and all-in figures are the same (TickPick shows fees
+      // included) printing both reads as a mistake, so it says what the number is instead.
+      const ppPrices = c => c.all_in == null
+        ? `${ppMoney(c.price)} before fees`
+        : (Number(c.all_in) === Number(c.price))
+          ? `${ppMoney(c.price)} (fees included)`
+          : `${ppMoney(c.price)} before fees · ${ppMoney(c.all_in)} all-in`;
+      // A source that could not produce a price for this game, kept in the list so the operator
+      // sees which site failed and why (AI-969).
+      const ppIsError = c => !!(c && (c.error || c.price == null));
+      // A price the model found by searching is not a listing we read, so it says so.
+      const ppSourceLabel = c => c.via === 'ai' ? `${c.source || 'Unknown'} (AI search)` : (c.source || 'Unknown');
+      // The listing best_price was copied from. Only meaningful while the price is still a scraped
+      // one: a hand-typed price leaves the old list in place (so it can be picked from again), and
+      // describing one of those listings beside a typed number would be attaching a basis it lacks.
+      const chosenCandidate = r => (r && r.price_source !== 'manual' && Array.isArray(r.price_candidates))
+        ? (r.price_candidates.find(c => c && c.chosen && c.price != null && !c.error) || null) : null;
       function priceInfo(r){
         // A row carrying its own overridden ticket_price is not what events_master's sourcing
         // describes. Showing nothing beats attaching someone else's provenance to a hand-typed
@@ -2852,11 +2936,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // design (migration 055), and the generic NULL wording — "a listing whose seat count was
         // not reported" — would describe a lookup that never happened. Say what it actually is.
         const manual = r.price_source === 'manual';
+        const pick = chosenCandidate(r);
+        // Prices only — error rows are not something the price was picked from.
+        const nCands = pick ? r.price_candidates.filter(c => c && c.price != null && !c.error).length : 0;
+        const nErr = pick ? r.price_candidates.length - nCands : 0;
         const lines = [
           'Per-ticket get-in price, before taxes and fees.',
           manual ? 'Set by hand by an operator.' : `Based on ${priceBasis(r)}.`,
           manual ? 'A price refresh will replace it.' : '',
           (r.price_source && !manual) ? `Source: ${r.price_source}` : '',
+          pick && ppSeatDesc(pick) ? `Seats: ${ppSeatDesc(pick)}` : '',
+          pick && ppSeatNums(pick) ? `Seat numbers: ${ppSeatNums(pick).replace(/^Seats? /, '')}` : '',
+          pick && ppQty(pick) ? `Sold in: ${ppQty(pick).replace(/^buy /, '')} tickets` : '',
+          pick ? ppPrices(pick) : '',
+          pick ? (pick.chosen_by === 'operator'
+            ? `Picked by an operator from ${nCands} price${nCands === 1 ? '' : 's'}.`
+            : pick.via === 'ai' ? 'Found by AI search — no marketplace page could be read.'
+            : `Cheapest all-in of ${nCands} price${nCands === 1 ? '' : 's'}.`) : '',
+          nErr ? `${nErr} source${nErr === 1 ? '' : 's'} returned no price — open the editor to see why.` : '',
           `${manual ? 'Set' : 'Checked'}: ${etDate(when,{month:'short',day:'numeric'})} ${etTime(when,{hour:'numeric',minute:'2-digit'})} ET`,
           (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
         ].filter(Boolean).join('\n');
@@ -2868,6 +2965,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         pop = document.createElement('div');
         pop.className = 'price-pop hidden';
         pop.innerHTML = `
+          <div class="pp-ticket mb-2 hidden"></div>
           <div class="mb-2">
             <label for="pp-price">Get-in price (per ticket)</label>
             <input id="pp-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="e.g. 20">
@@ -2876,6 +2974,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <label for="pp-url">Listing link</label>
             <input id="pp-url" type="url" placeholder="https://…">
           </div>
+          <details class="pp-cands mb-2 hidden">
+            <summary><span class="pp-cands-title">Prices</span><span class="pp-caret">&#9656;</span></summary>
+            <div class="pp-cands-body"></div>
+          </details>
           <div class="pp-err mb-2 hidden"></div>
           <div class="flex items-center gap-1">
             <button class="btn btn-xs btn-primary flex-1" data-pp="save">Save</button>
@@ -2889,10 +2991,32 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         document.body.appendChild(pop);
 
         pop.addEventListener('click', e => {
+          // A click anywhere on a candidate row toggles its checkbox — except the listing link,
+          // which should just open, and the checkbox itself, which toggles on its own.
+          const row = e.target.closest('.pp-cand');
+          if(row && !e.target.closest('a') && e.target.type !== 'checkbox'){
+            const cb = row.querySelector('input[type=checkbox]');
+            if(!cb || cb.disabled) return;       // error rows: nothing to pick
+            cb.checked = !cb.checked;
+            pickCandidate(Number(cb.dataset.ppcand), cb.checked);
+            return;
+          }
           const act = e.target.closest('[data-pp]')?.dataset.pp;
           if(!act) return;
           if(act === 'cancel') return close();
           save(act === 'reset');
+        });
+        pop.addEventListener('change', e => {
+          const cb = e.target.closest('[data-ppcand]');
+          if(cb) pickCandidate(Number(cb.dataset.ppcand), cb.checked);
+        });
+        // Typing over a picked listing's number or link turns it into a hand-typed price: the
+        // checkbox clears so the box never claims a listing the value no longer matches.
+        pop.addEventListener('input', e => {
+          if(!current || current.pending == null || !e.target.matches('#pp-price, #pp-url')) return;
+          const c = current.cands && current.cands[current.pending];
+          const p = pop.querySelector('#pp-price').value.trim(), u = pop.querySelector('#pp-url').value.trim();
+          if(!c || Number(p) !== Number(c.price) || u !== (c.url || '')){ current.pending = null; renderCandidates(); }
         });
         // Enter saves, Escape closes — a two-field box where reaching for the mouse is the
         // slowest part of correcting one number.
@@ -2911,27 +3035,247 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         box.classList.toggle('hidden', !msg);
       }
 
+      // ---- Scraped candidates in the editor (AI-969) -----------------------------------------
+      //
+      // Read from events_master when the box opens, not carried on the table rows. The pencil is
+      // rendered on every row of a ~6,800-row table, and the list is only wanted for the one row
+      // being edited; one small read on open costs less than shipping every list up front, and it
+      // is fresh — a refresh that ran since the table loaded is what the operator sees.
+      //
+      // READ WITH THE ANON KEY, like the Ticket Prices table. events_master's only RLS policy is
+      // events_master_anon_read (role anon). A signed-in session runs as `authenticated`, which has
+      // no policy, so sb.from('events_master') returns ZERO ROWS AND NO ERROR — the list silently
+      // came back empty for every operator and the accordion never appeared. fetchEvents() already
+      // reads this table with the anon key for the same reason; this matches it.
+      async function loadCandidates(cur){
+        cur.loadState = 'loading'; cur.loadError = '';
+        renderCandidates();
+        let list = null;
+        try {
+          const url = cfg.SUPABASE_URL + '/rest/v1/events_master?select=price_candidates&id=eq.' + encodeURIComponent(cur.id);
+          const r = await fetch(url, { headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY } });
+          const body = await r.json().catch(() => null);
+          if(!r.ok) throw new Error((body && body.message) || ('HTTP ' + r.status));
+          list = Array.isArray(body) && body[0] ? body[0].price_candidates : null;
+          cur.loadState = 'loaded';
+        } catch(e){
+          cur.loadState = 'error';
+          cur.loadError = String((e && e.message) || e);
+        }
+        if(current !== cur) return;            // the box was closed or moved to another row meanwhile
+        cur.cands = Array.isArray(list) && list.length ? list : null;
+        renderCandidates();
+      }
+
+      function renderCandidates(){
+        if(!pop || !current) return;
+        const box = pop.querySelector('.pp-cands'), body = pop.querySelector('.pp-cands-body');
+        const tk = pop.querySelector('.pp-ticket');
+        const c = current.cands;
+        pop.classList.add('pp-wide');
+        box.classList.remove('hidden');
+
+        // ALWAYS SHOWN (Vhea, 2026-09-15). A game priced before scraping existed, or never priced,
+        // has no list — the accordion still appears and says so, rather than vanishing and leaving
+        // the operator unsure whether the feature exists for this game at all.
+        if(!c){
+          tk.classList.add('hidden');
+          const state = current.loadState;
+          pop.querySelector('.pp-cands-title').textContent = state === 'loading' ? 'Prices · loading…' : 'Prices (0)';
+          const msg = state === 'loading'
+            ? 'Loading prices…'
+            : state === 'error'
+              ? `Could not load prices: ${esc2(current.loadError || 'unknown error')}`
+              : current.origPrice
+                ? 'No saved prices for this game yet. This price came from an earlier refresh, before listings were kept. They will appear here after the next price refresh.'
+                : 'No prices found for this game yet. They will appear here after the next price refresh.';
+          body.innerHTML = `<div class="pp-cand pp-cand-err" style="cursor:default">
+            <div class="flex-1 min-w-0 text-[11px] ${state === 'error' ? 'text-error' : 'text-base-content/55'}">${msg}</div>
+          </div>`;
+          return;
+        }
+        const manual = current.src === 'manual';
+        const nowIdx = manual ? -1 : c.findIndex(x => x && x.chosen && !ppIsError(x));
+        pop.classList.add('pp-wide');
+        const nPrices = c.filter(x => !ppIsError(x)).length;
+        const nErrors = c.length - nPrices;
+
+        // Ticket info for the price as it stands now.
+        const cur = nowIdx >= 0 ? c[nowIdx] : null;
+        tk.innerHTML = cur
+          ? `<b>${esc2(ppSourceLabel(cur))}</b> · ${esc2(ppPrices(cur))}`
+            + `<br>${esc2(ppListing(cur))}`
+            + (cur.chosen_by === 'operator' ? ' · <span class="text-base-content/50">picked by an operator</span>' : '')
+          : manual
+            ? `<span class="text-base-content/60">This price was typed by hand.${nPrices ? ' Tick a price below to use a real listing instead.' : ''}</span>`
+            : `<span class="text-base-content/60">No source could price this game on the last refresh${nErrors ? ' — see why below' : ''}.</span>`;
+        tk.classList.remove('hidden');
+
+        pop.querySelector('.pp-cands-title').textContent =
+          `Prices (${nPrices})${nErrors ? ` · ${nErrors} error${nErrors === 1 ? '' : 's'}` : ''}${nPrices > 1 ? ' · ranked by all-in' : ''}`;
+        body.innerHTML = c.map((x, i) => {
+          const when = x.checked_at ? new Date(x.checked_at) : null;
+          const checked = when ? `checked ${esc2(etDate(when,{month:'short',day:'numeric'}))} ${esc2(etTime(when,{hour:'numeric',minute:'2-digit'}))} ET` : '';
+
+          // A source that returned no price: the checkbox stays in place but cannot be ticked, and
+          // the price is replaced by a warning whose tooltip carries the reason — "402 Insufficient
+          // credits", "403 Forbidden". A site that simply does not list the game reads as a note,
+          // not an alarm: there is nothing to fix.
+          if(ppIsError(x)){
+            const isErr = x.error_kind !== 'not_listed';
+            const tip = [x.error, x.error_detail].filter(Boolean).join('\n');
+            return `<div class="pp-cand pp-cand-err" title="${esc2(tip)}">
+              <input type="checkbox" disabled aria-label="No price from this source">
+              <div class="flex-1 min-w-0">
+                <div><b>${esc2(x.source)}</b>
+                  <span class="${isErr ? 'pp-errsign' : 'pp-nosign'}" title="${esc2(tip)}">${isErr ? '&#9888; Error' : '&#8212; Not listed'}</span></div>
+                <div class="text-[10px] text-base-content/50 truncate">${esc2(x.error || '')}${checked ? ' · ' + checked : ''}</div>
+              </div>
+            </div>`;
+          }
+
+          const sel = current.pending === i;
+          const allIn = x.all_in == null ? '' : (Number(x.all_in) === Number(x.price) ? 'fees included' : esc2(ppMoney(x.all_in)) + ' all-in');
+          return `<div class="pp-cand${sel ? ' pp-sel' : ''}">
+            <input type="checkbox" data-ppcand="${i}" ${sel ? 'checked' : ''} aria-label="Use this price">
+            <div class="flex-1 min-w-0">
+              <div><b>${esc2(ppSourceLabel(x))}</b> <span class="font-semibold">${esc2(ppMoney(x.price))}</span>
+                ${allIn ? `<span class="text-base-content/50">· ${allIn}</span>` : ''}
+                ${i === nowIdx ? '<span class="pp-now">current</span>' : ''}</div>
+              <div class="text-[10px] text-base-content/60">${esc2(ppListing(x))}${checked ? ' · ' + checked : ''}</div>
+            </div>
+            ${x.url ? `<a href="${esc2(x.url)}" target="_blank" rel="noopener" class="link link-primary text-[10px] whitespace-nowrap">view &#8599;</a>` : ''}
+          </div>`;
+        }).join('');
+        box.classList.remove('hidden');
+      }
+
+      // Ticking a listing fills the two fields with its price and link; Save then records THAT
+      // listing (with its seats and source), not a typed number. Unticking puts back what the
+      // fields held when the box opened. Only one can be ticked — a price is one listing.
+      function pickCandidate(i, on){
+        if(!current || !current.cands) return;
+        const c = current.cands[i];
+        if(c && ppIsError(c)) return;          // an error row has no price to use
+        if(on && c){
+          current.pending = i;
+          pop.querySelector('#pp-price').value = c.price != null ? c.price : '';
+          pop.querySelector('#pp-url').value   = c.url || '';
+        } else if(current.pending === i){
+          current.pending = null;
+          pop.querySelector('#pp-price').value = current.origPrice;
+          pop.querySelector('#pp-url').value   = current.origUrl;
+        }
+        showErr('');
+        renderCandidates();
+      }
+
       function open(btn){
         const p = ensurePop();
-        current = { id: btn.dataset.priceedit, scope: btn.dataset.pricescope };
-        p.querySelector('#pp-price').value = btn.dataset.priceval || '';
-        p.querySelector('#pp-url').value   = btn.dataset.priceurl || '';
+        current = { id: btn.dataset.priceedit, scope: btn.dataset.pricescope, src: btn.dataset.pricesrc || '',
+                    origPrice: btn.dataset.priceval || '', origUrl: btn.dataset.priceurl || '', cands: null, pending: null,
+                    loadState: 'loading', loadError: '' };
+        p.querySelector('#pp-price').value = current.origPrice;
+        p.querySelector('#pp-url').value   = current.origUrl;
         showErr('');
+        renderCandidates();                    // clears any list left from the previous row
+        const opened = current;
+        loadCandidates(opened).then(() => { if(current === opened) placePop(btn); });
         p.classList.remove('hidden');
+        placePop(btn);
+        p.querySelector('#pp-price').focus();
+        p.querySelector('#pp-price').select();
+      }
+
+      function placePop(btn){
+        const p = pop;
+        if(!p || p.classList.contains('hidden')) return;
         // Placed from the trigger's rect, then pulled back inside the viewport — the pencil sits
         // in the second column of a wide table, so the right edge is the one that overflows.
         const r = btn.getBoundingClientRect();
         const w = p.offsetWidth, h = p.offsetHeight;
         p.style.left = Math.max(8, Math.min(r.left, window.innerWidth  - w - 8)) + 'px';
         p.style.top  = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - h - 8)) + 'px';
-        p.querySelector('#pp-price').focus();
-        p.querySelector('#pp-price').select();
+        // Placed twice — on open, and again once the scraped list has loaded and widened the box
+        // — so focus is NOT taken here; open() takes it once, and a re-place never yanks the cursor.
+      }
+
+      // Save a picked listing. The RPC takes the listing's INDEX, never a price: the number, link,
+      // source and seats come from the database's own copy of what the refresh read, so the
+      // browser can only choose among real listings, not invent one.
+      // ---- Save in the background (Vhea, 2026-09-15) -------------------------------------------
+      //
+      // A save writes ONE events_master row and returns in a few hundred ms. What made it feel slow
+      // was everything around it: the box stayed open with its buttons disabled until the write
+      // came back, and then the whole Ticket Prices table was re-paged (~3,800 rows, 3.5–5.7s
+      // measured) with every row dimmed — which reads as "still saving" long after it had finished.
+      //
+      // Now: the row repaints with the new price and a small spinner, the box closes at once, the
+      // write runs behind it, and only that one row is re-read (~0.4s) to confirm. A failed write
+      // puts every row back and says why in a toast — the operator's input is lost in that case,
+      // which is the price of not making every successful save wait.
+      function commitInBackground({ rpc, args, patch, okTitle, okLines }){
+        const id = current.id, scope = current.scope;
+        // The spinner flag goes to Ticket Prices only; the other tables do not render it and do
+        // not need a second repaint to clear it.
+        const undo = [
+          window.__patchEventPriceCampaigns?.(id, patch),
+          window.__patchEventPriceQueue?.(id, patch),
+          window.__patchEventPricePrices?.(id, Object.assign({}, patch, { __saving: true })),
+        ].filter(Boolean);
+        close();
+
+        const fail = msg => {
+          undo.forEach(fn => fn());
+          window.__pbToast?.({ type: 'err', title: 'Price not saved',
+            lines: [msg || 'Save failed.', 'The previous price has been put back.'] });
+        };
+        sb.rpc(rpc, args).then(({ error }) => {
+          if(error) return fail(error.message);
+          window.__pbToast?.({ type: 'ok', title: okTitle, lines: okLines });
+          // Confirm from the database: one row on Ticket Prices, where the pencil lives. If a
+          // price refresh landed in between, what it wrote wins over the optimistic patch.
+          if(scope === 'prices' && window.__refreshPriceRow) window.__refreshPriceRow(id);
+          else if(scope === 'queue') window.__loadQueue?.();
+          else if(scope === 'campaign') window.__loadEvents?.();
+        }, e => fail(String((e && e.message) || e)));
+      }
+
+      async function saveCandidate(i){
+        const c = current.cands[i];
+        // Mirrors what set_event_price_candidate writes — including moving the chosen flag, which
+        // the info tooltip reads.
+        const list = current.cands.map((x, k) => {
+          const y = Object.assign({}, x); delete y.chosen; delete y.chosen_by;
+          return k === i ? Object.assign(y, { chosen: true, chosen_by: 'operator' }) : y;
+        });
+        commitInBackground({
+          rpc: 'set_event_price_candidate',
+          args: { p_event_id: current.id, p_index: i },
+          patch: {
+            ticket_price: Number(c.price), ticket_url: c.url || null, price_source: c.source || null,
+            price_seats: (c.seats === 2 || c.seats === 1) ? c.seats : null,
+            priced_at: new Date().toISOString(), price_candidates: list,
+          },
+          okTitle: 'Price updated',
+          okLines: [
+            `Using ${ppSourceLabel(c)} at ${ppMoney(c.price)}${c.all_in != null && Number(c.all_in) !== Number(c.price) ? ` (${ppMoney(c.all_in)} all-in)` : ''}${ppListing(c) && ppListing(c) !== 'Seats not published' ? ' — ' + ppListing(c) : ''}.`,
+            'Applied to Offers, ICP/SCP and every queued blast for this game.',
+          ],
+        });
       }
 
       async function save(isReset){
         if(!current || !sb) { close(); return; }
         const priceRaw = pop.querySelector('#pp-price').value.trim();
         const urlRaw   = pop.querySelector('#pp-url').value.trim();
+
+        // A ticked listing whose values are still untouched saves as that listing. Anything
+        // edited after ticking falls through to the manual save below — see the input listener.
+        if(!isReset && current.pending != null && current.cands){
+          const c = current.cands[current.pending];
+          if(c && Number(priceRaw) === Number(c.price) && urlRaw === (c.url || '')) return saveCandidate(current.pending);
+        }
 
         // Reset sends a null price, which the RPC reads as "forget this and look it up again".
         let price = null;
@@ -2950,11 +3294,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           } catch { showErr('Listing link must be a full http(s) address.'); return; }
         }
 
-        const btns = pop.querySelectorAll('[data-pp]');
-        btns.forEach(b => b.disabled = true);
-
         // Paint the new price BEFORE the write, then reconcile. The tables re-render from
-        // memory, so this is instant; the reload afterwards is what makes it true.
+        // memory, so this is instant; the one-row re-read afterwards is what makes it true.
         //
         // The patch mirrors set_event_price_manual exactly: a save sets price_source='manual',
         // clears price_seats (a hand-typed figure describes no listing) and stamps priced_at;
@@ -2971,35 +3312,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Every tab, not just the one in front of you — one events_master row feeds all three,
         // which is exactly what the success toast claims. Patching only the active tab would
         // leave the others holding a stale number until they happened to reload.
-        const undo = [
-          window.__patchEventPriceCampaigns?.(current.id, patch),
-          window.__patchEventPriceQueue?.(current.id, patch),
-          window.__patchEventPricePrices?.(current.id, patch),
-        ].filter(Boolean);
-
-        const { error } = await sb.rpc('set_event_price_manual', {
-          p_event_id: current.id, p_price: price, p_url: isReset ? null : (urlRaw || null) });
-        btns.forEach(b => b.disabled = false);
-
-        // Put every row back exactly as it was. The popover stays open with the operator's
-        // input intact, so a failed save can be retried without retyping.
-        if(error){ undo.forEach(fn => fn()); showErr(error.message || 'Save failed.'); return; }
-
-        const scope = current.scope;
-        close();
-        window.__pbToast?.({
-          type:'ok',
-          title: isReset ? 'Price cleared' : 'Price updated',
-          lines: [ isReset
+        commitInBackground({
+          rpc: 'set_event_price_manual',
+          args: { p_event_id: current.id, p_price: price, p_url: isReset ? null : (urlRaw || null) },
+          patch,
+          okTitle: isReset ? 'Price cleared' : 'Price updated',
+          okLines: [ isReset
             ? 'The next refresh will look this game up again.'
             : 'Applied to Offers, ICP/SCP and every queued blast for this game.' ],
         });
-        // Reconcile in the background. The screen is already correct, so this is not awaited —
-        // awaiting it is what made a save feel slow, since __loadEvents pages the whole event
-        // table. If it disagrees with the patch (a concurrent price refresh, say), it wins.
-        if(scope === 'queue') window.__loadQueue?.();
-        else if(scope === 'prices') window.__reloadPrices?.();
-        else window.__loadEvents?.();
       }
 
       // Deliberately NOT stopPropagation: the Queue closes its row-actions menu from its own
@@ -3008,7 +3329,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       document.addEventListener('click', e => {
         const btn = e.target.closest('[data-priceedit]');
         if(btn){ e.preventDefault(); open(btn); return; }
-        if(pop && !pop.classList.contains('hidden') && !e.target.closest('.price-pop')) close();
+        // composedPath, not e.target.closest: ticking a scraped listing re-renders the list during
+        // this same click, so by the time the event reaches the document its target has been
+        // detached and closest('.price-pop') finds nothing — which closed the box on every pick.
+        // The path is fixed when dispatch starts, so it still contains the popover.
+        if(pop && !pop.classList.contains('hidden') && !e.composedPath().includes(pop)) close();
       });
       // The tables scroll inside their own box and the popover is fixed, so it would otherwise
       // sit still while the row it belongs to slides away.
@@ -3616,7 +3941,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('cbs-next')?.addEventListener('click', () => { page++; render(); });
 
       // Rich result toast (daisyUI card, auto-dismiss + manual close).
-      function pbToast({ type='ok', title, lines=[], chips=[], foot }){
+      // sticky: stays until dismissed. For results of long jobs the operator may have walked away
+      // from (a price refresh runs minutes) — a 9-second toast is gone before they look back.
+      function pbToast({ type='ok', title, lines=[], chips=[], foot, sticky=false }){
         let host = document.getElementById('pb-toast');
         if(!host){ host = document.createElement('div'); host.id='pb-toast'; document.body.appendChild(host); }
         const card = document.createElement('div');
@@ -3636,7 +3963,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const close = ()=>{ card.style.opacity='0'; card.style.transform='translateY(8px)'; setTimeout(()=>card.remove(), 180); };
         card.querySelector('button').addEventListener('click', close);
         host.appendChild(card);
-        setTimeout(close, type==='err'?12000:9000);
+        if(!sticky) setTimeout(close, type==='err'?12000:9000);
       }
 
       // In-page confirm modal (replaces native confirm()). Returns Promise<boolean>.
@@ -4126,6 +4453,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       //   'checking' — quoting the run. Free. No timer: it is short, and a clock implies cost.
       //   'pricing'  — the real run. Timed, because it is the one thing on this page that is
       //                actively spending money while you watch.
+      // A refresh keeps running when the operator moves to another tab — the tabs are one page —
+      // but the button showing it is on Ticket Prices only. A spinner on that tab's own label
+      // makes "still running" visible from anywhere in the app.
+      function priceTabBusy(on){
+        const a = document.querySelector('.pb-tabs [data-tab="prices"]');
+        if(!a) return;
+        const old = a.querySelector('.pb-tab-spin');
+        if(on && !old) a.insertAdjacentHTML('beforeend', ' <span class="pb-tab-spin loading loading-spinner loading-xs align-middle" style="color:#e8935a" title="Refreshing prices…"></span>');
+        if(!on && old) old.remove();
+      }
+
+      // Finished while the operator was in another browser tab: say so in the tab title, and put it
+      // back the moment they return. Nothing is asked of the browser (no notification permission).
+      function flagDoneInTitle(text){
+        if(!document.hidden) return;
+        const base = document.title.replace(/^[✓⚠] [^·]+ · /, '');
+        document.title = `${text} · ${base}`;
+        const restore = () => { if(!document.hidden){ document.title = base; document.removeEventListener('visibilitychange', restore); } };
+        document.addEventListener('visibilitychange', restore);
+      }
+
       function priceBusy(on, startedAt, mode){
         const btn = el('refresh-prices'), tip = el('refresh-prices-tip');
         if(!btn) return;
@@ -4144,11 +4492,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const mmss = ms => { const s = Math.floor(ms/1000); return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; };
           const paint = () => { btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Pricing… ${mmss(Date.now() - startedAt)}`; };
           paint();
-          if(tip) tip.dataset.tip = 'A priced run is in flight. This usually takes about a minute.';
+          if(tip) tip.dataset.tip = 'A priced run is in flight. You can switch tabs — you will get a notice here when it is done.';
           clearInterval(priceBusy._t);
           priceBusy._t = setInterval(paint, 1000);
+          priceTabBusy(true);
         } else {
           clearInterval(priceBusy._t);
+          priceTabBusy(false);
           btn.disabled = false;
           btn.innerHTML = '&#8635; Refresh prices';   // fixed label, never a captured snapshot
           paintPriceTip();                            // restore the tooltip the run overwrote
@@ -4251,8 +4601,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const emptyLeagues = (pickedLeagues || [])
             .filter(c => !(d.by_league && d.by_league[c]))
             .map(c => leagueLabel(c));
+          const sc = d.scrape || null;
           pbToast({
             type: bad ? 'err' : 'ok',
+            // Stays until dismissed: the operator may be on another tab, or away, when it lands.
+            sticky: true,
             title: d.write_error ? 'Prices found but could not be saved'
                  : !priced       ? 'No prices came back'
                  : lost          ? `Priced ${priced}, only ${wrote} saved`
@@ -4260,6 +4613,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             lines: [
               d.write_error || '',
               `${wrote} written · ${d.attempted} attempted of ${d.eligible} eligible${d.missing ? ` · ${d.missing} returned no price` : ''}`,
+              // AI-969: how many came from reading marketplace pages vs the AI search fallback.
+              sc ? `Scraped ${sc.priced} of ${sc.tried} (Gametime ${sc.gametime}, TickPick ${sc.tickpick})${d.model_priced ? ` · AI search priced ${d.model_priced}` : ''}` : '',
+              // Why the AI search could not help — "402 Insufficient credits: 5". Games it could not
+              // price keep their previous price, and the reason is in each one's price editor.
+              (() => {
+                // model_errors arrives as ["402 Insufficient credits: 5", ...].
+                const errs = (d.model_errors || []).map(s => { const m = String(s).match(/^(.*): (\d+)$/); return m ? { why: m[1], n: +m[2] } : { why: String(s), n: 0 }; });
+                const n = errs.reduce((a, e) => a + e.n, 0);
+                return errs.length ? `AI search could not price ${n} game${n === 1 ? '' : 's'} (${errs.map(e => e.why).join('; ')}) — those keep their previous price.` : '';
+              })(),
               d.unverified ? `${d.unverified} dropped — priced but no listing link, so the number could not be verified.` : '',
               d.timed_out ? `Ran out of time before ~${d.not_reached} games — everything priced so far was saved. Run again to finish the rest.` : '',
               leagues ? `Leagues: ${leagues}` : '',
@@ -4268,6 +4631,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               `Cost ${usd(d.cost_usd)} · ${Math.round((d.duration_ms||0)/1000)}s · ${d.model || 'model'}${d.retried_batches ? ` · ${d.retried_batches} batch retried` : ''}`,
             ].filter(Boolean),
           });
+          flagDoneInTitle(bad ? '⚠ Price refresh finished' : '✓ Prices refreshed');
           await load();   // pull the new prices into the table
           // The button now lives on Ticket Prices, so that table is the one the operator is
           // watching while this runs. load() above refreshes Campaigns, which is where the
@@ -4275,10 +4639,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(window.__reloadPrices) window.__reloadPrices();
         } catch(e){
           pbToast({
-            type:'err',
+            type:'err', sticky: true,
             title: e && e.unauthorised ? 'Price refresh is not authorised from the browser' : 'Price refresh failed',
             lines:[ String((e && e.message) || e) ],
           });
+          flagDoneInTitle('⚠ Price refresh failed');
         } finally {
           priceBusy(false);   // single owner of the reset, on every path
         }
@@ -6428,8 +6793,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const initcap = v => String(v || '').replace(/[0-9A-Za-z]+/g,
         w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
-      const EM_COLS = 'id,league,team,team_full,opponent,event_date,event_time,venue,'
+      const EM_COLS_BASE = 'id,league,team,team_full,opponent,event_date,event_time,venue,'
         + 'market_code,state_code,best_price,price_source,priced_at,price_url,price_seats';
+      // price_candidates (migration 077, AI-969) feeds the seat details in the price tooltip. It is
+      // asked for separately so the tab keeps loading on a database where 071 has not run yet:
+      // PostgREST rejects the whole query for one unknown column, and a missing tooltip line is
+      // not worth an empty table. Dropped for the rest of the session after the first refusal.
+      let EM_COLS = EM_COLS_BASE + ',price_candidates';
 
       async function fetchEvents(){
         const PAGE = 1000, MAX_PAGES = 60;
@@ -6440,14 +6810,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         for(let p = 0; p < MAX_PAGES; p++){
           // Ordered by a unique key: offset paging over an unordered result skips and repeats
           // rows. Upcoming only — a price table for games already played is noise.
-          const url = base + '?select=' + encodeURIComponent(EM_COLS)
-            + '&event_date=gte.' + today
-            + '&order=event_date.asc,id.asc&limit=' + PAGE + '&offset=' + (p * PAGE);
           let page = null, lastErr = '';
           for(let attempt = 0; attempt < 3; attempt++){
+            const url = base + '?select=' + encodeURIComponent(EM_COLS)
+              + '&event_date=gte.' + today
+              + '&order=event_date.asc,id.asc&limit=' + PAGE + '&offset=' + (p * PAGE);
             try {
               const r = await fetch(url, { headers: headers });
               if(r.ok){ const b = await r.json(); if(Array.isArray(b)){ page = b; break; } lastErr = 'events_master returned no rows'; }
+              else if(r.status === 400 && EM_COLS !== EM_COLS_BASE){
+                // Column not there yet (071 unapplied). Retry this page without it, at no cost of
+                // an attempt, and stop asking for it for the rest of the session.
+                const b = await r.json().catch(() => ({}));
+                if(/price_candidates/.test(String(b && b.message))){ EM_COLS = EM_COLS_BASE; attempt--; continue; }
+                lastErr = 'events_master HTTP 400';
+              }
               else lastErr = 'events_master HTTP ' + r.status;
             } catch(e){ lastErr = String((e && e.message) || e); }
             if(attempt < 2) await new Promise(res => setTimeout(res, 400 * (attempt + 1)));
@@ -6522,6 +6899,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               price_source: e.price_source,
               priced_at: e.priced_at,
               price_seats: e.price_seats,
+              price_candidates: e.price_candidates || null,
               __rec: null,
             };
           });
@@ -6797,13 +7175,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // edit, not the least — price-refresh only covers the price_window_days horizon, so
             // most of this table is a dash that nobody has been able to fill in from the app.
             const editBtn = (window.__priceEditBtn && window.__priceEditBtn(r, 'prices')) || '';
+            // Shown while a save from the price editor is still being written (commitInBackground).
+            const saving = r.__saving
+              ? ' <span class="loading loading-spinner loading-xs align-middle" style="color:#e8935a" title="Saving…"></span>' : '';
             const price = r.ticket_price != null
               ? '<span class="font-semibold text-[#133b49]">$' + fmt(r.ticket_price) + '</span>'
                 + ((window.__priceInfo && window.__priceInfo(r)) || '')
                 + ((window.__priceManualBadge && window.__priceManualBadge(r)) || '')
-                + editBtn
-                + '<div class="text-[10px] text-base-content/40">get-in</div>'
-              : '<span class="text-base-content/40">—</span>' + editBtn;
+                + editBtn + saving
+                + '<div class="text-[10px] text-base-content/40">' + (r.__saving ? 'saving…' : 'get-in') + '</div>'
+              : '<span class="text-base-content/40">—</span>' + editBtn + saving;
             // The outbound listing link lives here and ONLY here. This is the row the Queue and
             // Campaigns prices now route to, so this is where leaving the app belongs.
             // A row whose stored source is not a marketplace still has a working listing link,
@@ -6965,6 +7346,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Re-read after a save, so a concurrent price refresh wins over the optimistic patch.
       // Not awaited by the editor — the screen is already correct.
       window.__reloadPrices = function(){ LOADED = false; LOADING = null; return window.__loadPrices(); };
+
+      // Re-read ONE event after a save and repaint its row — ~0.4s, against 3.5–5.7s for
+      // __reloadPrices, which pages every upcoming event and dims the table while it does. A save
+      // changes one row, so one row is all that needs confirming. Read with the anon key for the
+      // same RLS reason as fetchEvents. On any failure the optimistic values simply stay; the
+      // spinner is cleared either way so a row never looks stuck.
+      window.__refreshPriceRow = async function(eventId){
+        const id = String(eventId || '');
+        const hits = ROWS.filter(r => String(r.event_id || '') === id);
+        if(!hits.length) return;
+        try {
+          const url = cfg.SUPABASE_URL + '/rest/v1/events_master?select=' + encodeURIComponent(EM_COLS)
+            + '&id=eq.' + encodeURIComponent(id);
+          const res = await fetch(url, { headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY } });
+          const body = res.ok ? await res.json() : null;
+          const e = Array.isArray(body) ? body[0] : null;
+          if(e) hits.forEach(function(row){
+            Object.assign(row, {
+              ticket_price: e.best_price, ticket_url: e.price_url, price_source: e.price_source,
+              priced_at: e.priced_at, price_seats: e.price_seats,
+              price_candidates: e.price_candidates || null,
+            });
+          });
+        } catch(err){ /* keep the optimistic values */ }
+        hits.forEach(function(row){ row.__saving = false; });
+        render();
+      };
 
       // ---- helpers used by the Queue and Campaigns tabs --------------------------------
       // The price stops being an outbound link and becomes a route into this table. Defined here
