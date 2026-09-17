@@ -1145,14 +1145,38 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  with the reach figures on Market History, which also count CakeMail and
                  Salesmsg. Two different questions, two different totals. -->
             <details id="tu-strip" class="collapse collapse-arrow border border-base-300 bg-base-100 hidden" open>
+              <!-- Closed, this reads as one short title and nothing else. The qualifier, the
+                   provenance line and the period control all live INSIDE, because a summary that
+                   carries a form control is a summary you cannot click without thinking, and the
+                   provenance ("40,000/day from vetting score 63") means nothing until the panel
+                   it explains is on screen. -->
               <summary class="collapse-title min-h-0 py-3">
-                <div class="flex items-baseline justify-between flex-wrap gap-2 pr-6">
-                  <span class="font-semibold text-sm">Telnyx SMS volume &mdash; all carriers, and the one cap</span>
-                  <span class="text-xs text-base-content/50" id="tu-prov"></span>
-                </div>
+                <span class="font-semibold text-sm">Telnyx SMS volume</span>
               </summary>
               <div class="collapse-content">
                 <div class="flex flex-col gap-3 pb-1">
+
+                  <div class="flex items-baseline justify-between flex-wrap gap-2 -mt-1">
+                    <div class="min-w-0">
+                      <div class="text-sm font-semibold">Telnyx SMS volume &mdash; all carriers, and the one cap</div>
+                      <div class="text-xs text-base-content/50" id="tu-prov"></div>
+                    </div>
+                    <!-- AI-1004: period selection. Everything below follows it. -->
+                    <label class="flex items-center gap-2 shrink-0">
+                      <span class="text-[11px] uppercase tracking-wide text-base-content/50">Period</span>
+                      <select id="tu-period" class="select select-bordered select-xs w-44"
+                              title="The allowance resets daily at midnight UTC. A month shows volume, and the busiest single day against the cap.">
+                        <option value="day:0">Today</option>
+                        <option value="day:1">Yesterday</option>
+                        <option value="day:2">2 days ago</option>
+                        <option value="day:3">3 days ago</option>
+                        <option value="month:0">This month</option>
+                        <option value="month:1">Last month</option>
+                        <option value="rolling:14" selected>Rolling 14 days</option>
+                        <option value="rolling:30">Rolling 30 days</option>
+                      </select>
+                    </label>
+                  </div>
 
                   <!-- TWO QUESTIONS, SIDE BY SIDE, LABELLED AS TWO.
                        This block used to lead with the T-Mobile figure alone, which made the
@@ -1161,7 +1185,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                        the cap is a clearly separated second panel rather than the headline. -->
                   <div class="flex items-stretch gap-5 flex-wrap">
                     <div class="min-w-[9rem]">
-                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">Sent today</div>
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50" id="tu-sent-label">Sent today</div>
                       <div class="text-3xl font-bold leading-tight tabular-nums" id="tu-sent">&mdash;</div>
                       <div class="text-xs text-base-content/60" id="tu-sent-sub">all carriers</div>
                     </div>
@@ -1199,12 +1223,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="border border-base-300 rounded-md p-3">
                     <div class="flex items-baseline justify-between flex-wrap gap-2 mb-2">
                       <div class="text-[11px] uppercase tracking-wide text-base-content/50">
-                        Where messages went
+                        Where messages went <span class="normal-case tracking-normal" id="tu-carrier-range"></span>
                       </div>
-                      <div class="join">
-                        <button class="btn btn-xs join-item" data-tu-range="today">Today</button>
-                        <button class="btn btn-xs join-item btn-active" data-tu-range="window">Last 14 days</button>
-                      </div>
+                      <!-- The Today / Last-14-days toggle that used to sit here is gone: the period
+                           dropdown answers the same question for the whole panel, and two controls
+                           disagreeing about the range is worse than one. -->
+                      <div></div>
                     </div>
                     <div class="flex flex-wrap gap-1.5" id="tu-carriers"></div>
                     <p class="text-[11px] text-base-content/50 mt-2">
@@ -1222,7 +1246,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="border border-base-300 rounded-md p-3">
                     <div class="flex items-baseline justify-between flex-wrap gap-2 mb-2">
                       <div class="text-[11px] uppercase tracking-wide text-base-content/50">
-                        Messages per day &middot; last 14 days
+                        Messages per day <span class="normal-case tracking-normal" id="tu-days-range">&middot; last 14 days</span>
                       </div>
                       <div class="flex items-center gap-3 text-[11px] text-base-content/60">
                         <span class="flex items-center gap-1"><span class="inline-block w-2.5 h-2.5 bg-success"></span>T&#8209;Mobile (capped)</span>
@@ -1243,10 +1267,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="border border-base-300 rounded-md overflow-hidden">
                     <div class="bg-base-200 px-3 py-2 border-b border-base-300">
                       <div class="text-[11px] uppercase tracking-wide text-base-content/50">1 &middot; The limit</div>
-                      <div class="text-sm font-semibold">By brand &mdash; who has how much allowance <span class="font-normal text-base-content/50">&middot; last 14 days</span></div>
+                      <div class="text-sm font-semibold">By brand &mdash; who has how much allowance <span class="font-normal text-base-content/50" id="tu-brand-range">&middot; last 14 days</span></div>
                       <div class="text-[11px] text-base-content/60">
                         The cap is set per brand and resets at midnight UTC. Sent and T&#8209;Mobile are
-                        fortnight totals; Busiest day is the single worst day against that brand's own ceiling.
+                        totals for the selected period; Used and Left are measured against one day's
+                        allowance, and Busiest day is the worst single day against that brand's own ceiling.
                       </div>
                     </div>
                     <div class="overflow-x-auto">
@@ -1254,7 +1279,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                         <thead><tr>
                           <th>Brand</th><th class="text-right">Score</th><th class="text-right">Cap/day</th>
                           <th class="text-right">Senders</th><th class="text-right">Sent</th>
-                          <th class="text-right">T&#8209;Mobile</th><th class="text-right">Busiest day</th>
+                          <th class="text-right">T&#8209;Mobile</th>
+                          <th class="text-right" title="Against the daily cap: for a single day, that day's T-Mobile volume; for a longer period, the busiest single day.">Used</th>
+                          <th class="text-right" title="Cap minus used. The allowance resets at midnight UTC.">Left</th>
+                          <th class="text-right">Busiest day</th>
                         </tr></thead>
                         <tbody id="tu-brands"></tbody>
                       </table>
@@ -1265,10 +1293,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="border border-base-300 rounded-md overflow-hidden">
                     <div class="px-3 py-2 border-b border-base-300">
                       <div class="text-[11px] uppercase tracking-wide text-base-content/50">2 &middot; The usage</div>
-                      <div class="text-sm font-semibold">By inbox &mdash; who did the sending <span class="font-normal text-base-content/50">&middot; last 14 days</span></div>
+                      <div class="text-sm font-semibold">By inbox &mdash; who did the sending <span class="font-normal text-base-content/50" id="tu-inbox-range">&middot; last 14 days</span></div>
                       <div class="text-[11px] text-base-content/60">
-                        A rolling fortnight, not today &mdash; the oldest day drops off as a new one is added.
-                        Every number that sent, and the brand whose allowance it drew on.
+                        Every number that sent in the selected period, and the brand whose allowance it
+                        drew on. A number has no allowance of its own &mdash; Allowance and Left belong to its
+                        brand and are shared with every other number on it.
                       </div>
                     </div>
                     <div class="overflow-x-auto">
@@ -1280,6 +1309,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                           <th class="text-right">AT&amp;T</th><th class="text-right">Verizon</th>
                           <th class="text-right" title="Every other carrier combined — none of them cap daily volume.">Other</th>
                           <th class="text-right">Segments</th>
+                          <!-- AI-1004. A number has no allowance of its own: Telnyx caps the BRAND and
+                               every number on it draws from the same pot. -->
+                          <th class="text-right" title="The allowance of the brand this number sends on — shared with every other number on that brand.">Allowance</th>
+                          <th class="text-right" title="What that shared allowance has left.">Left</th>
+                          <th class="text-right" title="This number's share of its brand's T-Mobile traffic in this period.">Share</th>
                         </tr></thead>
                         <tbody id="tu-inbox"></tbody>
                       </table>
@@ -8073,12 +8107,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       let loaded = false;
 
+      // AI-1004: which period the tab is showing. "rolling:N" keeps the fortnight view this panel
+      // was built around; "day:N" and "month:N" are the ones with a real allowance behind them.
+      let periodSel = 'rolling:14';
+      const periodQuery = () => {
+        const [kind, n] = periodSel.split(':');
+        return kind === 'rolling' ? `days=${n}` : `period=${kind}&offset=${n}`;
+      };
+
       window.__loadTelnyxUsage = async function(force){
         // The tab can be re-entered many times in a session and this number moves once a day.
         if(loaded && !force) return;
         const empty = document.getElementById('rep-empty');
         try{
-          const r = await fetch('/api/telnyx-usage?days=14', { headers: await apiHeaders() });
+          const r = await fetch('/api/telnyx-usage?' + periodQuery(), { headers: await apiHeaders() });
           if(!r.ok) throw new Error(r.status);
           const j = await r.json();
           if(!j || !j.ok) throw new Error('not ok');
@@ -8093,17 +8135,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }
       };
 
-      // Chips repaint on the Today/Last-14-days toggle without refetching — both figures come
-      // back in the same response, so switching is free.
+      // Switching period refetches — the allowance arithmetic is done server-side, per period.
+      // The select lives inside a <summary>, where a click would otherwise collapse the panel.
+      (function bindPeriod(){
+        const sel = document.getElementById('tu-period');
+        if(!sel) return;
+        sel.addEventListener('click', e => e.stopPropagation());
+        sel.addEventListener('change', async e => {
+          e.stopPropagation();
+          periodSel = sel.value;
+          sel.disabled = true;
+          await window.__loadTelnyxUsage(true);
+          sel.disabled = false;
+        });
+      })();
+
+      // Chips follow the period dropdown — there is no second range control here any more.
       let lastCarriers = [];
       let lastCap = 0;
-      let carrierRange = 'window';
 
       function paintCarriers(){
         const el = document.getElementById('tu-carriers');
         if(!el) return;
-        const isToday = carrierRange === 'today';
-        const val = c => isToday ? (Number(c.today) || 0) : (Number(c.total) || 0);
+        const val = c => Number(c.total) || 0;
         // A carrier with nothing today is dropped rather than shown as 0 — on a quiet morning
         // that would be eighteen empty chips burying the two that did send.
         const rows = lastCarriers.filter(c => val(c) > 0).sort((a, b) => val(b) - val(a));
@@ -8119,23 +8173,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             ? 'badge badge-sm bg-success/15 border-success/40 text-success-content'
             : 'badge badge-sm badge-ghost';
           const tip = c.capped
-            ? `${c.carrier} — the only carrier with a daily cap. ${nf(c.today)} today of ${nf(lastCap)} allowed, `
-              + `${nf(Math.max(0, lastCap - (Number(c.today) || 0)))} left. ${nf(c.total)} over the window.`
-            : `${c.carrier} — no daily volume cap, so this is a running total rather than a share of any allowance. `
-              + `${nf(c.today)} today, ${nf(c.total)} over the window.`;
+            ? `${c.carrier} — the only carrier with a daily cap. ${nf(c.total)} in this period; `
+              + `the cap is ${nf(lastCap)} a day and resets at midnight UTC.`
+            : `${c.carrier} — no daily volume cap, so this is a running total rather than a share of any `
+              + `allowance. ${nf(c.total)} in this period.`;
           return `<span class="${cls}" title="${esc(tip)}">${name}
                     <span class="tabular-nums font-semibold ml-1">${nf(n)}</span>
                     <span class="opacity-60 ml-1">${share}%</span>
                   </span>`;
         }).join('')
-          : `<span class="text-base-content/50 text-xs">Nothing sent ${isToday ? 'yet today' : 'in this window'}.</span>`;
+          : `<span class="text-base-content/50 text-xs">Nothing sent in this period.</span>`;
       }
-
-      document.querySelectorAll('[data-tu-range]').forEach(b => b.addEventListener('click', () => {
-        carrierRange = b.dataset.tuRange;
-        document.querySelectorAll('[data-tu-range]').forEach(x => x.classList.toggle('btn-active', x === b));
-        paintCarriers();
-      }));
 
       // Recorded from Telnyx portal → Messaging → Programmable Messaging → Rate Limits, which
       // is the ONLY place these appear — there is no API that returns an account rate limit.
@@ -8229,7 +8277,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         bar.className = 'h-full ' + (pct >= 80 ? 'bg-error' : pct >= 50 ? 'bg-warning' : 'bg-success');
 
         const c = j.cap || {};
-        const when = c.checked_at ? new Date(c.checked_at).toLocaleDateString() : 'never';
+        // The house clock, like every other timestamp in the app — not the viewer's.
+        const when = c.checked_at ? etDate(new Date(c.checked_at), { year: 'numeric', month: 'short', day: 'numeric' }) : 'never';
         $('tu-prov').textContent =
           `${pct.toFixed(2)}% of cap · ${nf(cap)}/day from vetting score ${c.vetting_score == null ? 'unvetted' : c.vetting_score}`
           + `${c.brand ? ' (' + c.brand + ')' : ''} · checked ${when}`;
@@ -8287,6 +8336,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const score = b.vetting_score == null
             ? '<span class="text-warning" title="No external vetting on this brand — it sits in the bottom band: 2,000 messages/day to T‑Mobile and 240 segments/minute to AT&amp;T.">unvetted</span>'
             : esc(b.vetting_score);
+          // AI-1004: used / left against the allowance, on the basis the server used — the day
+          // itself for a single day, the busiest day for anything longer.
+          const fill = Number(b.pct_of_allowance) || 0;
+          const fillTone = fill >= 90 ? 'text-error font-semibold' : fill >= 70 ? 'text-warning font-semibold' : '';
           return `<tr>
             <td>${esc(b.brand || '—')}</td>
             <td class="text-right tabular-nums">${score}</td>
@@ -8294,9 +8347,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="text-right tabular-nums opacity-70">${nf(b.numbers)}</td>
             <td class="text-right tabular-nums">${nf(b.total)}</td>
             <td class="text-right tabular-nums">${nf(b.tmobile)}</td>
+            <td class="text-right tabular-nums ${fillTone}" title="${esc(b.allowance_basis === 'day' ? 'This day\'s T‑Mobile volume against the cap.' : 'The busiest single day in this period, against the daily cap.')}">${nf(b.used_against_allowance)} <span class="opacity-60">· ${fill}%</span></td>
+            <td class="text-right tabular-nums">${b.remaining == null ? '—' : nf(b.remaining)}</td>
             <td class="text-right tabular-nums ${tone}">${b.peak_day ? esc(b.peak_day) + ' · ' + p + '%' : '—'}</td>
           </tr>`;
-        }).join('') : '<tr><td colspan="7" class="text-base-content/50">No brand sent anything in this window.</td></tr>';
+        }).join('') : '<tr><td colspan="9" class="text-base-content/50">No brand sent anything in this period.</td></tr>';
 
         // Say what was left out, so a one-row table is not mistaken for "we only have one brand".
         const idle = j.idle_brands || [];
@@ -8320,7 +8375,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             ? `<span class="opacity-70">${esc(x.brand || '—')}</span>`
               + (x.campaign ? ` <span class="opacity-40 text-[11px] font-mono">${esc(x.campaign)}</span>` : '')
             : '<span class="badge badge-error badge-sm text-white" title="This number is not registered to any 10DLC campaign. Carriers filter unregistered long codes, and it is capped at 0.1 messages/second by the number itself — the brand tier does not apply.">not registered</span>';
-          return `<tr>
+          // AI-1004: the allowance this number draws on, what is left of it, and how much of the
+          // brand's traffic was this number. The row is tinted when the SHARED pot is filling up,
+          // because that is what throttles — a number sending 5% of a pot that is 95% full is the
+          // one in trouble, and a per-number bar would have shown it as nearly empty.
+          const fill = Number(x.brand_pct_of_allowance) || 0;
+          const rowTone = x.alert === 'red' ? ' style="background:rgba(220,38,38,.06)"'
+            : x.alert === 'amber' ? ' style="background:rgba(217,119,6,.06)"' : '';
+          const leftCell = x.brand_remaining == null
+            ? '<span class="text-base-content/30" title="Not registered to a brand, so no allowance applies — carriers filter it and cap it at 0.1 messages/second.">—</span>'
+            : `<span class="${x.alert === 'red' ? 'text-error font-semibold' : x.alert === 'amber' ? 'text-warning font-semibold' : ''}" title="${esc(String(fill) + '% of ' + (x.brand || 'the brand') + '\'s allowance is used.')}">${nf(x.brand_remaining)}</span>`;
+          return `<tr${rowTone}>
             <td>${label}</td>
             <td class="font-mono text-[11px] opacity-70">${esc(x.number)}</td>
             <td>${brand}</td>
@@ -8330,13 +8395,55 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <td class="text-right tabular-nums opacity-70">${nf(x.verizon)}</td>
             <td class="text-right tabular-nums opacity-70">${nf(x.other)}</td>
             <td class="text-right tabular-nums opacity-50">${nf(x.segments)}</td>
+            <td class="text-right tabular-nums opacity-70">${x.brand_allowance == null ? '—' : nf(x.brand_allowance)}</td>
+            <td class="text-right tabular-nums">${leftCell}</td>
+            <td class="text-right tabular-nums opacity-70" title="${esc(x.number)} sent ${nf(x.tmobile)} of its brand's ${nf(x.brand_used != null ? x.brand_used : 0)} T‑Mobile messages in this period.">${x.share_of_brand ? x.share_of_brand + '%' : '—'}</td>
           </tr>`;
-        }).join('') : '<tr><td colspan="9" class="text-base-content/50">Nothing sent in this window.</td></tr>';
+        }).join('') : '<tr><td colspan="12" class="text-base-content/50">Nothing sent in this period.</td></tr>';
 
         renderLimits(j);
 
+        // AI-1004: every label follows the chosen period, so a prior month cannot be read as today.
+        const p = j.period || { kind: 'rolling', days: j.days, start: '', end: '' };
+        const sameDay = p.start === p.end;
+        const rangeLabel = p.kind === 'day'
+          ? (p.current ? `today · ${p.start} UTC` : `${p.start} UTC`)
+          : p.kind === 'month'
+            ? `${p.start} to ${p.end} UTC${p.current ? ' (month so far)' : ''}`
+            : `last ${p.days} days UTC`;
+        const setText = (id, v) => { const el = $(id); if(el) el.textContent = v; };
+        // WHY THESE DAYS ARE UTC AND NOTHING ELSE IN THE APP IS.
+        //
+        // Everywhere else Playbook runs on ET, deliberately. This one panel cannot: the T-Mobile
+        // allowance resets at midnight UTC, and Telnyx reports usage in whole UTC days. Re-cutting
+        // them into ET days is not a formatting choice — it would need per-message timestamps we do
+        // not store, and it would put a day's "left" against the wrong reset, which is the one
+        // number this panel exists to get right.
+        //
+        // So the days stay UTC and SAY so, with the ET window spelled out beside them.
+        const etWindow = ymd => {
+          if(!ymd) return '';
+          const a = new Date(ymd + 'T00:00:00Z'), b = new Date(a.getTime() + 86400000);
+          const f = d => `${etDate(d, { month: 'short', day: 'numeric' })} ${etTime(d, { hour: 'numeric', minute: '2-digit' })}`;
+          return `${f(a)} – ${f(b)} ET`;
+        };
+        setText('tu-sent-label', p.kind === 'day' ? (p.current ? 'Sent today' : 'Sent that day') : 'Sent on the latest day');
+        setText('tu-brand-range', '· ' + rangeLabel);
+        setText('tu-inbox-range', '· ' + rangeLabel);
+        setText('tu-carrier-range', '· ' + rangeLabel);
+        // One day selected means one bar; say so rather than leaving a fortnight's heading over it.
+        setText('tu-days-range', '· ' + rangeLabel);
         $('tu-note').textContent =
-          `Last ${j.days} days. The cap counts T‑Mobile-bound messages only — it is a carrier limit, not a reach figure, `
+          `${p.kind === 'rolling' ? `Last ${p.days} days` : rangeLabel}. `
+          // The rest of Playbook is ET; this panel is the exception and has to say why.
+          + (p.kind === 'day'
+              ? `Days here are UTC because the allowance resets at midnight UTC — this one covers ${etWindow(p.start)}. `
+              : 'Days here are UTC because the allowance resets at midnight UTC, so they do not line up with ET dates elsewhere in the app. ')
+          + (p.kind === 'day'
+              ? 'Allowance, used and left are this day\'s figures. '
+              : 'The allowance is a DAILY one, so used and left describe the busiest single day in this period, not the period total. ')
+          + 'A number has no allowance of its own — it draws on its brand\'s, shared with every other number on that brand. '
+          + `The cap counts T‑Mobile-bound messages only — it is a carrier limit, not a reach figure, `
           + `so it will not match the totals below. ${j.excludes || ''}`;
       }
     })();

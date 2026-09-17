@@ -37,13 +37,45 @@ export default async function handler(req, res) {
   const sh = supabaseHeaders(supaK);
   const get = p => fetch(`${supaUrl}/rest/v1/${p}`, { headers: sh });
 
-  const days = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 90);
-  const since = new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
+  // PERIOD SELECTION (AI-1004). ?period=day|month with ?offset=0 for the current one, 1 for the
+  // one before it, and so on. ?days=N is kept for the rolling window the compliance strip has
+  // always drawn, and stays the default so nothing that already calls this changes shape.
+  //
+  // UTC throughout, because that is when the cap resets — mid-morning in Manila. A "day" here is
+  // the carrier's day, not the operator's, or the remaining figure would be wrong for the hours
+  // in between.
+  const ymd = d => d.toISOString().slice(0, 10);
+  const period = String(req.query.period || '').toLowerCase();
+  const offset = Math.min(Math.max(parseInt(req.query.offset, 10) || 0, 0), 24);
+  const nowUtc = new Date();
+  const todayUtc = ymd(nowUtc);
+
+  let since, until, periodMeta;
+  if (period === 'day' || period === 'month') {
+    if (period === 'day') {
+      const d = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate() - offset));
+      since = until = ymd(d);
+    } else {
+      const first = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth() - offset, 1));
+      const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0));
+      since = ymd(first);
+      // A month in progress ends today: quoting a month-end date for a period still running
+      // invites reading a part-month total as the whole month.
+      until = ymd(last) > todayUtc ? todayUtc : ymd(last);
+    }
+    periodMeta = { kind: period, offset, start: since, end: until, current: offset === 0, days: Math.round((Date.parse(until) - Date.parse(since)) / 86400000) + 1 };
+  } else {
+    const d = Math.min(Math.max(parseInt(req.query.days, 10) || 14, 1), 90);
+    since = new Date(Date.now() - (d - 1) * 86400000).toISOString().slice(0, 10);
+    until = todayUtc;
+    periodMeta = { kind: 'rolling', offset: 0, start: since, end: until, current: true, days: d };
+  }
+  const days = periodMeta.days;
 
   try {
     const [uR, sR, bR] = await Promise.all([
       get(`telnyx_usage_daily?select=usage_date,sending_number,carrier,direction,msg_count,segments,cost`
-        + `&direction=eq.outbound&usage_date=gte.${since}&order=usage_date.asc&limit=20000`),
+        + `&direction=eq.outbound&usage_date=gte.${since}&usage_date=lte.${until}&order=usage_date.asc&limit=20000`),
       get(`telnyx_senders?select=phone_number,label,active,sort_order,notes,brand_id,tcr_campaign_id,assignment_status&order=sort_order.asc`),
       get(`telnyx_brands?select=brand_id,tcr_brand_id,brand_name,vetting_score,tmo_daily_cap,att_tpm,identity_status,checked_at`),
     ]);
@@ -135,6 +167,13 @@ export default async function handler(req, res) {
         const n = (dayMap.get(d.date) || { perBrand: {} }).perBrand[b.brand_id] || 0;
         return n > (m ? m.n : -1) ? { date: d.date, n } : m;
       }, null);
+      // ALLOWANCE IS A DAILY THING. T-Mobile's cap resets every midnight UTC, so "remaining" only
+      // means something for a single day. Over a longer period the honest equivalent is the
+      // BUSIEST day — how close the brand came to the ceiling at its worst — and that is what is
+      // reported, labelled so nobody reads a month of volume against one day's allowance.
+      const cap = Number(b.tmo_daily_cap) || 0;
+      const usedAgainstCap = periodMeta.kind === 'day' ? tmo : (peakDay ? peakDay.n : 0);
+      const basis = periodMeta.kind === 'day' ? 'day' : 'peak-day';
       return {
         brand_id: b.brand_id, brand: b.brand_name,
         vetting_score: b.vetting_score, tmobile_daily_cap: b.tmo_daily_cap, att_tpm: b.att_tpm,
@@ -142,6 +181,12 @@ export default async function handler(req, res) {
         peak_day: peakDay ? peakDay.date : null,
         peak_tmobile: peakDay ? peakDay.n : 0,
         peak_pct_of_cap: peakDay && b.tmo_daily_cap ? +(peakDay.n / b.tmo_daily_cap * 100).toFixed(2) : 0,
+        // What the Reports tab quotes as allowance / used / left for the chosen period.
+        allowance: cap,
+        allowance_basis: basis,
+        used_against_allowance: usedAgainstCap,
+        remaining: cap ? Math.max(0, cap - usedAgainstCap) : null,
+        pct_of_allowance: cap ? +(usedAgainstCap / cap * 100).toFixed(2) : 0,
         checked_at: b.checked_at,
       };
     }).sort((a, b) => b.peak_pct_of_cap - a.peak_pct_of_cap);
@@ -183,8 +228,15 @@ export default async function handler(req, res) {
 
     // ── Per inbox ─────────────────────────────────────────────────────────────
     const inboxMap = new Map();
+    // T-Mobile volume per number per DAY. Needed because the allowance is a daily one: over a
+    // month, a number's honest figure against the cap is its own busiest day, not its month total.
+    const inboxByDay = new Map();
     for (const r of usage) {
       const tn = r.sending_number;
+      if (isTmobile(r.carrier)) {
+        const k = tn + '|' + String(r.usage_date).slice(0, 10);
+        inboxByDay.set(k, (inboxByDay.get(k) || 0) + (Number(r.msg_count) || 0));
+      }
       const s = senders.find(x => x.phone_number === tn);
       const cur = inboxMap.get(tn) || {
         number: tn,
@@ -223,6 +275,43 @@ export default async function handler(req, res) {
         });
       }
     }
+    // A NUMBER HAS NO ALLOWANCE OF ITS OWN. Telnyx caps a BRAND, and every number on that brand
+    // draws from the same pot — ~88% of all volume is one number sharing Playbook's with the
+    // rest. So each number reports its brand's allowance, what the brand has left, and the share
+    // of that pot this number accounted for. A per-number bar would otherwise read "nearly empty"
+    // while the pot it draws from filled up.
+    const brandByIdForInbox = {};
+    for (const b of brandRows) brandByIdForInbox[b.brand_id] = b;
+    for (const x of inboxMap.values()) {
+      const s = senders.find(y => y.phone_number === x.number);
+      const b = s && s.brand_id ? brandByIdForInbox[s.brand_id] : null;
+      x.brand_allowance = b ? b.allowance : null;
+      x.brand_used = b ? b.used_against_allowance : null;
+      x.brand_remaining = b ? b.remaining : null;
+      x.brand_pct_of_allowance = b ? b.pct_of_allowance : null;
+      // Measured on the SAME basis as the brand, or the two numbers cannot be read together: for a
+      // single day, the day's volume; for a longer period, this number's own busiest day. Comparing
+      // a month total to a daily cap produced "603% of brand use" before this.
+      let ownPeak = x.tmobile;
+      if (periodMeta.kind !== 'day') {
+        ownPeak = 0;
+        for (const d of byDay) ownPeak = Math.max(ownPeak, inboxByDay.get(x.number + '|' + d.date) || 0);
+      }
+      x.tmobile_peak_day = ownPeak;
+      x.pct_of_allowance = b && b.allowance ? +(ownPeak / b.allowance * 100).toFixed(2) : null;
+      // Share of the brand's traffic across the whole period — a proportion, so both sides are
+      // period totals and it is the one figure here that is not about the cap.
+      x.share_of_brand = b && b.tmobile ? +(x.tmobile / b.tmobile * 100).toFixed(1) : 0;
+      // What the UI colours. Thresholds are on the BRAND's fill, because that is what actually
+      // throttles: a number sending 5% of a pot that is 95% full is the one in danger.
+      // Only numbers that actually sent are flagged. Tinting every idle number on a filling brand
+      // turned a 16-row table into a wall of pink and buried the two rows that were doing it.
+      const fill = b ? b.pct_of_allowance : 0;
+      const contributed = x.tmobile > 0;
+      x.alert = !x.registered ? 'unregistered'
+        : !contributed ? ''
+        : fill >= 90 ? 'red' : fill >= 70 ? 'amber' : '';
+    }
     const byInbox = [...inboxMap.values()].sort((a, b) => b.total - a.total);
 
     const today = byDay[byDay.length - 1] || null;
@@ -234,6 +323,7 @@ export default async function handler(req, res) {
     res.status(200).json({
       ok: true,
       days,
+      period: periodMeta,
       // The cap and where it came from — so the strip can say "40,000, from a vetting score of
       // 63 checked on <date>" rather than presenting a bare number nobody can audit.
       cap: {

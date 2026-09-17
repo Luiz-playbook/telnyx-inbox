@@ -11,11 +11,21 @@
 // stops the strip quoting a figure from memory — ours already moved once (16 -> 63 on
 // 2026-06-09, taking the daily cap from 2,000 to 40,000) and nothing in the app noticed.
 //
-// Runs from Vercel Cron (Authorization: Bearer CRON_SECRET) or on demand from a signed-in
-// Playbook account. Upserts on the natural key, so calling it repeatedly is safe and
-// backfilling is just a bigger ?days=.
+// Runs from Vercel Cron or on demand from a signed-in Playbook account. Upserts on the natural
+// key, so calling it repeatedly is safe and backfilling is just a bigger ?days=.
 //
-// Env: TELNYX_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, optional CRON_SECRET.
+// WHY IT HAS ITS OWN SECRET (AI-1004). CRON_SECRET is deliberately NOT set on Vercel: it is what
+// api/queue-tick.js requires to sweep the queue, and leaving it unset is what currently stops
+// blasts going out by accident. But gate() treats that same secret as the cron's identity, so
+// while it is absent this route answered every nightly call with 401 — the reason
+// telnyx_usage_daily stopped at 2026-09-10 while Telnyx itself still had the data.
+//
+// So the reporting sync gets a secret of its own, exactly as the price crons already do: setting
+// USAGE_CRON_SECRET lets this run without handing anything the power to send. Unset => open,
+// which is safe here in a way it would never be for queue-tick: this route only READS Telnyx
+// usage totals and writes aggregate counts. It sends nothing and spends nothing.
+//
+// Env: TELNYX_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, optional USAGE_CRON_SECRET.
 
 import { supabaseKey, supabaseHeaders } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
@@ -173,7 +183,16 @@ async function readSenderBrands(key, numbers) {
 }
 
 export default async function handler(req, res) {
-  if (!await gate(req, res)) return;
+  // Accepted via ?token= (how Vercel delivers it in the cron path) or a Bearer header. When the
+  // secret is unset the route is open to the cron; a signed-in Playbook account is still accepted
+  // either way, so the "Sync now" button in the UI keeps working.
+  const usageSecret = (process.env.USAGE_CRON_SECRET || '').trim();
+  const tokenOk = usageSecret
+    && (req.query?.token === usageSecret || req.headers.authorization === `Bearer ${usageSecret}`);
+  // No matching token: a signed-in Playbook account is required whenever a secret is configured.
+  // With no secret configured the route stays open so the nightly cron can reach it — it reads
+  // usage totals and writes counts, nothing more.
+  if (!tokenOk && usageSecret && !await gate(req, res)) return;
 
   const key = (process.env.TELNYX_API_KEY || '').trim();
   if (!key) { res.status(500).json({ error: 'TELNYX_API_KEY is not set on the server' }); return; }
