@@ -497,6 +497,9 @@
           <a href="#" data-tab="history">Market History</a>
           <a href="#" data-tab="templates">Templates</a>
           <a href="#" data-tab="rules">Cole Rules</a>
+          <!-- Replies sits beside Market History on purpose: history is what we said, replies is
+               what came back, and they are read one after the other. -->
+          <a href="#" data-tab="replies">Replies</a>
           <a href="#" data-tab="reports">Reports</a>
         </nav>
         <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
@@ -1092,10 +1095,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div id="bh-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
                   <div id="bh-panel-sub" class="text-xs text-base-content/50 mt-0.5"></div>
                 </div>
-                <!-- FOLLOW UP lives here, not in the row menu: this panel is where a blast is
-                     actually read, and deciding to go again is a decision you make having read
-                     it. Rendered by renderPanel so it can disable itself with a reason. -->
-                <button id="bh-followup" class="btn btn-xs btn-outline btn-info ml-auto shrink-0 hidden">&#8635; Follow up</button>
                 <button id="bh-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
               </div>
               <div id="bh-panel-body" class="bh-panel-body"></div>
@@ -1141,6 +1140,31 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                and screen-reader-operable for free. They are deliberately NOT grouped by a
                shared name attribute — these are unrelated reports, so opening one should not
                collapse another someone is reading. -->
+          <!-- ===== Replies (migration 079) =====
+               Everything that came back from a blast, in one place, split by channel because the
+               two behave differently: an email reply is a message against a campaign, an SMS
+               reply is a conversation with a number.
+
+               BOTH SIDES ARE CURRENTLY THIN, and the empty states say why rather than showing a
+               blank panel. Email has no ingestion wired at all; SMS only ever receives replies to
+               +16158050766, because the eight 2-way numbers post to Charles's HubSpot endpoint
+               instead. Verified against the live Telnyx account, 2026-09-17. -->
+          <div data-view id="view-replies" class="hidden space-y-3">
+            <div class="flex items-center gap-3 flex-wrap">
+              <div role="tablist" class="tabs tabs-boxed bg-base-200/60">
+                <button role="tab" class="tab tab-active" data-rtab="email">Email <span class="badge badge-xs ml-1.5" data-rcount="email">0</span></button>
+                <button role="tab" class="tab" data-rtab="sms">SMS <span class="badge badge-xs ml-1.5" data-rcount="sms">0</span></button>
+              </div>
+              <label class="text-xs text-base-content/60 flex items-center gap-1.5">
+                <input type="checkbox" id="rep-unread" class="checkbox checkbox-xs"> Unread only
+              </label>
+              <button id="rep-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+            </div>
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div id="rep-list" class="divide-y divide-base-300 max-h-[calc(100vh-260px)] overflow-auto"></div>
+            </div>
+          </div>
+
           <div data-view id="view-reports" class="hidden space-y-3">
 
             <!-- Telnyx 10DLC volume vs the carrier cap.
@@ -2526,8 +2550,97 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       renderTplList();
     });
 
+    // ===== Replies (migration 079) =====
+    //
+    // Reads reply_inbox(channel), which normalises the two stores into one list: email is a row
+    // per reply, SMS a row per conversation whose last message came in.
+    //
+    // THE EMPTY STATE IS THE MAIN FEATURE TODAY, and it is written to be believed. Both channels
+    // are genuinely thin — email has no ingestion at all, and SMS only receives replies to one
+    // number because the eight 2-way numbers post to Charles's HubSpot endpoint. A bare "no
+    // replies yet" would read as "nobody answered your blasts", which is a very different and
+    // much more alarming thing than "the wiring is not finished".
+    (function repliesModule(){
+      const host = document.getElementById('rep-list');
+      if(!host) return;
+      const esc3 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      let chan = 'email', unreadOnly = false, ROWS = [];
+
+      const ago = t => {
+        if(!t) return '';
+        const ms = Date.now() - new Date(t).getTime();
+        const m = Math.round(ms/60000), h = Math.round(ms/3600000), d = Math.round(ms/86400000);
+        return m < 60 ? m + 'm ago' : h < 48 ? h + 'h ago' : d + 'd ago';
+      };
+
+      const EMPTY = {
+        email: `<div class="font-semibold text-[#133b49] mb-1">No email replies yet</div>
+          <div>Nothing writes email replies to this database yet &mdash; the table exists (migration 079) and the ingestion is not wired.
+          Until it is, replies to email blasts stay in the sending account's own inbox.</div>`,
+        sms: `<div class="font-semibold text-[#133b49] mb-1">No SMS replies here</div>
+          <div>Replies only reach this app from <span class="font-mono text-xs">+1 615 805 0766</span>. The eight 2-way numbers send their
+          replies to the HubSpot integration instead, so a reply to a blast from one of those appears in HubSpot and never here.
+          <div class="mt-1.5 text-base-content/50">That split is AI-965. Closing it needs the HubSpot endpoint to forward a copy, or this app to read HubSpot.</div></div>`,
+      };
+
+      function render(){
+        const rows = unreadOnly ? ROWS.filter(r => r.unread) : ROWS;
+        document.querySelectorAll('[data-rtab]').forEach(b => b.classList.toggle('tab-active', b.dataset.rtab === chan));
+        if(!rows.length){
+          host.innerHTML = `<div class="p-6 text-sm text-base-content/60 leading-relaxed">${
+            unreadOnly && ROWS.length ? '<div class="font-semibold text-[#133b49] mb-1">Nothing unread</div><div>Untick “Unread only” to see the rest.</div>' : EMPTY[chan]
+          }</div>`;
+          return;
+        }
+        host.innerHTML = rows.map(r => `
+          <div class="flex items-start gap-3 px-4 py-3 hover:bg-base-200/40">
+            <span class="mt-1.5 w-2 h-2 rounded-full shrink-0 ${r.unread ? 'bg-[#e55608]' : 'bg-transparent'}"></span>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline gap-2">
+                <span class="font-semibold text-[#133b49] truncate">${esc3(r.correspondent || 'unknown')}</span>
+                ${r.market_key ? `<span class="text-xs text-base-content/50">${esc3(r.market_key)}</span>` : ''}
+                <span class="text-xs text-base-content/40 ml-auto shrink-0">${esc3(ago(r.received_at))}</span>
+              </div>
+              <div class="text-sm text-base-content/70 mt-0.5 line-clamp-2">${esc3(r.preview || '(no preview)')}</div>
+            </div>
+          </div>`).join('');
+      }
+
+      async function load(){
+        // `sb` is the module-scope client declared above, not window.sb — there is no such
+        // global, and reading one would have made this tab fail silently on every load.
+        if(!sb){ host.innerHTML = '<div class="p-6 text-sm text-error">config.js is not filled in.</div>'; return; }
+        host.innerHTML = '<div class="p-6 text-sm text-base-content/50">Loading replies…</div>';
+        const res = await sb.rpc('reply_inbox', { p_channel: chan });
+        if(res.error){
+          // A missing function is the expected failure until 079 is applied, and saying so beats
+          // printing PostgREST's own wording at someone who did not write the migration.
+          const missing = /reply_inbox/.test(res.error.message || '') && /(does not exist|not find)/i.test(res.error.message || '');
+          host.innerHTML = `<div class="p-6 text-sm text-base-content/60">${missing
+            ? '<div class="font-semibold text-[#133b49] mb-1">Not set up yet</div><div>Migration 079 has not been applied to this database, so there is nothing to read from.</div>'
+            : esc3(res.error.message)}</div>`;
+          return;
+        }
+        ROWS = res.data || [];
+        const c = document.querySelector(`[data-rcount="${chan}"]`);
+        if(c) c.textContent = ROWS.filter(r => r.unread).length;
+        render();
+      }
+
+      document.querySelectorAll('[data-rtab]').forEach(b => b.addEventListener('click', () => {
+        if(chan === b.dataset.rtab) return;
+        chan = b.dataset.rtab; load();
+      }));
+      const u = document.getElementById('rep-unread');
+      if(u) u.addEventListener('change', e => { unreadOnly = e.target.checked; render(); });
+      const rl = document.getElementById('rep-reload');
+      if(rl) rl.addEventListener('click', load);
+
+      window.__loadReplies = load;
+    })();
+
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', reports:'view-reports', rules:'view-rules' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -2538,6 +2651,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'history' && window.__loadBlastHistory) window.__loadBlastHistory();
       if(tab === 'reports' && window.__loadTelnyxUsage) window.__loadTelnyxUsage();
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
+      if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
     // A hash is either a bare tab ("#queue") or a tab with a target ("#prices:<event_id>"),
@@ -9210,27 +9324,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // fill [GAME] and [DATE] from a real event — without one they leave unresolved tokens and
       // api/queue-draft refuses the row outright.
       let FU_EVENTS = null;      // upcoming fixtures, loaded once and reused
-      async function startHistoryFollowUp(r){
-        const mkt = (r.market || '').toLowerCase();
-        if(!FU_EVENTS){
-          const res = await sb.rpc('rpc_event_recommendations');
-          FU_EVENTS = res.error ? [] : (res.data || []);
-        }
-        // This market, games still ahead, soonest first. A follow-up about a game already played
-        // sells nothing, and the date cap in the dialog cannot express "not this one" on its own.
-        const today = etYmd();
-        const games = FU_EVENTS
-          .filter(e => String(e.market_key || '').toLowerCase() === mkt && e.event_date >= today)
-          .sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)));
-        if(!games.length){
-          toast({ type:'err', title:'No upcoming games in this market',
-            lines:[ prettyMetro(r.market) + ' has no fixture ahead to follow up about.',
-                    'Rescan schedules on the Offers tab if you expect one.' ] });
-          return;
-        }
-        const ans = await historyFollowUpDialog(r, games);
-        if(!ans) return;
-
+      // The write half, shared by the tab. Separate from the form so the form stays about
+      // gathering answers and this stays about what happens to them.
+      async function queueHistoryFollowUp(r, games, ans){
         const g = games.find(x => String(x.event_id) === String(ans.eventId));
         if(!g) return;
         try {
@@ -9279,76 +9375,121 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }
       }
 
-      function historyFollowUpDialog(r, games){
-        return new Promise(resolve => {
-          const pad = n => String(n).padStart(2,'0');
-          const base = new Date(Date.now() + 864e5);
-          const day  = base.getFullYear() + '-' + pad(base.getMonth()+1) + '-' + pad(base.getDate());
-          const ov = document.createElement('div');
-          ov.className = 'pb-modal-overlay';
-          ov.innerHTML =
-            '<div class="pb-modal-card" role="dialog" aria-modal="true" style="max-width:34rem">'
-            + '<div class="flex items-start gap-2 mb-1">'
-            +   '<span class="text-xl leading-none text-[#e55608]">&#8635;</span>'
-            +   '<div class="font-extrabold text-lg text-[#133b49]">Follow up with ' + esc(prettyMetro(r.market)) + '</div>'
-            + '</div>'
-            + '<div class="text-sm text-base-content/70 mb-3">This blast went out on ' + esc(fmtDate(r.sent_at))
-            +   '. A follow-up is a new blast to the same market &mdash; choose which game it is about.</div>'
-            + '<div class="pbw-panel mb-3">'
-            +   '<div class="pbw-row"><span class="pbw-label">Game</span>'
-            +     '<select data-game class="select select-bordered select-sm flex-1">'
-            +       games.slice(0, 40).map(g => '<option value="' + esc(g.event_id) + '">'
-            +         esc(g.opponent ? g.opponent + ' at ' + g.team : g.team) + ' &middot; ' + esc(g.event_date)
-            +         '</option>').join('')
-            +     '</select></div>'
-            +   '<div class="pbw-row mt-2"><span class="pbw-label">Audience</span>'
-            +     '<select data-seg class="select select-bordered select-sm w-36">'
-            +       '<option value="ICP" selected>ICP</option><option value="SCP">SCP</option><option value="Other">Other</option>'
-            +     '</select>'
-            +     '<span class="pbw-label ml-auto">Wording</span>'
-            +     '<select data-variant class="select select-bordered select-sm w-48">'
-            +       '<option value="followup" selected>Follow-up</option>'
-            +       '<option value="playoffs">Playoffs</option>'
-            +       '<option value="season-opener">Season opener</option>'
-            +       '<option value="club-seats">Club seats</option>'
-            +     '</select></div>'
-            +   '<div class="pbw-rule"></div>'
-            +   '<div class="pbw-row"><span class="pbw-label">Send on</span>'
-            +     '<input type="date" data-day class="input input-bordered input-sm w-40" value="' + day + '" min="' + esc(etYmd()) + '">'
-            +     '<input type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">'
-            +     '<span class="text-xs text-base-content/50 ml-auto">US Eastern</span></div>'
-            +   '<div class="pbw-rule"></div>'
-            +   '<div class="pbw-row"><span class="pbw-label">Add as</span>'
-            +     '<select data-status class="select select-bordered select-sm w-44">'
-            +       '<option value="pending" selected>Pending &mdash; review later</option>'
-            +       '<option value="confirmed">Confirmed &mdash; already approved</option>'
-            +     '</select></div>'
-            + '</div>'
-            + '<div class="text-xs text-base-content/50 mb-3">It is queued as its own blast and appears on the Queue tab. Nothing sends until it is confirmed &mdash; and sending is paused at the moment.</div>'
-            + '<div class="flex justify-end gap-2">'
-            +   '<button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>'
-            +   '<button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Queue follow-up</button>'
-            + '</div></div>';
-          const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
-          const onKey = e => { if(e.key === 'Escape') done(null); };
-          ov.querySelector('[data-ok]').addEventListener('click', () => {
-            const v = ov.querySelector('[data-day]').value || day;
-            const parts = v.split('-').map(Number);
-            const tv = (ov.querySelector('[data-time]').value || '').match(/^(\d{1,2}):(\d{2})$/);
-            const hh = tv ? Math.min(23, Number(tv[1])) : 10, mi = tv ? Math.min(59, Number(tv[2])) : 0;
-            done({ eventId: ov.querySelector('[data-game]').value,
-                   segment: ov.querySelector('[data-seg]').value,
-                   variant: ov.querySelector('[data-variant]').value,
-                   status:  ov.querySelector('[data-status]').value,
-                   whenIso: new Date(etInstant(parts[0], parts[1], parts[2], hh, mi)).toISOString(),
-                   label: new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
-                          + ' at ' + pad(hh) + ':' + pad(mi) + ' ET' });
+      // THE FOLLOW UP TAB. An inline form rather than the modal it started as, because it is now
+      // one of the panel's tabs and a tab that opens a dialog over itself is two UIs for one job.
+      //
+      // TEMPLATES ARE SHOWN, NOT NAMED. The first version offered "Follow-up / Playoffs / Season
+      // opener / Club seats" and nothing else — choosing between four labels for text you cannot
+      // see. Cole's actual wording differs a lot between them, and which one suits a market is a
+      // judgement about the words. So the body is rendered under the picker, with [GAME]/[DATE]
+      // still in it: those are filled at draft time from the chosen game, and showing them
+      // unfilled is honest about what is a placeholder rather than implying the final text.
+      let FU_TEMPLATES = null;
+      async function renderFollowUpTab(r, host){
+        if(!host) return;
+        const mkt = r.market || null;
+        if(!mkt){
+          // The common case for email: an unbridged CakeMail list has no audience in our terms.
+          // Explained here in full rather than hidden, so it is clear the blast is the problem
+          // and not the feature.
+          host.innerHTML = `<div class="text-sm text-base-content/60 leading-relaxed">
+            <div class="font-semibold text-[#133b49] mb-1">No market on this blast</div>
+            This blast is not bridged to a market${r.list_name ? ` — its list is <b>${esc(r.list_name)}</b>` : ''}, so there is no audience to follow up with.
+            Bridge the list to a market first (<span class="font-mono text-xs">market_bridge_list</span>) and it will appear here.
+          </div>`;
+          return;
+        }
+        host.innerHTML = '<div class="text-sm text-base-content/50">Loading games and templates…</div>';
+        if(!FU_EVENTS){
+          const res = await sb.rpc('rpc_event_recommendations');
+          FU_EVENTS = res.error ? [] : (res.data || []);
+        }
+        if(!FU_TEMPLATES){
+          const t = await sb.from('message_templates')
+            .select('slug,variant,channel,name,subject,body,sort_order')
+            .eq('play','Ticketblast').eq('is_placeholder',false).order('sort_order',{ascending:true});
+          FU_TEMPLATES = t.error ? [] : (t.data || []);
+        }
+        const today = etYmd();
+        const games = FU_EVENTS
+          .filter(e => String(e.market_key || '').toLowerCase() === String(mkt).toLowerCase() && e.event_date >= today)
+          .sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)));
+        if(!games.length){
+          host.innerHTML = `<div class="text-sm text-base-content/60 leading-relaxed">
+            <div class="font-semibold text-[#133b49] mb-1">No upcoming games in ${esc(prettyMetro(mkt))}</div>
+            A follow-up needs a game ahead of it to be about. Try <b>Rescan schedules</b> on the Offers tab if you expect one.
+          </div>`;
+          return;
+        }
+        // 'initial' excluded: sending the first-touch message as a follow-up is the duplicate
+        // this exists to prevent.
+        const variants = [...new Set(FU_TEMPLATES.map(t => t.variant).filter(v => v && v !== 'initial'))]
+          .sort((a, b) => (b === 'followup' ? 1 : 0) - (a === 'followup' ? 1 : 0));
+        const LABELS = { followup:'Follow-up', playoffs:'Playoffs', 'season-opener':'Season opener', 'club-seats':'Club seats' };
+        const pad = n => String(n).padStart(2,'0');
+        const d0 = new Date(Date.now() + 864e5);
+        const day = d0.getFullYear() + '-' + pad(d0.getMonth()+1) + '-' + pad(d0.getDate());
+
+        host.innerHTML =
+          `<div class="text-xs text-base-content/50 mb-2">A new blast to <b class="text-[#133b49]">${esc(prettyMetro(mkt))}</b>, following the one sent ${esc(fmtDate(r.sent_at))}.</div>
+           <div class="pbw-panel mb-3">
+             <div class="pbw-row"><span class="pbw-label w-20">Game</span>
+               <select data-game class="select select-bordered select-sm flex-1">
+                 ${games.slice(0,40).map(g => `<option value="${esc(g.event_id)}">${esc(g.opponent ? g.opponent + ' at ' + g.team : g.team)} &middot; ${esc(g.event_date)}</option>`).join('')}
+               </select></div>
+             <div class="pbw-row mt-2"><span class="pbw-label w-20">Audience</span>
+               <select data-seg class="select select-bordered select-sm w-32">
+                 <option value="ICP" selected>ICP</option><option value="SCP">SCP</option><option value="Other">Other</option>
+               </select>
+               <span class="pbw-label ml-auto">Send</span>
+               <input type="date" data-day class="input input-bordered input-sm w-36" value="${day}" min="${esc(etYmd())}">
+               <input type="time" data-time class="input input-bordered input-sm w-24" value="10:00" step="900">
+             </div>
+             <div class="pbw-rule"></div>
+             <div class="pbw-row"><span class="pbw-label w-20">Template</span>
+               <select data-variant class="select select-bordered select-sm flex-1">
+                 ${variants.map(v => `<option value="${esc(v)}"${v==='followup'?' selected':''}>${esc(LABELS[v]||v)}</option>`).join('')}
+               </select></div>
+             <div class="mt-2" data-tplpreview></div>
+           </div>
+           <div class="flex items-center gap-2">
+             <select data-status class="select select-bordered select-sm w-44">
+               <option value="pending" selected>Pending &mdash; review later</option>
+               <option value="confirmed">Confirmed &mdash; already approved</option>
+             </select>
+             <button class="btn btn-sm btn-warning text-white hover:text-white ml-auto" data-queuefu>Queue follow-up</button>
+           </div>
+           <div class="text-xs text-base-content/50 mt-2">It appears on the Queue tab. Nothing sends until it is confirmed &mdash; and sending is paused at the moment.</div>`;
+
+        const vSel = host.querySelector('[data-variant]');
+        const prev = host.querySelector('[data-tplpreview]');
+        const paintTpl = () => {
+          const rows = FU_TEMPLATES.filter(t => t.variant === vSel.value);
+          prev.innerHTML = rows.length ? rows.map(t => `
+            <div class="border border-base-300 rounded-md bg-base-200/30 p-2 mb-1.5">
+              <div class="text-[10px] font-bold uppercase tracking-wide text-base-content/40">${esc(t.channel)}${t.subject ? ' &middot; ' + esc(t.subject) : ''}</div>
+              <div class="text-xs text-base-content/70 whitespace-pre-line mt-1">${esc(String(t.body||'').slice(0, 420))}${String(t.body||'').length > 420 ? '…' : ''}</div>
+            </div>`).join('')
+            : '<div class="text-xs text-[#c94d07]">No template stored for this one — the copy would be empty.</div>';
+        };
+        vSel.addEventListener('change', paintTpl); paintTpl();
+
+        host.querySelector('[data-queuefu]').addEventListener('click', async ev => {
+          const btn = ev.currentTarget;
+          const v = host.querySelector('[data-day]').value || day;
+          const parts = v.split('-').map(Number);
+          const tv = (host.querySelector('[data-time]').value || '').match(/^(\d{1,2}):(\d{2})$/);
+          const hh = tv ? Math.min(23, Number(tv[1])) : 10, mi = tv ? Math.min(59, Number(tv[2])) : 0;
+          btn.disabled = true;
+          await queueHistoryFollowUp(r, games, {
+            eventId: host.querySelector('[data-game]').value,
+            segment: host.querySelector('[data-seg]').value,
+            variant: vSel.value,
+            status:  host.querySelector('[data-status]').value,
+            whenIso: new Date(etInstant(parts[0], parts[1], parts[2], hh, mi)).toISOString(),
+            label: new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) + ' at ' + pad(hh) + ':' + pad(mi) + ' ET',
           });
-          ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
-          ov.addEventListener('click', e => { if(e.target === ov) done(null); });
-          document.addEventListener('keydown', onKey);
-          document.body.appendChild(ov);
-          ov.querySelector('[data-ok]').focus();
+          btn.disabled = false;
         });
       }
 
@@ -9360,8 +9501,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           p.classList.remove('open');
           p.setAttribute('aria-hidden', 'true');
           body.innerHTML = '';        // drops the iframe with it rather than leaving it loaded
-          const fuOff = el('bh-followup');
-          if(fuOff){ fuOff.classList.add('hidden'); fuOff.onclick = null; }
           return;
         }
 
@@ -9413,6 +9552,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const tabs = [
           ['copy', r.channel === 'SMS' ? 'Message' : 'Copy'],
           ...(cid2 ? [['replies', 'Replies'], ['recipients', 'Recipients']] : []),
+          // FOLLOW UP AS A TAB, not the header button it started as (Vhea, 2026-09-17). It is
+          // one of the things you do with a blast you are reading, and the panel already has a
+          // row for those. A button in the header read as chrome — same visual weight as Close.
+          //
+          // Always present, even with no market: the tab explains what is missing, where a
+          // hidden tab would have said the panel cannot do this at all.
+          ['followup', 'Follow up'],
         ];
         const tabBar = `<div role="tablist" class="tabs tabs-bordered">${tabs.map(([k,label]) =>
             `<button role="tab" class="tab ${panelTab===k?'tab-active':''}" data-ptab="${k}">${label}</button>`).join('')}</div>`;
@@ -9430,35 +9576,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    ${mailHead ? `<div class="bh-copy-head px-3.5 py-2 border-b border-base-300 bg-base-200/40 text-xs space-y-0.5">${mailHead}</div>` : ''}
                    ${inner}
                  </div>`
-              : '<div class="bh-copy"><div class="bh-copy-scroll p-3" data-people></div></div>');
+              : panelTab === 'followup'
+                ? `<div class="bh-copy"><div class="bh-copy-scroll p-3" data-followupform></div></div>`
+                : '<div class="bh-copy"><div class="bh-copy-scroll p-3" data-people></div></div>');
 
         body.querySelectorAll('[data-ptab]').forEach(b => b.addEventListener('click', () => {
           panelTab = b.dataset.ptab; renderPanel();
         }));
         if(panelTab === 'replies')    loadReplies(cid2, body.querySelector('[data-people]'));
         if(panelTab === 'recipients') loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
-
-        // FOLLOW UP. Enabled only when the blast resolves to a market, because the market is
-        // what a follow-up is aimed at — everything else (which game, which segment, what
-        // wording) is asked in the dialog.
-        //
-        // SHOWN DISABLED RATHER THAN HIDDEN when it cannot be used. An absent button reads as
-        // "this panel does not do that", which would be wrong on the row right next to it; a
-        // disabled one with the reason in its tooltip says which blast is the problem. The
-        // reason is nearly always the same, and the panel already prints it: the CakeMail list
-        // is not bridged to a market (market_bridge_list), so nobody knows who this blast went
-        // to in our terms.
-        const fu = el('bh-followup');
-        if(fu){
-          fu.classList.remove('hidden');
-          const mkt = r.market || null;
-          fu.disabled = !mkt;
-          fu.classList.toggle('opacity-50', !mkt);
-          fu.title = mkt
-            ? `Queue a new blast to ${prettyMetro(mkt)} — you choose the game, the audience and the wording.`
-            : `This blast is not bridged to a market${r.list_name ? ` (list "${r.list_name}")` : ''}, so there is no audience to follow up with. Bridge the list on market_bridge_list first.`;
-          fu.onclick = () => { if(mkt) startHistoryFollowUp(r); };
-        }
+        if(panelTab === 'followup')   renderFollowUpTab(r, body.querySelector('[data-followupform]'));
 
         fitPanel();
         p.classList.add('open');
