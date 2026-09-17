@@ -5627,7 +5627,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // if Salesmsg is unconfigured — in which case the dropdown simply shows Telnyx only,
       // rather than an option that cannot send.
       let SALESMSG_SENDERS = [];
-      let QUEUE = [], NUMBERS = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
+      let QUEUE = [], NUMBERS = [], TEMPLATES = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
       // WHAT IS TICKED, BY ID — not by index, so it survives a re-render, a sort and a page
       // turn. It is pruned to the FILTERED set on every render (see below): the filters define
       // the working set, the pager is only a window onto it, so selecting on page 1 and acting
@@ -6219,6 +6219,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const day  = `${base.getFullYear()}-${pad(base.getMonth()+1)}-${pad(base.getDate())}`;
           // Never past the game — a follow-up after kickoff sells nothing.
           const maxDay = r.event_date || '';
+          // ONE OPTION PER VARIANT, not per template row. Cole's copy comes in matched
+          // email/SMS pairs sharing a variant, and api/queue-draft picks the channel it needs —
+          // so offering both halves separately would ask the operator to choose something the
+          // endpoint does not take.
+          //
+          // 'initial' is excluded: it is the first-touch message, and sending it as a follow-up
+          // is precisely the duplicate this feature exists to prevent.
+          const LABELS = { followup: 'Follow-up — acknowledges the first message',
+                           playoffs: 'Playoffs', 'season-opener': 'Season opener',
+                           'club-seats': 'Club seats' };
+          const variants = [...new Set(TEMPLATES.map(t => t.variant).filter(v => v && v !== 'initial'))]
+            // followup first: it is the right answer unless there is a reason otherwise.
+            .sort((a, b) => (b === 'followup' ? 1 : 0) - (a === 'followup' ? 1 : 0));
+          const chansFor = v => TEMPLATES.filter(t => t.variant === v).map(t => t.channel).sort().join(' + ');
+          const variantOpts = variants.map(v =>
+            `<option value="${esc(v)}"${v === 'followup' ? ' selected' : ''}>${esc(LABELS[v] || v)} · ${esc(chansFor(v))}</option>`).join('');
+
           const ov = document.createElement('div');
           ov.className = 'pb-modal-overlay';
           ov.innerHTML =
@@ -6229,6 +6246,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                </div>
                <div class="text-sm text-base-content/70 mb-3">A second blast to <b>${esc(r.state_name || r.state_code || 'the same market')}${r.segment?' · '+esc(r.segment):''}</b> about the same game. It is queued as its own blast, with a copy of the original message for you to edit.</div>
                <div class="pbw-panel mb-3">
+                 <!-- WORDING FIRST, because it is the decision. The date is a detail beside
+                      "what does this second message actually say", and a follow-up that repeats
+                      the first message word for word is the one thing it must not be. -->
+                 <div class="pbw-row">
+                   <span class="pbw-label">Wording</span>
+                   <select data-variant class="select select-bordered select-sm flex-1">
+                     ${variantOpts}
+                     <!-- Last, and deliberately not the default. Duplicating is a fallback for
+                          when none of Cole's approved wording fits, not the normal path. -->
+                     <option value="">Copy the original message (edit it yourself)</option>
+                   </select>
+                 </div>
+                 <div class="text-xs text-base-content/50 mb-1" data-vnote></div>
+                 <div class="pbw-rule"></div>
                  <div class="pbw-row">
                    <span class="pbw-label">Send on</span>
                    <input type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${esc(etYmd())}"${maxDay?` max="${esc(maxDay)}"`:''}>
@@ -6262,6 +6293,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               ? `<span class="text-[#c94d07] font-semibold">&#9888; Inside the ${COOLDOWN_DAYS}-day cooldown for this market.</span> <span class="text-base-content/60">The hourly send will hold it rather than deliver it. You can still send it by hand with <b>Send now</b> on the row &mdash; that overrides the cooldown and says so.</span>`
               : `<span class="text-base-content/50">Past the ${COOLDOWN_DAYS}-day cooldown, so this will go on its own once confirmed.</span>`;
           };
+          const vEl = ov.querySelector('[data-variant]');
+          const vNote = ov.querySelector('[data-vnote]');
+          const paintV = () => {
+            vNote.textContent = vEl.value
+              ? 'Drafted from Cole’s approved template and filled in with this game and date.'
+              : 'An exact copy of the message that already went out — edit it in the Queue before it sends.';
+          };
+          vEl.addEventListener('change', paintV); paintV();
           dayEl.addEventListener('input', paint); paint();
           const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
           const onKey = e => { if(e.key==='Escape') done(null); };
@@ -6272,6 +6311,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             const hh = tv ? Math.min(23, Number(tv[1])) : 10, mi = tv ? Math.min(59, Number(tv[2])) : 0;
             done({ whenIso: new Date(etInstant(y, m, dd, hh, mi)).toISOString(),
                    status: ov.querySelector('[data-status]').value,
+                   variant: vEl.value || null,
                    insideCooldown: insideCooldown(),
                    label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
                           + ` at ${pad(hh)}:${pad(mi)} ET` });
@@ -6899,13 +6939,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               email_count: Number(r.email_count) || 0,
               phone_count: Number(r.phone_count) || 0,
               sms_count:   Number(r.sms_count)   || 0,
-              // THE ORIGINAL COPY IS CARRIED OVER, not redrafted. A follow-up has to differ from
-              // the message it follows, and only a person knows how — "last chance", a price
-              // that moved, seats that are nearly gone. Handing over the exact words that went
-              // out gives them something to edit; /api/queue-draft would hand back the same
-              // template the first blast already used and call it new.
-              email_copy: r.email_copy || null,
-              sms_copy: r.sms_copy || null,
+              // COPY DEPENDS ON THE CHOICE. Picking one of Cole's follow-up templates leaves
+              // these NULL so /api/queue-draft can write it below — it will not overwrite
+              // existing copy, so pre-filling here would make the template silently do nothing.
+              // Choosing "copy the original" carries the exact words that went out instead.
+              email_copy: ans.variant ? null : (r.email_copy || null),
+              sms_copy:   ans.variant ? null : (r.sms_copy   || null),
               // NOT email_subject — queue_enqueue_test does not accept it. Its insert lists
               // fifteen columns and that is not one of them, so passing it here would be
               // silently dropped and the follow-up would arrive with an empty subject line while
@@ -6923,10 +6962,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 lines:['There is already a blast waiting for this game and segment. Send or clear that one first.'] });
               return;
             }
-            // The subject, now that there is a row to put it on. Reported, not thrown: the
-            // blast is queued either way and the subject is editable in the Queue.
+            // DRAFT FROM THE CHOSEN TEMPLATE. Same endpoint AI Select uses, now told which
+            // variant rather than left to guess from the fixture's name.
+            //
+            // Reported, not thrown: the row is queued either way and its copy is editable in the
+            // Queue. A follow-up with no copy is visibly incomplete; a follow-up that failed to
+            // queue at all would be invisible.
+            let drafted = null;
+            if(ans.variant){
+              try {
+                const dr = await fetch('/api/queue-draft', {
+                  method:'POST', headers: await apiHeaders(),
+                  body: JSON.stringify({ ids: [made.id], variant: ans.variant }),
+                });
+                drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+              } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
+            }
+
+            // The subject, now that there is a row to put it on. Only when carrying the original
+            // over — queue-draft writes the template's own subject, and overwriting that with the
+            // first blast's would pair new wording with the old subject line.
             let subjectFailed = false;
-            if(r.email_subject){
+            if(!ans.variant && r.email_subject){
               const sres = await sb.rpc('queue_set_email_subject', { p_id: made.id, p_subject: r.email_subject });
               subjectFailed = !!sres.error;
             }
@@ -6942,7 +6999,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                         : ``,
                       SENDING_PAUSED ? `Sending is paused, so it will wait regardless.` : ``,
                       subjectFailed ? `The subject line did not carry over — set it in the Queue.` : ``,
-                      `The copy is a duplicate of the first blast — edit it before it goes.` ]});
+                      ans.variant
+                        ? (drafted && !drafted.error
+                            ? `Copy drafted from Cole's "${esc(ans.variant)}" template.${(drafted.errors||[]).length ? ` It reported a problem — check it in the Queue.` : ''}`
+                            : `Queued, but the copy was not drafted${drafted ? ': ' + esc(drafted.error) : ''}. Write it in the Queue before it sends.`)
+                        : `The copy is a duplicate of the first blast — edit it before it goes.` ]});
             await refresh();
           } catch(e){
             toast({ type:'err', title:'Could not queue the follow-up', lines:[ (e && e.message) || String(e) ] });
@@ -7416,6 +7477,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function loadQueue(){
         if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
+        // Cole's approved Ticketblast wording, for the Follow up picker. Read once and cached:
+        // thirteen rows that change when someone edits a template, not per render. Placeholder
+        // rows are excluded for the same reason api/queue-draft excludes them — not sendable copy.
+        if(!TEMPLATES.length){
+          const t = await sb.from('message_templates')
+            .select('slug,play,variant,channel,name,is_placeholder,sort_order')
+            .eq('play','Ticketblast').eq('is_placeholder',false).order('sort_order',{ascending:true});
+          TEMPLATES = t.error ? [] : (t.data || []);
+        }
         // Salesmsg numbers, live from the API. A failure here is NOT fatal: the dropdown falls
         // back to Telnyx only. Better a shorter list than an option that looks real and routes
         // nowhere, which is what the old hardcoded '(placeholder)' entry did.

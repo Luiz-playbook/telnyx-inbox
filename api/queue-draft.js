@@ -174,6 +174,24 @@ export default async function handler(req, res) {
   const tailor = body.tailor !== false;                 // default on; {tailor:false} = fill only
   const overwrite = body.overwrite === true;            // default: never clobber existing copy
 
+  // AN EXPLICITLY CHOSEN TEMPLATE, overriding pickVariant (Vhea, 2026-09-17).
+  //
+  // pickVariant guesses from the fixture's name and from whether the market has been blasted
+  // before. That is the right default for the cron and for AI Select, which have no operator to
+  // ask — but Follow up in the Queue DOES have one, standing in front of a list of Cole's
+  // approved wording, and guessing over their choice would make the picker decorative.
+  //
+  // Validated against the known set rather than passed through: this value selects a row from
+  // message_templates, and an unknown variant would fall through pick()'s fallback to 'initial'
+  // — a follow-up silently sent with the first-touch copy, which is the exact mistake the
+  // feature exists to avoid. An invalid value is refused loudly instead.
+  const VARIANTS = ['initial', 'followup', 'playoffs', 'season-opener', 'club-seats'];
+  const forcedVariant = body.variant ? String(body.variant).trim() : null;
+  if (forcedVariant && !VARIANTS.includes(forcedVariant)) {
+    res.status(400).json({ error: `unknown template variant "${forcedVariant}" — expected one of ${VARIANTS.join(', ')}` });
+    return;
+  }
+
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
   const rpc = (fn, b) => fetch(`${supaUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: sh, body: JSON.stringify(b || {}) });
 
@@ -214,7 +232,7 @@ export default async function handler(req, res) {
         skipped.push({ id: r.id, title: r.title, reason: 'already has copy — pass overwrite:true to replace' });
         continue;
       }
-      const variant = pickVariant(r, blasted.has(String(r.state_code || '').toUpperCase()));
+      const variant = forcedVariant || pickVariant(r, blasted.has(String(r.state_code || '').toUpperCase()));
       const tEmail = pick(variant, 'email'), tSms = pick(variant, 'sms');
       if (!tEmail && !tSms) { errors.push({ id: r.id, title: r.title, error: `no template for variant ${variant}` }); continue; }
 
