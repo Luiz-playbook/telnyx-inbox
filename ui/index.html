@@ -596,6 +596,19 @@
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
+                <!-- AUDIENCE SPORT (migration 080). NOT the same thing as the Sport filter to its
+                     left, and the labels have to carry that: that one is the sport of the GAME,
+                     this is the sport of the ORGANISATIONS being emailed. A dance studio is a
+                     perfectly good buyer for a hockey suite, and 26% of the contact base is
+                     "other" — so "who am I actually reaching" is a different question from
+                     "what is being played".
+
+                     It changes the REACH FIGURES ON THE ROW, not which rows are listed: every
+                     game still has an audience, this says how much of it matches the choice. -->
+                <select id="cbs-audsport" class="select select-bordered select-sm w-44" title="Whose inbox this lands in — the organisation's own sport, not the game's">
+                  <option value="">Everyone</option>
+                  <option value="__off">Not this game's sport</option>
+                </select>
                 <!-- Options are grouped US / Canada / Test and cover every market, not just the
                      states that happen to have an event loaded. -->
                 <select id="cbs-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
@@ -3604,6 +3617,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       let QUEUED = new Set();
       let lastShown = [];          // the rows currently rendered, for the header checkbox
       let ROWS = [], REGIONS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '', segF = '';
+      // AUDIENCE SPORT (migration 080). '' = everyone, '__off' = everyone whose sport is NOT the
+      // game's, or a specific sport. SPORT_REACH is (code|segment|sport) -> {phone,email}, read
+      // once; false when migration 080 is not applied, and every use guards on that so the tab
+      // behaves exactly as before without it.
+      let audSportF = '';
+      let SPORT_REACH = null;
       let dateFromF = '', dateToF = '';
       let page = 1, pageSize = 50;   // 0 = show everything
       let sortDir = '';              // '' = the RPC's own order (event date), else 'asc' / 'desc' on price
@@ -3758,8 +3777,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <td>${market}</td>
           <td>${segBadge(e.segment)}</td>
           <td class="font-semibold">${fmt(e.companies)}</td>
-          <td>${reachCell(e.emails)}</td>
-          <td>${reachCell(e.phones)}</td>
+          ${(() => {
+            // Reach under the audience-sport filter. When it is on, the figure is not the row's
+            // own any more, so it is marked — an unlabelled smaller number would read as the
+            // market having shrunk.
+            const ar = audienceReach(e);
+            const tag = ar.filtered ? ' <span class="text-[10px] text-[#c94d07]" title="Filtered to the audience sport chosen above — this is a subset of the market, not its total.">&#9662;</span>' : '';
+            return `<td>${reachCell(ar.email)}${tag}</td><td>${reachCell(ar.phone)}${tag}</td>`;
+          })()}
         </tr>`;
         }).join('');
         paintPick();
@@ -4162,6 +4187,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
+        // Reach per market x segment x the ORGANISATION's own sport. Absent until migration 080
+        // is applied, and that is not an error — the filter stays on "Everyone" and the row
+        // figures are the ones they always were.
+        if(SPORT_REACH === null){
+          const sr = await sb.from('market_sport_counts').select('code,segment,sport,phone_count,email_count');
+          if(sr.error){ SPORT_REACH = false; }
+          else {
+            SPORT_REACH = {};
+            (sr.data || []).forEach(x => { SPORT_REACH[x.code + '|' + x.segment + '|' + x.sport] = { phone: Number(x.phone_count)||0, email: Number(x.email_count)||0 }; });
+            fillAudienceSports(sr.data || []);
+          }
+        }
         // AI-964. What is already queued, so those rows show a tick instead of a checkbox.
         // NOT fatal if it fails: the table is about offers, and queue_enqueue_test de-dupes
         // server-side regardless, so the worst case is a checkbox that turns out to be a no-op.
@@ -4244,6 +4281,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         sortDir = sortDir === '' ? 'asc' : sortDir === 'asc' ? 'desc' : '';
         page = 1; render();
       });
+      el('cbs-audsport')?.addEventListener('change', e => { audSportF = e.target.value; render(); });
       el('cbs-pagesize')?.addEventListener('change', e => { pageSize = Number(e.target.value) || 0; page = 1; render(); });
       el('cbs-prev')?.addEventListener('click', () => { if(page > 1){ page--; render(); } });
       el('cbs-next')?.addEventListener('click', () => { page++; render(); });
@@ -5409,6 +5447,64 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // Seed the picker (today + DAYS_DEFAULT-1) and forbid picking a day already gone.
       if(el('tb-through')){ el('tb-through').min = ymd(new Date()); throughInput(); }
+
+      // ===== AUDIENCE SPORT (migration 080) =====
+      //
+      // THE GAME'S SPORT AND THE AUDIENCE'S SPORT ARE DIFFERENT THINGS, and the whole feature
+      // rests on not confusing them. events_master says a fixture is "Ice Hockey"; a recipient
+      // organisation says it does "dance". Nothing filters recipients by sport when sending, and
+      // that is right — a dance studio buying a suite for a Wild game is a good customer. This
+      // exists so the split can be SEEN, and so "who is actually on this list" is answerable.
+      //
+      // The mapping below is needed because the two vocabularies do not match: the fixture side
+      // says Baseball / Ice Hockey / Football, the organisation side says baseball / hockey /
+      // football. Only the overlapping ones matter — an organisation is never "ice hockey".
+      const GAME_SPORT_TO_ORG = {
+        'baseball':'baseball', 'basketball':'basketball', 'football':'football',
+        'ice hockey':'hockey', 'hockey':'hockey', 'soccer':'soccer',
+      };
+      const orgSportOfGame = e => GAME_SPORT_TO_ORG[String(e && e.sport || '').toLowerCase()] || null;
+
+      // Populate the dropdown from what the data actually holds, biggest first, rather than a
+      // hardcoded list that would drift from the enrichment.
+      function fillAudienceSports(rows){
+        const sel = el('cbs-audsport');
+        if(!sel || !rows.length) return;
+        const tot = {};
+        rows.forEach(r => { tot[r.sport] = (tot[r.sport]||0) + (Number(r.email_count)||0) + (Number(r.phone_count)||0); });
+        const opts = Object.keys(tot).sort((a,b) => tot[b] - tot[a]);
+        const keep = sel.value;
+        sel.innerHTML = '<option value="">Everyone</option>'
+          + '<option value="__off">Not this game’s sport</option>'
+          + opts.map(o => `<option value="${esc(o)}">Only ${esc(o.replace(/_/g,' '))}</option>`).join('');
+        sel.value = keep;
+      }
+
+      // The reach to SHOW for a row under the current filter.
+      //
+      // Falls back to the row's own figures whenever the answer is not knowable — filter off,
+      // counts not loaded, migration not applied, or a game whose sport has no organisation
+      // equivalent. Never guesses: a wrong reach number is what an operator approves a send on.
+      function audienceReach(e){
+        const base = { email: Number(e.emails)||0, phone: Number(e.phones)||0, filtered: false };
+        if(!audSportF || !SPORT_REACH || !e.state_code || !e.segment) return base;
+        const pref = e.state_code + '|' + e.segment + '|';
+        const keys = Object.keys(SPORT_REACH).filter(k => k.startsWith(pref));
+        if(!keys.length) return base;
+        let want;
+        if(audSportF === '__off'){
+          const own = orgSportOfGame(e);
+          // A game whose sport no organisation reports — CFB, WNBA — has no "other than this"
+          // to compute, so it shows its full audience rather than a figure that would be
+          // indistinguishable from "everyone" while claiming to be filtered.
+          if(!own) return base;
+          want = keys.filter(k => k.slice(pref.length) !== own);
+        } else {
+          want = keys.filter(k => k.slice(pref.length) === audSportF);
+        }
+        const out = want.reduce((a,k) => ({ email:a.email + SPORT_REACH[k].email, phone:a.phone + SPORT_REACH[k].phone }), {email:0,phone:0});
+        return { email: out.email, phone: out.phone, filtered: true };
+      }
 
       // Returns { picks:[{…, slot_date}], plan:[{date,existing,need,added}], vetoed, skipBy,
       //   evaluated, llm, per_day, through }. Server (rules+LLM) first, client rules as fallback.
