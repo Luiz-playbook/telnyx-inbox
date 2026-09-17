@@ -343,10 +343,8 @@ export default async function handler(req, res) {
       // means matching those mailbox threads to a blast by subject line, which is a thing to build,
       // not a credential to set.
       res.status(200).json({ ok: true, available: false,
-        reason: 'Coming soon.',
-        detail: 'CakeMail reports opens and clicks but no replies, and an emailed reply goes to the '
-          + 'sender\'s own inbox rather than back to us. Reading them means matching that mailbox to '
-          + 'each blast by subject line — that part is built, but it is not switched on here yet.' });
+        reason: 'Coming Soon',
+        detail: 'This feature is not yet available for emails.' });
       return;
     }
     const rows = await fetch(`${url}/rest/v1/blast_templates?select=subject,scheduled_for&campaign_id=eq.${wantReplies}&limit=1`, { headers: h })
