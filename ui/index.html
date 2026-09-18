@@ -565,8 +565,16 @@
 
             <div class="shrink-0 lg:mt-auto flex items-center gap-2 pt-1">
               <input id="agent-input" class="input input-bordered flex-1 rounded-full bg-base-100" placeholder="Message the campaign agent…" />
+              <!-- DICTATION. Hidden by default and revealed only once the browser is known to
+                   support speech recognition — a mic that does nothing is worse than no mic,
+                   because the failure only shows after someone has spoken a sentence at it. -->
+              <button id="agent-mic" class="btn btn-circle btn-ghost text-lg hidden" title="Dictate a message" aria-label="Dictate a message">&#127908;</button>
               <button id="agent-send" class="btn btn-circle btn-primary text-lg">&#8594;</button>
             </div>
+            <!-- Live transcript while speaking, and where a permission or browser problem is
+                 explained. Outside the input row so a long interim phrase cannot push the
+                 buttons around mid-sentence. -->
+            <div id="agent-mic-note" class="shrink-0 text-xs text-base-content/50 px-1 hidden"></div>
           </div>
         </aside>
 
@@ -3214,6 +3222,97 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(send) send.addEventListener('click', ()=>sendAgent(input.value));
       if(input) input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); sendAgent(input.value); } });
       document.querySelectorAll('#agent-chips .agent-chip').forEach(c=>c.addEventListener('click', ()=>sendAgent(c.textContent)));
+
+      // ===== DICTATION =====
+      //
+      // The browser's own speech recognition, not a transcription service. It costs nothing,
+      // needs no key, no endpoint and no audio leaving the machine — and for a message that is
+      // about to be typed into a chat box anyway, the accuracy is fine. Sending audio to Whisper
+      // would mean an API key, a route, a bill, and someone's voice on a third party's disk, to
+      // replace a feature the browser already has.
+      //
+      // THE TRADE IS BROWSER SUPPORT: Chrome and Edge have it, Firefox does not, Safari is
+      // partial. Hence the button is hidden until support is confirmed rather than rendered and
+      // then apologised for — a mic that does nothing is worse than no mic, because you only
+      // find out after speaking a whole sentence at it.
+      (function wireDictation(){
+        const mic  = document.getElementById('agent-mic');
+        const note = document.getElementById('agent-mic-note');
+        if(!mic || !input) return;
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if(!SR) return;                      // stays hidden; nothing to explain, nothing to click
+        mic.classList.remove('hidden');
+
+        let rec = null, listening = false, baseText = '';
+        const say = (msg, bad) => {
+          note.classList.toggle('hidden', !msg);
+          note.className = 'shrink-0 text-xs px-1 ' + (msg ? (bad ? 'text-[#c94d07]' : 'text-base-content/50') : 'hidden');
+          note.textContent = msg || '';
+        };
+        const paintMic = () => {
+          mic.classList.toggle('btn-ghost', !listening);
+          mic.classList.toggle('btn-error', listening);
+          mic.classList.toggle('text-white', listening);
+          mic.title = listening ? 'Stop dictating' : 'Dictate a message';
+        };
+
+        const stop = () => { if(rec){ try{ rec.stop(); }catch{} } };
+
+        mic.addEventListener('click', () => {
+          if(listening){ stop(); return; }
+
+          rec = new SR();
+          rec.lang = 'en-US';
+          // CONTINUOUS, because people pause mid-thought and the default stops at the first
+          // silence — which would cut "add a few NHL games in Toronto…" in half.
+          rec.continuous = true;
+          // Interim results are shown but NOT written into the box: they change as you speak,
+          // and an input that rewrites itself under the cursor is unusable if you want to
+          // correct a word by hand.
+          rec.interimResults = true;
+
+          // What was already typed is kept and dictation APPENDS. Someone half-typing a message
+          // and then reaching for the mic should not lose the half they typed.
+          baseText = input.value.trim();
+
+          let finalText = '';
+          rec.onresult = e => {
+            let interim = '';
+            for(let i = e.resultIndex; i < e.results.length; i++){
+              const t = e.results[i][0].transcript;
+              if(e.results[i].isFinal) finalText += t;
+              else interim += t;
+            }
+            input.value = [baseText, finalText.trim()].filter(Boolean).join(' ');
+            say(interim ? 'Hearing: ' + interim : 'Listening… press the mic again to stop.');
+          };
+          rec.onerror = ev => {
+            // Permission is the common one and deserves its own sentence: "not-allowed" tells
+            // someone nothing about the padlock in their address bar.
+            const why = ev.error === 'not-allowed' || ev.error === 'service-not-allowed'
+              ? 'Microphone blocked. Allow access for this site in your browser, then try again.'
+              : ev.error === 'no-speech' ? 'Did not catch anything — try again.'
+              : ev.error === 'audio-capture' ? 'No microphone found.'
+              : 'Dictation stopped: ' + ev.error;
+            say(why, true);
+          };
+          rec.onend = () => {
+            listening = false; paintMic();
+            // Cleared only if nothing went wrong — an error message must outlive the session
+            // that produced it, or it vanishes the instant it becomes relevant.
+            if(!/blocked|catch|microphone|stopped/i.test(note.textContent || '')) say('');
+            input.focus();
+          };
+
+          try { rec.start(); listening = true; paintMic(); say('Listening… press the mic again to stop.'); }
+          catch(e){ say('Could not start dictation: ' + ((e && e.message) || e), true); }
+        });
+
+        // Sending ends the session. Leaving the mic live after the message has gone would carry
+        // the next sentence into a box the operator is no longer looking at.
+        send?.addEventListener('click', stop);
+        input.addEventListener('keydown', e => { if(e.key === 'Enter') stop(); });
+      })();
       document.getElementById('chat-new')?.addEventListener('click', newChat);
       const menu=document.getElementById('chat-menu');
       if(menu) menu.addEventListener('click', e=>{
