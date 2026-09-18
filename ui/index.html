@@ -1168,6 +1168,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <button role="tab" class="tab tab-active" data-rtab="email">Email <span class="badge badge-xs ml-1.5" data-rcount="email">0</span></button>
                 <button role="tab" class="tab" data-rtab="sms">SMS <span class="badge badge-xs ml-1.5" data-rcount="sms">0</span></button>
               </div>
+              <!-- PROVIDER, which is not the same split as Email/SMS. "SMS" is two services
+                   with two different inboxes — Telnyx and Salesmsg — and only one of them
+                   reaches this database. Filtering by provider is the only way to ask "what came
+                   back through Salesmsg", and the only honest way to show that the answer is
+                   "nothing reaches us from there". -->
+              <select id="rep-provider" class="select select-bordered select-sm">
+                <option value="">All providers</option>
+                <option value="telnyx">Telnyx</option>
+                <option value="salesmsg">Salesmsg</option>
+                <option value="cakemail">CakeMail</option>
+                <option value="gmail">Gmail</option>
+                <option value="unknown">Unknown</option>
+              </select>
               <label class="text-xs text-base-content/60 flex items-center gap-1.5">
                 <input type="checkbox" id="rep-unread" class="checkbox checkbox-xs"> Unread only
               </label>
@@ -2596,13 +2609,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const host = document.getElementById('rep-list');
       if(!host) return;
       const esc3 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-      let chan = 'email', unreadOnly = false, ROWS = [];
+      let chan = 'email', provider = '', unreadOnly = false, ROWS = [];
 
       const ago = t => {
         if(!t) return '';
         const ms = Date.now() - new Date(t).getTime();
         const m = Math.round(ms/60000), h = Math.round(ms/3600000), d = Math.round(ms/86400000);
         return m < 60 ? m + 'm ago' : h < 48 ? h + 'h ago' : d + 'd ago';
+      };
+
+      // True once the database has been seen to lack the provider argument, so the note is shown
+      // instead of silently listing everything while the dropdown claims a filter is applied.
+      let providerUnsupported = false;
+
+      const PROVIDER_EMPTY = {
+        telnyx:  'Replies only reach this app from <span class="font-mono text-xs">+1 615 805 0766</span>. The eight 2-way numbers send theirs to the HubSpot integration.',
+        salesmsg:'Salesmsg replies stay in the Salesmsg inbox — nothing forwards them here. Blasts sent through Salesmsg are answered in Salesmsg.',
+        cakemail:'CakeMail does not receive replies at all: a reply to an email blast goes to the sending address’s own mailbox, not to CakeMail.',
+        gmail:   'No mailbox is connected, so nothing writes replies here yet.',
+        unknown: 'Nothing has arrived without a provider recorded.',
       };
 
       const EMPTY = {
@@ -2619,9 +2644,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const rows = unreadOnly ? ROWS.filter(r => r.unread) : ROWS;
         document.querySelectorAll('[data-rtab]').forEach(b => b.classList.toggle('tab-active', b.dataset.rtab === chan));
         if(!rows.length){
-          host.innerHTML = `<div class="p-6 text-sm text-base-content/60 leading-relaxed">${
-            unreadOnly && ROWS.length ? '<div class="font-semibold text-[#133b49] mb-1">Nothing unread</div><div>Untick “Unread only” to see the rest.</div>' : EMPTY[chan]
-          }</div>`;
+          // The most specific true explanation available: unread filter first, then the chosen
+          // provider, then the channel. "No replies yet" on its own reads as "nobody answered
+          // your blasts", which is a far more alarming claim than "nothing routes here".
+          const why = unreadOnly && ROWS.length
+            ? '<div class="font-semibold text-[#133b49] mb-1">Nothing unread</div><div>Untick “Unread only” to see the rest.</div>'
+            : provider
+              ? `<div class="font-semibold text-[#133b49] mb-1">Nothing from ${esc3(provider)}</div><div>${PROVIDER_EMPTY[provider] || ''}</div>`
+              : EMPTY[chan];
+          host.innerHTML = `<div class="p-6 text-sm text-base-content/60 leading-relaxed">${why}</div>`;
           return;
         }
         host.innerHTML = rows.map(r => `
@@ -2630,6 +2661,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <div class="min-w-0 flex-1">
               <div class="flex items-baseline gap-2">
                 <span class="font-semibold text-[#133b49] truncate">${esc3(r.correspondent || 'unknown')}</span>
+                ${r.provider ? `<span class="badge badge-xs badge-ghost">${esc3(r.provider)}</span>` : ''}
                 ${r.market_key ? `<span class="text-xs text-base-content/50">${esc3(r.market_key)}</span>` : ''}
                 <span class="text-xs text-base-content/40 ml-auto shrink-0">${esc3(ago(r.received_at))}</span>
               </div>
@@ -2643,7 +2675,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // global, and reading one would have made this tab fail silently on every load.
         if(!sb){ host.innerHTML = '<div class="p-6 text-sm text-error">config.js is not filled in.</div>'; return; }
         host.innerHTML = '<div class="p-6 text-sm text-base-content/50">Loading replies…</div>';
-        const res = await sb.rpc('reply_inbox', { p_channel: chan });
+        // p_provider is sent only when chosen. Migration 083 added the argument; an older
+        // database has the one-argument function, and passing an unknown parameter to PostgREST
+        // is a 404, not a warning — so the filter degrades to "All providers" rather than
+        // breaking the tab.
+        let res = await sb.rpc('reply_inbox', provider ? { p_channel: chan, p_provider: provider } : { p_channel: chan });
+        if(res.error && provider && /PGRST202|does not exist|not find/i.test(res.error.message || '')){
+          res = await sb.rpc('reply_inbox', { p_channel: chan });
+          if(!res.error) providerUnsupported = true;
+        }
         if(res.error){
           // A missing function is the expected failure until 079 is applied, and saying so beats
           // printing PostgREST's own wording at someone who did not write the migration.
@@ -2654,10 +2694,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return;
         }
         ROWS = res.data || [];
+        // Say it, rather than listing everything under a dropdown that claims to be filtering.
+        const pn = document.getElementById('rep-provider');
+        if(pn) pn.title = providerUnsupported
+          ? 'This database does not have the provider filter yet (migration 083). Showing everything.'
+          : 'Which service the reply came back through';
         const c = document.querySelector(`[data-rcount="${chan}"]`);
         if(c) c.textContent = ROWS.filter(r => r.unread).length;
         render();
       }
+
+      const pSel = document.getElementById('rep-provider');
+      if(pSel) pSel.addEventListener('change', e => { provider = e.target.value; load(); });
 
       document.querySelectorAll('[data-rtab]').forEach(b => b.addEventListener('click', () => {
         if(chan === b.dataset.rtab) return;
