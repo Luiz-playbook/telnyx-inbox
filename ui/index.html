@@ -4585,7 +4585,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // which is the recoverable direction.
           let sentNow = 0, sendFailed = [];
           if(ans.sendNow && queued.length){
+            // PROGRESS, because this is not a click that finishes. Each row resolves a whole
+            // market and hands it to a provider, so twenty of them is minutes, not seconds — and
+            // a button that only spins gives no way to tell "working" from "hung", nor how far
+            // it got if the tab is closed part-way.
+            //
+            // Closing the tab is SAFE and that is by design: the rows are already queued and
+            // confirmed, so whatever this loop has not reached is picked up by the hourly send.
+            // Nothing is lost, it just goes later.
+            let done = 0;
             for(const row of queued){
+              btn.innerHTML = `<span class="loading loading-spinner loading-xs"></span> Sending ${++done} of ${queued.length}…`;
               try {
                 const r2 = await fetch('/api/queue-tick', {
                   method:'POST', headers: await apiHeaders(), body: JSON.stringify({ id: row.id }),
