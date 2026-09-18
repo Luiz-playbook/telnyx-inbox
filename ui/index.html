@@ -1181,13 +1181,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <select id="rep-dest" class="select select-bordered select-sm w-52">
                 <option value="">Replied to: any</option>
               </select>
+              <!-- Options are filled per channel, not listed here: a provider that cannot carry
+                   the current channel is not a filter, it is a guaranteed empty result. See
+                   PROVIDERS_FOR below. -->
               <select id="rep-provider" class="select select-bordered select-sm">
                 <option value="">All providers</option>
-                <option value="telnyx">Telnyx</option>
-                <option value="salesmsg">Salesmsg</option>
-                <option value="cakemail">CakeMail</option>
-                <option value="gmail">Gmail</option>
-                <option value="unknown">Unknown</option>
               </select>
               <label class="text-xs text-base-content/60 flex items-center gap-1.5">
                 <input type="checkbox" id="rep-unread" class="checkbox checkbox-xs"> Unread only
@@ -2630,6 +2628,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // instead of silently listing everything while the dropdown claims a filter is applied.
       let providerUnsupported = false;
 
+      // A PROVIDER BELONGS TO A CHANNEL. Telnyx and Salesmsg send text and cannot send email;
+      // CakeMail and Gmail send email and cannot send text. Offering all five on both tabs meant
+      // half the dropdown was guaranteed to return nothing — and an empty result from a filter
+      // that should never have been offered reads as "no replies", not "wrong question".
+      //
+      // 'unknown' is email-only on purpose: it means a stored reply whose provider was never
+      // recorded, which only email_replies can have. The SMS side derives its provider from the
+      // table the row lives in, so it is never unknown.
+      const PROVIDERS_FOR = {
+        email: [['cakemail','CakeMail'], ['gmail','Gmail'], ['unknown','Unknown']],
+        sms:   [['telnyx','Telnyx'], ['salesmsg','Salesmsg']],
+      };
+
       const PROVIDER_EMPTY = {
         telnyx:  'Replies only reach this app from <span class="font-mono text-xs">+1 615 805 0766</span>. The eight 2-way numbers send theirs to the HubSpot integration.',
         salesmsg:'Salesmsg replies stay in the Salesmsg inbox — nothing forwards them here. Blasts sent through Salesmsg are answered in Salesmsg.',
@@ -2655,6 +2666,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // "nothing has ever come back to that number".
         //
         // Built from the UNFILTERED set so choosing one never empties the list it came from.
+        // Per channel, and the current choice is dropped if it cannot apply here.
+        const pSelR = document.getElementById('rep-provider');
+        if(pSelR){
+          const opts = PROVIDERS_FOR[chan] || [];
+          const keepP = provider;
+          pSelR.innerHTML = '<option value="">All providers</option>'
+            + opts.map(([v,l]) => `<option value="${esc3(v)}">${esc3(l)}</option>`).join('');
+          pSelR.value = opts.some(([v]) => v === keepP) ? keepP : '';
+          if(pSelR.value !== keepP) provider = pSelR.value;
+        }
+
         const dSel = document.getElementById('rep-dest');
         if(dSel){
           const seen = [...new Set(ROWS.map(r => r.destination).filter(Boolean))].sort();
@@ -2744,7 +2766,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(chan === b.dataset.rtab) return;
         // A number is not an address: a destination chosen on the SMS tab means nothing on the
         // email one, and carrying it across would show an empty inbox for no visible reason.
-        chan = b.dataset.rtab; dest = ''; load();
+        // Both filters are channel-specific: a Telnyx provider and a phone number both mean
+        // nothing on the email tab, and carrying either across would show an empty inbox for no
+        // visible reason.
+        chan = b.dataset.rtab; dest = ''; provider = ''; load();
       }));
       const u = document.getElementById('rep-unread');
       if(u) u.addEventListener('change', e => { unreadOnly = e.target.checked; render(); });
