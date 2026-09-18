@@ -1511,6 +1511,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   </label>
                 </div>
 
+                <!-- WHICH SENDER A NEW BLAST STARTS WITH (Vhea, 2026-09-18).
+                     It was a constant in the code, which meant changing it was a deploy and
+                     nobody could see what it was set to. It decides two things at once: the
+                     PROVIDER a blast sends through (Salesmsg or Telnyx) and, on Telnyx, whether
+                     replies come back to the HubSpot inbox — so it belongs on the settings page
+                     next to the other rules, not in a source file.
+
+                     Every queue row can still override it; this is only the starting point. -->
+                <div class="pt-1">
+                  <label class="form-control max-w-xl">
+                    <span class="label-text font-semibold text-[#133b49]">Default SMS sender <span class="font-normal text-base-content/50">(what a newly queued blast starts with — each row can still be changed)</span></span>
+                    <select id="rule-smsfrom" class="select select-bordered mt-1"></select>
+                  </label>
+                  <p id="rule-smsfrom-note" class="text-xs text-base-content/60 mt-1.5"></p>
+                </div>
+
                 <div><button id="rules-save" class="btn btn-primary">Save &amp; Recompute Queue</button></div>
 
                 <p class="text-sm text-base-content/50 leading-relaxed">Cross-strategy fatigue warning fires under <b id="rule-fatigue-label">10</b> days since any send to a market, regardless of strategy — a flag, not a hard block. Opt-out ceiling flags markets whose average unsubscribe rate is already running hot. Teammate AI has no game/cost fields, so it&rsquo;s gated on cooldown from last-any-send only (no dedicated Teammate AI history exists yet) — no forward-window or cost/demo math applies to it.</p>
@@ -2755,6 +2771,55 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     // ===== Cole Rules tab =====
     let RULES_LOADED = false;
+    // The default-sender picker. Grouped exactly as the per-row picker is, and for the same
+    // reason: "Telnyx · 2-way inbox — replies captured" is the fact being chosen between, and a
+    // flat list of numbers states none of it.
+    //
+    // "Let the app choose" is kept as the first option and maps to null. It is the honest
+    // representation of the stored default, and it means this setting never has to be filled in
+    // for the product to work.
+    async function fillDefaultSenderPicker(current){
+      const sel = document.getElementById('rule-smsfrom');
+      if(!sel || !sb) return;
+      const [numRes, smRes] = await Promise.all([
+        sb.from('telnyx_numbers').select('phone_number,label,messaging_profile_id,sort_order').order('sort_order',{ascending:true}),
+        (window.__SALESMSG_SENDERS ? Promise.resolve({ data: window.__SALESMSG_SENDERS }) : Promise.resolve({ data: [] })),
+      ]);
+      const nums = numRes.error ? [] : (numRes.data || []);
+      const sms  = smRes.data || [];
+      const TWO = '40019e3f-1590-401e-8329-7d1c4e9309cd';
+      const NAMES = { '40019e3f-1590-401e-8329-7d1c4e9309cd':'2-way inbox', '40019f22-ee12-4a37-a3d8-c4255ed71c03':'Luiz',
+                      '40019d54-14df-41bf-9d9e-c00943f08df8':'Playbook Core 10DLC' };
+      const byProf = {};
+      nums.forEach(n => { const k = n.messaging_profile_id || ''; (byProf[k] = byProf[k] || []).push(n); });
+      const ids = Object.keys(byProf).sort((a,b) => (b===TWO?1:0) - (a===TWO?1:0));
+      const esc4 = v => (v ?? '').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      sel.innerHTML = '<option value="">Let the app choose (a reply-capturing Telnyx number)</option>'
+        + ids.map(pid => {
+            const two = pid === TWO;
+            return '<optgroup label="' + esc4('Telnyx · ' + (NAMES[pid] || 'other profile') + (two ? ' — replies captured' : ' — replies NOT captured')) + '">'
+              + byProf[pid].map(n => '<option value="' + esc4(n.phone_number) + '">' + esc4((n.label ? n.label + ' · ' : '') + n.phone_number) + (two ? '' : ' ⚠') + '</option>').join('')
+              + '</optgroup>';
+          }).join('')
+        + (sms.length ? '<optgroup label="Salesmsg — replies go to the Salesmsg inbox">'
+            + sms.map(o => '<option value="' + esc4(o.value) + '">' + esc4(o.phone + ' · ' + o.team_name) + '</option>').join('') + '</optgroup>' : '');
+      sel.value = current || '';
+      const note = document.getElementById('rule-smsfrom-note');
+      const paint = () => {
+        if(!note) return;
+        const v = sel.value;
+        const n = nums.find(x => x.phone_number === v);
+        note.innerHTML = !v
+          ? 'No sender is stored, so the app picks one — a Telnyx number on the 2-way inbox profile, whose replies reach HubSpot.'
+          : n
+            ? (n.messaging_profile_id === TWO
+                ? 'Sends through <b>Telnyx</b>. Replies reach the <b>HubSpot inbox</b>.'
+                : '<span class="text-[#c94d07] font-semibold">Sends through Telnyx, but replies to this number do NOT reach HubSpot</span> — they come back to this app, where nobody is watching.')
+            : 'Sends through <b>Salesmsg</b>. Replies land in the <b>Salesmsg inbox</b> — not HubSpot, and not here.';
+      };
+      sel.onchange = paint; paint();
+    }
+
     async function loadRules(){
       if(!sb) return;
       const { data, error } = await sb.rpc('get_decider_rules');
@@ -2765,6 +2830,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       set('rule-window',   r.forward_window_days);
       set('rule-optout',   r.optout_ceiling_pct);
       const fl=document.getElementById('rule-fatigue-label'); if(fl && r.cross_strategy_fatigue_days!=null) fl.textContent = r.cross_strategy_fatigue_days;
+
+      // DEFAULT SMS SENDER (migration 081). Built from the live number and Salesmsg lists rather
+      // than a hardcoded set, and grouped by what each option actually means for replies — the
+      // choice looks like nine interchangeable numbers otherwise, when it is really a choice of
+      // provider AND of which inbox answers come back to.
+      await fillDefaultSenderPicker(r.default_sms_from || '');
 
       // Freshness thresholds, stated from the SAME row the price-refresh job reads. Written out
       // rather than hardcoded in the markup: these are tuned (48h was 72h until AI-845), and a
@@ -2813,7 +2884,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           p_optout: num('rule-optout'), p_fatigue: null
         });
         if(error) throw error;
-        note.textContent = '— saved · recomputing…';
+        // Saved through its own RPC (migration 081): set_decider_rules is live-only and lists its
+        // columns explicitly, so teaching it a new one blind would risk whatever else it does.
+        // A failure here is REPORTED, not thrown — the numeric rules above are already saved and
+        // silently losing only the sender would be the confusing half-save.
+        const sf = document.getElementById('rule-smsfrom');
+        if(sf){
+          const sres = await sb.rpc('set_default_sms_from', { p_value: sf.value || null });
+          if(sres.error) note.textContent = '— rules saved, but the sender was not: ' + sres.error.message;
+        }
+        if(!note.textContent) note.textContent = '— saved · recomputing…';
         await loadHistory();            // recompute the decider with the new rules
         note.textContent = '— saved & recomputed ' + etTime(Date.now()) + ' ET';
       }catch(e){ note.textContent = '— failed: '+e.message; }
@@ -6660,7 +6740,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // THIS CHANGES THE PROVIDER a new blast sends through, which is a bigger switch than a
       // label. It is one line to put back: move the Salesmsg lookup above the Telnyx one.
       // Rows already carrying a sms_from keep it — only rows with none pick this up.
+      // The stored setting wins (migration 081). Read once with the queue; null means nobody has
+      // chosen, and the preference order below applies.
+      let SETTING_SMS_FROM = null;
       const defaultSmsFrom = () => {
+        // Only if it still names something real. A number can be retired from telnyx_numbers or
+        // a Salesmsg inbox removed, and a stored value pointing at neither would select nothing
+        // in the dropdown — which renders as "Not sending SMS" and would turn the channel off on
+        // every new blast without a word.
+        if(SETTING_SMS_FROM && (NUMBERS.some(n => n.phone_number === SETTING_SMS_FROM)
+                                || SALESMSG_SENDERS.some(x => x.value === SETTING_SMS_FROM))) return SETTING_SMS_FROM;
         const two = NUMBERS.find(capturesReplies);
         if(two) return two.phone_number;
         const s = SALESMSG_SENDERS.find(x => String(x.team_id) === DEFAULT_SMS_TEAM_ID);
@@ -7796,6 +7885,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function loadQueue(){
         if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order,messaging_profile_id').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
+        // The chosen default sender. Absent until migration 081 is applied, which is not an
+        // error — the preference order in defaultSmsFrom simply applies, as it does today.
+        if(SETTING_SMS_FROM === null){
+          const dr = await sb.rpc('get_decider_rules');
+          const row = Array.isArray(dr.data) ? dr.data[0] : dr.data;
+          SETTING_SMS_FROM = (row && row.default_sms_from) || '';
+        }
         // Cole's approved Ticketblast wording, for the Follow up picker. Read once and cached:
         // thirteen rows that change when someone edits a template, not per render. Placeholder
         // rows are excluded for the same reason api/queue-draft excludes them — not sendable copy.
@@ -7813,6 +7909,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             const r = await fetch('/api/salesmsg-senders', { headers: await apiHeaders() });
             const d = await r.json().catch(()=>({}));
             SALESMSG_SENDERS = Array.isArray(d.senders) ? d.senders : [];
+            // Exposed for the Cole Rules default-sender picker, which lives in a different
+            // module and cannot see this one's scope. Without it that picker would offer only
+            // Telnyx numbers and silently omit Salesmsg — a choice missing from a settings page
+            // reads as a choice that does not exist.
+            window.__SALESMSG_SENDERS = SALESMSG_SENDERS;
             if(d.error) console.warn('Salesmsg senders unavailable:', d.error);
           } catch(e){ console.warn('Salesmsg senders unavailable:', e && e.message); }
         }
