@@ -4746,6 +4746,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>
                </div>
                ${skipped ? `<div class="text-xs text-[#c94d07] mb-3">${skipped} selected row${skipped===1?' is':'s are'} for a game that has already been played and will be skipped.</div>` : ''}
+               <!-- The only warning in this dialog, shown for the only option that cannot be
+                    undone. It says the two things needed before pressing it: how many people
+                    this actually reaches, and that the tab does not have to stay open. -->
+               <div class="text-xs mb-3 hidden" data-sendwarn></div>
                <div class="flex justify-end gap-2">
                  <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
                  <button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Add to queue</button>
@@ -4818,6 +4822,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               sel.disabled = true;
             } else {
               sel.disabled = false;
+            }
+            // Reach, counted across the whole selection and the chosen channels. "Send
+            // immediately" on twenty ticked offers is the largest single action in the product,
+            // and the number was nowhere on the screen that fires it.
+            const warn = ov.querySelector('[data-sendwarn]');
+            if(warn){
+              const imm = when.value === 'immediate' && !SENDING_PAUSED;
+              warn.classList.toggle('hidden', !imm);
+              if(imm){
+                const ppl = rows.reduce((a,e) => a
+                  + (chanSel.value === 'email' ? 0 : (Number(e.phones)||0))
+                  + (chanSel.value === 'sms'   ? 0 : (Number(e.emails)||0)), 0);
+                warn.innerHTML = `<span class="text-[#c94d07] font-semibold">&#9888; This sends for real, to about ${ppl.toLocaleString()} people across ${rows.length} blast${rows.length===1?'':'s'}.</span> `
+                  + `<span class="text-base-content/60">They go one at a time, so it takes a few minutes. Closing the tab is safe — anything not yet sent stays queued and confirmed, and the hourly send picks it up.</span>`;
+              }
             }
             whenNote.textContent = when.value === 'immediate'
               ? (SENDING_PAUSED ? 'Held — sending is paused' : 'Sends the moment you press the button')
