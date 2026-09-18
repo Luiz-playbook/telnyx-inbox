@@ -41,6 +41,7 @@
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
+import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 60 };
@@ -164,12 +165,27 @@ export default async function handler(req, res) {
       res.status(401).json({ error: 'unauthorized — a queue-wide send needs CRON_SECRET or SEND_SECRET' });
       return;
     }
-    const tm = await rpc('send_test_mode').then(r => r.json()).catch(() => null);
-    const testMode = Array.isArray(tm) && tm.length > 0;
-    if (!testMode) {
+    // A SIGNED-IN OPERATOR MAY SEND ONE NAMED ROW.
+    //
+    // This path used to be open to anyone while TEST MODE was on, and closed the moment the
+    // allowlist was emptied — the reasoning being that a browser cannot hold a secret, so the
+    // damage had to be bounded by the allowlist instead. That was right, and it had a
+    // consequence nobody acted on: the allowlist has been empty since the product went live, so
+    // "Send now" has been returning 401 while the button sat there looking enabled.
+    //
+    // The missing piece was never a secret, it was an IDENTITY. lib/auth.js verifies a Supabase
+    // session token against /auth/v1/user and requires the Playbook domain — the same check
+    // /api/trigger-decide and /api/queue-draft already make. A signed-in operator asking for one
+    // named blast is precisely who should be allowed to send it, and is a far stronger signal
+    // than a shared secret that would have to be published to the browser to be usable.
+    //
+    // STILL ONE ROW ONLY. The queue-wide sweep remains cron-or-secret: an identity authorises
+    // the blast a person is looking at, not a fan-out across everything due.
+    const caller = await requireCaller(req);
+    if (!caller) {
       res.status(401).json({
-        error: 'Send now is open only while TEST MODE is on (send_allowlist non-empty). '
-             + 'The allowlist is now empty, so real markets can receive mail and this route needs SEND_SECRET.',
+        error: 'Send now requires a signed-in Playbook account. '
+             + 'A queue-wide send needs CRON_SECRET or SEND_SECRET.',
       });
       return;
     }

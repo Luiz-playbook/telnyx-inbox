@@ -4321,6 +4321,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Reach per market x segment x the ORGANISATION's own sport. Absent until migration 080
         // is applied, and that is not an error — the filter stays on "Everyone" and the row
         // figures are the ones they always were.
+        // Senders for the Add to Queue dialog. The Queue module publishes these when IT loads,
+        // which is no use to someone who opens Offers first and never touches the Queue — the
+        // SMS picker would be empty and the blast would fall back to a default nobody chose.
+        // Loaded here too, and only when absent, so whichever tab is opened first fills them.
+        if(!window.__TELNYX_NUMBERS){
+          const tn = await sb.from('telnyx_numbers').select('phone_number,label,sort_order,messaging_profile_id').order('sort_order',{ascending:true});
+          window.__TELNYX_NUMBERS = tn.error ? [] : (tn.data || []);
+        }
+        if(!window.__SALESMSG_SENDERS){
+          try {
+            const sr = await fetch('/api/salesmsg-senders', { headers: await apiHeaders() });
+            const sd = await sr.json().catch(()=>({}));
+            window.__SALESMSG_SENDERS = Array.isArray(sd.senders) ? sd.senders : [];
+          } catch { window.__SALESMSG_SENDERS = []; }
+        }
         if(SPORT_REACH === null){
           const sr = await sb.from('market_sport_counts').select('code,segment,sport,phone_count,email_count');
           if(sr.error){ SPORT_REACH = false; }
@@ -4491,18 +4506,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             state_name: e.state_name || null,
             event_id: e.event_id || null,
             segment: e.segment || null,
-            email: true, sms: true,
+            // The chosen channels. queue_enqueue_test takes these directly, so a row arrives
+            // already set rather than needing the pickers opened on each one afterwards.
+            email: ans.channel !== 'sms',
+            sms:   ans.channel !== 'email',
             // Reach as this tab measured it. Since migration 073 these are distinct sendable
             // recipients, so what the operator saw on the row is what the queue will record.
-            email_count: Number(e.emails) || 0,
-            phone_count: Number(e.phones) || 0,
-            sms_count:   Number(e.phones) || 0,
+            // Reach counted only for the channels actually being used. Carrying an email count
+            // on an SMS-only blast would put a number on the row for an audience it will never
+            // touch — and those counts are what an operator approves the send on.
+            email_count: ans.channel === 'sms'   ? 0 : (Number(e.emails) || 0),
+            phone_count: ans.channel === 'email' ? 0 : (Number(e.phones) || 0),
+            sms_count:   ans.channel === 'email' ? 0 : (Number(e.phones) || 0),
             // email_copy / sms_copy left null on purpose — /api/queue-draft writes real copy from
             // Cole's templates below, exactly as Trigger Blast does.
           }));
           const ins = await sb.rpc('queue_enqueue_test', { p_rows: payload });
           if(ins.error) throw new Error(ins.error.message);
           const queued = ins.data || [];
+
+          // SENDERS, as a second step. queue_enqueue_test's insert lists fifteen columns and
+          // email_from/sms_from are not among them, so passing them with the row would be
+          // silently dropped — the blast would go from whatever the default happens to be while
+          // the dialog showed something else. Set explicitly, per row, before anything can send.
+          //
+          // Reported rather than thrown: the rows ARE queued, and a row on the default sender is
+          // recoverable in the Queue. Losing the rows entirely is not.
+          let senderFailed = 0;
+          if(queued.length && (ans.emailFrom || ans.smsFrom)){
+            for(const row of queued){
+              const patch = {};
+              if(ans.emailFrom) patch.email_from = ans.emailFrom;
+              if(ans.smsFrom)   patch.sms_from   = ans.smsFrom;
+              const up = await sb.from('campaign_queue').update(patch).eq('id', row.id);
+              if(up.error) senderFailed++;
+            }
+          }
 
           // CONFIRM AS A SECOND STEP, not a new argument to the insert. queue_enqueue_test hard-
           // codes status 'pending' and teaching it another status would mean another migration
@@ -4535,6 +4574,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
           // The RPC silently skips anything already queued, so the difference is reported rather
           // than left for the operator to notice by counting rows.
+          // SEND IMMEDIATELY, one row at a time, through the same endpoint the Queue's Send now
+          // uses — a signed-in operator naming one blast. Sequential on purpose: each call
+          // resolves a whole market's recipients and hands them to a provider, and firing twenty
+          // at once would have them competing for the same rate limit with no way to tell which
+          // failed for which reason.
+          //
+          // A failure does NOT roll anything back. The row stays queued and confirmed, so the
+          // hourly tick picks it up — "it did not go out now" becomes "it goes out shortly",
+          // which is the recoverable direction.
+          let sentNow = 0, sendFailed = [];
+          if(ans.sendNow && queued.length){
+            for(const row of queued){
+              try {
+                const r2 = await fetch('/api/queue-tick', {
+                  method:'POST', headers: await apiHeaders(), body: JSON.stringify({ id: row.id }),
+                });
+                const d2 = await r2.json().catch(()=>({}));
+                if(r2.ok && !d2.error) sentNow++;
+                else sendFailed.push((d2 && d2.error) || ('HTTP ' + r2.status));
+              } catch(e){ sendFailed.push((e && e.message) || 'unreachable'); }
+            }
+          }
+
           const skipped = live.length - queued.length;
           picked.clear();
           pbToast({
@@ -4557,6 +4619,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     ? `These will go out at their slot without further action.`
                     : `Pending blasts wait for someone to confirm them — they will not go out on their own.`),
               confirmFailed ? `${confirmFailed} could not be confirmed — they are queued as pending, confirm them in the Queue.` : ``,
+              `Sending by ${ans.channel === 'both' ? 'email and SMS' : ans.channel === 'email' ? 'email only' : 'SMS only'}.`,
+              ans.sendNow
+                ? (sentNow === queued.length
+                    ? `Sent now — ${sentNow} of ${queued.length} went out.`
+                    : `Sent ${sentNow} of ${queued.length}. ${esc(sendFailed[0] || '')} The rest stay queued and confirmed, so the hourly send will pick them up.`)
+                : ``,
+              senderFailed ? `${senderFailed} could not be set to the chosen sender — check them in the Queue before they go.` : ``,
               skipped > 0 ? `${skipped} already queued — left untouched.` : ``,
               past.length ? `${past.length} skipped — the game has already been played.` : ``,
               drafted && !drafted.error
@@ -4606,6 +4675,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    <select data-when class="select select-bordered select-sm w-44">
                      <option value="schedule" selected>At a set time</option>
                      <option value="now">As soon as possible</option>
+                     <!-- SEND IMMEDIATELY, not "queue with a slot of now". This one calls the
+                          send endpoint per row the moment they are queued, which is why it is
+                          worded as an action and sits last: it is the only option here that puts
+                          messages on the wire without anyone looking at the queue first. -->
+                     <option value="immediate">Send immediately — no review</option>
                    </select>
                    <span class="text-xs text-base-content/50 ml-auto" data-whennote></span>
                  </div>
@@ -4617,6 +4691,30 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                         pinned to the house clock (etInstant) so one queue means one thing
                         wherever it was filled in from. -->
                    <span class="text-xs text-base-content/50 ml-auto">US Eastern</span>
+                 </div>
+                 <div class="pbw-rule"></div>
+                 <!-- CHANNELS AND SENDERS, chosen here rather than opened row by row afterwards
+                      (Vhea, 2026-09-19). Adding twenty rows and then setting the same two
+                      pickers on each of them is the same job twenty times.
+
+                      Both channels stay the default: a blast that reaches one audience when the
+                      operator assumed two is a silent halving of the send. -->
+                 <div class="pbw-row">
+                   <span class="pbw-label">Send by</span>
+                   <select data-chan class="select select-bordered select-sm w-40">
+                     <option value="both" selected>Email + SMS</option>
+                     <option value="email">Email only</option>
+                     <option value="sms">SMS only</option>
+                   </select>
+                   <span class="text-xs text-base-content/50 ml-auto" data-channote></span>
+                 </div>
+                 <div class="pbw-row mt-2" data-emailrow>
+                   <span class="pbw-label w-20">Email from</span>
+                   <select data-emailfrom class="select select-bordered select-sm flex-1"></select>
+                 </div>
+                 <div class="pbw-row mt-2" data-smsrow>
+                   <span class="pbw-label w-20">Text from</span>
+                   <select data-smsfrom class="select select-bordered select-sm flex-1"></select>
                  </div>
                  <div class="pbw-rule"></div>
                  <!-- STATUS AT THE MOMENT OF ADDING (Vhea, 2026-09-16). Queueing something you
@@ -4649,6 +4747,46 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // What each choice actually means is stated as it is made. "Confirmed" does NOT mean
           // "send now" — and while the hold is on it does not mean "will send" either, which is
           // the one thing someone pre-approving twenty blasts needs to be sure of.
+          // The SAME lists the Queue uses, shared on window rather than copied — a second
+          // hardcoded set would drift the first time a sender is added, and the two screens
+          // would disagree about what a blast sends from.
+          const emailSenders = window.__EMAIL_SENDERS || [];
+          const smsNumbers   = window.__TELNYX_NUMBERS || [];
+          const smsSalesmsg  = window.__SALESMSG_SENDERS || [];
+          const TWO_WAY = '40019e3f-1590-401e-8329-7d1c4e9309cd';
+          const efSel = ov.querySelector('[data-emailfrom]');
+          const sfSel = ov.querySelector('[data-smsfrom]');
+          efSel.innerHTML = emailSenders.map(x =>
+            `<option value="${esc(x.v)}"${x.v === 'cakemail:1761047:l4vuKoFJ5s9eJryDK0sV' ? ' selected' : ''}>${esc(x.method)} · ${esc(x.label)}</option>`).join('');
+          // Grouped by whether a reply comes back, exactly as the Queue's picker is. The choice
+          // decides the provider AND which inbox answers arrive in; a flat list says neither.
+          const byProf = {};
+          smsNumbers.forEach(n => { const k = n.messaging_profile_id || ''; (byProf[k] = byProf[k] || []).push(n); });
+          const profIds = Object.keys(byProf).sort((a,b) => (b===TWO_WAY?1:0) - (a===TWO_WAY?1:0));
+          sfSel.innerHTML = profIds.map(pid => {
+            const two = pid === TWO_WAY;
+            return `<optgroup label="${esc('Telnyx · ' + (two ? '2-way inbox — replies captured' : 'other profile — replies NOT captured'))}">`
+              + byProf[pid].map(n => `<option value="${esc(n.phone_number)}"${two && byProf[pid][0] === n ? ' selected' : ''}>${esc((n.label ? n.label + ' · ' : '') + n.phone_number)}${two ? '' : ' ⚠'}</option>`).join('')
+              + `</optgroup>`;
+          }).join('')
+            + (smsSalesmsg.length ? `<optgroup label="Salesmsg — replies stay in Salesmsg">`
+                + smsSalesmsg.map(x => `<option value="${esc(x.value)}">${esc(x.phone + ' · ' + x.team_name)}</option>`).join('') + `</optgroup>` : '');
+
+          const chanSel  = ov.querySelector('[data-chan]');
+          const chanNote = ov.querySelector('[data-channote]');
+          const emailRow = ov.querySelector('[data-emailrow]');
+          const smsRow   = ov.querySelector('[data-smsrow]');
+          const paintChan = () => {
+            const c = chanSel.value;
+            // Inline display, not the hidden attribute: .pbw-row sets display:flex and a class
+            // rule beats the browser's default [hidden]{display:none}, so the row would stay on
+            // screen with its select still reachable by Tab.
+            emailRow.style.display = (c === 'sms') ? 'none' : 'flex';
+            smsRow.style.display   = (c === 'email') ? 'none' : 'flex';
+            chanNote.textContent = c === 'both' ? 'Both channels' : c === 'email' ? 'No text will be sent' : 'No email will be sent';
+          };
+          chanSel.addEventListener('change', paintChan); paintChan();
+
           const note = ov.querySelector('[data-statusnote]');
           const sel  = ov.querySelector('[data-status]');
           const when = ov.querySelector('[data-when]');
@@ -4660,7 +4798,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // simultaneously waiting for review is a contradiction the queue would have to resolve
           // silently, and it would resolve it by not sending.
           const paintNote = () => {
-            const now = when.value === 'now';
+            const now = when.value === 'now' || when.value === 'immediate';
             // INLINE STYLE, NOT el.hidden. .pbw-row sets display:flex, and a class rule beats the
             // browser's default [hidden]{display:none} — the row would have stayed visible with
             // its inputs still reachable by Tab. An inline style is the one thing that wins here.
@@ -4671,9 +4809,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             } else {
               sel.disabled = false;
             }
-            whenNote.textContent = now
-              ? (SENDING_PAUSED ? 'Held — sending is paused' : 'Goes at the next hourly tick')
-              : '';
+            whenNote.textContent = when.value === 'immediate'
+              ? (SENDING_PAUSED ? 'Held — sending is paused' : 'Sends the moment you press the button')
+              : now
+                ? (SENDING_PAUSED ? 'Held — sending is paused' : 'Goes at the next hourly tick')
+                : '';
             note.textContent = sel.value === 'confirmed'
               ? (SENDING_PAUSED ? 'Approved, and still held — sending is paused' : 'Approved — goes at its slot')
               : 'Waits for review';
@@ -4692,9 +4832,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // now" on a queue row is the control that fires immediately, and conflating the two
             // here would make a bulk Add to Queue capable of blasting twenty markets on one
             // click. The label says "as soon as possible" for that reason.
-            if(when.value === 'now'){
-              done({ whenIso: new Date().toISOString(), status: 'confirmed', immediate: true,
-                     label: 'as soon as possible' });
+            const answers = {
+              channel: chanSel.value,
+              emailFrom: chanSel.value === 'sms' ? null : efSel.value,
+              smsFrom:   chanSel.value === 'email' ? null : sfSel.value,
+            };
+            if(when.value === 'now' || when.value === 'immediate'){
+              done({ ...answers, whenIso: new Date().toISOString(), status: 'confirmed',
+                     immediate: true, sendNow: when.value === 'immediate',
+                     label: when.value === 'immediate' ? 'immediately' : 'as soon as possible' });
               return;
             }
             const v = ov.querySelector('[data-day]').value || day;
@@ -4707,7 +4853,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // 10:00 US EASTERN, not the browser's 10:00 — the same rule and the same helper
             // Trigger Blast uses. queue-tick fires on the stored instant, so a browser-local
             // time would send a Texas blast at 04:00 local when queued from Europe.
-            done({ whenIso: new Date(etInstant(y, m, dd, hh, mi)).toISOString(),
+            done({ ...answers,
+                   whenIso: new Date(etInstant(y, m, dd, hh, mi)).toISOString(),
                    status: sel.value,
                    label: new Date(y, m-1, dd).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})
                           + ` at ${String(hh).padStart(2,'0')}:${String(mi).padStart(2,'0')} ET` });
@@ -5968,6 +6115,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // It lives in the "Text from" list, populated from /api/salesmsg-senders.
       ];
       const emailMethodOf = v => (EMAIL_SENDERS.find(s => s.v === v) || {}).method || 'Mail merge';
+      // Shared with the Offers tab's Add to Queue dialog, which lives in another IIFE and needs
+      // the SAME lists — a second hardcoded copy would drift the moment a sender is added, and
+      // the two would disagree about what a blast sends from.
+      window.__EMAIL_SENDERS = EMAIL_SENDERS;
       // What a row sends from when it has never been given a sender. Both defaults name the
       // production channel, not whatever happens to sit first in a list: a queued blast is a
       // real market blast, so the safe default is the one we actually send real blasts with.
@@ -7710,11 +7861,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // No secret is attached, deliberately: config.js is public, so anything put here
           // would be too. The server allows this call because it names ONE row and TEST MODE
           // is on — while send_allowlist is non-empty only the test market resolves to any
-          // recipients at all. When the allowlist is emptied for a real launch, this returns
-          // 401 and Send now needs a server-side credential again.
+          // SIGNED IN, NOT ANONYMOUS. This posted with no credential at all, relying on the
+          // endpoint's test-mode carve-out — which closed the day the allowlist was emptied. So
+          // Send now has been returning 401 while the button looked enabled, and nobody noticed
+          // because nothing could send anyway.
+          //
+          // apiHeaders() attaches the operator's Supabase session token, which the endpoint now
+          // verifies against the Playbook domain. Same credential /api/trigger-decide and
+          // /api/queue-draft already use — a person, not a shared secret.
           const res = await fetch('/api/queue-tick', {
             method:'POST',
-            headers:{ 'content-type':'application/json' },
+            headers: await apiHeaders(),
             body: JSON.stringify({ id: r.id }),
           });
           const d = await res.json().catch(()=>({}));
@@ -7933,6 +8090,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function loadQueue(){
         if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order,messaging_profile_id').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
+        // Shared with the Offers tab's Add to Queue dialog for the same reason EMAIL_SENDERS is:
+        // one list, not two that drift.
+        window.__TELNYX_NUMBERS = NUMBERS;
         // The chosen default sender. Absent until migration 081 is applied, which is not an
         // error — the preference order in defaultSmsFrom simply applies, as it does today.
         if(SETTING_SMS_FROM === null){
