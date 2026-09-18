@@ -2019,7 +2019,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const ss=document.getElementById('sms-sender');
       if(ss){
         if(!sb){ ss.innerHTML='<option value="">config.js not filled in</option>'; return; }
-        const { data, error } = await sb.from('telnyx_numbers').select('phone_number,label,active,sort_order').order('sort_order',{ascending:true});
+        const { data, error } = await sb.from('telnyx_numbers').select('phone_number,label,active,sort_order,messaging_profile_id').order('sort_order',{ascending:true});
         if(error){ ss.innerHTML='<option value="">Failed to load numbers</option>'; return; }
         const nums=data||[];
         ss.innerHTML = nums.length ? nums.map(n=>`<option value="${esc(n.phone_number)}">${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join('') : '<option value="">No numbers</option>';
@@ -5852,6 +5852,38 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       //   swapped underneath it. If Salesmsg is unreachable the option does not exist at all,
       //   and the default falls back to the first Telnyx number as before.
       const DEFAULT_SMS_TEAM_ID = '2341';    // Josh Marcus · +16468591775
+
+      // ===== WHICH MESSAGING PROFILE A NUMBER SITS ON (AI-965) =====
+      //
+      // The profile — not the number — decides where a reply goes. Verified against the live
+      // Telnyx account on 2026-09-17:
+      //
+      //   playbook-ai-2way-inbox   8 numbers   webhook -> Charles's HubSpot integration
+      //   Luiz                     1 number    webhook -> n8n -> this app's telnyx_messages
+      //
+      // So a blast sent from one of the eight lands its replies in the HubSpot inbox Cole
+      // already works in. A blast sent from the ninth does not — its replies come here, where
+      // nobody is looking.
+      //
+      // That ninth is +16158050766, labelled "Main", and it sorts FIRST. Which is the whole of
+      // AI-965's note from the review call: "the number shown in SendBlaster was not the number
+      // Cole sees when texting from the HubSpot inbox, which caused confusion about whether
+      // replies would be captured." Nothing ever blocked using the right numbers — they have
+      // been in this dropdown all along. The default pointed at the one odd one out, and the
+      // picker gave no hint that one of nine behaved completely differently.
+      //
+      // BY ID, NOT BY NAME: profile names are editable in the Telnyx dashboard, and a rename
+      // would silently turn every warning here off. The id is stable.
+      const TWO_WAY_PROFILE_ID = '40019e3f-1590-401e-8329-7d1c4e9309cd';
+      const PROFILE_NAMES = {
+        '40019e3f-1590-401e-8329-7d1c4e9309cd': '2-way inbox',
+        '40019f22-ee12-4a37-a3d8-c4255ed71c03': 'Luiz',
+        '40019d54-14df-41bf-9d9e-c00943f08df8': 'Playbook Core 10DLC',
+        '40019e8e-2402-4c5e-ac23-54e08439299b': 'Textable — Cole',
+        '40019ecc-41bb-48ba-9068-6eb2454edca8': 'Cole textable v2',
+      };
+      const profileName   = id => PROFILE_NAMES[id] || (id ? 'other profile' : 'no profile');
+      const capturesReplies = n => !!n && n.messaging_profile_id === TWO_WAY_PROFILE_ID;
       // emailFromLabel (and the cakemail id parser behind it) rendered a read-only "From" line
       // above the email preview. The sender picker now sits in the panel header and states the
       // same thing as a control rather than as text, so both are gone. A stored value that is
@@ -6613,9 +6645,30 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // Resolved against the live Salesmsg list, not stored: DEFAULT_SMS_TEAM_ID names an
       // inbox, and only the list knows which number that inbox currently sends from. A value
       // not in the dropdown would select nothing, so an absent team falls through to Telnyx.
+      // THE DEFAULT IS A TELNYX 2-WAY NUMBER, not Salesmsg (Vhea, 2026-09-18, AI-965).
+      //
+      // It used to resolve DEFAULT_SMS_TEAM_ID against the Salesmsg list FIRST and only fall
+      // through to Telnyx if that inbox was missing — so every queued blast defaulted to
+      // salesmsg:2341:+16468591775, and Telnyx was never reached. All five rows in the queue
+      // when this changed carried exactly that value.
+      //
+      // That is a THIRD destination for replies, on top of the two AI-965 is about: a Salesmsg
+      // reply lands in Salesmsg's own inbox — not the HubSpot inbox Cole works in, and not this
+      // app either. It is also why "use Charles's messaging profile" looked blocked when it
+      // never was: the profile was irrelevant while the send was not going through Telnyx.
+      //
+      // THIS CHANGES THE PROVIDER a new blast sends through, which is a bigger switch than a
+      // label. It is one line to put back: move the Salesmsg lookup above the Telnyx one.
+      // Rows already carrying a sms_from keep it — only rows with none pick this up.
       const defaultSmsFrom = () => {
+        const two = NUMBERS.find(capturesReplies);
+        if(two) return two.phone_number;
         const s = SALESMSG_SENDERS.find(x => String(x.team_id) === DEFAULT_SMS_TEAM_ID);
-        return s ? s.value : ((NUMBERS[0] && NUMBERS[0].phone_number) || '');
+        if(s) return s.value;
+        // Last resort. NUMBERS[0] is "Main", whose replies reach neither HubSpot nor anywhere
+        // anyone reads — but a default that resolves to nothing would turn SMS off on every row,
+        // which is worse than choosing badly.
+        return (NUMBERS[0] && NUMBERS[0].phone_number) || '';
       };
       const smsFromOf   = r => r.sms_from   || defaultSmsFrom();
 
@@ -6808,11 +6861,36 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // Salesmsg API via /api/salesmsg-senders (OAuth). The Salesmsg entry used to be a
           // hardcoded '(placeholder)' whose value 'salesmessage' was then handed to the TELNYX
           // webhook as a From — it named a product but routed nowhere.
-          const smsOpts = [
-            ...NUMBERS.map(n=>({ v:n.phone_number, method:'Telnyx', label:(n.label?n.label+' · ':'')+n.phone_number })),
-            ...SALESMSG_SENDERS.map(s=>({ v:s.value, method:'Salesmsg', label:`${s.phone} · ${s.team_name}` })),
-          ];
-          const smsSel = `<select class="select select-bordered select-xs mini-select w-52${r.sms?'':' text-base-content/50'}" data-qsms="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending SMS', r.sms)}${smsOpts.map(o=>`<option value="${esc(o.v)}"${(r.sms && o.v===curSms)?' selected':''}>${esc(o.method)} · ${esc(o.label)}</option>`).join('')}</select>`;
+          // GROUPED BY MESSAGING PROFILE (AI-965). A flat list of nine numbers hid the only
+          // distinction that matters — whether a reply comes back — behind labels like "Main"
+          // and "2-way 3", which say nothing about it. An optgroup puts the answer above the
+          // options instead of asking anyone to remember which is which.
+          const byProfile = {};
+          NUMBERS.forEach(n => { const k = n.messaging_profile_id || ''; (byProfile[k] = byProfile[k] || []).push(n); });
+          // The 2-way inbox first: it is the right answer in almost every case, and a picker
+          // should not put the correct choice where you have to scroll for it.
+          const profIds = Object.keys(byProfile).sort((a, b) =>
+            (b === TWO_WAY_PROFILE_ID ? 1 : 0) - (a === TWO_WAY_PROFILE_ID ? 1 : 0));
+          const curNum = NUMBERS.find(n => n.phone_number === curSms);
+          const telnyxGroups = profIds.map(pid => {
+            const two = pid === TWO_WAY_PROFILE_ID;
+            const head = 'Telnyx · ' + profileName(pid) + (two ? ' — replies captured' : ' — replies NOT captured');
+            return '<optgroup label="' + esc(head) + '">' + byProfile[pid].map(n =>
+              '<option value="' + esc(n.phone_number) + '"' + ((r.sms && n.phone_number === curSms) ? ' selected' : '') + '>'
+              + esc((n.label ? n.label + ' · ' : '') + n.phone_number) + (two ? '' : ' ⚠') + '</option>').join('') + '</optgroup>';
+          }).join('');
+          const smsSel = '<select class="select select-bordered select-xs mini-select w-52' + (r.sms ? '' : ' text-base-content/50') + '" data-qsms="' + esc(r.id) + '"' + (sent ? ' disabled' : '') + '>'
+            + offOpt('Not sending SMS', r.sms) + telnyxGroups
+            + (SALESMSG_SENDERS.length ? '<optgroup label="Salesmsg">' + SALESMSG_SENDERS.map(o =>
+                '<option value="' + esc(o.value) + '"' + ((r.sms && o.value === curSms) ? ' selected' : '') + '>' + esc(o.phone) + ' · ' + esc(o.team_name) + '</option>').join('') + '</optgroup>' : '')
+            + '</select>';
+          // A row already set to a number whose replies vanish says so ON THE ROW, not only
+          // inside the dropdown — the picker is collapsed most of the time, and this is the
+          // thing to notice before confirming, not after a reply never arrives.
+          const smsWarn = (r.sms && curSms && NUMBERS.length && curNum && !capturesReplies(curNum))
+            ? '<div class="text-[11px] text-[#c94d07] font-semibold mt-1" title="This number is on the '
+              + esc(profileName(curNum.messaging_profile_id)) + ' messaging profile, not the 2-way inbox. Anyone who replies to this blast will not appear in the HubSpot inbox.">⚠ replies to this number are not captured</div>'
+            : '';
           // Campaign columns, rendered exactly as Campaigns by Event renders them.
           //
           // READ-ONLY HERE, ON PURPOSE (Vhea, 2026-08-17, extended 2026-08-27). The pencil
@@ -6932,7 +7010,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // different heights side by side read as a layout fault rather than as a deliberate fit.
           // Vhea, 2026-09-10. The bubble still sits at the top; the panel just fills the row.
           const smsPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
-            ${panelHead('SMS', smsSel, r.sms ? smsMethodOf(curSms) : '')}
+            ${panelHead('SMS', smsSel + smsWarn, r.sms ? smsMethodOf(curSms) : '')}
             ${r.sms ? `<div class="copy-pane p-3"><div class="sms-phone"><div class="sms-bubble${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-sms="${esc(r.id)}">${esc(r.sms_copy||'')}</div></div></div>
               <div class="${smsCountClass(smsInfo(r.sms_copy||''))}" data-smscount="${esc(r.id)}">${esc(smsCountLabel(smsInfo(r.sms_copy||'')))}</div>
               <div class="flex-1"></div>`
@@ -7717,7 +7795,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
       async function loadQueue(){
         if(!sb){ el('q-rows').innerHTML='<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
-        if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
+        if(!NUMBERS.length){ const n = await sb.from('telnyx_numbers').select('phone_number,label,sort_order,messaging_profile_id').order('sort_order',{ascending:true}); NUMBERS = n.error ? [] : (n.data || []); }
         // Cole's approved Ticketblast wording, for the Follow up picker. Read once and cached:
         // thirteen rows that change when someone edits a template, not per render. Placeholder
         // rows are excluded for the same reason api/queue-draft excludes them — not sendable copy.
