@@ -1173,6 +1173,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    reaches this database. Filtering by provider is the only way to ask "what came
                    back through Salesmsg", and the only honest way to show that the answer is
                    "nothing reaches us from there". -->
+              <!-- REPLIED TO. Provider says which service; this says which of OUR OWN senders the
+                   reply arrived at, which is the question actually asked day to day: did this
+                   come back to the 2-way number or to Main, and whose mailbox is it in.
+                   The options are rebuilt per channel from the rows themselves, so it can never
+                   offer a number with nothing behind it. -->
+              <select id="rep-dest" class="select select-bordered select-sm w-52">
+                <option value="">Replied to: any</option>
+              </select>
               <select id="rep-provider" class="select select-bordered select-sm">
                 <option value="">All providers</option>
                 <option value="telnyx">Telnyx</option>
@@ -2609,7 +2617,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const host = document.getElementById('rep-list');
       if(!host) return;
       const esc3 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-      let chan = 'email', provider = '', unreadOnly = false, ROWS = [];
+      let chan = 'email', provider = '', dest = '', unreadOnly = false, ROWS = [];
 
       const ago = t => {
         if(!t) return '';
@@ -2641,7 +2649,25 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       };
 
       function render(){
-        const rows = unreadOnly ? ROWS.filter(r => r.unread) : ROWS;
+        // OPTIONS FROM THE ROWS, not a hardcoded list. Which senders have replies differs per
+        // channel and changes as traffic moves between numbers, and an option that matches
+        // nothing is worse than an absent one — it reads as "no replies here" when it means
+        // "nothing has ever come back to that number".
+        //
+        // Built from the UNFILTERED set so choosing one never empties the list it came from.
+        const dSel = document.getElementById('rep-dest');
+        if(dSel){
+          const seen = [...new Set(ROWS.map(r => r.destination).filter(Boolean))].sort();
+          const keep = dest;
+          dSel.innerHTML = '<option value="">Replied to: any</option>'
+            + seen.map(d => `<option value="${esc3(d)}">${esc3(d)}</option>`).join('');
+          dSel.value = seen.includes(keep) ? keep : '';
+          if(dSel.value !== keep) dest = dSel.value;   // the chosen one no longer exists here
+          // Nothing to choose between is not a choice. Hidden rather than shown empty.
+          dSel.classList.toggle('hidden', seen.length < 2);
+        }
+        const rows = (unreadOnly ? ROWS.filter(r => r.unread) : ROWS)
+          .filter(r => !dest || r.destination === dest);
         document.querySelectorAll('[data-rtab]').forEach(b => b.classList.toggle('tab-active', b.dataset.rtab === chan));
         if(!rows.length){
           // The most specific true explanation available: unread filter first, then the chosen
@@ -2662,6 +2688,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <div class="flex items-baseline gap-2">
                 <span class="font-semibold text-[#133b49] truncate">${esc3(r.correspondent || 'unknown')}</span>
                 ${r.provider ? `<span class="badge badge-xs badge-ghost">${esc3(r.provider)}</span>` : ''}
+                ${r.destination ? `<span class="text-xs text-base-content/40" title="They replied to this number/address of ours">&rarr; ${esc3(r.destination)}</span>` : ''}
                 ${r.market_key ? `<span class="text-xs text-base-content/50">${esc3(r.market_key)}</span>` : ''}
                 <span class="text-xs text-base-content/40 ml-auto shrink-0">${esc3(ago(r.received_at))}</span>
               </div>
@@ -2704,12 +2731,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         render();
       }
 
+      const dSelEl = document.getElementById('rep-dest');
+      // Client-side: the options come from the loaded rows, so filtering them server-side would
+      // mean a round trip to narrow a list already in hand. p_destination exists on the RPC for
+      // when this inbox is big enough to page, which it is not.
+      if(dSelEl) dSelEl.addEventListener('change', e => { dest = e.target.value; render(); });
+
       const pSel = document.getElementById('rep-provider');
       if(pSel) pSel.addEventListener('change', e => { provider = e.target.value; load(); });
 
       document.querySelectorAll('[data-rtab]').forEach(b => b.addEventListener('click', () => {
         if(chan === b.dataset.rtab) return;
-        chan = b.dataset.rtab; load();
+        // A number is not an address: a destination chosen on the SMS tab means nothing on the
+        // email one, and carrying it across would show an empty inbox for no visible reason.
+        chan = b.dataset.rtab; dest = ''; load();
       }));
       const u = document.getElementById('rep-unread');
       if(u) u.addEventListener('change', e => { unreadOnly = e.target.checked; render(); });
