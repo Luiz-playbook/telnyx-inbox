@@ -36,6 +36,7 @@
   --red:#c8332b;
   --amber:#c97a14;
   --green:#2b8a3e;
+  --green-ink:#226e31;   /* --green is 3.9:1 on its own tint; this is the same hue at 5.5:1 */
   --gray:#98a2aa;
 
   /* SEMANTIC LAYER, over the raw palette above. Brand token -> semantic token ->
@@ -51,7 +52,11 @@
   --color-surface-sunken:     #fafbfb;
   --color-foreground:         var(--ink);
   --color-foreground-muted:   var(--ink-2);
-  --color-foreground-subtle:  var(--muted);
+  /* --muted is the brand swatch and stays exactly as SKILL.md sets it. Text,
+     though, has to clear WCAG AA, and #7c8891 lands at 3.4-3.6:1 on our three
+     light grounds. This is the same blue-grey walked down to ~4.6:1 so the
+     hue is unchanged and only the legibility moves. */
+  --color-foreground-subtle:  #68737d;
   --color-border:             var(--line);
   --color-border-subtle:      var(--line-2);
   --color-border-strong:      #cfd4d8;
@@ -274,7 +279,7 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 .camp-table th, .q-table th {
   background: #fafbfb;
   font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
-  color: var(--muted);
+  color: var(--color-foreground-subtle);
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -310,7 +315,7 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 .border-base-300 { border-color: var(--line) !important; }
 .bg-base-100 { background: #fff !important; }
 .bg-base-200, .bg-base-200\/70, .bg-base-200\/60, .bg-base-200\/50, .bg-base-200\/40, .bg-base-200\/30, .bg-base-200\/20 { background: #f7f8f9 !important; }
-.text-base-content\/50, .text-base-content\/60, .text-base-content\/40, .text-base-content\/45 { color: var(--muted) !important; }
+.text-base-content\/50, .text-base-content\/60, .text-base-content\/40, .text-base-content\/45 { color: var(--color-foreground-subtle) !important; }
 .text-base-content\/70 { color: var(--ink-2) !important; }
 .text-\[\#133b49\] { color: var(--ink) !important; }
 .text-\[\#e55608\], .text-\[\#c94d07\] { color: var(--orange-ink) !important; }
@@ -320,19 +325,19 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
    just a container for it. */
 .badge {
   border-radius: 4px;
-  font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em;
   padding: 2px 6px; height: auto; min-height: 0;
   border: 0;
 }
 .badge-warning { background: #fdf3e6; color: var(--amber); }
-.badge-success { background: #eaf3ec; color: var(--green); }
+.badge-success { background: #eaf3ec; color: var(--green-ink); }
 .badge-error   { background: #fbeceb; color: var(--red); }
 .badge-info    { background: #e5eef3; color: var(--navy); }
 .badge-ghost   { background: var(--line-2); color: var(--ink-2); }
 
 /* Segment tags, the one place a coloured chip earns its keep: three of them sit
    side by side all day and the colour is how you tell them apart at a glance. */
-.seg { border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; }
+.seg { border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; }
 .seg-icp { background: #e5eef3; color: var(--navy); }
 .seg-scp { background: var(--orange-tint); color: var(--orange-ink); }
 .seg-non { background: var(--line-2); color: var(--ink-2); }
@@ -359,7 +364,7 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
    Agent messages are plain text under a small muted label — no bubble. Only the
    operator's own messages get one, so the column reads as a transcript rather
    than two rows of competing balloons. */
-.agent-label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.agent-label { color: var(--color-foreground-subtle); font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; }
 .agent-bubble {
   background: transparent; border: 0; border-radius: 0; padding: 0;
   color: var(--ink); font-size: 13px; line-height: 1.5;
@@ -403,7 +408,7 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 
 /* An empty cell is an en dash in grey. Not "N/A", not blank — blank reads as a
    rendering fault, "N/A" reads as an answer. */
-.text-base-content\/40:empty::after { content: "–"; color: var(--gray); }
+.text-base-content\/40:empty::after { content: "–"; color: var(--color-foreground-subtle); }
 
 /* --------------------------------------------------------------------- misc */
 .skeleton { background: var(--line-2); border-radius: 4px; }
@@ -417,3 +422,21 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 .dropdown-content { border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(22,58,76,.12); }
 .q-menu { border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(22,58,76,.12); }
 .link-primary { color: var(--orange-ink); }
+
+/* ------------------------------------------------------------------- motion
+   The app had exactly one reduced-motion rule (.bh-found), so every other
+   animation and transition ignored the setting.
+
+   This is deliberately NOT the usual `* { animation: none; transition: .01ms }`
+   sledgehammer. That kills the hover, focus and disabled feedback too, and on a
+   tool where an operator is confirming a send, losing "the button acknowledged
+   me" is worse than the motion was. So: travel and entrances go, colour and
+   opacity feedback stays. */
+@media (prefers-reduced-motion: reduce) {
+  .pb-toast-card, .pb-modal-card, .bh-found { animation: none !important; }
+  *, *::before, *::after {
+    transition-property: color, background-color, border-color, box-shadow, opacity !important;
+    transition-duration: 120ms !important;
+    scroll-behavior: auto !important;
+  }
+}

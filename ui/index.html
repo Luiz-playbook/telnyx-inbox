@@ -20,16 +20,16 @@
     .status-pill .dot{ width:8px; height:8px; border-radius:9999px; flex:0 0 auto; }
     .sp-live{ background:#eaf5ee; border-color:#cfe9d8; } .sp-live .dot{ background:#067523; }
     .sp-pending{ background:#fdeee4; border-color:#f5d3bd; } .sp-pending .dot{ background:#e55608; }
-    .sp-manual{ background:#eaf0fe; border-color:#d3def8; } .sp-manual .dot{ background:#2f6bff; }
+    .sp-manual{ background:#eaf0fe; border-color:#d3def8; } .sp-manual .dot{ background:#1d4fd7; }
     .sp-off{ background:#f1f4f7; border-color:#e5ebf1; color:#9aa7b4; } .sp-off .dot{ background:#9aa7b4; }
     /* play picker */
     .play-card{ text-align:left; border:1px solid #e5ebf1; border-radius:12px; padding:14px; background:#fff; display:flex; flex-direction:column; gap:6px; align-items:flex-start; cursor:pointer; transition:border-color .12s; }
     .play-card:hover{ border-color:#cbd6e2; }
     .play-card.sel{ border-color:#e8935a; background:#fdeee4; box-shadow:0 0 0 1px #e8935a inset; }
     .play-title{ font-weight:800; color:#133b49; font-size:15px; }
-    .play-desc{ font-size:12.5px; color:#6b7a90; line-height:1.5; }
+    .play-desc{ font-size:12.5px; color:#5d6b80; line-height:1.5; }
     /* audience & channels */
-    .draft-pill{ display:inline-block; background:#eaf0fe; color:#2f6bff; border:1px solid #d3def8; border-radius:9999px; padding:6px 14px; font-size:13px; font-weight:700; }
+    .draft-pill{ display:inline-block; background:#eaf0fe; color:#1d4fd7; border:1px solid #d3def8; border-radius:9999px; padding:6px 14px; font-size:13px; font-weight:700; }
     .chan{ border:1px solid #d8e2ef; border-radius:8px; padding:6px 16px; font-weight:700; font-size:13px; background:#fff; color:#5e6e82; cursor:pointer; }
     .chan.sel{ background:#133b49; color:#fff; border-color:#133b49; }
     /* queue table */
@@ -74,7 +74,7 @@
        — the deal is the answer, the company is reference. */
     .deal-pill{ display:inline-flex; align-items:center; border-radius:9999px; padding:1px 7px;
                 font-size:10px; font-weight:800; letter-spacing:.02em; white-space:nowrap;
-                background:#eaf0fe; color:#2f6bff; border:1px solid #d3def8; }
+                background:#eaf0fe; color:#1d4fd7; border:1px solid #d3def8; }
     /* Won and lost are the two stages worth telling apart at a glance. Everything else is
        in-flight and shares the neutral blue rather than being colour-guessed. */
     .deal-pill.won{ background:#e6f6ea; color:#067523; border-color:#c7e9d1; }
@@ -90,7 +90,7 @@
     /* The disclosure caret. Rendered ONLY on rows that have something under them, so its
        presence is the signal that there is anything to open — a caret on an empty row is a
        control that does nothing, and with 100 rows on screen that is 100 of them. */
-    .rec-caret{ width:14px; height:14px; line-height:14px; text-align:center; font-size:9px;
+    .rec-caret{ width:14px; height:14px; line-height:14px; text-align:center; font-size:11px;
                 color:#8695a7; background:none; border:0; padding:0; cursor:pointer;
                 transition:transform .12s ease; }
     .rec-caret:hover{ color:#133b49; }
@@ -142,7 +142,7 @@
                  border:0; padding:0; line-height:1; vertical-align:baseline; }
     .evt-rescan:hover{ color:#e8935a; }
     .evt-rescan:disabled{ color:#d8e2ef; cursor:default; }
-    .price-manual{ display:inline-block; font-size:9px; font-weight:800; letter-spacing:.04em;
+    .price-manual{ display:inline-block; font-size:11px; font-weight:800; letter-spacing:.04em;
                    text-transform:uppercase; color:#8a5a2b; background:#fdf1e4; border:1px solid #f3ddc4;
                    border-radius:9999px; padding:0 5px; margin-left:4px; vertical-align:middle; }
     /* Fixed for the same reason .q-menu is: both tables scroll inside an overflow-auto box that
@@ -182,10 +182,10 @@
     .price-pop .pp-errsign{ display:inline-block; font-size:10px; font-weight:800; color:#b45309; background:#fef3c7;
                             border:1px solid #fde68a; border-radius:9999px; padding:0 6px; margin-left:3px; cursor:help; }
     .price-pop .pp-nosign{ display:inline-block; font-size:10px; font-weight:700; color:#8695a7; margin-left:3px; cursor:help; }
-    .price-pop .pp-now{ display:inline-block; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+    .price-pop .pp-now{ display:inline-block; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
                         color:#067523; background:#eaf5ee; border:1px solid #cfe9d8; border-radius:9999px;
                         padding:0 5px; margin-left:3px; vertical-align:middle; }
-    .tb-email{ background:#eaf0fe; color:#2f6bff; border-color:#d3def8; }
+    .tb-email{ background:#eaf0fe; color:#1d4fd7; border-color:#d3def8; }
     .tb-sms{ background:#eaf5ee; color:#067523; border-color:#cfe9d8; }
     .tb-ph{ background:#f1f4f7; color:#8695a7; border-color:#e5ebf1; }
     .tpl-src{ border:1px solid #d8e2ef; border-radius:8px; padding:3px 11px; font-size:12px; font-weight:700; color:#5e6e82; background:#fff; cursor:pointer; }
@@ -388,7 +388,7 @@
     .camp-table th.sortable{ cursor:pointer; user-select:none; }
     .camp-table th.sortable:hover{ color:#133b49; }
     .camp-table th.sortable.on{ color:#e55608; }
-    .sort-ind{ margin-left:5px; font-size:9px; color:#c3ccd8; }
+    .sort-ind{ margin-left:5px; font-size:11px; color:#c3ccd8; }
     .camp-table th.sortable.on .sort-ind{ color:#e55608; }
     .camp-table td{ padding:14px 16px; vertical-align:middle; border-top:1px solid #edf2f9; }
     /* Columns whose contents have a fixed width of their own (a datetime control, a metro name)
@@ -399,15 +399,15 @@
     .camp-table th.col-tight, .camp-table td.col-tight{ padding-left:10px; padding-right:10px; }
     .camp-row:hover{ background:#f8fafc; }
     .seg{ font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 7px; border-radius:5px; text-transform:uppercase; white-space:nowrap; }
-    .seg-icp{ background:#e3edff; color:#2f6bff; }
+    .seg-icp{ background:#e3edff; color:#1d4fd7; }
     .seg-scp{ background:#fde7d6; color:#e55608; }
-    .seg-non{ background:#eef1f6; color:#6b7a90; }
+    .seg-non{ background:#eef1f6; color:#5d6b80; }
     .tagpill{ display:inline-flex; align-items:center; font-size:10px; font-weight:800; letter-spacing:.03em; padding:2px 8px; border-radius:9999px; text-transform:uppercase; }
     .tag-vip{ background:#efe6ff; color:#7b61ff; }
     .tag-food{ background:#e2f5e9; color:#067523; }
-    .tag-sched{ background:#eef1f6; color:#6b7a90; }
+    .tag-sched{ background:#eef1f6; color:#5d6b80; }
     .sport-pill{ display:inline-flex; align-items:center; font-size:12px; font-weight:700; color:#3f7d7d; }
-    .status-chip{ font-weight:700; font-size:13px; color:#6b7a90; padding:6px 14px; border-radius:9999px; border:1px solid transparent; cursor:pointer; white-space:nowrap; }
+    .status-chip{ font-weight:700; font-size:13px; color:#5d6b80; padding:6px 14px; border-radius:9999px; border:1px solid transparent; cursor:pointer; white-space:nowrap; }
     .status-chip:hover{ background:#eef1f6; }
     .status-chip.active{ color:#e55608; border-color:#e55608; background:#fff; }
     .mini-select{ font-size:12px; }
@@ -606,8 +606,8 @@
               </label>
               <span class="text-sm text-base-content/50 mr-auto" id="cbs-total">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
-                <select id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
-                <select id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
+                <select aria-label="Filter offers by sport" id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select aria-label="Filter offers by league" id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
                 <!-- AUDIENCE SPORT (migration 080). NOT the same thing as the Sport filter to its
                      left, and the labels have to carry that: that one is the sport of the GAME,
                      this is the sport of the ORGANISATIONS being emailed. A dance studio is a
@@ -623,7 +623,7 @@
                 </select>
                 <!-- Options are grouped US / Canada / Test and cover every market, not just the
                      states that happen to have an event loaded. -->
-                <select id="cbs-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
+                <select aria-label="Filter offers by state" id="cbs-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
                 <select id="cbs-window" class="select select-bordered select-sm" title="Upcoming window">
                   <option value="">All upcoming</option>
                   <option value="7">Next 7 days</option>
@@ -793,16 +793,16 @@
                     <a href="#" class="link link-primary text-sm font-semibold">New draft</a>
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div class="form-control"><label class="label"><span class="label-text">Market</span></label><select id="market-select" class="select select-bordered"><option value="">Loading markets…</option></select></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Market</span></label><select aria-label="Market" id="market-select" class="select select-bordered"><option value="">Loading markets…</option></select></div>
                     <div class="form-control"><label class="label"><span class="label-text" id="ctx-label">Game / Event</span></label><input id="ctx-input" class="input input-bordered" value="Dolphins Home Opener" placeholder="e.g. Home Opener"></div>
-                    <div class="form-control" id="field-gamedate"><label class="label"><span class="label-text">Game date</span></label><input id="game-date" type="date" class="input input-bordered"></div>
-                    <div class="form-control" id="field-cost"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input id="cost-bundle" type="number" step="0.01" class="input input-bordered" value="20"></div>
-                    <div class="form-control hidden" id="field-sport"><label class="label"><span class="label-text">Sport</span></label><select id="sport-select" class="select select-bordered"><option>Volleyball</option><option>Basketball</option><option>Soccer</option><option>Baseball</option><option>Softball</option><option>Football</option><option>Hockey</option><option>Lacrosse</option><option>Wrestling</option><option>Other</option></select></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Assigned BDA</span></label><input id="assigned-bda" class="input input-bordered" value="unassigned"></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Last suite</span></label><input id="last-suite" class="input input-bordered" value="unknown"></div>
-                    <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input id="next-suite" class="input input-bordered" value="unknown"></div>
+                    <div class="form-control" id="field-gamedate"><label class="label"><span class="label-text">Game date</span></label><input aria-label="Game date" id="game-date" type="date" class="input input-bordered"></div>
+                    <div class="form-control" id="field-cost"><label class="label"><span class="label-text">Cost per bundle ($)</span></label><input aria-label="Cost per bundle" id="cost-bundle" type="number" step="0.01" class="input input-bordered" value="20"></div>
+                    <div class="form-control hidden" id="field-sport"><label class="label"><span class="label-text">Sport</span></label><select aria-label="Sport" id="sport-select" class="select select-bordered"><option>Volleyball</option><option>Basketball</option><option>Soccer</option><option>Baseball</option><option>Softball</option><option>Football</option><option>Hockey</option><option>Lacrosse</option><option>Wrestling</option><option>Other</option></select></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Assigned BDA</span></label><input aria-label="Assigned BDA" id="assigned-bda" class="input input-bordered" value="unassigned"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Last suite</span></label><input aria-label="Last suite" id="last-suite" class="input input-bordered" value="unknown"></div>
+                    <div class="form-control"><label class="label"><span class="label-text">Next suite</span></label><input aria-label="Next suite" id="next-suite" class="input input-bordered" value="unknown"></div>
                   </div>
-                  <div class="form-control"><label class="label"><span class="label-text">Notes</span></label><input id="blast-notes" class="input input-bordered" value="Lower bowl, section 112"></div>
+                  <div class="form-control"><label class="label"><span class="label-text">Notes</span></label><input aria-label="Blast notes" id="blast-notes" class="input input-bordered" value="Lower bowl, section 112"></div>
                   <div id="market-contacts" class="hidden space-y-3">
                     <div>
                       <div class="label-text font-semibold mb-1">Phone numbers in <span id="mc-name"></span> <span class="text-base-content/50 font-normal">(<span id="mp-count">0</span>)</span></div>
@@ -838,9 +838,9 @@
                     </div>
                   </div>
                   <div class="form-control"><label class="label"><span class="label-text font-semibold">Email sender <span class="font-normal text-base-content/50">(autofilled per play, switch if needed)</span></span></label>
-                    <select id="email-sender" class="select select-bordered"><option>Loading…</option></select></div>
+                    <select aria-label="Email sender" id="email-sender" class="select select-bordered"><option>Loading…</option></select></div>
                   <div class="form-control"><label class="label"><span class="label-text font-semibold">SMS sender <span class="font-normal text-base-content/50">(autofilled per play, switch if needed)</span></span></label>
-                    <select id="sms-sender" class="select select-bordered"><option>Loading…</option></select></div>
+                    <select aria-label="SMS sender" id="sms-sender" class="select select-bordered"><option>Loading…</option></select></div>
                 </div>
               </div>
             </div>
@@ -873,7 +873,7 @@
                 <h2 class="font-extrabold text-[#133b49]">Preview <span class="text-sm font-semibold text-base-content/50">— editable, this is exactly what would send</span></h2>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div class="form-control" id="preview-email-wrap"><label class="label"><span class="label-text">Email</span></label>
-                    <textarea id="preview-email" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
+                    <textarea aria-label="Email preview, editable" id="preview-email" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hi [NAME],
 
 My name is Josh Marcus, CEO/Co-Founder of Playbook. We provide tools designed to automate the day-to-day processes of running programs, registration, scheduling, payments, reporting, communication workflows, and other backend processes that typically create unnecessary admin overhead for staff.
 We've also started rolling out new sponsorship and rev share opportunities and we thought of your organization right away.
@@ -883,7 +883,7 @@ Best,
 Josh Marcus
 CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="form-control" id="preview-sms-wrap"><label class="label"><span class="label-text">SMS</span></label>
-                    <textarea id="preview-sms" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
+                    <textarea aria-label="SMS preview, editable" id="preview-sms" class="textarea textarea-bordered min-h-52 text-sm leading-relaxed">Hey, it's Josh Marcus, CEO &amp; Co-Founder | Playbook Sports. We have a few [GAME] that we'd be happy to donate as a thank you gesture for taking a demo for our software. Playbook helps sports organizations manage scheduling, communication, reporting, marketing and more while offering sponsorship &amp; rev-share opportunities. Are you free for a quick demo today or sometime this week to see if it makes sense?</textarea></div>
                 </div>
                 <div id="preview-none" class="hidden text-sm text-base-content/50 border border-dashed border-base-300 rounded-lg p-4 text-center">
                   No channels are firing — turn on Email and/or SMS in Audience &amp; Channels to see what would send.
@@ -927,12 +927,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="SCP">SCP</option>
                   <option value="Other">Other</option>
                 </select>
-                <select id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select aria-label="Filter queue by sport" id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <!-- NFL and CFB share the sport "Football" on purpose; league is what separates
                      them. Added with college football (877 games) so the Queue can be read one
                      competition at a time. -->
                 <select id="q-league" class="select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
-                <select id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
+                <select aria-label="Filter queue by state" id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
                 <select id="q-channel" class="select select-bordered select-sm" title="Channel">
                   <option value="">All channels</option>
                   <option value="email">Email</option>
@@ -1089,7 +1089,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </label>
               <span class="text-sm text-base-content/50 mr-auto" id="bh-summary">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
-                <select id="bh-channel" class="select select-bordered select-sm"><option value="">All channels</option></select>
+                <select aria-label="Filter history by channel" id="bh-channel" class="select select-bordered select-sm"><option value="">All channels</option></select>
                 <select id="bh-status" class="select select-bordered select-sm" title="Source platform"><option value="">All sources</option></select>
                 <!-- Same joined shape as Ticket Prices and the Queue. Replaces a "last N days"
                      select: the question here is usually "what went out that week", which a
@@ -1190,13 +1190,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    come back to the 2-way number or to Main, and whose mailbox is it in.
                    The options are rebuilt per channel from the rows themselves, so it can never
                    offer a number with nothing behind it. -->
-              <select id="rep-dest" class="select select-bordered select-sm w-52">
+              <select aria-label="Filter replies by destination" id="rep-dest" class="select select-bordered select-sm w-52">
                 <option value="">Replied to: any</option>
               </select>
               <!-- Options are filled per channel, not listed here: a provider that cannot carry
                    the current channel is not a filter, it is a guaranteed empty result. See
                    PROVIDERS_FOR below. -->
-              <select id="rep-provider" class="select select-bordered select-sm">
+              <select aria-label="Filter replies by provider" id="rep-provider" class="select select-bordered select-sm">
                 <option value="">All providers</option>
               </select>
               <label class="text-xs text-base-content/60 flex items-center gap-1.5">
@@ -1673,9 +1673,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </label>
               <span class="text-sm text-base-content/50 mr-auto" id="tp-total">Loading&hellip;</span>
               <div class="flex items-center gap-2 flex-wrap justify-end">
-                <select id="tp-sport" class="select select-bordered select-sm w-40"><option value="">All sports</option></select>
+                <select aria-label="Filter ticket prices by sport" id="tp-sport" class="select select-bordered select-sm w-40"><option value="">All sports</option></select>
                 <select id="tp-league" class="select select-bordered select-sm w-40" title="League"><option value="">All leagues</option></select>
-                <select id="tp-market" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
+                <select aria-label="Filter ticket prices by market" id="tp-market" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
                 <select id="tp-fresh" class="select select-bordered select-sm w-40" title="Price freshness">
                   <!-- Labels are rewritten with live counts by fillFreshness(); these are the
                        fallback if a render has not run yet. -->
@@ -2523,7 +2523,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <div class="flex gap-2 shrink-0">${actions}</div>
         </div>
         ${(tpl.editing && editable)
-          ? `<textarea class="tpl-edit" id="tpl-editor">${esc(it.body||'')}</textarea>
+          ? `<textarea aria-label="Template body" class="tpl-edit" id="tpl-editor">${esc(it.body||'')}</textarea>
              <div class="text-xs text-base-content/50 mt-1.5">Saves to <code>message_templates</code> in Supabase — everyone sees the change.</div>
              <div class="text-xs text-error mt-1 hidden" id="tpl-err"></div>`
           : `<pre class="tpl-body">${esc(it.body||'')}</pre>`}`;
@@ -4845,7 +4845,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       whose audience reads email at 07:00 was stuck with mid-morning. -->
                  <div class="pbw-row">
                    <span class="pbw-label">Send</span>
-                   <select data-when class="select select-bordered select-sm w-44">
+                   <select aria-label="Send time" data-when class="select select-bordered select-sm w-44">
                      <option value="schedule" selected>At a set time</option>
                      <option value="now">As soon as possible</option>
                      <!-- SEND IMMEDIATELY, not "queue with a slot of now". This one calls the
@@ -4858,8 +4858,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>
                  <div class="pbw-row mt-2" data-schedrow>
                    <span class="pbw-label">On</span>
-                   <input type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${todayYmd()}">
-                   <input type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">
+                   <input aria-label="Send date" type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${todayYmd()}">
+                   <input aria-label="Send time" type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">
                    <!-- The zone is stated because it is NOT the browser's. Every send slot is
                         pinned to the house clock (etInstant) so one queue means one thing
                         wherever it was filled in from. -->
@@ -4874,7 +4874,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       operator assumed two is a silent halving of the send. -->
                  <div class="pbw-row">
                    <span class="pbw-label">Send by</span>
-                   <select data-chan class="select select-bordered select-sm w-40">
+                   <select aria-label="Send by channel" data-chan class="select select-bordered select-sm w-40">
                      <option value="both" selected>Email + SMS</option>
                      <option value="email">Email only</option>
                      <option value="sms">SMS only</option>
@@ -4883,11 +4883,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>
                  <div class="pbw-row mt-2" data-emailrow>
                    <span class="pbw-label w-20">Email from</span>
-                   <select data-emailfrom class="select select-bordered select-sm flex-1"></select>
+                   <select aria-label="Email sender" data-emailfrom class="select select-bordered select-sm flex-1"></select>
                  </div>
                  <div class="pbw-row mt-2" data-smsrow>
                    <span class="pbw-label w-20">Text from</span>
-                   <select data-smsfrom class="select select-bordered select-sm flex-1"></select>
+                   <select aria-label="SMS sender" data-smsfrom class="select select-bordered select-sm flex-1"></select>
                  </div>
                  <div class="pbw-rule"></div>
                  <!-- STATUS AT THE MOMENT OF ADDING (Vhea, 2026-09-16). Queueing something you
@@ -4896,7 +4896,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       Pending stays the default: pre-confirming is the deliberate choice. -->
                  <div class="pbw-row">
                    <span class="pbw-label">Add as</span>
-                   <select data-status class="select select-bordered select-sm w-44">
+                   <select aria-label="Add to queue as" data-status class="select select-bordered select-sm w-44">
                      <option value="pending" selected>Pending — review later</option>
                      <option value="confirmed">Confirmed — already approved</option>
                    </select>
@@ -5151,10 +5151,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                <div class="pbw-panel mb-3">
                  <div class="pbw-row">
                    <span class="pbw-label">Markets per day</span>
-                   <input type="number" data-perday class="input input-bordered input-sm w-20"
+                   <input aria-label="Markets per day" type="number" data-perday class="input input-bordered input-sm w-20"
                           value="${perDay}" min="1" max="10" step="1">
                    <span class="pbw-label ml-auto">Through</span>
-                   <input type="date" data-through class="input input-bordered input-sm w-40"
+                   <input aria-label="Through date" type="date" data-through class="input input-bordered input-sm w-40"
                           value="${through}" min="${minDay}">
                  </div>
                  <div class="pbw-rule"></div>
@@ -6995,7 +6995,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       the first message word for word is the one thing it must not be. -->
                  <div class="pbw-row">
                    <span class="pbw-label">Wording</span>
-                   <select data-variant class="select select-bordered select-sm flex-1">
+                   <select aria-label="Message wording" data-variant class="select select-bordered select-sm flex-1">
                      ${variantOpts}
                      <!-- Last, and deliberately not the default. Duplicating is a fallback for
                           when none of Cole's approved wording fits, not the normal path. -->
@@ -7006,14 +7006,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  <div class="pbw-rule"></div>
                  <div class="pbw-row">
                    <span class="pbw-label">Send on</span>
-                   <input type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${esc(etYmd())}"${maxDay?` max="${esc(maxDay)}"`:''}>
-                   <input type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">
+                   <input aria-label="Send date" type="date" data-day class="input input-bordered input-sm w-40" value="${day}" min="${esc(etYmd())}"${maxDay?` max="${esc(maxDay)}"`:''}>
+                   <input aria-label="Send time" type="time" data-time class="input input-bordered input-sm w-28" value="10:00" step="900">
                    <span class="text-xs text-base-content/50 ml-auto">US Eastern</span>
                  </div>
                  <div class="pbw-rule"></div>
                  <div class="pbw-row">
                    <span class="pbw-label">Add as</span>
-                   <select data-status class="select select-bordered select-sm w-44">
+                   <select aria-label="Add to queue as" data-status class="select select-bordered select-sm w-44">
                      <option value="pending" selected>Pending — review later</option>
                      <option value="confirmed">Confirmed — already approved</option>
                    </select>
@@ -7336,7 +7336,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // sending" is a decision the operator makes right here, and choosing a real sender
           // turns the channel back on. Only a sent row is locked.
           const offOpt = (label, on) => `<option value=""${on?'':' selected'}>&mdash; ${label} &mdash;</option>`;
-          const emailSel = `<select class="select select-bordered select-xs mini-select w-56${r.email?'':' text-base-content/50'}" data-qemail="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending email', r.email)}${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}"${(r.email && s.v===curEmail)?' selected':''}>${esc(s.method)} · ${esc(s.label)}</option>`).join('')}</select>`;
+          const emailSel = `<select aria-label="Email sender for this blast" class="select select-bordered select-xs mini-select w-56${r.email?'':' text-base-content/50'}" data-qemail="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending email', r.email)}${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}"${(r.email && s.v===curEmail)?' selected':''}>${esc(s.method)} · ${esc(s.label)}</option>`).join('')}</select>`;
           // Telnyx numbers come from the telnyx_numbers table; Salesmsg numbers come from the
           // Salesmsg API via /api/salesmsg-senders (OAuth). The Salesmsg entry used to be a
           // hardcoded '(placeholder)' whose value 'salesmessage' was then handed to the TELNYX
@@ -7359,7 +7359,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               '<option value="' + esc(n.phone_number) + '"' + ((r.sms && n.phone_number === curSms) ? ' selected' : '') + '>'
               + esc((n.label ? n.label + ' · ' : '') + n.phone_number) + (two ? '' : ' ⚠') + '</option>').join('') + '</optgroup>';
           }).join('');
-          const smsSel = '<select class="select select-bordered select-xs mini-select w-52' + (r.sms ? '' : ' text-base-content/50') + '" data-qsms="' + esc(r.id) + '"' + (sent ? ' disabled' : '') + '>'
+          const smsSel = '<select aria-label="SMS sender for this blast" class="select select-bordered select-xs mini-select w-52' + (r.sms ? '' : ' text-base-content/50') + '" data-qsms="' + esc(r.id) + '"' + (sent ? ' disabled' : '') + '>'
             + offOpt('Not sending SMS', r.sms) + telnyxGroups
             + (SALESMSG_SENDERS.length ? '<optgroup label="Salesmsg">' + SALESMSG_SENDERS.map(o =>
                 '<option value="' + esc(o.value) + '"' + ((r.sms && o.value === curSms) ? ' selected' : '') + '>' + esc(o.phone) + ' · ' + esc(o.team_name) + '</option>').join('') + '</optgroup>' : '')
@@ -10136,26 +10136,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           `<div class="text-xs text-base-content/50 mb-2">A new blast to <b class="text-[#133b49]">${esc(prettyMetro(mkt))}</b>, following the one sent ${esc(fmtDate(r.sent_at))}.</div>
            <div class="pbw-panel mb-3">
              <div class="pbw-row"><span class="pbw-label w-20">Game</span>
-               <select data-game class="select select-bordered select-sm flex-1">
+               <select aria-label="Game" data-game class="select select-bordered select-sm flex-1">
                  ${games.slice(0,40).map(g => `<option value="${esc(g.event_id)}">${esc(g.opponent ? g.opponent + ' at ' + g.team : g.team)} &middot; ${esc(g.event_date)}</option>`).join('')}
                </select></div>
              <div class="pbw-row mt-2"><span class="pbw-label w-20">Audience</span>
-               <select data-seg class="select select-bordered select-sm w-32">
+               <select aria-label="Audience segment" data-seg class="select select-bordered select-sm w-32">
                  <option value="ICP" selected>ICP</option><option value="SCP">SCP</option><option value="Other">Other</option>
                </select>
                <span class="pbw-label ml-auto">Send</span>
-               <input type="date" data-day class="input input-bordered input-sm w-36" value="${day}" min="${esc(etYmd())}">
-               <input type="time" data-time class="input input-bordered input-sm w-24" value="10:00" step="900">
+               <input aria-label="Send date" type="date" data-day class="input input-bordered input-sm w-36" value="${day}" min="${esc(etYmd())}">
+               <input aria-label="Send time" type="time" data-time class="input input-bordered input-sm w-24" value="10:00" step="900">
              </div>
              <div class="pbw-rule"></div>
              <div class="pbw-row"><span class="pbw-label w-20">Template</span>
-               <select data-variant class="select select-bordered select-sm flex-1">
+               <select aria-label="Message wording" data-variant class="select select-bordered select-sm flex-1">
                  ${variants.map(v => `<option value="${esc(v)}"${v==='followup'?' selected':''}>${esc(LABELS[v]||v)}</option>`).join('')}
                </select></div>
              <div class="mt-2" data-tplpreview></div>
            </div>
            <div class="flex items-center gap-2">
-             <select data-status class="select select-bordered select-sm w-44">
+             <select aria-label="Add to queue as" data-status class="select select-bordered select-sm w-44">
                <option value="pending" selected>Pending &mdash; review later</option>
                <option value="confirmed">Confirmed &mdash; already approved</option>
              </select>
@@ -11049,11 +11049,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 '<dt class="text-base-content/50">Ticket price</dt><dd>' + esc(money(offer.price_per_person)) + '</dd>' +
               '</dl>' +
               '<label class="text-xs font-semibold text-base-content/60">Audience segment</label>' +
-              '<select data-seg class="select select-bordered select-sm w-full mb-3">' +
+              '<select aria-label="Audience segment" data-seg class="select select-bordered select-sm w-full mb-3">' +
                 segments.map(function(x){ return '<option value="' + esc(x) + '">' + esc(x) + '</option>'; }).join('') +
               '</select>' +
               '<label class="text-xs font-semibold text-base-content/60">Send at</label>' +
-              '<input data-when type="datetime-local" class="input input-bordered input-sm w-full mb-4" value="' + esc(defaultWhen) + '">' +
+              '<input aria-label="Send at" data-when type="datetime-local" class="input input-bordered input-sm w-full mb-4" value="' + esc(defaultWhen) + '">' +
               '<div class="flex justify-end gap-2">' +
                 '<button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>' +
                 '<button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>Add to Queue</button>' +
@@ -11208,7 +11208,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           ? `<button class="btn btn-xs btn-outline rounded-full px-3" data-addqueue="${esc(e.id)}" title="Queue this offer for a send">+ Queue</button>`
           : `<button class="btn btn-xs btn-outline rounded-full px-3 btn-disabled opacity-50" disabled title="${esc('Cannot queue: ' + (fx.why || 'no matching fixture') + '.')}">+ Queue</button>`;
         return `<tr class="camp-row" data-row="${esc(e.id)}">
-          <td><input type="checkbox" class="checkbox checkbox-xs" data-select="${esc(e.id)}" ${sel?'checked':''}/></td>
+          <td><input aria-label="Select this offer" type="checkbox" class="checkbox checkbox-xs" data-select="${esc(e.id)}" ${sel?'checked':''}/></td>
           ${c.event?`<td>
             <div class="flex items-center gap-2">
               <div class="min-w-0">
@@ -11223,8 +11223,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           ${c.rec?`<td><span class="badge badge-sm font-semibold whitespace-nowrap ${recBadgeClass(rec.tier)}" title="${esc(rec.reason)}">${esc(rec.label)}</span><div class="text-xs text-base-content/50 mt-0.5 whitespace-nowrap">${esc(rec.reason)}</div></td>`:''}
           ${c.template?`<td>${bt?`<div class="min-w-0"><div class="font-semibold text-[#133b49] truncate max-w-[220px]" title="${esc(bt.top.name)}">${esc(bt.top.name)}</div><div class="text-xs text-base-content/50 whitespace-nowrap">${Number(bt.top.open_rate).toFixed(1)}% open · ${bt.count} past${sw?` · best ${esc(sw)}`:''}</div></div>`:'<span class="text-base-content/40">—</span>'}</td>`:''}
           ${c.tags?`<td><div class="flex flex-wrap gap-1">${tags.map(t=>`<span class="tagpill ${tagClass(t)}">${esc(t)}</span>`).join('')}</div></td>`:''}
-          ${c.emails?`<td><select class="select select-bordered select-xs mini-select w-52" data-email-from="${esc(e.id)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(e)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>`:''}
-          ${c.sms?`<td><select class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(e.id)}">${state.numbers.length?state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(e)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>`:''}
+          ${c.emails?`<td><select aria-label="Email sender for this offer" class="select select-bordered select-xs mini-select w-52" data-email-from="${esc(e.id)}">${EMAIL_SENDERS.map(a=>`<option ${a===emailFromOf(e)?'selected':''}>${esc(a)}</option>`).join('')}</select></td>`:''}
+          ${c.sms?`<td><select aria-label="SMS sender for this offer" class="select select-bordered select-xs mini-select w-44" data-sms-from="${esc(e.id)}">${state.numbers.length?state.numbers.map(n=>`<option value="${esc(n.phone_number)}" ${n.phone_number===smsFromOf(e)?'selected':''}>${n.label?esc(n.label)+' · ':''}${esc(n.phone_number)}</option>`).join(''):'<option value="">No numbers</option>'}</select></td>`:''}
           ${c.suite?`<td class="text-sm text-base-content/60 whitespace-nowrap">${esc(suiteDate(e))}</td>`:''}
         </tr>`;
       }
