@@ -34,3 +34,12 @@ meeting-transcripts/
 
 # Bruno API collection — local request scratchpad, not part of the deliverable.
 bruno/
+
+# Do-not-contact CSVs (suppression/). REAL PEOPLE'S EMAIL ADDRESSES AND PHONE NUMBERS, and
+# specifically of people who have asked not to be contacted — the last data that should sit in a
+# repo, on anyone's laptop, or in a cloud backup of it. Drop the files in, import them, and the
+# database is the record; the CSV is a courier, not a home.
+# The README and .gitkeep are tracked so the folder exists on clone and explains itself.
+suppression/*
+!suppression/.gitkeep
+!suppression/README.md
