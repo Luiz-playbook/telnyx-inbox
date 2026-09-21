@@ -466,6 +466,10 @@
     .edit-live:focus{ box-shadow:0 0 0 2px #e8935a inset; background:#fffdfa; }
     .sms-bubble.edit-live:focus{ background:#fff; }
   </style>
+  <!-- The design system, LAST so it wins the cascade without !important and
+       without touching a line of markup or script above it. See the header of
+       playbook-ui.css for why a restyle of this file has to work that way. -->
+  <link href="./playbook-ui.css" rel="stylesheet" />
 </head>
 <body class="h-full">
   <div class="flex flex-col h-screen bg-base-200">

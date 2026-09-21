@@ -1,0 +1,330 @@
+/* ============================================================================
+   Playbook UI — the design system, applied over everything else.
+   ============================================================================
+
+   LOADED LAST, AND THAT IS THE WHOLE TRICK. The cascade here is daisyUI ->
+   Tailwind -> theme.css -> the inline <style> in index.html -> this file. Being
+   last means equal-specificity rules win without !important and without editing
+   a single line of markup or script.
+
+   That constraint is deliberate: this is a restyle, not a rewrite. ui/index.html
+   is ~11,000 lines where the markup, the event wiring and the render functions
+   all live together, so changing a class name to suit a stylesheet risks
+   breaking a querySelector three thousand lines away. Nothing in this file can
+   do that. Every id, every data- attribute, every handler is untouched.
+
+   The system, from SKILL.md: an internal ops tool where people scan hundreds of
+   rows and act on a few. Calm, dense, utilitarian — Linear or Stripe's
+   dashboard, not a marketing site. No gradients, no glass, no glow, no emoji
+   used as decoration, no large radii.
+   ============================================================================ */
+
+@import url("https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&display=swap");
+
+:root, [data-theme="light"] {
+  --navy:#163a4c;
+  --orange:#e8590c;
+  --orange-ink:#b8460a;
+  --orange-tint:#fdf1ea;
+  --bg:#f5f6f7;
+  --panel:#fff;
+  --ink:#1c2830;
+  --ink-2:#4a5862;
+  --muted:#7c8891;
+  --line:#e4e7ea;
+  --line-2:#eef0f2;
+  --red:#c8332b;
+  --amber:#c97a14;
+  --green:#2b8a3e;
+  --gray:#98a2aa;
+
+  /* daisyUI's own theme, moved onto the same palette. Components this file does
+     not name explicitly — a dropdown, a tooltip — then land in the right colours
+     instead of the old teal. oklch because that is what daisyUI 4 expects. */
+  --p:  0.5807 0.1732 42.13;   /* --orange  */
+  --pc: 1 0 0;
+  --n:  0.3352 0.0500 227.30;  /* --navy    */
+  --nc: 1 0 0;
+  --b1: 1 0 0;
+  --b2: 0.9797 0.0016 247.84;
+  --b3: 0.9601 0.0023 247.86;
+  --bc: 0.2685 0.0180 235.00;  /* --ink     */
+  --su: 0.5321 0.1401 148.60;  /* --green   */
+  --wa: 0.6216 0.1220 62.00;   /* --amber   */
+  --er: 0.5163 0.1780 25.60;   /* --red     */
+  --in: 0.3352 0.0500 227.30;
+  --rounded-btn: 6px;
+  --rounded-box: 8px;
+  --border-btn: 1px;
+  --animation-btn: 0s;         /* no press-bounce; this is a tool, not a toy */
+  --animation-input: 0s;
+}
+
+/* ---------------------------------------------------------------- type + page
+   13px base. Every number gets tabular figures so columns of prices and counts
+   line up on the decimal — the single cheapest thing you can do for a table
+   nobody reads word by word. */
+html, body {
+  font-family: "Public Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+body, .text-sm { font-size: 13px; }
+.text-xs { font-size: 12px; }
+td, th, .input, .select, .textarea, .btn, .badge { font-variant-numeric: tabular-nums; }
+
+h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
+
+/* ------------------------------------------------------------------- top bar
+   48px, navy, and nothing in it but identity and the account. */
+.pb-topbar {
+  background: var(--navy);
+  color: #fff;
+  min-height: 48px;
+  padding: 0 16px !important;
+  border-bottom: 0;
+}
+.pb-wordmark { font-weight: 700; letter-spacing: .04em; font-size: 14px; }
+.pb-topbar .bg-\[\#e55608\] { background: var(--orange) !important; border-radius: 5px; width: 24px; height: 24px; font-size: 13px; }
+.pb-topbar .text-white\/70, .pb-topbar .text-white\/60 { color: #a9c0cc !important; }
+
+/* ---------------------------------------------------------------------- nav
+   42px, white, orange underline on the active tab. The underline is the only
+   orange in the row: orange means "do something", and a tab you are already on
+   is not an action. */
+.pb-tabs {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+  height: 42px;
+  padding: 0 16px;
+  gap: 2px;
+}
+.pb-tabs a {
+  display: flex; align-items: center;
+  padding: 0 12px; margin: 0;
+  font-weight: 500; font-size: 13px;
+  color: var(--ink-2);
+  border-bottom: 2px solid transparent;
+}
+.pb-tabs a:hover { color: var(--ink); }
+.pb-tabs a.active { color: var(--orange-ink); border-bottom-color: var(--orange); }
+
+/* ------------------------------------------------------------------- buttons
+   One orange button per view. Everything else is white with a hairline border —
+   Rescan, Reload, AI Select, Clear, the lot. */
+.btn {
+  border-radius: 6px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  text-transform: none;
+  min-height: 0;
+  height: auto;
+  padding: 6px 11px;
+  box-shadow: none;
+}
+.btn:hover { background: #fff; border-color: #cfd4d8; }
+.btn-sm { padding: 5px 10px; font-size: 12.5px; }
+.btn-xs { padding: 3px 8px; font-size: 12px; }
+.btn-square, .btn-circle { padding: 0; }
+.btn-circle { border-radius: 6px; }   /* no pills on controls */
+
+.btn-primary, .btn-warning {
+  background: var(--orange); border-color: var(--orange); color: #fff; font-weight: 600;
+}
+.btn-primary:hover, .btn-warning:hover { background: #d4500a; border-color: #d4500a; color: #fff; }
+
+.btn-ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
+.btn-ghost:hover { background: var(--line-2); border-color: transparent; color: var(--ink); }
+
+.btn-outline { background: #fff; color: var(--ink); border-color: var(--line); }
+.btn-outline:hover { background: #fff; border-color: #cfd4d8; color: var(--ink); }
+.btn-outline.btn-error, .btn-error { background: #fff; color: var(--red); border-color: #e7c4c1; }
+.btn-outline.btn-error:hover, .btn-error:hover { background: #fdf4f3; border-color: var(--red); color: var(--red); }
+.btn-outline.btn-success, .btn-success { background: #fff; color: var(--green); border-color: #cbe3d1; }
+.btn-outline.btn-success:hover, .btn-success:hover { background: #f4faf5; border-color: var(--green); color: var(--green); }
+.btn-outline.btn-info, .btn-info { background: #fff; color: var(--navy); border-color: #cddbe2; }
+.btn-outline.btn-info:hover, .btn-info:hover { background: #f4f8fa; border-color: var(--navy); color: var(--navy); }
+.btn-disabled, .btn[disabled] { background: #fff !important; border-color: var(--line) !important; color: var(--gray) !important; }
+
+/* --------------------------------------------------------------------- fields */
+.input, .select, .textarea {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  min-height: 0;
+  height: auto;
+  padding: 7px 10px;
+  box-shadow: none;
+}
+.input-sm, .select-sm, .textarea-sm { padding: 5px 9px; font-size: 12.5px; }
+.input-xs, .select-xs { padding: 3px 7px; font-size: 12px; }
+.input:focus, .select:focus, .textarea:focus,
+.input:focus-within, .select:focus-within {
+  outline: 0; border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy);
+}
+.input-bordered, .select-bordered, .textarea-bordered { border-color: var(--line); }
+.checkbox {
+  width: 15px; height: 15px; border-radius: 3px;
+  border: 1px solid #c3cbd1; accent-color: var(--navy);
+}
+.checkbox:checked, .checkbox[aria-checked="true"] { background-color: var(--navy); border-color: var(--navy); }
+.join .join-item { border-radius: 0; }
+.join > :first-child.join-item { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+.join > :last-child.join-item  { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+
+/* --------------------------------------------------------------------- tables
+   42px rows, 11px uppercase headers, hairline separators. The header is sticky
+   already in the markup; this only changes how it looks. */
+.camp-table, .q-table { border-collapse: collapse; }
+.camp-table th, .q-table th {
+  background: #fafbfb;
+  font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.camp-table td, .q-table td {
+  padding: 0 12px;
+  height: 42px;
+  border-top: 0;
+  border-bottom: 1px solid var(--line-2);
+  color: var(--ink);
+}
+.camp-table tbody tr:last-child td, .q-table tbody tr:last-child td { border-bottom: 0; }
+.camp-row:hover, tbody .camp-row:hover { background: #fbfaf8; }
+.camp-row.sel { background: #f4f8fa; }
+/* A selected row is marked by a 3px navy edge, not by filling it with colour —
+   a full-width tint reads as a status, and selection is not one. */
+.camp-row.q-picked > td { background: var(--orange-tint); }
+.camp-row.q-picked > td:first-child { box-shadow: inset 3px 0 0 var(--orange); }
+
+/* Day bands: 30px, quiet, says the date once instead of on every row. */
+.camp-table tr.bg-base-200\/70 td, .q-table tr.bg-base-200\/70 td {
+  height: 30px; background: #f7f8f9;
+  font-size: 11px; letter-spacing: .05em; color: var(--ink-2);
+  border-bottom: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------- cards + panels
+   8px radius, hairline border, no shadow. A shadow on a static panel is the
+   fastest way to make a tool look like a landing page. */
+.card, .rounded-xl, .rounded-lg {
+  border-radius: 8px;
+}
+.card { box-shadow: none !important; border: 1px solid var(--line); background: #fff; }
+.border-base-300 { border-color: var(--line) !important; }
+.bg-base-100 { background: #fff !important; }
+.bg-base-200, .bg-base-200\/70, .bg-base-200\/60, .bg-base-200\/50, .bg-base-200\/40, .bg-base-200\/30, .bg-base-200\/20 { background: #f7f8f9 !important; }
+.text-base-content\/50, .text-base-content\/60, .text-base-content\/40, .text-base-content\/45 { color: var(--muted) !important; }
+.text-base-content\/70 { color: var(--ink-2) !important; }
+.text-\[\#133b49\] { color: var(--ink) !important; }
+.text-\[\#e55608\], .text-\[\#c94d07\] { color: var(--orange-ink) !important; }
+
+/* --------------------------------------------------------------------- badges
+   Small, square-ish, quiet. Status colour carries the meaning; the badge is
+   just a container for it. */
+.badge {
+  border-radius: 4px;
+  font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+  padding: 2px 6px; height: auto; min-height: 0;
+  border: 0;
+}
+.badge-warning { background: #fdf3e6; color: var(--amber); }
+.badge-success { background: #eaf3ec; color: var(--green); }
+.badge-error   { background: #fbeceb; color: var(--red); }
+.badge-info    { background: #e5eef3; color: var(--navy); }
+.badge-ghost   { background: var(--line-2); color: var(--ink-2); }
+
+/* Segment tags, the one place a coloured chip earns its keep: three of them sit
+   side by side all day and the colour is how you tell them apart at a glance. */
+.seg { border-radius: 4px; font-size: 10.5px; font-weight: 700; letter-spacing: .04em; padding: 2px 6px; }
+.seg-icp { background: #e5eef3; color: var(--navy); }
+.seg-scp { background: var(--orange-tint); color: var(--orange-ink); }
+.seg-non { background: var(--line-2); color: var(--ink-2); }
+.sport-pill { background: var(--line-2); color: var(--ink-2); border-radius: 4px; font-size: 11px; font-weight: 600; padding: 2px 6px; }
+
+/* ------------------------------------------------------------- selection bars
+   Floating, navy, centred at the bottom. The one place a shadow belongs,
+   because it is genuinely above the page. */
+#q-bulk, #cbs-bulk {
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  z-index: 60;
+  background: var(--navy); color: #fff;
+  border: 0; border-radius: 8px;
+  padding: 9px 10px 9px 16px;
+  box-shadow: 0 4px 14px rgba(22,58,76,.25);
+  white-space: nowrap;
+}
+#q-bulk .text-\[\#133b49\], #cbs-bulk .text-\[\#133b49\] { color: #fff !important; }
+#q-bulk .text-base-content\/60, #cbs-bulk .text-base-content\/60 { color: #a9c0cc !important; }
+#q-bulk .btn-ghost, #cbs-bulk .btn-ghost { color: #cfdde4; }
+#q-bulk .btn-ghost:hover, #cbs-bulk .btn-ghost:hover { background: transparent; color: #fff; }
+
+/* ------------------------------------------------------------------ the agent
+   Agent messages are plain text under a small muted label — no bubble. Only the
+   operator's own messages get one, so the column reads as a transcript rather
+   than two rows of competing balloons. */
+.agent-label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.agent-bubble {
+  background: transparent; border: 0; border-radius: 0; padding: 0;
+  color: var(--ink); font-size: 13px; line-height: 1.5;
+}
+.agent-bubble--me {
+  background: var(--orange-tint); border: 0; color: var(--ink);
+  border-radius: 10px 10px 2px 10px; padding: 7px 11px; max-width: 80%;
+}
+.agent-chip {
+  border-radius: 5px; border: 1px solid var(--line);
+  color: var(--ink-2); background: #fff;
+  font-weight: 500; font-size: 12px; padding: 4px 9px;
+}
+.agent-chip:hover { background: #fff; border-color: var(--orange); color: var(--orange-ink); }
+#agent-rail { background: #fff; border-right: 1px solid var(--line); }
+
+/* -------------------------------------------------------------- modals, toasts */
+.pb-modal-overlay { background: rgba(22,58,76,.35); }
+.pb-modal-card {
+  border-radius: 8px; padding: 18px;
+  box-shadow: 0 10px 30px rgba(22,58,76,.18);
+  border: 1px solid var(--line);
+}
+.pb-modal-card .font-extrabold { font-size: 15px; color: var(--ink); }
+.pbw-panel { border: 1px solid var(--line); background: #fafbfb; border-radius: 6px; }
+.pbw-label { font-size: 12px; font-weight: 600; color: var(--ink); }
+.pbw-rule { background: var(--line); }
+.pb-toast-card {
+  border-radius: 8px; border: 1px solid var(--line);
+  box-shadow: 0 6px 20px rgba(22,58,76,.14);
+}
+
+/* ------------------------------------------------------------- status colours
+   Red is stale or failed, amber is aging, green is fresh, gray is never. They
+   mean only that — nothing decorative is allowed to borrow them. */
+.status-pill { border-radius: 6px; font-size: 12px; font-weight: 500; padding: 5px 10px; border: 1px solid var(--line); }
+.sp-live    { background: #f4faf5; border-color: #cbe3d1; } .sp-live .dot    { background: var(--green); }
+.sp-pending { background: #fdf6ee; border-color: #f0ddc2; } .sp-pending .dot { background: var(--amber); }
+.sp-manual  { background: #f4f8fa; border-color: #cddbe2; } .sp-manual .dot  { background: var(--navy); }
+.sp-off     { background: #f7f8f9; border-color: var(--line); color: var(--gray); } .sp-off .dot { background: var(--gray); }
+
+/* An empty cell is an en dash in grey. Not "N/A", not blank — blank reads as a
+   rendering fault, "N/A" reads as an answer. */
+.text-base-content\/40:empty::after { content: "–"; color: var(--gray); }
+
+/* --------------------------------------------------------------------- misc */
+.skeleton { background: var(--line-2); border-radius: 4px; }
+.loading { color: var(--ink-2); }
+.tabs-bordered .tab { border-bottom-width: 2px; font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.tabs-bordered .tab-active { color: var(--orange-ink); border-bottom-color: var(--orange); }
+.tabs-boxed { background: var(--line-2); border-radius: 6px; padding: 2px; }
+.tabs-boxed .tab { border-radius: 5px; font-weight: 500; color: var(--ink-2); }
+.tabs-boxed .tab-active { background: #fff; color: var(--ink); box-shadow: none; }
+.menu li > * { border-radius: 5px; font-size: 13px; }
+.dropdown-content { border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(22,58,76,.12); }
+.q-menu { border-radius: 8px; border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(22,58,76,.12); }
+.link-primary { color: var(--orange-ink); }
