@@ -14,12 +14,21 @@
 -- It is also the honest place for it: after this, "who does this blast reach" has one answer,
 -- and the reach counters, the queue's displayed numbers and the actual send all read it.
 --
--- THE FIRST VERSION OF THIS FILE TIMED OUT AND ROLLED BACK, which is why it is written this
--- way. is_suppressed() was SECURITY DEFINER, and Postgres cannot inline one of those — it
--- became a real function call per row, half a million of them across the three counter views,
--- each an EXISTS against 724,415 rows. Nothing applied, nothing was left half-done, and the
--- before/after check below is what caught it: zero drop, which the header already named as the
--- signature of a failed match.
+-- IT TOOK THREE ATTEMPTS TO MAKE THIS FAST ENOUGH TO APPLY, and the shape of the file is the
+-- record of that. Both earlier versions timed out and rolled back cleanly — nothing applied,
+-- nothing left half-done — and the before/after check is what caught the first one: zero drop
+-- on every market, which the header below had already named as the signature of a failed match
+-- rather than a successful no-op.
+--
+--   1st: is_suppressed() was SECURITY DEFINER. Postgres cannot inline one of those, so it became
+--        a real call per row — ~500,000 of them, each an EXISTS against 724,415 rows.
+--   2nd: the three counter views each normalised every value twice and ran their own NOT IN,
+--        and the file then called refresh_market_contacts() on top, redoing the lot.
+--   3rd: one shared view does the normalising and the suppression once; the counters are plain
+--        GROUP BYs over it, and nothing is rebuilt twice.
+--
+-- IF IT STILL TIMES OUT, split it: everything above the counter views is small and instant, and
+-- the three CREATE MATERIALIZED VIEW statements can be run one at a time.
 --
 -- MEASURED BEFORE APPLYING, against the live database:
 --
@@ -129,23 +138,28 @@ $function$;
 -- ---------------------------------------------------------------------------
 -- The counters have to agree with the send, or the screen lies.
 --
--- market_counts and market_segment_counts are what the operator reads before approving a blast.
+-- market_counts and the two beside it are what the operator reads before approving a blast.
 -- Leaving them counting suppressed people would put a number on screen that the send cannot
--- deliver — which is precisely the class of bug 073 was written to remove, arriving by a
--- different door.
+-- deliver — the same class of bug 073 removed, arriving by a different door.
 --
--- Same shape as 073/080, with the suppression test added. Rebuilt rather than refreshed because
--- the definition changes.
+-- ONE SHARED VIEW, THREE AGGREGATES. The second attempt at this file still timed out, and the
+-- reason was duplicated work rather than any single slow step:
+--
+--   * each of the three views normalised every phone and email TWICE — once to count it, once
+--     to test it against the list;
+--   * each ran its own NOT IN against 724,415 rows;
+--   * and the file then called refresh_market_contacts(), which rebuilt all three AGAIN on top
+--     of the CREATE that had just populated them. The whole job, twice.
+--
+-- v_sendable_contacts does the normalising and the suppression ONCE. The three views become
+-- plain GROUP BYs over it, which is what they always should have been, and the trailing refresh
+-- is gone because CREATE MATERIALIZED VIEW populates.
+--
+-- LEFT JOIN ... IS NULL rather than NOT IN: NOT IN against a subquery that can contain NULL
+-- silently returns no rows at all, and this is the last place to discover that. The anti-join
+-- also lets the planner hash the list once and probe 84,650 rows against it.
 -- ---------------------------------------------------------------------------
--- ANTI-JOINED ONCE, not tested per row. Building the suppressed sets as CTEs lets Postgres hash
--- 724,415 rows once and probe 84,650 against them — seconds. Calling is_suppressed() per row
--- instead is the same answer arrived at half a million times, which is what timed out.
---
--- The two sets are separated by channel here rather than inside the test: an entry scoped to
--- 'sms' must not remove anyone from the email count.
-drop materialized view if exists public.market_counts;
-
-create materialized view public.market_counts as
+create or replace view public.v_sendable_contacts as
   with sup_phone as (
     select distinct phone from public.do_not_contact
      where phone is not null and (channel is null or channel = 'sms')
@@ -155,79 +169,63 @@ create materialized view public.market_counts as
     select distinct email from public.do_not_contact
      where email is not null and (channel is null or channel = 'email')
        and (expires_at is null or expires_at > now())
+  ),
+  norm as (
+    select mc.code, mc.state_name,
+           coalesce(mc.segment, 'Other')           as segment,
+           coalesce(mc.primary_sport, '(unknown)') as sport,
+           public.sendable_phone(mc.phone) as p,
+           public.sendable_email(mc.email) as e
+    from public.market_contacts mc
   )
-  select mc.code,
-         max(mc.state_name) as name,
-         count(distinct public.sendable_phone(mc.phone))
-           filter (where public.sendable_phone(mc.phone) not in (select phone from sup_phone)) as phone_count,
-         count(distinct public.sendable_email(mc.email))
-           filter (where public.sendable_email(mc.email) not in (select email from sup_email)) as email_count
-  from public.market_contacts mc
-  group by mc.code;
+  select n.code, n.state_name, n.segment, n.sport,
+         -- NULL where suppressed, which is what makes count(distinct ...) skip them without a
+         -- second test: an unusable value and a suppressed one are both "nobody to send to".
+         case when sp.phone is null then n.p end as phone,
+         case when se.email is null then n.e end as email
+  from norm n
+  left join sup_phone sp on sp.phone = n.p
+  left join sup_email se on se.email = n.e;
 
+comment on view public.v_sendable_contacts is
+  'market_contacts normalised and with the do-not-contact list already applied (086). phone and '
+  'email are NULL where the contact is unusable OR suppressed. The three counter views aggregate '
+  'this so the normalising and the suppression happen once, not six times.';
+
+grant select on public.v_sendable_contacts to anon, authenticated, service_role;
+
+drop materialized view if exists public.market_counts;
+create materialized view public.market_counts as
+  select code, max(state_name) as name,
+         count(distinct phone) as phone_count,
+         count(distinct email) as email_count
+  from public.v_sendable_contacts group by code;
 create unique index if not exists market_counts_pk on public.market_counts (code);
 grant select on public.market_counts to anon, authenticated, service_role;
 
 drop materialized view if exists public.market_segment_counts;
-
 create materialized view public.market_segment_counts as
-  with sup_phone as (
-    select distinct phone from public.do_not_contact
-     where phone is not null and (channel is null or channel = 'sms')
-       and (expires_at is null or expires_at > now())
-  ),
-  sup_email as (
-    select distinct email from public.do_not_contact
-     where email is not null and (channel is null or channel = 'email')
-       and (expires_at is null or expires_at > now())
-  )
-  select mc.code,
-         coalesce(mc.segment, 'Other') as segment,
-         max(mc.state_name) as name,
-         count(distinct public.sendable_phone(mc.phone))
-           filter (where public.sendable_phone(mc.phone) not in (select phone from sup_phone)) as phone_count,
-         count(distinct public.sendable_email(mc.email))
-           filter (where public.sendable_email(mc.email) not in (select email from sup_email)) as email_count
-  from public.market_contacts mc
-  group by mc.code, coalesce(mc.segment, 'Other');
-
+  select code, segment, max(state_name) as name,
+         count(distinct phone) as phone_count,
+         count(distinct email) as email_count
+  from public.v_sendable_contacts group by code, segment;
 create unique index if not exists market_segment_counts_pk on public.market_segment_counts (code, segment);
 grant select on public.market_segment_counts to anon, authenticated, service_role;
 
 drop materialized view if exists public.market_sport_counts;
-
 create materialized view public.market_sport_counts as
-  with sup_phone as (
-    select distinct phone from public.do_not_contact
-     where phone is not null and (channel is null or channel = 'sms')
-       and (expires_at is null or expires_at > now())
-  ),
-  sup_email as (
-    select distinct email from public.do_not_contact
-     where email is not null and (channel is null or channel = 'email')
-       and (expires_at is null or expires_at > now())
-  )
-  select mc.code,
-         coalesce(mc.segment, 'Other')            as segment,
-         coalesce(mc.primary_sport, '(unknown)')  as sport,
-         count(distinct public.sendable_phone(mc.phone))
-           filter (where public.sendable_phone(mc.phone) not in (select phone from sup_phone)) as phone_count,
-         count(distinct public.sendable_email(mc.email))
-           filter (where public.sendable_email(mc.email) not in (select email from sup_email)) as email_count
-  from public.market_contacts mc
-  group by mc.code, coalesce(mc.segment, 'Other'), coalesce(mc.primary_sport, '(unknown)');
-
+  select code, segment, sport,
+         count(distinct phone) as phone_count,
+         count(distinct email) as email_count
+  from public.v_sendable_contacts group by code, segment, sport;
 create unique index if not exists market_sport_counts_pk on public.market_sport_counts (code, segment, sport);
 grant select on public.market_sport_counts to anon, authenticated, service_role;
 
 comment on materialized view public.market_counts is
-  'Distinct sendable reach per market, EXCLUDING anyone on the do-not-contact list (086). Counts '
-  'what a blast would actually deliver to, so the number on screen and the number that receives '
-  'the message are the same.';
+  'Distinct sendable reach per market, EXCLUDING anyone on the do-not-contact list (086). What a '
+  'blast would actually deliver to, so the number on screen and the number that receives the '
+  'message are the same.';
 
--- ---------------------------------------------------------------------------
--- Populate. refresh_market_contacts rebuilds all three and already carries its own 300s
--- statement timeout (082) — which matters more now, since each counted row runs a suppression
--- lookup against 724,415 rows.
--- ---------------------------------------------------------------------------
-select public.refresh_market_contacts();
+-- NO TRAILING refresh_market_contacts(). CREATE MATERIALIZED VIEW populates, and that call would
+-- rebuild market_contacts and re-refresh all three on top of work just done — which is a large
+-- part of why the earlier attempts ran out of time. The daily cron still calls it, unchanged.
