@@ -604,7 +604,16 @@
                 <span class="text-base-content/40">&#128269;</span>
                 <input id="cbs-search" type="text" class="grow w-64" placeholder="Search event or state…" autocomplete="off" />
               </label>
-              <span class="text-sm text-base-content/50 mr-auto" id="cbs-total">Loading&hellip;</span>
+              <!-- COUNTS FRESHNESS (migration 087). The companies / emails / phones figures are
+                   now a cached snapshot instead of a live recount, because that recount was 90%
+                   of the ~12 seconds this tab used to spend loading. A cached number is only
+                   dangerous when nobody can tell it is cached, so its age is on screen and the
+                   recount is one click away. -->
+              <div class="flex items-center gap-2 mr-auto">
+                <span class="text-sm text-base-content/50" id="cbs-total">Loading&hellip;</span>
+                <span class="text-xs text-base-content/50" id="cbs-counts-age" title="When the companies / emails / phones figures were last recounted."></span>
+                <button id="cbs-refresh-counts" class="btn btn-xs btn-outline" title="Recount companies, emails and phones from the contact data as it stands now. Takes about a second.">Refresh counts</button>
+              </div>
               <div class="flex items-center gap-2 flex-wrap justify-end">
                 <select aria-label="Filter offers by sport" id="cbs-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
                 <select aria-label="Filter offers by league" id="cbs-league" class="select select-bordered select-sm"><option value="">All leagues</option></select>
@@ -4430,7 +4439,35 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       //
       // The Range header is ignored on an RPC POST here, so the page is passed as query
       // params, which means going through fetch rather than sb.rpc().
+      // ONE REQUEST, NOT TEN. See migrations/087_cache_state_segment_summary.sql.
+      //
+      // This paged through event_targets in 1,000-row chunks because that is PostgREST's cap.
+      // The cap is real; the paging was still wrong. A set-returning function cannot have a
+      // LIMIT pushed inside it, so every page ran the WHOLE function and discarded the rest --
+      // the plan for `LIMIT 1000 OFFSET 9000` still reported rows=9640. Ten pages meant ten
+      // full runs: ~12 seconds of database time for an answer that costs one.
+      //
+      // event_targets_json() returns everything as a single row of JSON. PostgREST limits ROWS,
+      // and one row is under the cap however many events it carries. Measured after 087:
+      // event_targets itself went 1,185ms -> 80ms, so the whole load is ~12s -> ~0.1s.
       async function fetchAllEvents(){
+        const headers = { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}`, 'content-type': 'application/json' };
+        try {
+          const r = await fetch(`${cfg.SUPABASE_URL}/rest/v1/rpc/event_targets_json`, { method:'POST', headers, body:'{}' });
+          if(r.ok){
+            const body = await r.json();
+            if(Array.isArray(body)) return { data: body, error: null };
+          }
+        } catch(e){ /* fall through */ }
+        // A 404 here means 087 has not reached whatever database this build points at. The old
+        // path still works, just slowly, so degrade to it rather than emptying the tab.
+        return await fetchAllEventsPaged();
+      }
+
+      // The pre-087 path, kept as the fallback for the case above. Correct but expensive; if
+      // you are reading this because the tab is slow again, check that event_targets_json
+      // exists before looking anywhere else.
+      async function fetchAllEventsPaged(){
         const PAGE = 1000, MAX = 60000;      // MAX is a runaway guard, not an expected limit
         const url = `${cfg.SUPABASE_URL}/rest/v1/rpc/event_targets`;
         const headers = { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}`, 'content-type': 'application/json' };
@@ -4471,13 +4508,59 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return { data: all, error: null };
       }
 
+      // ------------------------------------------------- counts freshness (migration 087)
+      //
+      // The reach figures are a cached snapshot now. Showing their age is not decoration: it is
+      // the whole reason caching them is safe. An operator deciding whether to send to a market
+      // is entitled to know whether "1,844 emails" was counted a minute ago or last Tuesday.
+      function paintCountsAge(ts){
+        const box = el('cbs-counts-age');
+        if(!box) return;
+        if(!ts){ box.textContent = ''; box.removeAttribute('title'); return; }
+        const d = new Date(ts), ms = Date.now() - d.getTime();
+        const m = Math.round(ms/60000), h = Math.round(ms/3600000), dd = Math.round(ms/86400000);
+        const rel = m < 1 ? 'just now' : m < 60 ? m + 'm ago' : h < 48 ? h + 'h ago' : dd + 'd ago';
+        box.textContent = '· counts ' + rel;
+        // Absolute time in the tooltip, relative on the face — the house rule for every other
+        // timestamp in this app.
+        box.title = 'Companies / emails / phones last recounted ' + d.toLocaleString();
+        // Past a day the snapshot is old enough that it should catch the eye rather than blend
+        // into the meta row. Amber is the "needs attention" colour, not an error.
+        box.style.color = (ms > 86400000) ? 'var(--amber, #c97a14)' : '';
+      }
+
+      // The button. ~1s: it recounts the 192-cell grid, it does NOT rebuild the 90,000-row
+      // contact table -- that is /api/refresh-contacts and it takes up to a minute.
+      el('cbs-refresh-counts')?.addEventListener('click', async (e) => {
+        const btn = e.currentTarget;
+        const was = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Recounting…';
+        try {
+          const r = await fetch('/api/refresh-counts', { method:'POST', headers: await apiHeaders() });
+          const d = await r.json().catch(() => ({}));
+          if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+          paintCountsAge(d.refreshed_at);
+          // Reload so the table shows the numbers that were just recounted. Without this the
+          // label would claim "just now" over the figures fetched before the refresh.
+          await load();
+          window.__pbToast?.({ type:'ok', title:'Counts recounted',
+            lines:[ `${Number(d.companies||0).toLocaleString()} companies · ${Number(d.emails||0).toLocaleString()} emails · ${Number(d.phones||0).toLocaleString()} phones` ] });
+        } catch(err){
+          window.__pbToast?.({ type:'err', title:'Could not recount',
+            lines:[ String((err && err.message) || err) ] });
+        } finally { btn.disabled = false; btn.textContent = was; }
+      });
+
       // Exposed for the price editor, which sits outside this module (it is shared with the
       // Queue) and has to re-read the table after a save — the price it wrote is on
       // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
         if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
-        const [ev, rg, q] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue') ]);
+        // counts_refreshed_at is a single timestamp and rides along in the same round trip,
+        // so knowing how old the figures are costs nothing.
+        const [ev, rg, q, ca] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue'), sb.rpc('counts_refreshed_at') ]);
+        paintCountsAge(ca && !ca.error ? ca.data : null);
         if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
