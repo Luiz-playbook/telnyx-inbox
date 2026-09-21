@@ -174,6 +174,20 @@ export default async function handler(req, res) {
   const tailor = body.tailor !== false;                 // default on; {tailor:false} = fill only
   const overwrite = body.overwrite === true;            // default: never clobber existing copy
 
+  // CUSTOM COPY — the Follow up tab's editor. When present it replaces the TEMPLATE BODY as
+  // stage 1's input and nothing else changes: the operator's wording still gets token
+  // substitution, the no-leftover-token rule and the SMS length report. Editing the words must
+  // not also opt out of the checks that stop a stray [GAME] going out literally to a whole
+  // market.
+  //
+  // One row at a time. "Here is the exact copy for this blast" means nothing across a batch,
+  // and silently applying one market's wording to five is the worst available reading of it.
+  const custom = (body.custom && typeof body.custom === 'object') ? body.custom : null;
+  if (custom && (!ids || ids.length !== 1)) {
+    res.status(400).json({ error: 'custom copy applies to exactly one row — pass a single id' });
+    return;
+  }
+
   // AN EXPLICITLY CHOSEN TEMPLATE, overriding pickVariant (Vhea, 2026-09-17).
   //
   // pickVariant guesses from the fixture's name and from whether the market has been blasted
@@ -234,17 +248,26 @@ export default async function handler(req, res) {
       }
       const variant = forcedVariant || pickVariant(r, blasted.has(String(r.state_code || '').toUpperCase()));
       const tEmail = pick(variant, 'email'), tSms = pick(variant, 'sms');
-      if (!tEmail && !tSms) { errors.push({ id: r.id, title: r.title, error: `no template for variant ${variant}` }); continue; }
+      // Hand-written copy stands on its own — a missing template row is only fatal when the
+      // template is what we were going to send.
+      const cEmail = (custom && typeof custom.email === 'string' && custom.email.trim()) ? custom.email : null;
+      const cSms   = (custom && typeof custom.sms   === 'string' && custom.sms.trim())   ? custom.sms   : null;
+      if (!tEmail && !tSms && !cEmail && !cSms) { errors.push({ id: r.id, title: r.title, error: `no template for variant ${variant}` }); continue; }
 
       // Stage 1 — the deterministic fill. This is what gets written unless stage 2 beats it.
+      // Custom copy substitutes for the template body per channel, then goes through exactly
+      // the same fill as a template would.
       const base = {
-        email: fillTokens(tEmail ? tEmail.body : (tSms ? tSms.body : ''), r),
-        sms: fillTokens(tSms ? tSms.body : (tEmail ? tEmail.body : ''), r),
+        email: fillTokens(cEmail || (tEmail ? tEmail.body : (tSms ? tSms.body : '')), r),
+        sms: fillTokens(cSms || (tSms ? tSms.body : (tEmail ? tEmail.body : '')), r),
       };
-      // The template itself is the only thing that can leave a token behind here, so this
-      // catches a bad template row rather than a bad model — worth failing loudly on.
+      // Either a bad template row or hand-written copy can leave a token here; never the
+      // model, which has not run yet. Both are worth failing loudly on, because the thing
+      // being prevented is a literal "[GAME]" arriving in every inbox in the market.
       if (LEFTOVER.test(base.email) || LEFTOVER.test(base.sms)) {
-        errors.push({ id: r.id, title: r.title, error: `template ${variant} left an unresolved token — fix the template row` });
+        errors.push({ id: r.id, title: r.title, error: (cEmail || cSms)
+          ? 'your wording still has a [TOKEN] in it. Only [GAME], [DATE] and [SPORT] get filled in — anything else would be sent to every recipient exactly as written'
+          : `template ${variant} left an unresolved token — fix the template row` });
         continue;
       }
 
@@ -264,7 +287,10 @@ export default async function handler(req, res) {
 
       // Stage 2 — tailor. Every failure path lands on `base`, never on an error.
       let copy = base, tailored = false;
-      if (tailor && (target.ok || anthKey)) {
+      // NEVER TAILOR WHAT A HUMAN WROTE. The model's job is fitting a generic template to a
+      // market. Pointed at copy someone typed on purpose it is an unrequested rewrite, and the
+      // operator would have no way to tell it happened.
+      if (tailor && !cEmail && !cSms && (target.ok || anthKey)) {
         const user = [
           `## This blast`, `- Market: ${r.state_name || r.state_code || 'unspecified'}`,
           `- Game: ${gameLabel(r)}`, `- Date: ${prettyDate(r.event_date) || 'unspecified'}`,
@@ -291,8 +317,11 @@ export default async function handler(req, res) {
       // subject in until migration 044. Only the email template carries one; a row with no
       // email template keeps whatever it had, and queue-tick still falls back to the title.
       let subject = null;
-      if (tEmail && tEmail.subject) {
-        const filled = fillTokens(tEmail.subject, r);
+      const subjSrc = (custom && typeof custom.subject === 'string' && custom.subject.trim())
+        ? custom.subject
+        : (tEmail && tEmail.subject ? tEmail.subject : null);
+      if (subjSrc) {
+        const filled = fillTokens(subjSrc, r);
         if (!LEFTOVER.test(filled) && filled.trim()) {
           subject = filled.trim();
           const s = await rpc('queue_set_email_subject', { p_id: r.id, p_subject: subject });

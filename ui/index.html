@@ -10139,9 +10139,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           try {
             const dr = await fetch('/api/queue-draft', {
               method:'POST', headers: await apiHeaders(),
-              body: JSON.stringify({ ids: [made.id], variant: ans.variant }),
+              // ans.custom is the operator's own wording, present only when they edited it.
+              // The endpoint uses it in place of the template body and then fills, checks and
+              // writes it exactly as it would a template -- and skips the model tailoring,
+              // because rewriting copy someone typed on purpose is not what was asked for.
+              body: JSON.stringify({ ids: [made.id], variant: ans.variant, custom: ans.custom || undefined }),
             });
             drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+            // A 200 with an entry in `errors` is not a success. The commonest cause is a
+            // [TOKEN] left in hand-written copy, which is refused rather than sent literally,
+            // and saying "drafted" over that would be a lie the operator acts on.
+            if(drafted && !drafted.error && (drafted.errors || []).length){
+              drafted = { error: drafted.errors[0].error || 'the copy was refused' };
+            }
           } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
 
           if(ans.status === 'confirmed'){
@@ -10152,8 +10162,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             lines:[ (g.opponent ? g.opponent + ' at ' + g.team : g.team) + ' · ' + ans.segment,
                     'Goes ' + ans.label + ' · ' + (ans.status === 'confirmed' ? 'confirmed' : 'pending review') + '.',
                     drafted && !drafted.error
-                      ? 'Copy drafted from Cole’s "' + ans.variant + '" template.'
-                      : 'Queued, but the copy was not drafted' + (drafted ? ': ' + (drafted.error || '') : '') + '. Write it in the Queue.',
+                      ? (ans.custom
+                          ? 'Your wording was saved as written.'
+                          : 'Copy drafted from Cole’s "' + ans.variant + '" template.')
+                      : 'Queued, but the copy was not saved' + (drafted ? ': ' + (drafted.error || '') : '') + '. Write it in the Queue.',
                     'Find it on the Queue tab.' ] });
         } catch(e){
           toast({ type:'err', title:'Could not queue the follow-up', lines:[ (e && e.message) || String(e) ] });
@@ -10246,18 +10258,99 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
            </div>
            <div class="text-xs text-base-content/50 mt-2">It appears on the Queue tab. Nothing sends until it is confirmed &mdash; and sending is paused at the moment.</div>`;
 
+        // THE COPY IS EDITABLE HERE. It used to be a read-only preview truncated at 420
+        // characters, so the only way to change the wording of a single follow-up was to queue
+        // it and edit it on the Queue tab afterwards -- or to edit the template, which changes
+        // it for every market. The words for THIS blast are editable in place now.
+        //
+        // TOKENS STAY VISIBLE, deliberately, exactly as the read-only version showed them.
+        // [GAME] and [DATE] are substituted by api/queue-draft from the game picked above, so
+        // leaving them unfilled is honest about what is a placeholder. Whatever is typed here
+        // goes through the same fill, the same no-leftover-token rule and the same SMS length
+        // check as a stored template: editing the words does not opt out of any of it.
         const vSel = host.querySelector('[data-variant]');
         const prev = host.querySelector('[data-tplpreview]');
-        const paintTpl = () => {
-          const rows = FU_TEMPLATES.filter(t => t.variant === vSel.value);
-          prev.innerHTML = rows.length ? rows.map(t => `
-            <div class="border border-base-300 rounded-md bg-base-200/30 p-2 mb-1.5">
-              <div class="text-[10px] font-bold uppercase tracking-wide text-base-content/40">${esc(t.channel)}${t.subject ? ' &middot; ' + esc(t.subject) : ''}</div>
-              <div class="text-xs text-base-content/70 whitespace-pre-line mt-1">${esc(String(t.body||'').slice(0, 420))}${String(t.body||'').length > 420 ? '…' : ''}</div>
-            </div>`).join('')
-            : '<div class="text-xs text-[#c94d07]">No template stored for this one — the copy would be empty.</div>';
+
+        const tplFor = v => {
+          const rows = FU_TEMPLATES.filter(t => t.variant === v);
+          const em = rows.find(t => t.channel === 'email'), sm = rows.find(t => t.channel === 'sms');
+          return { subject: (em && em.subject) || '', email: (em && em.body) || '',
+                   sms: (sm && sm.body) || '', any: rows.length > 0 };
         };
-        vSel.addEventListener('change', paintTpl); paintTpl();
+
+        prev.innerHTML =
+          `<div class="border border-base-300 rounded-md bg-base-200/30 p-2">
+             <div data-fu-notice class="hidden text-xs mb-2 rounded px-2 py-1.5" style="background:#fff8ec;border:1px solid #f0d9b5;color:#8a5a00;"></div>
+             <label class="text-[10px] font-bold uppercase tracking-wide text-base-content/40">Email &middot; subject</label>
+             <input data-fu-subject aria-label="Follow-up email subject" class="input input-bordered input-sm w-full mb-2 text-xs">
+             <label class="text-[10px] font-bold uppercase tracking-wide text-base-content/40">Email &middot; body</label>
+             <textarea data-fu-email aria-label="Follow-up email body" rows="9" class="textarea textarea-bordered w-full text-xs leading-relaxed mb-2"></textarea>
+             <label class="text-[10px] font-bold uppercase tracking-wide text-base-content/40">SMS</label>
+             <textarea data-fu-sms aria-label="Follow-up SMS body" rows="4" class="textarea textarea-bordered w-full text-xs leading-relaxed"></textarea>
+             <div data-fu-smscount class="text-xs text-base-content/50 mt-1"></div>
+             <div class="flex items-center gap-2 mt-2">
+               <span data-fu-state class="text-xs text-base-content/50"></span>
+               <button type="button" data-fu-reset class="btn btn-ghost btn-xs ml-auto">Reset to template</button>
+             </div>
+           </div>`;
+
+        const fSub = prev.querySelector('[data-fu-subject]'),
+              fEm  = prev.querySelector('[data-fu-email]'),
+              fSms = prev.querySelector('[data-fu-sms]'),
+              fCnt = prev.querySelector('[data-fu-smscount]'),
+              fSt  = prev.querySelector('[data-fu-state]'),
+              fNote = prev.querySelector('[data-fu-notice]');
+
+        // What the loaded template says. "Has this been edited" is a comparison against that,
+        // not a flag, so undoing an edit by hand correctly reads as unedited again.
+        let loaded = { subject: '', email: '', sms: '' };
+        const readNow = () => ({ subject: fSub.value, email: fEm.value, sms: fSms.value });
+        const isDirty = () => {
+          const n = readNow();
+          return n.subject !== loaded.subject || n.email !== loaded.email || n.sms !== loaded.sms;
+        };
+
+        const paintState = () => {
+          const i = smsInfo(fSms.value || '');
+          // Two segments is the billing ceiling (Marx, 2026-08-03). Counted in credits rather
+          // than characters because one emoji re-encodes the message and halves the budget.
+          const over = i.segments > 2;
+          fCnt.textContent = smsCountLabel(i)
+            + (over ? '  \u26a0 over the 2-credit cap \u2014 this bills ' + i.segments + ' credits per recipient' : '');
+          fCnt.className = 'text-xs mt-1 ' + (over ? 'text-[#c94d07] font-semibold' : 'text-base-content/50');
+          const dirty = isDirty();
+          fSt.textContent = dirty
+            ? 'Your wording \u2014 sends exactly as written, once [GAME] and [DATE] are filled in.'
+            : 'Cole\u2019s ' + (LABELS[vSel.value] || vSel.value) + ' template, unchanged.';
+          fSt.style.color = dirty ? 'var(--orange-ink, #b8460a)' : '';
+        };
+
+        const loadTemplate = (v) => {
+          const t = tplFor(v);
+          loaded = { subject: t.subject, email: t.email, sms: t.sms };
+          fSub.value = t.subject; fEm.value = t.email; fSms.value = t.sms;
+          fNote.classList.add('hidden');
+          if(!t.any){
+            fNote.textContent = 'No template stored for this one \u2014 write the copy yourself, or the blast would go out empty.';
+            fNote.classList.remove('hidden');
+          }
+          paintState();
+        };
+
+        // Changing the template must not silently throw away something the operator typed, so
+        // when the copy has been edited the new wording is OFFERED rather than applied.
+        vSel.addEventListener('change', () => {
+          if(!isDirty()){ loadTemplate(vSel.value); return; }
+          fNote.innerHTML = 'You have edited this copy, so the <b>' + esc(LABELS[vSel.value] || vSel.value)
+            + '</b> wording was not loaded over it. <button type="button" data-fu-take class="underline font-semibold">Use it anyway</button>';
+          fNote.classList.remove('hidden');
+          fNote.querySelector('[data-fu-take]').addEventListener('click', () => loadTemplate(vSel.value));
+        });
+        prev.querySelector('[data-fu-reset]').addEventListener('click', () => loadTemplate(vSel.value));
+        fSub.addEventListener('input', paintState);
+        fEm.addEventListener('input', paintState);
+        fSms.addEventListener('input', paintState);
+        loadTemplate(vSel.value);
 
         host.querySelector('[data-queuefu]').addEventListener('click', async ev => {
           const btn = ev.currentTarget;
@@ -10265,11 +10358,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const parts = v.split('-').map(Number);
           const tv = (host.querySelector('[data-time]').value || '').match(/^(\d{1,2}):(\d{2})$/);
           const hh = tv ? Math.min(23, Number(tv[1])) : 10, mi = tv ? Math.min(59, Number(tv[2])) : 0;
+          // An emptied box would otherwise fall back to the template on the server, which is
+          // safe but silent -- the operator would be told their wording was saved while the
+          // template went out. Refuse instead, and say which one is blank.
+          if(isDirty()){
+            const n = readNow(), blank = [];
+            if(!n.email.trim()) blank.push('email');
+            if(!n.sms.trim()) blank.push('SMS');
+            if(blank.length){
+              toast({ type:'err', title:'Nothing to send on ' + blank.join(' or '),
+                lines:[ 'Write something in the ' + blank.join(' and ') + ' box, or press "Reset to template" to put Cole\u2019s wording back.' ] });
+              return;
+            }
+          }
           btn.disabled = true;
           await queueHistoryFollowUp(r, games, {
             eventId: host.querySelector('[data-game]').value,
             segment: host.querySelector('[data-seg]').value,
             variant: vSel.value,
+            // Only sent when it actually differs from the template. Passing it unconditionally
+            // would make every follow-up "custom copy" and switch off the tailoring pass for
+            // people who never touched the box.
+            custom: isDirty() ? readNow() : null,
             status:  host.querySelector('[data-status]').value,
             whenIso: new Date(etInstant(parts[0], parts[1], parts[2], hh, mi)).toISOString(),
             label: new Date(parts[0], parts[1]-1, parts[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}) + ' at ' + pad(hh) + ':' + pad(mi) + ' ET',
