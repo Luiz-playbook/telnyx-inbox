@@ -153,10 +153,12 @@ for (const file of files) {
     continue;
   }
 
-  // Batched: one statement per 500 rows. A single call with tens of thousands of entries would
-  // sit on one transaction long enough to meet the statement timeout, and the failure would be
-  // "nothing imported" rather than "most of it did".
-  const SIZE = 500;
+  // Batched. suppress_contacts is set-based, so a batch costs two statements whatever its size
+  // — the limit is the payload and the statement timeout, not the row count. 5,000 keeps the
+  // 496k-row list to ~100 round trips instead of a thousand, at under a megabyte each.
+  //
+  // Still batched rather than sent whole: one failed call should lose one batch, not the import.
+  const SIZE = 5000;
   let ins = 0, upd = 0, skip = 0, error = null;
   for (let i = 0; i < rows.length; i += SIZE) {
     const batch = rows.slice(i, i + SIZE);

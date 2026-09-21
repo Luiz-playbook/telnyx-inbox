@@ -108,93 +108,93 @@ grant all    on public.do_not_contact to service_role;
 -- normalise differently from the send path by accident — there is one implementation of "what
 -- this phone number really is" and everything goes through it.
 --
--- Upserts on the same keys as the indexes above. Re-running a file is a no-op; a corrected file
--- updates in place. Deliberately never deletes: removing someone from this list is not something
--- a bulk import should be able to do as a side effect of a smaller sheet.
+-- SET-BASED, NOT ROW-BY-ROW, and that is not premature optimisation. The first list to arrive is
+-- 496,063 rows; a plpgsql loop doing a SELECT and an INSERT per identifier would be roughly a
+-- million statements, which is hours and a statement timeout somewhere in the middle. Two
+-- INSERT ... ON CONFLICT statements per batch is the same work in seconds.
+--
+-- DEDUPED WITHIN THE BATCH by the DISTINCT ON. Postgres refuses ON CONFLICT DO UPDATE if one
+-- statement would touch the same row twice — "cannot affect row a second time" — and an export
+-- of half a million contacts certainly repeats an address. Without this the whole batch fails,
+-- not the duplicate row.
+--
+-- Upserts; deliberately never deletes. Removing someone from this list should not be a side
+-- effect of importing a smaller sheet.
 -- ---------------------------------------------------------------------------
 create or replace function public.suppress_contacts(p_rows jsonb, p_source_file text default null)
 returns table (inserted int, updated int, skipped int)
-language plpgsql
+language sql
 volatile
 security definer
 set search_path to 'public'
 as $function$
-declare
-  r        jsonb;
-  v_email  text;
-  v_phone  text;
-  v_chan   text;
-  v_ins    int := 0;
-  v_upd    int := 0;
-  v_skip   int := 0;
-  v_was    boolean;
-begin
-  for r in select value from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) as value
-  loop
+  with src as (
     -- The same normalisation the send uses. sendable_* return NULL for anything unusable, so a
-    -- malformed address or a number that cannot be dialled is dropped here rather than stored as
-    -- an entry that can never match.
-    v_email := public.sendable_email(r->>'email');
-    v_phone := public.sendable_phone(r->>'phone');
-    v_chan  := nullif(btrim(lower(coalesce(r->>'channel', ''))), '');
-    if v_chan is not null and v_chan not in ('email','sms') then v_chan := null; end if;
-
-    if v_email is null and v_phone is null then
-      v_skip := v_skip + 1;
-      continue;
-    end if;
-
-    -- One row per identifier: a record carrying both an email and a phone becomes two entries,
-    -- because the send checks one or the other and a combined row would only ever match half the
-    -- time. They keep the same name, organisation and reason, so the context is not lost.
-    if v_email is not null then
-      select true into v_was from public.do_not_contact
-       where email = v_email and coalesce(channel,'all') = coalesce(v_chan,'all') limit 1;
-      insert into public.do_not_contact (email, phone, full_name, organization, reason, channel, source, source_file)
-      values (v_email, null,
-              nullif(btrim(coalesce(r->>'full_name','')), ''),
-              nullif(btrim(coalesce(r->>'organization','')), ''),
-              nullif(btrim(coalesce(r->>'reason','')), ''),
-              v_chan, nullif(btrim(coalesce(r->>'source','')), ''), p_source_file)
-      on conflict (email, coalesce(channel,'all')) where email is not null
-      do update set full_name    = coalesce(excluded.full_name,    do_not_contact.full_name),
-                    organization = coalesce(excluded.organization, do_not_contact.organization),
-                    reason       = coalesce(excluded.reason,       do_not_contact.reason),
-                    source_file  = excluded.source_file,
-                    updated_at   = now();
-      if coalesce(v_was,false) then v_upd := v_upd + 1; else v_ins := v_ins + 1; end if;
-      v_was := null;
-    end if;
-
-    if v_phone is not null then
-      select true into v_was from public.do_not_contact
-       where phone = v_phone and coalesce(channel,'all') = coalesce(v_chan,'all') limit 1;
-      insert into public.do_not_contact (email, phone, full_name, organization, reason, channel, source, source_file)
-      values (null, v_phone,
-              nullif(btrim(coalesce(r->>'full_name','')), ''),
-              nullif(btrim(coalesce(r->>'organization','')), ''),
-              nullif(btrim(coalesce(r->>'reason','')), ''),
-              v_chan, nullif(btrim(coalesce(r->>'source','')), ''), p_source_file)
-      on conflict (phone, coalesce(channel,'all')) where phone is not null
-      do update set full_name    = coalesce(excluded.full_name,    do_not_contact.full_name),
-                    organization = coalesce(excluded.organization, do_not_contact.organization),
-                    reason       = coalesce(excluded.reason,       do_not_contact.reason),
-                    source_file  = excluded.source_file,
-                    updated_at   = now();
-      if coalesce(v_was,false) then v_upd := v_upd + 1; else v_ins := v_ins + 1; end if;
-      v_was := null;
-    end if;
-  end loop;
-
-  return query select v_ins, v_upd, v_skip;
-end;
+    -- malformed address or an undiallable number is dropped here rather than stored as an entry
+    -- that can never match anything.
+    select public.sendable_email(x->>'email')                       as email,
+           public.sendable_phone(x->>'phone')                       as phone,
+           nullif(btrim(coalesce(x->>'full_name','')), '')          as full_name,
+           nullif(btrim(coalesce(x->>'organization','')), '')       as organization,
+           nullif(btrim(coalesce(x->>'reason','')), '')             as reason,
+           case when lower(btrim(coalesce(x->>'channel',''))) in ('email','sms')
+                then lower(btrim(x->>'channel')) end                as channel,
+           nullif(btrim(coalesce(x->>'source','')), '')             as source
+    from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) x
+  ),
+  -- One row per identifier. A record carrying both an email and a phone becomes TWO entries,
+  -- because the send checks one or the other and a combined row would only ever match half the
+  -- time. Name, organisation and reason ride along on both, so the context is not lost.
+  em as (
+    select distinct on (email, coalesce(channel,'all'))
+           email, full_name, organization, reason, channel, source
+    from src where email is not null
+    order by email, coalesce(channel,'all')
+  ),
+  ph as (
+    select distinct on (phone, coalesce(channel,'all'))
+           phone, full_name, organization, reason, channel, source
+    from src where phone is not null
+    order by phone, coalesce(channel,'all')
+  ),
+  -- xmax = 0 is true only for a freshly inserted row, which is how an upsert tells "added" from
+  -- "already knew about this one". Worth having: on a re-import the difference between 0 added
+  -- and 400,000 added is the difference between "ran twice" and "something is wrong".
+  ie as (
+    insert into public.do_not_contact (email, full_name, organization, reason, channel, source, source_file)
+    select email, full_name, organization, reason, channel, source, p_source_file from em
+    on conflict (email, coalesce(channel,'all')) where email is not null
+    do update set full_name    = coalesce(excluded.full_name,    do_not_contact.full_name),
+                  organization = coalesce(excluded.organization, do_not_contact.organization),
+                  reason       = coalesce(excluded.reason,       do_not_contact.reason),
+                  source_file  = excluded.source_file,
+                  updated_at   = now()
+    returning (xmax = 0) as was_new
+  ),
+  ip as (
+    insert into public.do_not_contact (phone, full_name, organization, reason, channel, source, source_file)
+    select phone, full_name, organization, reason, channel, source, p_source_file from ph
+    on conflict (phone, coalesce(channel,'all')) where phone is not null
+    do update set full_name    = coalesce(excluded.full_name,    do_not_contact.full_name),
+                  organization = coalesce(excluded.organization, do_not_contact.organization),
+                  reason       = coalesce(excluded.reason,       do_not_contact.reason),
+                  source_file  = excluded.source_file,
+                  updated_at   = now()
+    returning (xmax = 0) as was_new
+  )
+  select (select count(*) from ie where was_new)::int
+         + (select count(*) from ip where was_new)::int,
+         (select count(*) from ie where not was_new)::int
+         + (select count(*) from ip where not was_new)::int,
+         -- Rows that identified nobody once cleaned: no usable address and no dialable number.
+         (select count(*) from src where email is null and phone is null)::int;
 $function$;
 
 comment on function public.suppress_contacts(jsonb, text) is
   'Bulk-load do-not-contact records. Normalises inside the database through sendable_email/'
-  'sendable_phone so an importer cannot normalise differently from the send path. Upserts; never '
-  'deletes — removing someone from this list should not be a side effect of importing a smaller '
-  'sheet. Migration 085.';
+  'sendable_phone so an importer cannot normalise differently from the send path. Set-based and '
+  'deduped per batch — the first list is half a million rows. Upserts; never deletes, because '
+  'removing someone should not be a side effect of importing a smaller sheet. Migration 085.';
 
 revoke execute on function public.suppress_contacts(jsonb, text) from public, anon;
 grant  execute on function public.suppress_contacts(jsonb, text) to service_role;
