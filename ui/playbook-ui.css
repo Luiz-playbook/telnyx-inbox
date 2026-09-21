@@ -38,6 +38,39 @@
   --green:#2b8a3e;
   --gray:#98a2aa;
 
+  /* SEMANTIC LAYER, over the raw palette above. Brand token -> semantic token ->
+     component, so a rule says what a colour is FOR rather than what it is:
+     --color-border, not "that grey". Retheming then means editing the eight
+     lines above and nothing else, and a reviewer can see when a component has
+     reached past its own meaning — a border painted with --red is visible as a
+     mistake in a way that #c8332b is not.
+
+     The names follow the convention the Tailwind design-system skill uses, so
+     they read the same as they would in a project that had a build step. */
+  --color-surface:            var(--panel);
+  --color-surface-sunken:     #fafbfb;
+  --color-foreground:         var(--ink);
+  --color-foreground-muted:   var(--ink-2);
+  --color-foreground-subtle:  var(--muted);
+  --color-border:             var(--line);
+  --color-border-subtle:      var(--line-2);
+  --color-border-strong:      #cfd4d8;
+  --color-primary:            var(--orange);
+  --color-primary-hover:      #d4500a;
+  --color-primary-ink:        var(--orange-ink);
+  --color-primary-tint:       var(--orange-tint);
+  --color-accent:             var(--navy);
+  --color-danger:             var(--red);
+  --color-warning:            var(--amber);
+  --color-success:            var(--green);
+  --color-neutral:            var(--gray);
+
+  /* Focus. Navy on light ground, a light ring where the ground is navy. */
+  --color-ring:               var(--navy);
+  --color-ring-invert:        #a9c0cc;
+  --ring-width:               2px;
+  --ring-offset:              2px;
+
   /* daisyUI's own theme, moved onto the same palette. Components this file does
      not name explicitly — a dropdown, a tooltip — then land in the right colours
      instead of the old teal. oklch because that is what daisyUI 4 expects. */
@@ -126,7 +159,7 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
   padding: 6px 11px;
   box-shadow: none;
 }
-.btn:hover { background: #fff; border-color: #cfd4d8; }
+.btn:hover { background: #fff; border-color: var(--color-border-strong); }
 .btn-sm { padding: 5px 10px; font-size: 12.5px; }
 .btn-xs { padding: 3px 8px; font-size: 12px; }
 .btn-square, .btn-circle { padding: 0; }
@@ -135,13 +168,13 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 .btn-primary, .btn-warning {
   background: var(--orange); border-color: var(--orange); color: #fff; font-weight: 600;
 }
-.btn-primary:hover, .btn-warning:hover { background: #d4500a; border-color: #d4500a; color: #fff; }
+.btn-primary:hover, .btn-warning:hover { background: var(--color-primary-hover); border-color: var(--color-primary-hover); color: #fff; }
 
 .btn-ghost { border-color: transparent; background: transparent; color: var(--ink-2); }
 .btn-ghost:hover { background: var(--line-2); border-color: transparent; color: var(--ink); }
 
 .btn-outline { background: #fff; color: var(--ink); border-color: var(--line); }
-.btn-outline:hover { background: #fff; border-color: #cfd4d8; color: var(--ink); }
+.btn-outline:hover { background: #fff; border-color: var(--color-border-strong); color: var(--color-foreground); }
 .btn-outline.btn-error, .btn-error { background: #fff; color: var(--red); border-color: #e7c4c1; }
 .btn-outline.btn-error:hover, .btn-error:hover { background: #fdf4f3; border-color: var(--red); color: var(--red); }
 .btn-outline.btn-success, .btn-success { background: #fff; color: var(--green); border-color: #cbe3d1; }
@@ -164,9 +197,11 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 }
 .input-sm, .select-sm, .textarea-sm { padding: 5px 9px; font-size: 12.5px; }
 .input-xs, .select-xs { padding: 3px 7px; font-size: 12px; }
+/* A field shows its focus however it was reached — you are about to type into
+   it, and the border is the cursor's context. */
 .input:focus, .select:focus, .textarea:focus,
 .input:focus-within, .select:focus-within {
-  outline: 0; border-color: var(--navy); box-shadow: 0 0 0 1px var(--navy);
+  outline: 0; border-color: var(--color-ring); box-shadow: 0 0 0 1px var(--color-ring);
 }
 .input-bordered, .select-bordered, .textarea-bordered { border-color: var(--line); }
 .checkbox {
@@ -177,6 +212,60 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 .join .join-item { border-radius: 0; }
 .join > :first-child.join-item { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
 .join > :last-child.join-item  { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+
+/* ------------------------------------------------------------- keyboard focus
+   THIS WAS MISSING ENTIRELY and it is the one accessibility hole in the restyle:
+   no button, tab, row or menu item had a focus style, so tabbing through the
+   app moved an invisible cursor. In a tool built around scanning dense tables
+   and working through multi-field dialogs, that is not a small omission.
+   daisyUI's own focus ring was overridden by the button rules above and nothing
+   replaced it.
+
+   :focus-visible, not :focus — the browser decides, and it means a ring appears
+   when you tab and not when you click. A ring on every mouse click is noise, and
+   noise is what gets a focus style deleted again six months later.
+
+   outline + outline-offset rather than a box-shadow: outline does not
+   participate in layout, so a ring on a 42px table row cannot shift the row.
+
+   @supports so a browser without :focus-visible keeps the plain :focus ring
+   rather than losing focus styling altogether — degrading to noisy beats
+   degrading to invisible. */
+@supports selector(:focus-visible) {
+  .btn:focus-visible,
+  .tab:focus-visible,
+  .checkbox:focus-visible,
+  .agent-chip:focus-visible,
+  .pb-tabs a:focus-visible,
+  .link-primary:focus-visible,
+  [role="tab"]:focus-visible,
+  [data-qmenu]:focus-visible,
+  summary:focus-visible {
+    outline: var(--ring-width) solid var(--color-ring);
+    outline-offset: var(--ring-offset);
+    border-radius: 6px;
+  }
+  /* On the navy bars a navy ring is invisible. */
+  .pb-topbar .btn:focus-visible,
+  #q-bulk .btn:focus-visible,
+  #cbs-bulk .btn:focus-visible {
+    outline-color: var(--color-ring-invert);
+  }
+  /* Rows are reached by click, not by tab, and a ring inside a scrolling table
+     reads as a selection that is not there. */
+  .camp-row:focus-visible { outline: none; }
+  .btn:focus:not(:focus-visible) { outline: none; }
+}
+
+/* ------------------------------------------------------------- disabled state
+   One rule, so a disabled control cannot be styled into looking clickable by a
+   variant that forgot. pointer-events:none also stops the hover colour firing
+   under the cursor, which is what makes a dead button feel alive. */
+.btn[disabled], .btn-disabled, .input[disabled], .select[disabled], .textarea[disabled] {
+  pointer-events: none;
+  opacity: .5;
+  box-shadow: none;
+}
 
 /* --------------------------------------------------------------------- tables
    42px rows, 11px uppercase headers, hairline separators. The header is sticky
