@@ -14,6 +14,13 @@
 -- It is also the honest place for it: after this, "who does this blast reach" has one answer,
 -- and the reach counters, the queue's displayed numbers and the actual send all read it.
 --
+-- THE FIRST VERSION OF THIS FILE TIMED OUT AND ROLLED BACK, which is why it is written this
+-- way. is_suppressed() was SECURITY DEFINER, and Postgres cannot inline one of those — it
+-- became a real function call per row, half a million of them across the three counter views,
+-- each an EXISTS against 724,415 rows. Nothing applied, nothing was left half-done, and the
+-- before/after check below is what caught it: zero drop, which the header already named as the
+-- signature of a failed match.
+--
 -- MEASURED BEFORE APPLYING, against the live database:
 --
 --     market   phones  emails        expected suppressed: ~12.5% of phones, ~10.0% of emails
@@ -47,14 +54,22 @@
 --
 -- CHANNEL: null on the list means every channel. A row scoped to 'sms' does not suppress email.
 --
--- STABLE, not VOLATILE, so the planner may cache it within a statement — this is called once per
--- candidate row across tens of thousands of them.
+-- STABLE, so the planner may cache it within a statement. It is still called per row by the two
+-- resolvers below — a few thousand rows per market, against an indexed lookup — but NOT by the
+-- counter views, which anti-join instead. See their note.
 -- ---------------------------------------------------------------------------
+-- NOT security definer, and that is a performance decision as much as a security one: Postgres
+-- CANNOT INLINE a SECURITY DEFINER function, so it becomes a real call with its own snapshot per
+-- row — half a million of them across the three counter views, each an EXISTS against 724,415
+-- rows. That is what made the first version of this migration time out and roll back.
+--
+-- Plain, it inlines, and the planner turns it into a subquery it can optimise. do_not_contact
+-- has RLS with a read policy for anon and authenticated (085), so no elevation is needed to read
+-- it; and the matviews below are built by the owner, which bypasses RLS anyway.
 create or replace function public.is_suppressed(p_email text, p_phone text, p_channel text)
 returns boolean
 language sql
 stable
-security definer
 set search_path to 'public'
 as $function$
   select exists (
@@ -122,15 +137,33 @@ $function$;
 -- Same shape as 073/080, with the suppression test added. Rebuilt rather than refreshed because
 -- the definition changes.
 -- ---------------------------------------------------------------------------
+-- ANTI-JOINED ONCE, not tested per row. Building the suppressed sets as CTEs lets Postgres hash
+-- 724,415 rows once and probe 84,650 against them — seconds. Calling is_suppressed() per row
+-- instead is the same answer arrived at half a million times, which is what timed out.
+--
+-- The two sets are separated by channel here rather than inside the test: an entry scoped to
+-- 'sms' must not remove anyone from the email count.
 drop materialized view if exists public.market_counts;
 
 create materialized view public.market_counts as
-  select code,
-         max(state_name) as name,
-         count(distinct public.sendable_phone(phone)) filter (where not public.is_suppressed(null, phone, 'sms'))   as phone_count,
-         count(distinct public.sendable_email(email)) filter (where not public.is_suppressed(email, null, 'email')) as email_count
-  from public.market_contacts
-  group by code;
+  with sup_phone as (
+    select distinct phone from public.do_not_contact
+     where phone is not null and (channel is null or channel = 'sms')
+       and (expires_at is null or expires_at > now())
+  ),
+  sup_email as (
+    select distinct email from public.do_not_contact
+     where email is not null and (channel is null or channel = 'email')
+       and (expires_at is null or expires_at > now())
+  )
+  select mc.code,
+         max(mc.state_name) as name,
+         count(distinct public.sendable_phone(mc.phone))
+           filter (where public.sendable_phone(mc.phone) not in (select phone from sup_phone)) as phone_count,
+         count(distinct public.sendable_email(mc.email))
+           filter (where public.sendable_email(mc.email) not in (select email from sup_email)) as email_count
+  from public.market_contacts mc
+  group by mc.code;
 
 create unique index if not exists market_counts_pk on public.market_counts (code);
 grant select on public.market_counts to anon, authenticated, service_role;
@@ -138,13 +171,25 @@ grant select on public.market_counts to anon, authenticated, service_role;
 drop materialized view if exists public.market_segment_counts;
 
 create materialized view public.market_segment_counts as
-  select code,
-         coalesce(segment, 'Other') as segment,
-         max(state_name) as name,
-         count(distinct public.sendable_phone(phone)) filter (where not public.is_suppressed(null, phone, 'sms'))   as phone_count,
-         count(distinct public.sendable_email(email)) filter (where not public.is_suppressed(email, null, 'email')) as email_count
-  from public.market_contacts
-  group by code, coalesce(segment, 'Other');
+  with sup_phone as (
+    select distinct phone from public.do_not_contact
+     where phone is not null and (channel is null or channel = 'sms')
+       and (expires_at is null or expires_at > now())
+  ),
+  sup_email as (
+    select distinct email from public.do_not_contact
+     where email is not null and (channel is null or channel = 'email')
+       and (expires_at is null or expires_at > now())
+  )
+  select mc.code,
+         coalesce(mc.segment, 'Other') as segment,
+         max(mc.state_name) as name,
+         count(distinct public.sendable_phone(mc.phone))
+           filter (where public.sendable_phone(mc.phone) not in (select phone from sup_phone)) as phone_count,
+         count(distinct public.sendable_email(mc.email))
+           filter (where public.sendable_email(mc.email) not in (select email from sup_email)) as email_count
+  from public.market_contacts mc
+  group by mc.code, coalesce(mc.segment, 'Other');
 
 create unique index if not exists market_segment_counts_pk on public.market_segment_counts (code, segment);
 grant select on public.market_segment_counts to anon, authenticated, service_role;
@@ -152,13 +197,25 @@ grant select on public.market_segment_counts to anon, authenticated, service_rol
 drop materialized view if exists public.market_sport_counts;
 
 create materialized view public.market_sport_counts as
-  select code,
-         coalesce(segment, 'Other')            as segment,
-         coalesce(primary_sport, '(unknown)')  as sport,
-         count(distinct public.sendable_phone(phone)) filter (where not public.is_suppressed(null, phone, 'sms'))   as phone_count,
-         count(distinct public.sendable_email(email)) filter (where not public.is_suppressed(email, null, 'email')) as email_count
-  from public.market_contacts
-  group by code, coalesce(segment, 'Other'), coalesce(primary_sport, '(unknown)');
+  with sup_phone as (
+    select distinct phone from public.do_not_contact
+     where phone is not null and (channel is null or channel = 'sms')
+       and (expires_at is null or expires_at > now())
+  ),
+  sup_email as (
+    select distinct email from public.do_not_contact
+     where email is not null and (channel is null or channel = 'email')
+       and (expires_at is null or expires_at > now())
+  )
+  select mc.code,
+         coalesce(mc.segment, 'Other')            as segment,
+         coalesce(mc.primary_sport, '(unknown)')  as sport,
+         count(distinct public.sendable_phone(mc.phone))
+           filter (where public.sendable_phone(mc.phone) not in (select phone from sup_phone)) as phone_count,
+         count(distinct public.sendable_email(mc.email))
+           filter (where public.sendable_email(mc.email) not in (select email from sup_email)) as email_count
+  from public.market_contacts mc
+  group by mc.code, coalesce(mc.segment, 'Other'), coalesce(mc.primary_sport, '(unknown)');
 
 create unique index if not exists market_sport_counts_pk on public.market_sport_counts (code, segment, sport);
 grant select on public.market_sport_counts to anon, authenticated, service_role;
