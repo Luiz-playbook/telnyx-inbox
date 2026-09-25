@@ -1,18 +1,35 @@
 # System gaps
 
-> **ACTIVE CHANGE — 2026-08-12: the hourly auto-send cron is DISABLED.**
+> **ACTIVE CHANGE — 2026-09-26: the hourly auto-send cron is DISABLED (again).**
 >
-> `{ "path": "/api/queue-tick", "schedule": "0 * * * *" }` was removed from `vercel.json` so
-> the system can run with test mode off — appearing live — without anything sending on its
-> own. This is the ONLY control preventing automatic sends once `send_allowlist` is empty:
-> the cron needs no human, so "nobody will press send" does not cover it.
+> `{ "path": "/api/queue-tick", "schedule": "0 * * * *" }` is removed from `vercel.json`.
+> It had been restored at some point after the 2026-08-12 removal below, but was inert the
+> whole time for a different reason: `CRON_SECRET` is unset, so every cron call to it 401'd.
 >
-> Manual "Send now" still works for anyone holding `SEND_SECRET`, and CakeMail / Telnyx
-> credentials remain configured. This is a stop on automation, not a disconnection.
+> **Why it came off now.** Charles wants the DAILY DECIDER on. `/api/decide` authenticates
+> through `gate()`, which accepts `Bearer CRON_SECRET` — and Vercel only ever auto-delivers
+> that ONE secret to every cron in this file. So setting `CRON_SECRET` to wake the decider
+> would wake the hourly send in the same stroke. Taking the line out decouples them: the
+> secret can be set, the decider runs, and nothing can fan out across the queue on a timer.
 >
-> **Restore by putting that line back and redeploying** — and do restore it, because with the
-> cron off, scheduled blasts silently never go out. That failure is quiet: rows simply sit in
-> the queue looking scheduled.
+> A per-route secret (the `PRICE_CRON_SECRET` pattern) does NOT solve this — Vercel cannot
+> deliver one, so it would have to be written into the `?token=` in this file, in the repo.
+>
+> **What still sends.** Manual "Send now" on a single named row, by a signed-in operator, is
+> untouched — different code path, different credential. This stops the timer, not the system.
+>
+> **Restore by putting that line back and redeploying.** Do restore it once the auto-send is
+> wanted, because with the cron off, scheduled blasts silently never go out: rows just sit in
+> the queue looking scheduled. That failure is quiet, which is why it is written down here.
+
+---
+
+> **2026-08-12 — the original note, kept for history.**
+>
+> The same line was removed so the system could run with test mode off — appearing live —
+> without anything sending on its own. This is the ONLY control preventing automatic sends
+> once `send_allowlist` is empty: the cron needs no human, so "nobody will press send" does
+> not cover it.
 
 
 Findings from the 2026-08-12 review, written while standing up the send-test harness. Most

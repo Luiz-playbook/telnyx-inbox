@@ -14,7 +14,6 @@
     { "path": "/api/telnyx-usage-sync", "schedule": "10 13 * * *" },
     { "path": "/api/cakemail-sync", "schedule": "20 13 * * *" },
     { "path": "/api/decide", "schedule": "0 14 * * *" },
-    { "path": "/api/queue-tick", "schedule": "0 * * * *" },
     { "path": "/api/refresh-contacts", "schedule": "30 13 * * *" }
   ]
 }
