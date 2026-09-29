@@ -2665,7 +2665,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const PROVIDER_EMPTY = {
         telnyx:  'Replies only reach this app from <span class="font-mono text-xs">+1 615 805 0766</span>. The eight 2-way numbers send theirs to the HubSpot integration.',
         salesmsg:'Salesmsg replies stay in the Salesmsg inbox — nothing forwards them here. Blasts sent through Salesmsg are answered in Salesmsg.',
-        cakemail:'CakeMail does not receive replies at all: a reply to an email blast goes to the sending address’s own mailbox, not to CakeMail.',
+        cakemail:'CakeMail still cannot receive replies — a reply to an email blast goes to the sending address’s own mailbox, never to CakeMail. Replies reach this tab only for blasts sent with a Mailhook return address; anything sent before that lands in the sender’s inbox instead.',
         gmail:   'No mailbox is connected, so nothing writes replies here yet.',
         unknown: 'Nothing has arrived without a provider recorded.',
       };
