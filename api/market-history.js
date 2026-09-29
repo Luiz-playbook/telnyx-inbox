@@ -16,6 +16,7 @@
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
+import { hubspotToken } from '../lib/hubspot.js';
 
 export const config = { maxDuration: 30 };
 
@@ -334,7 +335,7 @@ export default async function handler(req, res) {
   const wantReplies = String(req.query?.replies || '').trim();
   if (wantReplies) {
     if (!/^[0-9]+$/.test(wantReplies)) { res.status(400).json({ error: 'replies must be a campaign id' }); return; }
-    const token = (process.env.HUBSPOT_TOKEN || '').trim();
+    const token = hubspotToken();   // HUBSPOT_ACCESS_TOKEN or HUBSPOT_TOKEN — see lib/hubspot.js
     if (!token) {
       // The old wording ("not connected to this server yet") made this read as a switch nobody had
       // flicked. The real position is upstream of us: CakeMail reports opens and clicks and has no
