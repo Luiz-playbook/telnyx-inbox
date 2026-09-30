@@ -62,18 +62,30 @@ async function mh(path, { method = 'GET', body } = {}) {
 // A shared domain is enough for testing. A CUSTOM domain is what production replies need, and
 // that is a DNS change on a dedicated subdomain — never the apex, which would take company mail
 // down with it. See docs/mailhook.md.
+// Mailhook speaks JSON:API — { data: { id, type, attributes: {…} } }, or an array of those.
+// The fields worth having are under `attributes`, so reading them off the object gives undefined.
+// See the same helper in lib/mailhook.js, which is the shared reason this is not duplicated logic
+// so much as the same lesson learned twice.
+const flat = (o) => {
+  const d = (o && o.data !== undefined) ? o.data : o;
+  if (Array.isArray(d)) return d.map(x => ({ id: x && x.id, ...(x && x.attributes ? x.attributes : x) }));
+  if (!d || typeof d !== 'object') return d;
+  return { id: d.id, ...(d.attributes ? d.attributes : d) };
+};
+
 async function ensureDomain() {
   const declared = (process.env.MAILHOOK_DOMAIN_ID || '').trim();
   if (declared) return declared;
-  const existing = await mh('/domains').catch(() => null);
-  const list = Array.isArray(existing) ? existing : (existing && existing.data) || [];
-  const shared = list.find(d => d.domain_type === 'shared');
-  if (shared) return String(shared.id);
-  const made = await mh('/domains', {
+  const list = flat(await mh('/domains').catch(() => null));
+  const shared = (Array.isArray(list) ? list : []).find(d => d && d.domain_type === 'shared');
+  // Reuse, don't accumulate: the free tier allows 3 domains, and a fresh one per run burns
+  // through that in three invocations.
+  if (shared && shared.id) return String(shared.id);
+  const made = flat(await mh('/domains', {
     method: 'POST',
     body: { domain_type: 'shared', tailme_slug: `sendblaster-${Date.now().toString(36)}` },
-  });
-  return String((made && (made.id || (made.data && made.data.id))) || die('could not create a Mailhook domain'));
+  }));
+  return String((made && made.id) || die('could not create a Mailhook domain'));
 }
 
 async function main() {
@@ -111,8 +123,8 @@ async function main() {
       method: 'POST',
       body: { domain_id: domainId, metadata: { purpose: 'cakemail-deliverability-test', marker, account, sender } },
     });
-    const d = made.data || made;
-    to = d.email_address || d.email || die(`Mailhook returned no address: ${JSON.stringify(made).slice(0, 300)}`);
+    const d = flat(made) || {};
+    to = d.email || d.email_address || die(`Mailhook returned no address: ${JSON.stringify(made).slice(0, 300)}`);
     addressId = d.id;
     console.log(`\nMailhook inbox : ${to}`);
     console.log(`  address id   : ${addressId}`);
@@ -143,8 +155,11 @@ async function main() {
   while (Date.now() < deadline && !got) {
     await sleep(5000);
     process.stdout.write('.');
-    const inbox = await mh(`/email_addresses/${addressId}/inbound_emails`).catch(() => null);
-    const rows = Array.isArray(inbox) ? inbox : (inbox && inbox.data) || [];
+    const inbox = flat(await mh(`/email_addresses/${addressId}/inbound_emails`).catch(() => null));
+    // Flattened too, and for a sharper reason than the others: read raw, every field below is
+    // undefined, so a mail that DID arrive matches nothing, `rows[0]` is picked as a fallback,
+    // and the script reports a delivered message as "the body was altered in transit".
+    const rows = Array.isArray(inbox) ? inbox : (inbox ? [inbox] : []);
     got = rows.find(m => String(m.subject || '').includes(stamp))
        || rows.find(m => `${m.text_body || ''}${m.html_body || ''}`.includes(marker))
        || rows[0] || null;

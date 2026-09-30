@@ -39,6 +39,7 @@
 // Keep this in sync with EMAIL_SENDERS / cakemailSender in ui/index.html.
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
+import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
@@ -343,6 +344,12 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
+      // NOT `failed`. A note is something worth seeing that is not a send failure — and `failed`
+      // is load-bearing: anything in it flips the row to status 'partial' (migration 058) and
+      // shows up in Market History as a half-broken blast. A missing Mailhook return address
+      // degrades where replies land; it does not stop a single message going out, so putting it
+      // in `failed` would report a clean blast as broken.
+      const notes = [];
       // AI-976: recipients to write to HubSpot once this row's sends are done. Collected
       // rather than logged inline so the CRM write never sits between resolving an audience
       // and putting the messages on the wire.
@@ -423,10 +430,25 @@ export default async function handler(req, res) {
           // The key is per sub-account, so it is checked against the account this row sends from.
           if (!cakemailKey(cm.accountId)) { failed.push(`CakeMail not configured for account ${cm.accountId} — set ${cakemailKeyEnvName(cm.accountId)}`); }
           else {
+            // THE RETURN ADDRESS. Without one, a reply goes to the CakeMail sender's own mailbox
+            // and this app never sees it — which is why email_replies stood empty from migration
+            // 079 until this shipped.
+            //
+            // Plus-addressing, so this is a string built from the row id and CANNOT FAIL: no API
+            // call, nothing to rate-limit, no per-address cap, and no way to be left half-done
+            // while a campaign is going out. The earlier vendor-minting version could return null
+            // mid-blast and send with no return address at all, which is the failure this avoids.
+            //
+            // The address only RECEIVES. Nothing in this codebase sends from that mailbox.
+            const replyTo = replyAddressFor(r.id);
+            notes.push(replyTo
+              ? `replies → ${replyTo}`
+              : `no return address for row ${r.id} — replies go to the sender mailbox`);
             try {
               const out = await sendCampaign({
                 accountId: cm.accountId, senderId: cm.senderId,
                 emails, subject, html,
+                replyTo,
                 // `name` is CakeMail's internal campaign label, not anything a recipient
                 // sees — the row title is the right thing there, subject is not.
                 name: `${r.title} — ${r.state_code || 'blast'}`,
@@ -498,7 +520,8 @@ export default async function handler(req, res) {
           hubspot = { error: String((e && e.message) || e) };
         }
       }
-      results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined, recipients: summary, cooldown_overridden: cooling || undefined, hubspot });
+      results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined,
+        notes: notes.length ? notes : undefined, recipients: summary, cooldown_overridden: cooling || undefined, hubspot });
     }
 
     res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS } });

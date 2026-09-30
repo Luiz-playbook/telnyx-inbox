@@ -2671,9 +2671,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       };
 
       const EMPTY = {
+        // The ingestion IS wired now: the send path sets a plus-addressed Reply-To carrying the
+        // queue id (lib/reply-address.js), and api/email-reply.js writes what comes back. So the
+        // honest empty state is no longer "nothing can arrive" — it is "nothing has arrived yet,
+        // and only blasts sent from now on can produce one".
+        // Saying which blasts can never appear here matters: everything sent before the return
+        // address existed was answered into the sender's own mailbox, and no amount of waiting
+        // brings those replies to this tab.
         email: `<div class="font-semibold text-[#133b49] mb-1">No email replies yet</div>
-          <div>Nothing writes email replies to this database yet &mdash; the table exists (migration 079) and the ingestion is not wired.
-          Until it is, replies to email blasts stay in the sending account's own inbox.</div>`,
+          <div>Replies are being caught now &mdash; each email blast goes out with its own return address, and anything that comes back
+          lands here attributed to the blast that earned it.
+          <div class="mt-1.5 text-base-content/50">Only blasts sent since that was switched on can appear. Replies to earlier ones went to the
+          sending account's own mailbox and stay there.</div></div>`,
         sms: `<div class="font-semibold text-[#133b49] mb-1">No SMS replies here</div>
           <div>Replies only reach this app from <span class="font-mono text-xs">+1 615 805 0766</span>. The eight 2-way numbers send their
           replies to the HubSpot integration instead, so a reply to a blast from one of those appears in HubSpot and never here.

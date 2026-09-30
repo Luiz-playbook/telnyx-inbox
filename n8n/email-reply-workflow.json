@@ -1,0 +1,123 @@
+{
+  "name": "Email Blast Replies -> Replies Tab",
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_comment": [
+    "LIVE as workflow vrqDhZprQ0TgwPdS in the n8n project 'John Luiz Gonzaga <john@callplaybook.com>'.",
+    "Created INACTIVE on purpose: activating before EMAIL_REPLY_SECRET is set in Vercel means every",
+    "poll posts and gets 503/401.",
+    "It had to live in John's own project because n8n refuses a credential from another project, and",
+    "the Gmail credential must be the mailbox the +q return address delivers to.",
+    "NO GMAIL LABEL OR FILTER IS NEEDED - the trigger's own Gmail query does the narrowing, and the",
+    "code node enforces the +q tag as a second guard.",
+    "THE MAILBOX IS READ ONLY. Never add a Gmail send, reply or draft node to this workflow."
+  ],
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "maxResults": 25,
+        "filters": {
+          "q": "to:john+q OR deliveredto:john+q",
+          "readStatus": "both",
+          "includeSpamTrash": false,
+          "includeDrafts": false
+        },
+        "options": {}
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail: blast replies",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        240,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "KTOuLwqwz0GMfnbT",
+          "name": "My_Gmail"
+        }
+      },
+      "notes": "READ ONLY. Never attach a Gmail send/reply/draft node to this credential. Must be john@callplaybook.com - the mailbox the +q return address delivers to. simple:false is REQUIRED: the simplified output drops headers, and the +q tag lives on a recipient header. readStatus:both because a reply a human has already opened still needs ingesting; the trigger only fetches messages newer than its last poll, and the endpoint dedupes on Gmail message id, so nothing is posted twice."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Pull out what /api/email-reply needs, and DROP anything without a +q tag.\n//\n// THE GUARD IS THE POINT OF THIS NODE. john@callplaybook.com is a real person's mailbox. The\n// trigger's Gmail query narrows things already, but a query is a filter, not a guarantee. If it\n// ever over-matches, this stops personal mail being written into an operator-facing inbox in the\n// app. Deliberate trade: a reply whose + was mangled by some relay is dropped rather than stored\n// unattributed. Keeping strangers' mail out of the Replies tab matters more, and the message is\n// still sitting in Gmail either way.\n\nconst j = $input.item.json;\n\n// n8n parses the message with mailparser when simple:false, so an address field can arrive as a\n// STRING, as { text }, or as { value: [{ address }] }. Reading it raw yields '[object Object]' and\n// the tag test below silently never matches -- every reply would be dropped.\nfunction addrText(v) {\n  if (!v) return '';\n  if (typeof v === 'string') return v;\n  if (typeof v === 'object') {\n    if (typeof v.text === 'string' && v.text) return v.text;\n    if (Array.isArray(v.value)) {\n      let out = '';\n      for (const x of v.value) {\n        if (x && x.address) out = out ? out + ', ' + x.address : x.address;\n      }\n      return out;\n    }\n  }\n  return '';\n}\n\n// Headers may be a Map (mailparser), a plain object, or Gmail's [{name,value}] array.\nfunction header(name) {\n  const want = String(name).toLowerCase();\n  const h = j.headers || (j.payload && j.payload.headers);\n  if (!h) return '';\n  if (Array.isArray(h)) {\n    for (const x of h) {\n      if (x && String(x.name || '').toLowerCase() === want) return addrText(x.value);\n    }\n    return '';\n  }\n  if (typeof h.get === 'function') { return addrText(h.get(want)); }\n  for (const k of Object.keys(h)) {\n    if (k.toLowerCase() === want) return addrText(h[k]);\n  }\n  return '';\n}\n\nconst to = addrText(j.to) || header('to');\nconst deliveredTo = header('delivered-to');\nconst cc = addrText(j.cc) || header('cc');\n\n// Must match TAG and the id format in lib/reply-address.js.\nconst TAG = /\\+q[0-9a-f]{32}(?:@|$|[,>\\s])/i;\nlet tagged = '';\nfor (const v of [to, deliveredTo, cc]) {\n  if (v && TAG.test(v)) { tagged = v; break; }\n}\nif (!tagged) return null;   // not a blast reply -- leave it alone\n\nreturn {\n  json: {\n    // Gmail's immutable message id. The endpoint writes it to provider_message_id, which is\n    // UNIQUE, so a re-poll or a re-run reconciles instead of posting the reply twice.\n    id: j.id || j.messageId || null,\n    threadId: j.threadId || null,\n    from: addrText(j.from) || header('from') || null,\n    to: tagged,\n    cc: cc || null,\n    subject: j.subject || header('subject') || null,\n    text: j.text || j.textPlain || j.snippet || null,\n    html: j.html || j.textAsHtml || null,\n    // Epoch millis as a string. The endpoint normalises it; handed straight to a timestamptz\n    // column this would store a date tens of thousands of years from now.\n    internalDate: j.internalDate || null,\n    date: j.date || header('date') || null,\n  },\n};\n"
+      },
+      "id": "extract-reply",
+      "name": "Extract + Require +q Tag",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ],
+      "notes": "Returns null for anything without a +q tag, which drops the item. That is the safety net keeping personal mail out of the app."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://telnyx-inbox.vercel.app/api/email-reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpTemplatedCustomAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 20000
+        }
+      },
+      "id": "post-reply",
+      "name": "POST /api/email-reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "httpTemplatedCustomAuth": {
+          "id": "REPLACE_WITH_x_reply_secret_CREDENTIAL_ID",
+          "name": "Telnyx Inbox x-reply-secret"
+        }
+      },
+      "notes": "Credential is a templated custom auth holding the shared secret: {\"headers\":{\"x-reply-secret\":\"{{api_key}}\"}}. Must match EMAIL_REPLY_SECRET in Vercel exactly or every call 401s. Errors are NOT swallowed - a failed write should fail the execution so it is visible and retried. The endpoint dedupes on Gmail message id, so a retry cannot double-post."
+    }
+  ],
+  "connections": {
+    "Gmail: blast replies": {
+      "main": [
+        [
+          {
+            "node": "Extract + Require +q Tag",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract + Require +q Tag": {
+      "main": [
+        [
+          {
+            "node": "POST /api/email-reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
