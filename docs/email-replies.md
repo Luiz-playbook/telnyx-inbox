@@ -65,14 +65,19 @@ Optionally `REPLY_MAILBOX` to move the catching mailbox (default `john@callplayb
 
 ### 2. n8n — create the one credential, then activate
 
-The `POST /api/email-reply` node needs a **Templated Custom Auth** credential named
-*Telnyx Inbox x-reply-secret*, whose template is:
+The `POST /api/email-reply` node needs a **Header Auth** credential named
+*Telnyx Inbox x-reply-secret*, with two fields:
 
-```json
-{ "headers": { "x-reply-secret": "{{api_key}}" } }
-```
+| Field | Value |
+|---|---|
+| Name | `x-reply-secret` |
+| Value | the same string as `EMAIL_REPLY_SECRET` in Vercel |
 
-with `api_key` set to the same value as `EMAIL_REPLY_SECRET`. Then **Activate** the workflow.
+Then **Activate** the workflow.
+
+> Pick **Header Auth**, not "Custom Auth". They are different credential types
+> (`httpHeaderAuth` vs `httpCustomAuth`) and only the first attaches to this node. Header Auth is
+> also just a name/value pair — no JSON template to mistype.
 
 > **The Gmail credential is already pointed at John's mailbox** (`My_Gmail`). Check it is really
 > `john@callplaybook.com` before activating — n8n's credential auto-assignment twice attached a

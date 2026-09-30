@@ -70,7 +70,7 @@
         "method": "POST",
         "url": "https://telnyx-inbox.vercel.app/api/email-reply",
         "authentication": "genericCredentialType",
-        "genericAuthType": "httpTemplatedCustomAuth",
+        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
@@ -88,12 +88,12 @@
         300
       ],
       "credentials": {
-        "httpTemplatedCustomAuth": {
-          "id": "REPLACE_WITH_x_reply_secret_CREDENTIAL_ID",
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_HEADER_AUTH_CREDENTIAL_ID",
           "name": "Telnyx Inbox x-reply-secret"
         }
       },
-      "notes": "Credential is a templated custom auth holding the shared secret: {\"headers\":{\"x-reply-secret\":\"{{api_key}}\"}}. Must match EMAIL_REPLY_SECRET in Vercel exactly or every call 401s. Errors are NOT swallowed - a failed write should fail the execution so it is visible and retried. The endpoint dedupes on Gmail message id, so a retry cannot double-post."
+      "notes": "Credential is a HEADER AUTH: Name 'x-reply-secret', Value = the same string as EMAIL_REPLY_SECRET in Vercel. One static header, so Header Auth fits exactly — 'Custom Auth' in the n8n picker is a different credential type (httpCustomAuth) and will not attach to this node. Errors are NOT swallowed: a failed write should fail the execution so it is visible and retried. The endpoint dedupes on Gmail message id, so a retry cannot double-post."
     }
   ],
   "connections": {
