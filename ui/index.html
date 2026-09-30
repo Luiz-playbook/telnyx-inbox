@@ -514,6 +514,9 @@
           <!-- Replies sits beside Market History on purpose: history is what we said, replies is
                what came back, and they are read one after the other. -->
           <a href="#" data-tab="replies">Replies</a>
+          <!-- Do Not Contact sits last among the data tabs because it is consulted, not worked:
+               you come here to check whether someone is on it, or to add a list, not daily. -->
+          <a href="#" data-tab="dnc">Do Not Contact</a>
           <a href="#" data-tab="reports">Reports</a>
         </nav>
         <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
@@ -957,6 +960,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="email">Email</option>
                   <option value="sms">SMS</option>
                 </select>
+                <!-- FATIGUE FILTER. Hides blasts whose market+segment was contacted recently, so the
+                     queue shows what is actually safe to send rather than everything that was ever
+                     queued. Defaults to 21 days and is REMEMBERED between visits, deliberately: the
+                     danger it guards against is a row nobody meant to send sitting in a list nobody
+                     re-filtered, and a default that resets to "off" every morning would not guard
+                     against it at all. "Any" is still one click away and is never sticky by accident
+                     — choosing it is choosing it. -->
+                <select id="q-targeted" class="select select-bordered select-sm" title="Hide blasts whose market and segment were contacted within this many days">
+                  <option value="">Targeted: any time</option>
+                  <option value="14">Targeted &gt; 14 days ago</option>
+                  <option value="21">Targeted &gt; 21 days ago</option>
+                  <option value="28">Targeted &gt; 28 days ago</option>
+                  <option value="40">Targeted &gt; 40 days ago</option>
+                  <option value="60">Targeted &gt; 60 days ago</option>
+                  <option value="75">Targeted &gt; 75 days ago</option>
+                  <option value="90">Targeted &gt; 90 days ago</option>
+                </select>
                 <!-- Scheduled-date range. Replaces the old single "send day" select, which could
                      only ever name one day that already existed in the queue — reviewing "this
                      week" meant picking days one at a time. Two inclusive bounds, either of
@@ -1225,6 +1245,77 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div id="rep-list" class="divide-y divide-base-300 max-h-[calc(100vh-260px)] overflow-auto"></div>
+            </div>
+          </div>
+
+          <!-- ================================================================= DO NOT CONTACT
+               A 724k-row table, so nothing here loads "the list". Every view is a server-side
+               page or a server-side count, and the search asks the database rather than
+               filtering something already downloaded. Ask for it all and the browser dies and
+               PostgREST caps you at 1,000 rows anyway, silently, which is the worse half.       -->
+          <div data-view id="view-dnc" class="hidden space-y-3">
+
+            <div class="flex items-start gap-3 flex-wrap">
+              <div class="flex gap-3">
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">On the list</div>
+                  <div id="dnc-total" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Emails</div>
+                  <div id="dnc-emails" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Phones</div>
+                  <div id="dnc-phones" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+              </div>
+
+              <!-- UPLOAD. The file never leaves the browser whole: it is parsed here and posted
+                   in slices, because these exports run to 46MB and no request body takes that. -->
+              <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 flex-1 min-w-[20rem]">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50 mb-1.5">Add a list</div>
+                <div class="flex items-center gap-2 flex-wrap">
+                  <input id="dnc-file" type="file" accept=".csv,text/csv" multiple
+                         class="file-input file-input-bordered file-input-sm max-w-xs" aria-label="Choose do-not-contact CSV files">
+                  <button id="dnc-upload" class="btn btn-sm btn-warning text-white hover:text-white" disabled>Upload</button>
+                </div>
+                <div id="dnc-up-status" class="text-xs text-base-content/60 mt-2 leading-relaxed">
+                  CSV with an <span class="font-mono">email</span> or <span class="font-mono">phone</span> column &mdash; extra columns are ignored,
+                  and <span class="font-mono">organization</span>/<span class="font-mono">reason</span> are kept when present.
+                  Re-uploading the same file changes nothing.
+                </div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <input id="dnc-search" type="search" placeholder="Search an email, phone, name or organisation&hellip;"
+                     class="input input-bordered input-sm w-80" aria-label="Search the do-not-contact list">
+              <select id="dnc-channel" class="select select-bordered select-sm" aria-label="Filter by what is suppressed">
+                <option value="">Email and phone</option>
+                <option value="email">Has an email</option>
+                <option value="phone">Has a phone</option>
+              </select>
+              <span id="dnc-count" class="text-xs text-base-content/60"></span>
+              <button id="dnc-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-360px)]">
+                <table class="q-table w-full">
+                  <thead>
+                    <tr>
+                      <th>Email</th><th>Phone</th><th>Name</th><th>Organisation</th><th>Reason</th><th>Source</th><th>Added</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dnc-rows"></tbody>
+                </table>
+              </div>
+              <div class="flex items-center gap-2 px-4 py-2.5 border-t border-base-300 text-xs">
+                <button id="dnc-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
+                <span id="dnc-page" class="text-base-content/60"></span>
+                <button id="dnc-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
+              </div>
             </div>
           </div>
 
@@ -2819,8 +2910,263 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       window.__loadReplies = load;
     })();
 
+    // ===== Do Not Contact =====
+    //
+    // 724,000 rows and growing, so the rule for this whole module is: NEVER ASK FOR THE LIST.
+    // Every number on screen is a server-side count and every page is a server-side slice. The
+    // temptation is to pull it once and filter in the browser, which fails twice over — the tab
+    // would be unusable, and PostgREST silently caps any response at 1,000 rows, so it would
+    // look like it worked while showing a fraction of the data.
+    (function dncModule(){
+      const host = document.getElementById('dnc-rows');
+      if(!host) return;
+      const esc4 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const PAGE = 50;
+      let page = 0, term = '', channel = '', total = null, busy = false;
+
+      const REST = () => `${cfg.SUPABASE_URL}/rest/v1/do_not_contact`;
+      const keyHeaders = () => ({ apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY });
+
+      // PostgREST's or= filter. The term is escaped for the FILTER GRAMMAR, not for SQL: commas
+      // and parentheses end a condition, so a search for "o'brien, inc" would otherwise be read
+      // as two filters and 400 the request.
+      const filterFor = () => {
+        const parts = [];
+        if(channel === 'email') parts.push('email=not.is.null');
+        if(channel === 'phone') parts.push('phone=not.is.null');
+        const t = term.trim();
+        if(t){
+          const safe = t.replace(/[,()\\]/g, ch => '\\' + ch);
+          parts.push(`or=(email.ilike.*${safe}*,phone.ilike.*${safe}*,full_name.ilike.*${safe}*,organization.ilike.*${safe}*)`);
+        }
+        return parts;
+      };
+
+      const fmtDate = t => { if(!t) return ''; const d = new Date(t); return isNaN(d) ? '' : d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+
+      async function load(){
+        if(busy) return; busy = true;
+        host.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr>';
+        const parts = filterFor();
+        const qs = ['select=email,phone,full_name,organization,reason,source,created_at',
+                    'order=created_at.desc', `limit=${PAGE}`, `offset=${page*PAGE}`].concat(parts).join('&');
+        try {
+          // count=exact on the SAME request the rows come from, so the total always describes the
+          // filter actually applied. A separately-fetched count drifts the moment the term changes.
+          const r = await fetch(`${REST()}?${qs}`, { headers: { ...keyHeaders(), Prefer: 'count=exact' } });
+          if(!r.ok){
+            host.innerHTML = `<tr><td colspan="7" class="text-center text-error py-8">${esc4(await r.text())}</td></tr>`;
+            busy = false; return;
+          }
+          const rows = await r.json();
+          // Content-Range is "0-49/724415"; the part after the slash is the filtered total.
+          const cr = r.headers.get('content-range') || '';
+          const matched = Number((cr.split('/')[1] || '').trim());
+          if(!Number.isNaN(matched)) total = matched;
+          render(rows);
+        } catch(e){
+          host.innerHTML = `<tr><td colspan="7" class="text-center text-error py-8">${esc4(e.message || e)}</td></tr>`;
+        }
+        busy = false;
+      }
+
+      function render(rows){
+        const c = document.getElementById('dnc-count');
+        if(c) c.textContent = total == null ? ''
+          : `${total.toLocaleString()} ${total === 1 ? 'entry' : 'entries'}${(term || channel) ? ' matching' : ''}`;
+        const pg = document.getElementById('dnc-page');
+        const pages = total == null ? 1 : Math.max(1, Math.ceil(total / PAGE));
+        if(pg) pg.textContent = total ? `Page ${page+1} of ${pages.toLocaleString()}` : '';
+        const prev = document.getElementById('dnc-prev'), next = document.getElementById('dnc-next');
+        if(prev) prev.disabled = page === 0;
+        if(next) next.disabled = page + 1 >= pages;
+
+        if(!rows.length){
+          // The empty state distinguishes "nothing matches" from "the list is empty", because
+          // those mean opposite things on a suppression list and only one of them is alarming.
+          host.innerHTML = `<tr><td colspan="7" class="text-center text-base-content/50 py-10">${
+            (term || channel) ? 'Nothing on the list matches that.' : 'The do-not-contact list is empty.'}</td></tr>`;
+          return;
+        }
+        host.innerHTML = rows.map(r => `<tr>
+          <td class="font-mono text-xs">${esc4(r.email) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+          <td class="font-mono text-xs">${esc4(r.phone) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+          <td>${esc4(r.full_name)}</td>
+          <td>${esc4(r.organization)}</td>
+          <td class="text-base-content/60">${esc4(r.reason)}</td>
+          <td class="text-xs text-base-content/50">${esc4(r.source)}</td>
+          <td class="text-xs text-base-content/50 whitespace-nowrap">${esc4(fmtDate(r.created_at))}</td>
+        </tr>`).join('');
+      }
+
+      // The headline numbers. HEAD requests rather than counting client-side, for the same reason
+      // as above — and HEAD means the rows are never transferred at all, only the count header.
+      async function loadStats(){
+        const one = async (extra) => {
+          try {
+            const r = await fetch(`${REST()}?select=id${extra ? '&' + extra : ''}&limit=1`,
+              { method: 'HEAD', headers: { ...keyHeaders(), Prefer: 'count=exact' } });
+            const cr = r.headers.get('content-range') || '';
+            const n = Number((cr.split('/')[1] || '').trim());
+            return Number.isNaN(n) ? null : n;
+          } catch { return null; }
+        };
+        const set = (id, v) => { const e = document.getElementById(id); if(e) e.textContent = v == null ? '—' : v.toLocaleString(); };
+        const [all, em, ph] = await Promise.all([one(''), one('email=not.is.null'), one('phone=not.is.null')]);
+        set('dnc-total', all); set('dnc-emails', em); set('dnc-phones', ph);
+      }
+
+      // ---- upload -------------------------------------------------------------------------
+      //
+      // THE PARSER AND THE HEADER MAP ARE scripts/import-suppression.js's, COPIED DELIBERATELY.
+      // Two importers that disagree about which column is the email is the kind of difference
+      // nobody notices until a list quietly imports empty. If one changes, change both.
+      function parseCsv(text){
+        const rows = []; let row = [], field = '', inQuotes = false;
+        const s2 = text.replace(/^﻿/, '');   // Excel's BOM, or "email" never matches
+        for(let i = 0; i < s2.length; i++){
+          const ch = s2[i];
+          if(inQuotes){
+            if(ch === '"'){ if(s2[i+1] === '"'){ field += '"'; i++; } else inQuotes = false; }
+            else field += ch;
+            continue;
+          }
+          if(ch === '"'){ inQuotes = true; continue; }
+          if(ch === ','){ row.push(field); field = ''; continue; }
+          if(ch === '\r') continue;
+          if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; continue; }
+          field += ch;
+        }
+        if(field.length || row.length){ row.push(field); rows.push(row); }
+        return rows.filter(r => r.some(v => String(v).trim() !== ''));
+      }
+      const normH = h => String(h || '').toLowerCase().replace(/[^a-z]/g, '');
+      const FIELDS = {
+        email:        ['email','emailaddress','email1','workemail','contactemail','emailaddresses'],
+        phone:        ['phone','phonenumber','mobile','mobilephone','cell','cellphone','telephone','number','phone1'],
+        full_name:    ['name','fullname','contactname','contact'],
+        first_name:   ['firstname','first'],
+        last_name:    ['lastname','last','surname'],
+        organization: ['organization','organisation','company','companyname','org','account','accountname','club'],
+        reason:       ['reason','note','notes','why','comment','comments','status'],
+        channel:      ['channel','type'],
+      };
+      function rowsFromCsv(text, filename){
+        const table = parseCsv(text);
+        if(!table.length) return { rows: [], noId: 0, headers: [] };
+        const header = table[0], idx = {};
+        header.forEach((h, i) => {
+          const n = normH(h);
+          for(const f of Object.keys(FIELDS)) if(FIELDS[f].includes(n) && idx[f] === undefined) idx[f] = i;
+        });
+        const get = (r, f) => (idx[f] === undefined ? '' : String(r[idx[f]] ?? '').trim());
+        const out = []; let noId = 0;
+        for(const r of table.slice(1)){
+          const email = get(r,'email'), phone = get(r,'phone');
+          if(!email && !phone){ noId++; continue; }
+          const name = get(r,'full_name') || [get(r,'first_name'), get(r,'last_name')].filter(Boolean).join(' ');
+          out.push({ email: email || null, phone: phone || null, full_name: name || null,
+                     organization: get(r,'organization') || null, reason: get(r,'reason') || null,
+                     channel: get(r,'channel') || null, source: filename });
+        }
+        return { rows: out, noId, headers: header };
+      }
+
+      const say = html => { const e = document.getElementById('dnc-up-status'); if(e) e.innerHTML = html; };
+      const readFile = f => new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ''));
+        fr.onerror = () => reject(new Error(`could not read ${f.name}`));
+        fr.readAsText(f);
+      });
+
+      async function upload(){
+        const input = document.getElementById('dnc-file');
+        const btn = document.getElementById('dnc-upload');
+        const files = Array.from((input && input.files) || []);
+        if(!files.length) return;
+        if(btn) btn.disabled = true;
+
+        let ins = 0, upd = 0, skip = 0;
+        const problems = [];
+        try {
+          for(let fi = 0; fi < files.length; fi++){
+            const f = files[fi];
+            say(`Reading <b>${esc4(f.name)}</b>&hellip;`);
+            let parsed;
+            try { parsed = rowsFromCsv(await readFile(f), f.name); }
+            catch(e){ problems.push(`${f.name}: ${e.message || e}`); continue; }
+
+            if(!parsed.rows.length){
+              // Names the headers it DID find. A file that imports zero rows is almost always a
+              // column-name mismatch, and guessing which column wastes an afternoon.
+              problems.push(`${f.name}: no usable rows. Columns seen: ${parsed.headers.slice(0,8).join(', ') || '(none)'}`);
+              continue;
+            }
+            skip += parsed.noId;
+
+            // 2,000 rather than the script's 5,000: a browser request crosses the public internet
+            // and a serverless body limit, where the script talks straight to Supabase.
+            const SIZE = 2000;
+            for(let i = 0; i < parsed.rows.length; i += SIZE){
+              const batch = parsed.rows.slice(i, i + SIZE);
+              say(`Uploading <b>${esc4(f.name)}</b> &mdash; ${Math.min(i + SIZE, parsed.rows.length).toLocaleString()} of ${parsed.rows.length.toLocaleString()} rows`
+                  + (files.length > 1 ? ` <span class="text-base-content/40">(file ${fi+1} of ${files.length})</span>` : ''));
+              const res = await fetch('/api/suppression-upload', {
+                method: 'POST',
+                headers: await apiHeaders(),
+                body: JSON.stringify({ rows: batch, source: f.name }),
+              });
+              const d = await res.json().catch(() => ({}));
+              if(!res.ok){
+                // Stop this FILE, not the whole run: a later file may be fine, and a partly
+                // imported suppression list still protects the people it did reach.
+                problems.push(`${f.name}: ${d.error || 'HTTP ' + res.status}`);
+                break;
+              }
+              ins += Number(d.inserted || 0); upd += Number(d.updated || 0); skip += Number(d.skipped || 0);
+            }
+          }
+        } finally {
+          if(btn) btn.disabled = false;
+          if(input) input.value = '';
+        }
+
+        const bits = [`<b>${ins.toLocaleString()}</b> added`, `${upd.toLocaleString()} updated`];
+        if(skip) bits.push(`${skip.toLocaleString()} unusable`);
+        say(bits.join(' &middot; ')
+          + (problems.length ? `<div class="text-[#c0341a] mt-1">${problems.map(esc4).join('<br>')}</div>` : '')
+          + '<div class="text-base-content/50 mt-1">Numbers and addresses are normalised the same way the send path does, so re-uploading the same file changes nothing.</div>');
+        page = 0; await Promise.all([loadStats(), load()]);
+      }
+
+      // ---- wiring -------------------------------------------------------------------------
+      let searchTimer = null;
+      document.getElementById('dnc-search')?.addEventListener('input', e => {
+        term = e.target.value;
+        // Debounced: this searches 724k rows server-side, and a request per keystroke would queue
+        // behind itself and deliver results for a term already typed past.
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { page = 0; load(); }, 300);
+      });
+      document.getElementById('dnc-channel')?.addEventListener('change', e => { channel = e.target.value; page = 0; load(); });
+      document.getElementById('dnc-prev')?.addEventListener('click', () => { if(page > 0){ page--; load(); } });
+      document.getElementById('dnc-next')?.addEventListener('click', () => { page++; load(); });
+      document.getElementById('dnc-reload')?.addEventListener('click', () => { loadStats(); load(); });
+      document.getElementById('dnc-file')?.addEventListener('change', e => {
+        const btn = document.getElementById('dnc-upload');
+        if(btn) btn.disabled = !(e.target.files && e.target.files.length);
+      });
+      document.getElementById('dnc-upload')?.addEventListener('click', upload);
+
+      // Loaded on first view, not at startup: three counts over 724k rows is not work to do for
+      // someone who opened the app to look at the Queue.
+      let loadedOnce = false;
+      window.__loadDnc = () => { if(loadedOnce) return; loadedOnce = true; loadStats(); load(); };
+    })();
+
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -2832,6 +3178,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'reports' && window.__loadTelnyxUsage) window.__loadTelnyxUsage();
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
+      if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
     // A hash is either a bare tab ("#queue") or a tab with a target ("#prices:<event_id>"),
@@ -6611,6 +6958,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
       // may be blank. They replace the old single-day `dayF`.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
+      // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
+      //
+      // WHY THIS ONE IS DIFFERENT. Every other filter answers "what am I looking for right now",
+      // so starting blank is right. This one answers "what should I not be looking at at all" —
+      // it is a guard, and a guard that resets every morning guards nothing. 21 days is the
+      // default rather than the 14-day cooldown floor so the queue errs on the quiet side of the
+      // rule the sender already enforces.
+      //
+      // An explicit "any time" is stored as the string 'any', NOT as '', so a deliberate choice to
+      // see everything is remembered and is distinguishable from never having chosen. Reading it
+      // back maps 'any' to '' — the falsy value matchesRest treats as "filter off".
+      const TARGETED_KEY = 'blaster_queue_targeted';
+      const TARGETED_DEFAULT = '21';
+      let targetedF = (() => {
+        let v = null; try { v = localStorage.getItem(TARGETED_KEY); } catch { /* private mode */ }
+        if(v === 'any') return '';
+        return /^(14|21|28|40|60|75|90)$/.test(v || '') ? v : TARGETED_DEFAULT;
+      })();
       // Same pills Campaigns by Event uses, so a segment reads identically on both tabs. A row
       // with no segment predates migration 050 and targeted the whole market — saying "Other"
       // there would be a lie, so it says so.
@@ -6635,6 +7000,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           .sort((a,b) => (b.days_left||0) - (a.days_left||0))[0] || null;
       };
       const cooldownNote = r => { const c = coolingOf(r); return (c && c.cooled) ? `<div class="text-[11px] font-semibold text-[#c94d07] mt-0.5">&#9203; cooling &middot; ${c.days_left}d left${r.segment?' &middot; '+esc(r.segment):''}</div>` : ''; };
+
+      // HOW LONG SINCE THIS ROW'S AUDIENCE WAS LAST CONTACTED. Feeds the "Targeted >" filter.
+      //
+      // This is a different question from coolingOf() above, which only knows whether the 14-day
+      // floor has passed. market_cooldowns already returns days_since for every market × segment,
+      // so the filter reads real history rather than needing anything new from the server.
+      //
+      // MIN, NOT MAX, for a whole-market row. coolingOf takes the segment with the MOST days left
+      // because that is the one still holding the row back. Here the question is "when was anyone
+      // in this market last mailed", so the most RECENT send wins — the smallest days_since. Taking
+      // the max would report a market as long-untouched because one quiet segment was, while ICP
+      // got a blast yesterday.
+      //
+      // null means NEVER TARGETED, which must pass every filter. A market with no history is the
+      // safest thing in the queue, and treating a missing number as 0 would hide exactly the rows
+      // most worth sending.
+      const daysSinceTargeted = r => {
+        const code = (r.state_code || '').toUpperCase(); if(!code) return null;
+        const pick = c => (c && c.days_since != null) ? c.days_since : null;
+        if(r.segment) return pick(COOLDOWNS[`${code}|${r.segment}`]);
+        const seen = SEGMENTS.map(s => pick(COOLDOWNS[`${code}|${s}`])).filter(d => d != null);
+        return seen.length ? Math.min(...seen) : null;
+      };
 
       // The Schedule column, both directions, in ET. The <input type="datetime-local"> has no
       // zone of its own — it renders the string it is given and hands back a string in the same
@@ -7352,6 +7740,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(stateF  && (r.state_code||'') !== stateF) return false;
         if(chanF === 'email' && !r.email) return false;
         if(chanF === 'sms'   && !r.sms)   return false;
+        // "Targeted > N days ago" — keep rows whose audience has NOT been contacted inside N days.
+        // Never-targeted (null) always passes: no history is not recent history.
+        if(targetedF){
+          const d = daysSinceTargeted(r);
+          if(d != null && d <= Number(targetedF)) return false;
+        }
         // Scheduled-date range. Compared as ET day strings, which sort lexicographically
         // because they are zero-padded YYYY-MM-DD — no Date parsing, so no timezone drift
         // between the bound the operator picked and the day the row is banded under. Both
@@ -8331,6 +8725,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; syncDateClear(); render(); });
+      // The control has to show the remembered value, or the queue would silently hide rows while
+      // the dropdown claimed "any time" — a filter lying about itself is worse than no filter.
+      if(el('q-targeted')) el('q-targeted').value = targetedF;
+      // Persisted on change. 'any' is stored for the empty choice so it survives as a decision —
+      // see TARGETED_KEY. A failed write (private browsing) must not stop the filter applying.
+      el('q-targeted')?.addEventListener('change', e => {
+        targetedF = e.target.value;
+        try { localStorage.setItem(TARGETED_KEY, targetedF || 'any'); } catch { /* ignore */ }
+        page = 1; syncDateClear(); render();
+      });
       // Scheduled-date range. Each end applies on its own, so both listeners just re-render.
       // The bounds are NOT auto-corrected if the operator inverts them (from after to): an
       // inverted range legitimately matches nothing, and silently swapping the values would
@@ -8347,8 +8751,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Painted from the state, not from the inputs: the two can differ for a moment during a
         // programmatic reset, and the button has to describe what the TABLE is filtered by.
         const all = el('q-clear');
+        // targetedF counts as "a filter is on" only when it differs from the default, or the Clear
+        // button would be permanently visible with nothing to clear.
         if(all) all.classList.toggle('hidden',
-          !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo));
+          !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo
+            || targetedF !== TARGETED_DEFAULT));
       }
       // Everything at once, including the search box. The per-filter dropdowns each go back to
       // their "All …" option rather than being emptied of options.
@@ -8356,6 +8763,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         qFilter = statusF = segF = sportF = leagueF = stateF = chanF = dateFrom = dateTo = '';
         ['q-search','q-status','q-segment','q-sport','q-league','q-state','q-channel','q-date-from','q-date-to']
           .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        // BACK TO THE DEFAULT, NOT TO OFF. Clear means "stop narrowing my search", and turning the
+        // fatigue guard off is the opposite of that — it would WIDEN the queue to include markets
+        // contacted yesterday, which is the one thing this filter exists to prevent. Someone who
+        // wants everything picks "any time" deliberately.
+        targetedF = TARGETED_DEFAULT;
+        try { localStorage.setItem(TARGETED_KEY, targetedF); } catch { /* ignore */ }
+        if(el('q-targeted')) el('q-targeted').value = targetedF;
         page = 1; syncDateClear(); render();
       }
       function clearDateFilter(){
@@ -8397,6 +8811,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const act = BULK.find(a => a.key === b.dataset.bulk);
           if(act) runBulk(act);
         }));
+        // REPARENTED TO <body>, AND IT HAS TO BE. #q-bulk is the floating bar, and
+        // playbook-ui.css centres it with `transform: translateX(-50%)`. A transformed element
+        // becomes the CONTAINING BLOCK for any position:fixed descendant — so while this menu
+        // lived inside the bar, the viewport coordinates computed below were applied relative to
+        // the bar instead, putting the menu far off-screen. The button looked dead: the handler
+        // ran, the menu un-hid, and nobody could see it.
+        //
+        // Moved once, on first open, rather than in the markup, so the element stays next to the
+        // bar in the HTML where it is easy to find.
+        if(menu.parentNode !== document.body) document.body.appendChild(menu);
         menu.classList.remove('hidden');
         // Same placement maths as the row menus — measured after unhiding so it has a height,
         // flipped above the trigger when it would run off the bottom.

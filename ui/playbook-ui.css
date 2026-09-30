@@ -345,7 +345,18 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 
 /* ------------------------------------------------------------- selection bars
    Floating, navy, centred at the bottom. The one place a shadow belongs,
-   because it is genuinely above the page. */
+   because it is genuinely above the page.
+
+   ⚠ THE `transform` BELOW BREAKS position:fixed FOR ANY DESCENDANT. A transformed
+   element becomes the containing block for fixed children, so their coordinates
+   stop being viewport coordinates. That is not theoretical: it silently broke the
+   Actions menu, which is .q-menu{position:fixed} positioned from
+   getBoundingClientRect() — the menu opened hundreds of pixels off-screen and the
+   button looked dead. ui/index.html now reparents #q-bulk-pop to <body> on open.
+
+   So: do not nest a fixed-position popup inside this bar. If centring without a
+   transform is ever wanted, use `left:0; right:0; margin-inline:auto; width:max-content`
+   instead, and the trap goes away. */
 #q-bulk, #cbs-bulk {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
   z-index: 60;
