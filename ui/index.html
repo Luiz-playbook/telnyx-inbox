@@ -947,6 +947,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="email">Email</option>
                   <option value="sms">SMS</option>
                 </select>
+                <!-- FATIGUE FILTER. Hides blasts whose market+segment was contacted recently, so the
+                     queue shows what is actually safe to send rather than everything that was ever
+                     queued. Defaults to 21 days and is REMEMBERED between visits, deliberately: the
+                     danger it guards against is a row nobody meant to send sitting in a list nobody
+                     re-filtered, and a default that resets to "off" every morning would not guard
+                     against it at all. "Any" is still one click away and is never sticky by accident
+                     — choosing it is choosing it. -->
+                <select id="q-targeted" class="select select-bordered select-sm" title="Hide blasts whose market and segment were contacted within this many days">
+                  <option value="">Targeted: any time</option>
+                  <option value="14">Targeted &gt; 14 days ago</option>
+                  <option value="21">Targeted &gt; 21 days ago</option>
+                  <option value="28">Targeted &gt; 28 days ago</option>
+                  <option value="40">Targeted &gt; 40 days ago</option>
+                  <option value="60">Targeted &gt; 60 days ago</option>
+                  <option value="75">Targeted &gt; 75 days ago</option>
+                  <option value="90">Targeted &gt; 90 days ago</option>
+                </select>
                 <!-- Scheduled-date range. Replaces the old single "send day" select, which could
                      only ever name one day that already existed in the queue — reviewing "this
                      week" meant picking days one at a time. Two inclusive bounds, either of
@@ -6539,6 +6556,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
       // may be blank. They replace the old single-day `dayF`.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
+      // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
+      //
+      // WHY THIS ONE IS DIFFERENT. Every other filter answers "what am I looking for right now",
+      // so starting blank is right. This one answers "what should I not be looking at at all" —
+      // it is a guard, and a guard that resets every morning guards nothing. 21 days is the
+      // default rather than the 14-day cooldown floor so the queue errs on the quiet side of the
+      // rule the sender already enforces.
+      //
+      // An explicit "any time" is stored as the string 'any', NOT as '', so a deliberate choice to
+      // see everything is remembered and is distinguishable from never having chosen. Reading it
+      // back maps 'any' to '' — the falsy value matchesRest treats as "filter off".
+      const TARGETED_KEY = 'blaster_queue_targeted';
+      const TARGETED_DEFAULT = '21';
+      let targetedF = (() => {
+        let v = null; try { v = localStorage.getItem(TARGETED_KEY); } catch { /* private mode */ }
+        if(v === 'any') return '';
+        return /^(14|21|28|40|60|75|90)$/.test(v || '') ? v : TARGETED_DEFAULT;
+      })();
       // Same pills Campaigns by Event uses, so a segment reads identically on both tabs. A row
       // with no segment predates migration 050 and targeted the whole market — saying "Other"
       // there would be a lie, so it says so.
@@ -6563,6 +6598,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           .sort((a,b) => (b.days_left||0) - (a.days_left||0))[0] || null;
       };
       const cooldownNote = r => { const c = coolingOf(r); return (c && c.cooled) ? `<div class="text-[11px] font-semibold text-[#c94d07] mt-0.5">&#9203; cooling &middot; ${c.days_left}d left${r.segment?' &middot; '+esc(r.segment):''}</div>` : ''; };
+
+      // HOW LONG SINCE THIS ROW'S AUDIENCE WAS LAST CONTACTED. Feeds the "Targeted >" filter.
+      //
+      // This is a different question from coolingOf() above, which only knows whether the 14-day
+      // floor has passed. market_cooldowns already returns days_since for every market × segment,
+      // so the filter reads real history rather than needing anything new from the server.
+      //
+      // MIN, NOT MAX, for a whole-market row. coolingOf takes the segment with the MOST days left
+      // because that is the one still holding the row back. Here the question is "when was anyone
+      // in this market last mailed", so the most RECENT send wins — the smallest days_since. Taking
+      // the max would report a market as long-untouched because one quiet segment was, while ICP
+      // got a blast yesterday.
+      //
+      // null means NEVER TARGETED, which must pass every filter. A market with no history is the
+      // safest thing in the queue, and treating a missing number as 0 would hide exactly the rows
+      // most worth sending.
+      const daysSinceTargeted = r => {
+        const code = (r.state_code || '').toUpperCase(); if(!code) return null;
+        const pick = c => (c && c.days_since != null) ? c.days_since : null;
+        if(r.segment) return pick(COOLDOWNS[`${code}|${r.segment}`]);
+        const seen = SEGMENTS.map(s => pick(COOLDOWNS[`${code}|${s}`])).filter(d => d != null);
+        return seen.length ? Math.min(...seen) : null;
+      };
 
       // The Schedule column, both directions, in ET. The <input type="datetime-local"> has no
       // zone of its own — it renders the string it is given and hands back a string in the same
@@ -7280,6 +7338,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(stateF  && (r.state_code||'') !== stateF) return false;
         if(chanF === 'email' && !r.email) return false;
         if(chanF === 'sms'   && !r.sms)   return false;
+        // "Targeted > N days ago" — keep rows whose audience has NOT been contacted inside N days.
+        // Never-targeted (null) always passes: no history is not recent history.
+        if(targetedF){
+          const d = daysSinceTargeted(r);
+          if(d != null && d <= Number(targetedF)) return false;
+        }
         // Scheduled-date range. Compared as ET day strings, which sort lexicographically
         // because they are zero-padded YYYY-MM-DD — no Date parsing, so no timezone drift
         // between the bound the operator picked and the day the row is banded under. Both
@@ -8259,6 +8323,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-channel')?.addEventListener('change',e => { chanF   = e.target.value; page = 1; syncDateClear(); render(); });
+      // The control has to show the remembered value, or the queue would silently hide rows while
+      // the dropdown claimed "any time" — a filter lying about itself is worse than no filter.
+      if(el('q-targeted')) el('q-targeted').value = targetedF;
+      // Persisted on change. 'any' is stored for the empty choice so it survives as a decision —
+      // see TARGETED_KEY. A failed write (private browsing) must not stop the filter applying.
+      el('q-targeted')?.addEventListener('change', e => {
+        targetedF = e.target.value;
+        try { localStorage.setItem(TARGETED_KEY, targetedF || 'any'); } catch { /* ignore */ }
+        page = 1; syncDateClear(); render();
+      });
       // Scheduled-date range. Each end applies on its own, so both listeners just re-render.
       // The bounds are NOT auto-corrected if the operator inverts them (from after to): an
       // inverted range legitimately matches nothing, and silently swapping the values would
@@ -8275,8 +8349,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // Painted from the state, not from the inputs: the two can differ for a moment during a
         // programmatic reset, and the button has to describe what the TABLE is filtered by.
         const all = el('q-clear');
+        // targetedF counts as "a filter is on" only when it differs from the default, or the Clear
+        // button would be permanently visible with nothing to clear.
         if(all) all.classList.toggle('hidden',
-          !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo));
+          !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo
+            || targetedF !== TARGETED_DEFAULT));
       }
       // Everything at once, including the search box. The per-filter dropdowns each go back to
       // their "All …" option rather than being emptied of options.
@@ -8284,6 +8361,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         qFilter = statusF = segF = sportF = leagueF = stateF = chanF = dateFrom = dateTo = '';
         ['q-search','q-status','q-segment','q-sport','q-league','q-state','q-channel','q-date-from','q-date-to']
           .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        // BACK TO THE DEFAULT, NOT TO OFF. Clear means "stop narrowing my search", and turning the
+        // fatigue guard off is the opposite of that — it would WIDEN the queue to include markets
+        // contacted yesterday, which is the one thing this filter exists to prevent. Someone who
+        // wants everything picks "any time" deliberately.
+        targetedF = TARGETED_DEFAULT;
+        try { localStorage.setItem(TARGETED_KEY, targetedF); } catch { /* ignore */ }
+        if(el('q-targeted')) el('q-targeted').value = targetedF;
         page = 1; syncDateClear(); render();
       }
       function clearDateFilter(){
