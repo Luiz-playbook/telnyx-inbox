@@ -8325,6 +8325,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const act = BULK.find(a => a.key === b.dataset.bulk);
           if(act) runBulk(act);
         }));
+        // REPARENTED TO <body>, AND IT HAS TO BE. #q-bulk is the floating bar, and
+        // playbook-ui.css centres it with `transform: translateX(-50%)`. A transformed element
+        // becomes the CONTAINING BLOCK for any position:fixed descendant — so while this menu
+        // lived inside the bar, the viewport coordinates computed below were applied relative to
+        // the bar instead, putting the menu far off-screen. The button looked dead: the handler
+        // ran, the menu un-hid, and nobody could see it.
+        //
+        // Moved once, on first open, rather than in the markup, so the element stays next to the
+        // bar in the HTML where it is easy to find.
+        if(menu.parentNode !== document.body) document.body.appendChild(menu);
         menu.classList.remove('hidden');
         // Same placement maths as the row menus — measured after unhiding so it has a height,
         // flipped above the trigger when it would run off the bottom.
