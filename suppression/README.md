@@ -70,11 +70,19 @@ drop in a corrected export without cleaning up first.
 
 ---
 
-## What this does NOT yet do
+## It IS enforced now (and the tab shows it)
 
-**Nothing consults this list when a blast is sent.** The table exists and can be filled; the send
-path does not read it yet — that is a separate, deliberate step (see migration 085's header).
+Both recipient resolvers consult the list: `market_emails` and `market_phones` each call
+`is_suppressed(...)` (migration 086), so a suppressed address or number is removed from a market's
+audience before a blast is built. This section previously said the opposite — that the list was
+stored but not honoured — which was true only until 086 landed.
 
-Until it is wired, this is a record of who should not be contacted, not a guarantee that they
-will not be. Worth knowing, because a list that is loaded but not enforced is in some ways worse
-than no list: it is evidence you knew.
+## You no longer have to use this script
+
+The **Do Not Contact** tab in the app reads the same table and uploads the same CSVs, parsing them
+in the browser and posting them in batches. The script remains the right tool for very large files
+and for anything scripted — it talks straight to Supabase with the service-role key and has no
+request-size ceiling.
+
+Either way the destination and the normalisation are identical, so it makes no difference to the
+data which one you use.
