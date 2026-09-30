@@ -13,7 +13,8 @@
 //   • On-demand UI   — x-inbox-secret: REPLY_SECRET
 // Flags: ?dry=1 (price but don't write), ?limit=N (cap games this run),
 //        ?window=N (horizon in days, this run only), ?force=1 (ignore the cooldown),
-//        ?leagues=nba,nfl (price only these; omitted = all), ?estimate=1 (quote it, spend nothing).
+//        ?leagues=nba,nfl (price only these; omitted = all), ?estimate=1 (quote it, spend nothing),
+//        ?event=<events_master id> (price just that one game — the editor's per-game refresh).
 //
 // PARTIAL REFRESHES ARE THE NORMAL CASE, not the exception (AI-968, Josh on the SendBlaster
 // review call): most prices are fairly static, and when one league's schedule drops he wants that
@@ -125,7 +126,11 @@ export default async function handler(req, res) {
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
 
   const dry = req.query?.dry === '1' || req.query?.dry === 'true' || (req.body && req.body.dry === true);
-  const force = req.query?.force === '1' || req.query?.force === 'true';
+  // ?event=<id> — one game, asked for by an operator. It bypasses everything that decides which
+  // games are worth pricing (recommendation, window, freshness, cooldown): pressing refresh on a
+  // game is the answer to that question. Matched as a UUID, never interpolated raw.
+  const eventId = /^[0-9a-f-]{36}$/i.test(String(req.query?.event || '')) ? String(req.query.event) : null;
+  const force = !!eventId || req.query?.force === '1' || req.query?.force === 'true';
   const started = Date.now();
 
   // ?leagues=nba,nfl — price only those leagues (AI-968). Absent or empty means every league,
@@ -177,10 +182,13 @@ export default async function handler(req, res) {
     const rules = (await rulesR.json())[0] || { price_window_days: 20, price_skip_below: 15, price_stale_hours: 48, price_stale_hours_near: 12, price_near_days: 3 };
 
     // eligibility: games the decider says to 'send' (market/cooldown/window rules applied there)
-    const recR = await fetch(`${supaUrl}/rest/v1/rpc/rpc_event_recommendations`, { method: 'POST', headers: sh, body: '{}' });
-    const recs = await recR.json();
-    if (!recR.ok || !Array.isArray(recs)) { res.status(502).json({ error: 'recommendations fetch failed', detail: recs }); return; }
-    const sendIds = recs.filter(r => r.decision === 'send').map(r => r.event_id);
+    let sendIds = [eventId];
+    if (!eventId) {
+      const recR = await fetch(`${supaUrl}/rest/v1/rpc/rpc_event_recommendations`, { method: 'POST', headers: sh, body: '{}' });
+      const recs = await recR.json();
+      if (!recR.ok || !Array.isArray(recs)) { res.status(502).json({ error: 'recommendations fetch failed', detail: recs }); return; }
+      sendIds = recs.filter(r => r.decision === 'send').map(r => r.event_id);
+    }
     if (!sendIds.length) { res.status(200).json({ ok: true, eligible: 0, note: 'no send-eligible games' }); return; }
 
     // pull those events, narrow to the price window + skip rule (cheap games locked in / fresh prices kept)
@@ -198,7 +206,7 @@ export default async function handler(req, res) {
     const winDays = Number.isFinite(winReq) && winReq > 0
       ? Math.max(1, Math.min(90, winReq))
       : Number(rules.price_window_days);
-    const winCut = new Date(Date.now() + winDays * 864e5).toISOString().slice(0, 10);
+    const winCut = eventId ? '9999-12-31' : new Date(Date.now() + winDays * 864e5).toISOString().slice(0, 10);
     const idList = `(${sendIds.map(id => `"${id}"`).join(',')})`;
     const evR = await fetch(
       // status=eq.scheduled: never pay the model to look up a price for a cancelled or postponed

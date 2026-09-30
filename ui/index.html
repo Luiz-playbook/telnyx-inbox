@@ -150,6 +150,8 @@
     .price-pop{ position:fixed; z-index:70; width:250px; background:#fff; border:1px solid #e3e8ef;
                 border-radius:10px; padding:10px; box-shadow:0 10px 30px rgba(19,59,73,.18); }
     .price-pop.hidden{ display:none; }
+    /* Taller than the window is possible once the price list is open; scroll inside it so the buttons stay reachable. */
+    .price-pop{ max-height:calc(100vh - 16px); overflow-y:auto; }
     .price-pop label{ display:block; font-size:10px; font-weight:800; letter-spacing:.04em;
                       text-transform:uppercase; color:#8695a7; margin-bottom:2px; }
     .price-pop input{ width:100%; border:1px solid #d8e2ef; border-radius:7px; padding:4px 7px;
@@ -416,6 +418,9 @@
     .sms-phone{ background:#f5f8fb; border:1px solid #e5ebf1; border-radius:12px; padding:12px; }
     .sms-bubble{ display:inline-block; max-width:88%; background:#e9e9eb; color:#111; padding:9px 13px; font-size:13.5px; line-height:1.45;
                  border-radius:18px; border-bottom-left-radius:5px; white-space:pre-wrap; overflow-wrap:anywhere; }
+    /* One reading size for the two previews side by side in an expanded queue row: the email and the
+       SMS bubble are the same copy, so neither should look louder than the other. */
+    .mail-body, .mail-body *, .sms-bubble{ font-size:12px !important; line-height:1.5 !important; }
     .sms-bubble:empty::before{ content:"(no SMS copy yet)"; color:#8695a7; font-style:italic; }
     .prev-label{ font-size:10.5px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#8695a7; }
     /* An expanded queue row used to be as tall as its longest copy, so opening one pushed the
@@ -432,7 +437,9 @@
        tries were worse — stretching both put a six-paragraph email's worth of white under a
        two-line bubble, and one fixed height for both did the same to whichever channel was
        shorter. Unequal panels are fine when the copy is genuinely unequal; dead space is not. */
-    .copy-pane{ max-height:32vh; overflow-y:auto; overscroll-behavior:contain; }
+    /* No height ceiling (Josh, 2026-10-01): the whole message should be readable without scrolling inside
+       the box, which is what speeds up reviewing a queue. The font is a size smaller to make that fit. */
+    .copy-pane{ overflow-y:visible; }
     .copy-pane::-webkit-scrollbar{ width:9px; }
     .copy-pane::-webkit-scrollbar-thumb{ background:#cdd7e1; border-radius:9999px; border:2px solid transparent; background-clip:content-box; }
     .copy-pane::-webkit-scrollbar-thumb:hover{ background:#b3c0cd; background-clip:content-box; }
@@ -447,6 +454,9 @@
        trigger and both pseudo-elements — above it. */
     .tooltip{ z-index:60; }
     .tooltip:before, .tooltip:after{ z-index:60; }
+    /* Two tooltips sit at z 60, so the later one in the page painted over the earlier one's bubble —
+       Reload's tip opened underneath the Refresh prices button beside it. The one being hovered wins. */
+    .tooltip:hover, .tooltip:hover:before, .tooltip:hover:after{ z-index:61; }
     /* Long explanatory tips need to wrap and read left-aligned, not as one squeezed line.
        pre-line, not normal: these tips carry blank-line paragraph breaks, and `normal` collapses
        them into one wall of text. */
@@ -1708,7 +1718,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <!-- Reload and Refresh prices sit next to each other and sound alike, but only
                      one of them spends money. Same daisyUI tooltip treatment as Refresh prices,
                      so two adjacent controls are not explained two different ways. -->
-                <span class="tooltip tooltip-bottom tooltip-wide tooltip-sm" data-tip="Re-reads what is already stored and repaints the table. Free, and instant — it looks nothing up. Use Refresh prices to go and fetch new prices.">
+                <span class="tooltip tooltip-left tooltip-wide tooltip-sm" data-tip="Re-reads what is already stored and repaints the table. Free, and instant — it looks nothing up. Use Refresh prices to go and fetch new prices.">
                   <button id="tp-reload" class="btn btn-outline btn-sm gap-1">&#8635; Reload</button>
                 </span>
               </div>
@@ -3519,6 +3529,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <div class="pp-err mb-2 hidden"></div>
           <div class="flex items-center gap-1">
             <button class="btn btn-xs btn-primary flex-1" data-pp="save">Save</button>
+            <button class="btn btn-xs btn-ghost btn-square" data-pp="refresh" title="Refresh this game's prices from every source" aria-label="Refresh this game's prices"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></button>
             <button class="btn btn-xs btn-ghost" data-pp="reset" title="Clear the price so the next refresh looks it up again">Reset</button>
             <button class="btn btn-xs btn-ghost" data-pp="cancel">Cancel</button>
           </div>
@@ -3542,6 +3553,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const act = e.target.closest('[data-pp]')?.dataset.pp;
           if(!act) return;
           if(act === 'cancel') return close();
+          if(act === 'refresh') return refreshOne(e.target.closest('[data-pp]'));
           save(act === 'reset');
         });
         pop.addEventListener('change', e => {
@@ -3632,6 +3644,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           </div>`;
           return;
         }
+        if(!current.opened){ current.opened = true; box.open = true; }   // list starts open, so the per-source "more" rows are in view
         const manual = current.src === 'manual';
         const nowIdx = manual ? -1 : c.findIndex(x => x && x.chosen && !ppIsError(x));
         pop.classList.add('pp-wide');
@@ -3651,7 +3664,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         pop.querySelector('.pp-cands-title').textContent =
           `Prices (${nPrices})${nErrors ? ` · ${nErrors} error${nErrors === 1 ? '' : 's'}` : ''}${nPrices > 1 ? ' · ranked by all-in' : ''}`;
-        body.innerHTML = c.map((x, i) => {
+        const rowHtml = (x, i) => {
           const when = x.checked_at ? new Date(x.checked_at) : null;
           const checked = when ? `checked ${esc2(etDate(when,{month:'short',day:'numeric'}))} ${esc2(etTime(when,{hour:'numeric',minute:'2-digit'}))} ET` : '';
 
@@ -3684,6 +3697,26 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             ${x.url ? `<a href="${esc2(x.url)}" target="_blank" rel="noopener" class="link link-primary text-[10px] whitespace-nowrap">view &#8599;</a>` : ''}
           </div>`;
+        };
+        // One block per source: its cheapest listing in view, the rest folded under "more". The list
+        // arrives ranked by all-in, so the first row seen for a source is that source's cheapest and
+        // sources come out ordered by their best price. Indexes stay those of the flat list, which is
+        // what the tick handler and Save read. A group opens by itself when the chosen or ticked
+        // listing is one of its hidden rows, so the current price is never tucked out of sight.
+        const groups = [], bySrc = {};
+        c.forEach((x, i) => {
+          const k = ppIsError(x) ? 'err:' + i : (x.source || '?');
+          if(!bySrc[k]){ bySrc[k] = { src: x.source, rows: [] }; groups.push(bySrc[k]); }
+          bySrc[k].rows.push(i);
+        });
+        body.innerHTML = groups.map(g => {
+          const [first, ...rest] = g.rows;
+          if(!rest.length) return rowHtml(c[first], first);
+          const open = rest.some(i => i === nowIdx || i === current.pending);
+          return rowHtml(c[first], first)
+            + `<details class="pp-more"${open ? ' open' : ''}>`
+            + `<summary class="text-[10px] link link-primary cursor-pointer pl-6 py-0.5">${rest.length} more ${esc2(g.src)} price${rest.length === 1 ? '' : 's'}</summary>`
+            + rest.map(i => rowHtml(c[i], i)).join('') + `</details>`;
         }).join('');
         box.classList.remove('hidden');
       }
@@ -3777,6 +3810,45 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           else if(scope === 'queue') window.__loadQueue?.();
           else if(scope === 'campaign') window.__loadEvents?.();
         }, e => fail(String((e && e.message) || e)));
+      }
+
+      // Re-price just this game from every source, then show what came back. The endpoint is the
+      // same job the Refresh prices button runs, narrowed to one events_master id with its
+      // eligibility, window and cooldown checks skipped — an operator asking is the decision.
+      // It replaces the stored price (including a hand-typed one), so that case asks first.
+      async function refreshOne(btn){
+        const cur = current;
+        if(!cur || btn.disabled) return;
+        if(cur.src === 'manual' && !confirm('This price was typed by hand. Refreshing will replace it with the cheapest listing found. Continue?')) return;
+        const title = btn.title;
+        btn.disabled = true; btn.classList.add('animate-spin'); btn.title = 'Refreshing…';
+        showErr('');
+        try {
+          const r = await fetch('/api/price-refresh?force=1&event=' + encodeURIComponent(cur.id), { method:'POST', headers:{ 'content-type':'application/json' }, body:'{}' });
+          const d = await r.json().catch(() => ({}));
+          if(r.status === 401) throw new Error('Refreshing needs the price secret, which only the scheduled job has.');
+          if(!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+          if(!d.ok) throw new Error(d.write_error || (d.zero_coverage ? 'No source could price this game.' : 'Refresh failed.'));
+          // One row to re-read, exactly like a save; the table repaints from the database.
+          if(cur.scope === 'prices' && window.__refreshPriceRow) window.__refreshPriceRow(cur.id);
+          else if(cur.scope === 'queue') window.__loadQueue?.();
+          else if(cur.scope === 'campaign') window.__loadEvents?.();
+          if(current !== cur) return;          // the box was closed or moved meanwhile
+          cur.src = ''; cur.pending = null;
+          await loadCandidates(cur);
+          const pick = (cur.cands || []).find(x => x && x.chosen && !ppIsError(x));
+          if(current === cur && pick){
+            cur.origPrice = pick.price != null ? String(pick.price) : '';
+            cur.origUrl = pick.url || '';
+            pop.querySelector('#pp-price').value = cur.origPrice;
+            pop.querySelector('#pp-url').value = cur.origUrl;
+            renderCandidates();
+          }
+        } catch(e){
+          if(current === cur) showErr(String((e && e.message) || e));
+        } finally {
+          btn.disabled = false; btn.classList.remove('animate-spin'); btn.title = title;
+        }
       }
 
       async function saveCandidate(i){
@@ -3875,7 +3947,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       // The tables scroll inside their own box and the popover is fixed, so it would otherwise
       // sit still while the row it belongs to slides away.
-      window.addEventListener('scroll', () => { if(pop && !pop.classList.contains('hidden')) close(); }, true);
+      window.addEventListener('scroll', e => { if(pop && !pop.classList.contains('hidden') && !(e.target instanceof Node && pop.contains(e.target))) close(); }, true);
       window.addEventListener('resize', () => { if(pop && !pop.classList.contains('hidden')) close(); });
 
       window.__priceEditBtn = priceEditBtn;
@@ -7589,8 +7661,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               : offNote('SMS')}
             ${panelFoot('sms', r.id)}
           </section>`;
-          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">${emailPanel}${smsPanel}</div>
+          const detail = `<tr class="${open?'':'hidden'} bg-base-200/40"><td></td><td colspan="9" class="py-3" style="padding:16px 20px 18px 12px">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">${emailPanel}${smsPanel}</div>
             <!-- The save controls moved INTO each panel (see panelFoot). What is left here is the
                  one line that is about neither channel in particular. -->
             <!-- AI-960. WHY THIS ROW EXISTS, in the operator's own words, when a Trigger Blast run
