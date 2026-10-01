@@ -215,7 +215,20 @@ export default async function handler(req, res) {
   // Vercel — would call tonight's games "yesterday" for the last hours of every UTC day and
   // refuse to send perfectly valid blasts.
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
-  const smsHook = process.env.BULK_SEND_WEBHOOK_URL, emailHook = process.env.EMAIL_SEND_WEBHOOK_URL;
+  // THE SAME DEFAULTS scripts/gen-config.js GIVES THE BROWSER, and they have to match.
+  //
+  // They did not. gen-config.js falls back to these URLs when the env var is unset, so
+  // ui/config.js showed a perfectly good webhook address while this file — which had no
+  // fallback — saw undefined and refused every SMS with "No SMS route". The n8n workflow was
+  // never called, so it recorded no executions and looked broken when nothing had knocked on it.
+  // BULK_SEND_WEBHOOK_URL had in fact never been set in Vercel at all.
+  //
+  // Two sources of truth for one URL, one of them silent about being empty. Setting the variable
+  // fixes today; matching the default is what stops it coming back.
+  const smsHook = process.env.BULK_SEND_WEBHOOK_URL
+    || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-bulk-send';
+  const emailHook = process.env.EMAIL_SEND_WEBHOOK_URL
+    || 'https://playbooksports.app.n8n.cloud/webhook/gmail-bulk-send';
   const hookOk = u => u && !String(u).startsWith('<<');
 
   // Manual "Send now" from the Queue posts { id } and targets exactly that row. It is an
