@@ -9,6 +9,40 @@
   <link href="./theme.css" rel="stylesheet" />
   <style>
     html,body{height:100%}
+    /* NAV + ADMIN MENU (AI-1074). theme.css styles .pb-tabs a as a bare underlined tab, which
+       is right for the main row and wrong inside a menu, so the menu's links reset what they
+       inherit rather than theme.css growing a second shape. */
+    .pb-tabs a, .admin-trigger{ display:inline-flex; align-items:center; gap:7px; }
+    .tab-ico{ width:15px; height:15px; flex:0 0 auto; opacity:.75; }
+    .pb-tabs a.active .tab-ico{ opacity:1; }
+    .admin-wrap{ position:relative; }
+    /* The default disclosure triangle would sit beside our own caret. */
+    .admin-trigger::-webkit-details-marker{ display:none; }
+    .admin-trigger{ list-style:none; padding:13px 2px; margin-right:26px; font-weight:700;
+      color:#5e6e82; border-bottom:2px solid transparent; white-space:nowrap; cursor:pointer;
+      user-select:none; }
+    .admin-trigger:hover{ color:#354052; }
+    /* Open, or holding the page you are on: both mean "the thing you want is in here". */
+    .admin-wrap[open] > .admin-trigger, .admin-trigger.active{ color:#e55608; border-bottom-color:#e55608; }
+    .admin-caret{ font-size:10px; opacity:.6; margin-left:1px; }
+    .admin-menu{ position:absolute; top:100%; left:0; z-index:60; min-width:208px; padding:6px;
+      background:#fff; border:1px solid #d8e2ef; border-radius:10px;
+      box-shadow:0 10px 28px rgba(19,59,73,.14); display:flex; flex-direction:column; }
+    .pb-tabs .admin-menu a{ padding:8px 10px; margin:0; border-bottom:0; border-radius:7px;
+      font-size:13.5px; font-weight:600; color:#354052; }
+    .pb-tabs .admin-menu a:hover{ background:#f4f7fb; color:#133b49; }
+    .pb-tabs .admin-menu a.active{ background:#fdeee4; color:#c94d07; border-bottom:0; }
+    .admin-sep{ height:1px; background:#edf2f9; margin:5px 6px; }
+    /* "all segments" pill (AI-1079). Deliberately quieter than the segment badge beside it:
+       the badge states what the row IS, this only offers a shortcut, and the shortcut must not
+       out-shout the fact. Turns solid once the whole set is selected, so the offer reads as
+       fully picked from any one of its rows. */
+    .seg-all{ font-size:10px; font-weight:800; letter-spacing:.03em; text-transform:uppercase;
+      color:#5e6e82; background:#fff; border:1px solid #d8e2ef; border-radius:9999px;
+      padding:1px 7px; line-height:1.5; cursor:pointer; white-space:nowrap; }
+    .seg-all:hover{ border-color:#e8935a; color:#c94d07; background:#fdeee4; }
+    .seg-all.on{ background:#133b49; border-color:#133b49; color:#fff; }
+    .seg-all.on:hover{ background:#1b4e60; border-color:#1b4e60; color:#fff; }
     /* agent panel */
     .agent-label{ color:#3f7d7d; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
     .agent-bubble{ background:#eef2f1; border:1px solid #e3ebe9; border-radius:14px; padding:13px 15px; color:#3a4a52; font-size:14px; line-height:1.55; }
@@ -505,19 +539,33 @@
       <!-- tabs -->
       <div class="pb-tabs px-5 flex items-center justify-between">
         <nav class="flex items-center">
-          <a href="#" data-tab="compose" class="active">Offers</a>
-          <a href="#" data-tab="queue">Queue</a>
-          <a href="#" data-tab="prices">Ticket Prices</a>
-          <a href="#" data-tab="history">Market History</a>
-          <a href="#" data-tab="templates">Templates</a>
-          <a href="#" data-tab="rules">Cole Rules</a>
-          <!-- Replies sits beside Market History on purpose: history is what we said, replies is
-               what came back, and they are read one after the other. -->
-          <a href="#" data-tab="replies">Replies</a>
-          <!-- Do Not Contact sits last among the data tabs because it is consulted, not worked:
-               you come here to check whether someone is on it, or to add a list, not daily. -->
-          <a href="#" data-tab="dnc">Do Not Contact</a>
-          <a href="#" data-tab="reports">Reports</a>
+          <a href="#" data-tab="compose" class="active"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1z"/><path d="M15 8a4 4 0 0 1 0 8"/></svg>Offers</a>
+          <a href="#" data-tab="queue"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Queue</a>
+          <!-- Replies stays a main tab: history is what we said, replies is what came back, and
+               replying is daily work. The reporting and setup pages it used to sit beside are
+               now behind Admin (AI-1074), which is why it reads as a main tab on its own. -->
+          <a href="#" data-tab="replies"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v5"/></svg>Replies</a>
+          <!-- ADMIN (AI-1074). Everything you configure or consult rather than work through
+               every day: templates, Cole's rules, ticket prices, market history, reports and the
+               Do Not Contact list. A <details> rather than a JS menu so Esc, Tab and the
+               keyboard work without being written; the document click handler below closes it
+               the way a menu is expected to close. The links keep their data-tab attributes, so
+               showTab, the hash router and every programmatic .click() elsewhere in this file
+               still find them by the same selector they always used. -->
+          <details class="admin-wrap" id="admin-menu">
+            <summary class="admin-trigger" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg>Admin<span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
+            <div class="admin-menu" role="menu">
+              <a href="#" data-tab="prices" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v20"/><path d="M17 7a4 4 0 0 0-4-3h-2a3 3 0 0 0 0 6h2a3 3 0 0 1 0 6h-2a4 4 0 0 1-4-3"/></svg>Ticket Prices</a>
+              <a href="#" data-tab="history" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 8v4l3 2"/></svg>Market History</a>
+              <a href="#" data-tab="reports" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Reports</a>
+              <div class="admin-sep" role="separator"></div>
+              <a href="#" data-tab="templates" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Templates</a>
+              <a href="#" data-tab="rules" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg>Cole Rules</a>
+              <!-- Do Not Contact was not named in the ticket. It sits here because it is
+                   consulted, not worked -- the same reason it was last among the data tabs. -->
+              <a href="#" data-tab="dnc" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Do Not Contact</a>
+            </div>
+          </details>
         </nav>
         <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
              so a logged-out visitor never sees an empty account chip on the way to /login. -->
@@ -3179,8 +3227,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
+      // AI-1074. A tab inside Admin lights the Admin trigger instead: the row must still say
+      // where you are when the page you are on is not one of the three visible tabs.
+      const aw = document.getElementById('admin-menu');
+      if(aw){
+        aw.querySelector('.admin-trigger')?.classList.toggle('active', !!aw.querySelector(`[data-tab="${tab}"]`));
+        aw.open = false;   // a chosen destination closes the menu it was chosen from
+      }
     }
     document.querySelectorAll('.pb-tabs [data-tab]').forEach(a => a.addEventListener('click', e => { e.preventDefault(); location.hash = a.dataset.tab; showTab(a.dataset.tab); }));
+    // AI-1074. <details> opens and closes itself on the summary, but it does NOT close when you
+    // click away or press Esc, and a nav menu that stays open over the page reads as broken.
+    (() => {
+      const aw = document.getElementById('admin-menu');
+      if(!aw) return;
+      document.addEventListener('click', e => { if(aw.open && !aw.contains(e.target)) aw.open = false; });
+      document.addEventListener('keydown', e => {
+        if(e.key !== 'Escape' || !aw.open) return;
+        aw.open = false;
+        aw.querySelector('.admin-trigger')?.focus();   // Esc returns focus to what opened it
+      });
+    })();
     // A hash is either a bare tab ("#queue") or a tab with a target ("#prices:<event_id>"),
     // the second form being how a price link deep-links to one row. Both are handled here, and
     // a hashchange listener is required because those links are ordinary anchors: they change
@@ -4342,11 +4409,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // is what one queue row means. Anything coarser (event alone) would make three segment
       // rows of the same game indistinguishable in a selection.
       const pickKey = e => `${e.event_id || ''}|${e.segment || ''}`;
+      // AI-1079. Every segment row of one offer that could actually be queued. Same two
+      // exclusions the checkbox itself applies -- already queued, and no market -- because this
+      // selects the very rows those render instead of a checkbox, and a one-click control must
+      // not reach anything a click could not.
+      //
+      // It reads lastItems, the FILTERED set, not ROWS. With a Segment filter on, the screen is
+      // a deliberately narrowed view of the board and "all" means all of what is shown; picking
+      // rows the filter just hid would be the control disagreeing with the page it sits on.
+      const eventPickKeys = id => lastItems
+        .filter(e => (e.event_id || '') === id && (e.state_code || e.market_key))
+        .map(pickKey)
+        .filter(k => !QUEUED.has(k));
       const picked = new Set();
       // Keys already live in the queue. Read once per load; the RPC would skip them anyway, but
       // offering a checkbox that silently does nothing is worse than not offering one.
       let QUEUED = new Set();
       let lastShown = [];          // the rows currently rendered, for the header checkbox
+      // AI-1079. The rows that pass the filters on EVERY page, which is what "all segments of
+      // this offer" has to mean: an offer's three segment rows sort together but can still fall
+      // either side of a page break, and a control that silently skipped the one overleaf would
+      // be worse than the three clicks it replaces.
+      let lastItems = [];
       let ROWS = [], REGIONS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '', segF = '';
       // AUDIENCE SPORT (migration 080). '' = everyone, '__off' = everyone whose sport is NOT the
       // game's, or a specific sport. SPORT_REACH is (code|segment|sport) -> {phone,email}, read
@@ -4430,6 +4514,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const start = (page - 1) * size;
         const shown = view.slice(start, start + size);
         lastShown = shown;
+        lastItems = items;
         const rng = el('cbs-range');
         if(rng) rng.textContent = items.length
           ? `${(start + 1).toLocaleString()}–${Math.min(start + size, items.length).toLocaleString()} of ${items.length.toLocaleString()}${pageSize > 0 ? ` · page ${page} of ${pages}` : ''}`
@@ -4506,7 +4591,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             :`${window.__priceLink ? window.__priceLink(e) : '<span class="text-base-content/40">—</span>'}`}</td>
           <td>${sport}</td>
           <td>${market}</td>
-          <td>${segBadge(e.segment)}</td>
+          ${(() => {
+            // AI-1079. Josh: on a 50-to-80 dollar game every segment gets the blast, so ticking
+            // three boxes was the common case, not the exception. The control sits in the
+            // Segment column because that is the thing it acts on, and it is offered from every
+            // row of the offer so it is wherever your eye already is.
+            //
+            // Hidden when there is only one selectable segment row: "all" of one is the
+            // checkbox beside it, and an extra control that does the same thing invites the
+            // reading that the checkbox did something narrower.
+            const sibs = eventPickKeys(e.event_id || '');
+            if(sibs.length < 2) return `<td>${segBadge(e.segment)}</td>`;
+            const on = sibs.every(k => picked.has(k));
+            return `<td><div class="flex items-center gap-1.5">${segBadge(e.segment)}
+              <button class="seg-all${on ? ' on' : ''}" data-pickall="${esc(e.event_id || '')}"
+                title="${on ? 'Clear all ' + sibs.length + ' segments of this offer'
+                            : 'Select all ' + sibs.length + ' segments of this offer in one click'}"
+                aria-pressed="${on}">all</button></div></td>`;
+          })()}
           <td class="font-semibold">${fmt(e.companies)}</td>
           ${(() => {
             // Reach under the audience-sport filter. When it is on, the figure is not the row's
@@ -5123,6 +5225,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const k = box.getAttribute('data-pick');
         if(box.checked) picked.add(k); else picked.delete(k);
         paintPick();
+      });
+
+      // AI-1079. One click for every segment of an offer, and the same click again to undo it.
+      // A click, not a change: this is a button, and the row's own checkbox must not see it.
+      el('cbs-rows')?.addEventListener('click', ev => {
+        const btn = ev.target.closest('[data-pickall]');
+        if(!btn) return;
+        ev.preventDefault();
+        const keys = eventPickKeys(btn.getAttribute('data-pickall'));
+        if(!keys.length) return;
+        // Partly selected counts as off, so the first click always completes the set. Clearing
+        // from half-selected would make the same button mean two things depending on state.
+        const on = keys.every(k => picked.has(k));
+        keys.forEach(k => on ? picked.delete(k) : picked.add(k));
+        // Full re-render: the sibling rows' checkboxes and every "all" button on this offer
+        // change together, and they are not all on screen.
+        render();
       });
 
       // Header box: this page only, and only rows that can actually be selected.
@@ -6186,9 +6305,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function priceTabBusy(on){
         const a = document.querySelector('.pb-tabs [data-tab="prices"]');
         if(!a) return;
-        const old = a.querySelector('.pb-tab-spin');
-        if(on && !old) a.insertAdjacentHTML('beforeend', ' <span class="pb-tab-spin loading loading-spinner loading-xs align-middle" style="color:#e8935a" title="Refreshing prices…"></span>');
-        if(!on && old) old.remove();
+        // AI-1074 moved this label inside the Admin menu, where it is out of sight while the
+        // menu is closed — which is almost always. The spinner exists precisely to be seen from
+        // anywhere in the app, so it goes on the Admin trigger as well: on the link for when the
+        // menu is open, on the trigger for the rest of the time.
+        const hosts = [a, a.closest('.admin-wrap')?.querySelector('.admin-trigger')].filter(Boolean);
+        hosts.forEach(h => {
+          const old = h.querySelector('.pb-tab-spin');
+          if(on && !old) h.insertAdjacentHTML('beforeend', ' <span class="pb-tab-spin loading loading-spinner loading-xs align-middle" style="color:#e8935a" title="Refreshing prices…"></span>');
+          if(!on && old) old.remove();
+        });
       }
 
       // Finished while the operator was in another browser tab: say so in the tab title, and put it
