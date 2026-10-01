@@ -45,7 +45,23 @@ import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
 
-export const config = { maxDuration: 60 };
+// 300s, NOT the old 60. A real blast does not fit in a minute, and the way it failed to fit was
+// the worst possible: Vercel killed the function mid-run, so CakeMail was left holding a campaign
+// that had been built but never scheduled, and this file never reached the line that records a
+// failure. The row stayed 'confirmed' with send_failures NULL, the browser got a 504 with no JSON
+// to show, and the operator saw a button that did nothing.
+//
+// MEASURED, 2026-10-01: one recipient through the production account scheduled and delivered fine.
+// The same code against 905 and 627 recipients timed out — four hourly ticks in a row each built a
+// campaign for the first due row and died before reaching the other five. Nothing was ever sent.
+// lib/cakemail.js is five sequential calls (list, policy, import, campaign, SCHEDULE) and the
+// import of ~900 contacts is what eats the budget; the send is mostly WAITING on CakeMail, not
+// working, so a longer ceiling costs nothing when runs are short.
+//
+// This does not make a run unbounded. The loop still walks due rows one at a time, and a tick that
+// runs out of time simply leaves the remaining rows untouched for the next hour — marking sent is
+// the last thing done per row, so a row is never recorded as sent when it was not.
+export const config = { maxDuration: 300 };
 
 const normPhone = p => { let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; };
 const validPhone = p => /^\+\d{10,15}$/.test(p||'');
