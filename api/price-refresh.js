@@ -424,6 +424,36 @@ export default async function handler(req, res) {
       else { written = Number(wBody) || 0; }
     }
 
+    // Price history (migration 088): each source's cheapest listing, stamped with this run. Best
+    // effort and not awaited into the result — the table may not exist yet on a database that has
+    // not run the migration, and a refresh must never fail over a log of itself.
+    let historyWritten = 0;
+    if (!dry && priceRows.length) {
+      const idOf = new Map(games.map(g => [g.external_id, g.id]));
+      const at = new Date().toISOString();
+      const rows = [];
+      for (const row of priceRows) {
+        const eid = idOf.get(row.external_id);
+        if (!eid) continue;
+        const best = new Map();                        // source -> its cheapest priced candidate
+        for (const cand of row.candidates || []) {
+          if (!cand || cand.price == null || cand.error) continue;
+          const cur = best.get(cand.source);
+          if (!cur || (cand.all_in ?? cand.price) < (cur.all_in ?? cur.price)) best.set(cand.source, cand);
+        }
+        for (const [source, cand] of best) {
+          rows.push({ event_id: eid, source, price: cand.price, all_in: cand.all_in ?? null,
+            seats: cand.seats === 1 || cand.seats === 2 ? cand.seats : null, section: cand.section || null,
+            chosen: !!cand.chosen, checked_at: at });
+        }
+      }
+      if (rows.length) {
+        const hR = await fetch(`${supaUrl}/rest/v1/event_price_history`, {
+          method: 'POST', headers: { ...sh, Prefer: 'return=minimal' }, body: JSON.stringify(rows) }).catch(() => null);
+        if (hR && hR.ok) historyWritten = rows.length;
+      }
+    }
+
     // One PATCH per unpriced game — PostgREST cannot set a different value per row in one request.
     // These are the minority (the misses), and a failure here never fails the run: the prices that
     // did land are what matters, and the next run rewrites these lists anyway.
@@ -524,6 +554,7 @@ export default async function handler(req, res) {
         : undefined,
       unpriced_with_errors: errorOnly.length || undefined,
       error_lists_written: dry ? undefined : errorListsWritten,
+      history_written: dry ? undefined : historyWritten,
     });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });

@@ -3873,6 +3873,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <summary><span class="pp-cands-title">Prices</span><span class="pp-caret">&#9656;</span></summary>
             <div class="pp-cands-body"></div>
           </details>
+          <div class="pp-hist mb-2 hidden text-[10px] leading-snug text-base-content/60"></div>
           <div class="pp-err mb-2 hidden"></div>
           <div class="flex items-center gap-1">
             <button class="btn btn-xs btn-primary flex-1" data-pp="save">Save</button>
@@ -3962,6 +3963,43 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(current !== cur) return;            // the box was closed or moved to another row meanwhile
         cur.cands = Array.isArray(list) && list.length ? list : null;
         renderCandidates();
+        loadHistory(cur);
+      }
+
+      // Price over time (migration 088): the cheapest all-in price found at each refresh, so "is this
+      // game getting cheaper?" has an answer. Best effort and silent on failure — a database that has
+      // not run the migration yet has no such table, and the box works exactly as before without it.
+      async function loadHistory(cur){
+        const el = pop && pop.querySelector('.pp-hist');
+        if(!el) return;
+        el.classList.add('hidden');
+        try {
+          const url = cfg.SUPABASE_URL + '/rest/v1/event_price_history?select=source,price,all_in,checked_at&order=checked_at.asc&limit=400&event_id=eq.' + encodeURIComponent(cur.id);
+          const r = await fetch(url, { headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY } });
+          const rows = r.ok ? await r.json().catch(() => null) : null;
+          if(current !== cur || !Array.isArray(rows) || !rows.length) return;
+          // One point per refresh: the cheapest source at that moment.
+          const byRun = new Map();
+          for(const x of rows){
+            const v = Number(x.all_in != null ? x.all_in : x.price);
+            if(!(v > 0)) continue;
+            const k = String(x.checked_at).slice(0, 16);
+            if(!byRun.has(k) || v < byRun.get(k).v) byRun.set(k, { v, src: x.source, at: x.checked_at });
+          }
+          const pts = [...byRun.values()];
+          if(!pts.length) return;
+          const low = pts.reduce((a, b) => b.v < a.v ? b : a);
+          const fmt = d => etDate(new Date(d), { month: 'short', day: 'numeric' });
+          const last = pts.slice(-6);
+          const trend = last.length > 1
+            ? (last[last.length - 1].v < last[0].v ? ' <span class="text-success">&#9660;</span>' : last[last.length - 1].v > last[0].v ? ' <span class="text-error">&#9650;</span>' : '')
+            : '';
+          el.innerHTML = `<b class="text-[#133b49]">Price over time</b> · lowest seen ${esc2(ppMoney(low.v))} (${esc2(low.src)}, ${esc2(fmt(low.at))})`
+            + `<br>${last.map(p => `${esc2(fmt(p.at))} ${esc2(ppMoney(p.v))}`).join(' &rarr; ')}${trend}`
+            + (pts.length === 1 ? ' · first check — a trend appears after the next refresh' : '');
+          el.classList.remove('hidden');
+          placePop(document.querySelector(`[data-priceedit="${CSS.escape(cur.id)}"]`) || pop);
+        } catch(e){ /* history is optional */ }
       }
 
       function renderCandidates(){
@@ -4033,7 +4071,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           }
 
           const sel = current.pending === i;
-          const allIn = x.all_in == null ? '' : (Number(x.all_in) === Number(x.price) ? 'fees included' : esc2(ppMoney(x.all_in)) + ' all-in');
+          const allIn = x.all_in == null ? '' : (Number(x.all_in) === Number(x.price) ? 'fees included' : x.all_in_estimated ? '~' + esc2(ppMoney(x.all_in)) + ' all-in (est.)' : esc2(ppMoney(x.all_in)) + ' all-in');
           return `<div class="pp-cand${sel ? ' pp-sel' : ''}">
             <input type="checkbox" data-ppcand="${i}" ${sel ? 'checked' : ''} aria-label="Use this price">
             <div class="flex-1 min-w-0">

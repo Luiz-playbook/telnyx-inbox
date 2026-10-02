@@ -43,3 +43,6 @@ bruno/
 suppression/*
 !suppression/.gitkeep
 !suppression/README.md
+
+# Local reference files (not for the repo)
+xdocs/
