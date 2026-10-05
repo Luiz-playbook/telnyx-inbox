@@ -224,6 +224,7 @@
     .price-pop .pp-errsign{ display:inline-block; font-size:10px; font-weight:800; color:#b45309; background:#fef3c7;
                             border:1px solid #fde68a; border-radius:9999px; padding:0 6px; margin-left:3px; cursor:help; }
     .price-pop .pp-nosign{ display:inline-block; font-size:10px; font-weight:700; color:#8695a7; margin-left:3px; cursor:help; }
+    .price-pop .pp-warnline{ color:#b45309; margin-top:2px; cursor:help; }
     .price-pop .pp-now{ display:inline-block; font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
                         color:#067523; background:#eaf5ee; border:1px solid #cfe9d8; border-radius:9999px;
                         padding:0 5px; margin-left:3px; vertical-align:middle; }
@@ -3845,6 +3846,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // A scraped price is a real listing, so it can say WHICH seats it is: section, row, the
       // section group the marketplace files it under, and what it costs with fees. These helpers
       // are shared by the info tooltip and the editor so the two describe a listing identically.
+      // Why a price is marked "possibly standing room" (lib/scrape-price.js, flagStandingSuspects).
+      const ppSuspectTip = x => "This site only publishes a game's lowest price, with no section, so standing room cannot be ruled out. It is far below Gametime's cheapest real seat for the same game" + (x.suspect_standing_low != null ? " and close to Gametime's standing-room price (" + ppMoney(x.suspect_standing_low) + ")" : "")
+        + ". It is kept in the list and never chosen automatically; tick it to use it anyway.";
       const ppMoney = n => (n == null || n === '') ? '—'
         : '$' + (Number(n) % 1 ? Number(n).toFixed(2) : String(Number(n)));
       const ppSeatDesc = c => [c.section ? `Section ${c.section}` : '', c.row ? `Row ${c.row}` : '', c.section_group || '']
@@ -3894,6 +3898,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // describing one of those listings beside a typed number would be attaching a basis it lacks.
       const chosenCandidate = r => (r && r.price_source !== 'manual' && Array.isArray(r.price_candidates))
         ? (r.price_candidates.find(c => c && c.chosen && c.price != null && !c.error) || null) : null;
+      // WHY A PRICE IS BLANK (Josh, 2026-09-30: "if the price doesn't show up, what does that mean?").
+      // Read from the stored error rows when the row carries them, otherwise from what is known.
+      // Returns { short, tip } — short sits under the dash, tip is the full explanation.
+      function priceBlankReason(r){
+        const c = r && Array.isArray(r.price_candidates) ? r.price_candidates : null;
+        const errs = c ? c.filter(x => x && x.error) : [];
+        if(errs.length){
+          const real = errs.filter(x => x.error_kind !== 'not_listed');
+          const detail = errs.map(x => (x.source || 'Source') + ': ' + x.error).join('\n');
+          return real.length
+            ? { short: 'source error', tip: 'A price source failed on the last refresh, so there is nothing to show yet.\n' + detail + '\nRefresh this game from the price editor to try again.' }
+            : { short: 'not listed', tip: 'No marketplace lists this game yet, so there is no price to read.\n' + detail };
+        }
+        if(r && r.priced_at && r.ticket_price == null) return { short: 'cleared', tip: 'The price was cleared by hand. The next refresh will look it up again.' };
+        return { short: 'not looked up yet', tip: 'No refresh has priced this game yet. Only games inside the pricing window are looked up automatically — open the editor and use the refresh icon to look this one up now.' };
+      }
+      window.__priceBlankReason = priceBlankReason;
+
       function priceInfo(r){
         // A row carrying its own overridden ticket_price is not what events_master's sourcing
         // describes. Showing nothing beats attaching someone else's provenance to a hand-typed
@@ -3907,7 +3929,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const pick = chosenCandidate(r);
         // Prices only — error rows are not something the price was picked from.
         const nCands = pick ? r.price_candidates.filter(c => c && c.price != null && !c.error).length : 0;
-        const nErr = pick ? r.price_candidates.length - nCands : 0;
+        const nErr = pick ? r.price_candidates.filter(c => c && c.error).length : 0;
+        const nSus = pick ? r.price_candidates.filter(c => c && c.suspect_standing).length : 0;
         const lines = [
           'Per-ticket get-in price, before taxes and fees.',
           manual ? 'Set by hand by an operator.' : `Based on ${priceBasis(r)}.`,
@@ -3922,6 +3945,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : pick.via === 'ai' ? 'Found by AI search — no marketplace page could be read.'
             : `Cheapest all-in of ${nCands} price${nCands === 1 ? '' : 's'}.`) : '',
           nErr ? `${nErr} source${nErr === 1 ? '' : 's'} returned no price — open the editor to see why.` : '',
+          pick && nSus ? `${nSus} lower price${nSus === 1 ? '' : 's'} skipped as possibly standing room (far below Gametime's cheapest real seat) — open the editor to review.` : '',
           `${manual ? 'Set' : 'Checked'}: ${etDate(when,{month:'short',day:'numeric'})} ${etTime(when,{hour:'numeric',minute:'2-digit'})} ET`,
           (r.price_currency && r.price_currency !== 'USD') ? `Currency: ${r.price_currency}` : '',
         ].filter(Boolean).join('\n');
@@ -4152,6 +4176,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 ${allIn ? `<span class="text-base-content/50">· ${allIn}</span>` : ''}
                 ${i === nowIdx ? '<span class="pp-now">current</span>' : ''}</div>
               <div class="text-[10px] text-base-content/60">${esc2(ppListing(x))}${checked ? ' · ' + checked : ''}</div>
+              ${x.suspect_standing ? `<div class="text-[10px] pp-warnline" title="${esc2(ppSuspectTip(x))}">&#9888; Possibly standing room &mdash; ${esc2(ppMoney(x.all_in))} is ${Math.round((1 - x.all_in / x.suspect_baseline) * 100)}% below Gametime&rsquo;s cheapest real seat (${esc2(ppMoney(x.suspect_baseline))}). Not picked automatically.</div>` : ''}
             </div>
             ${x.url ? `<a href="${esc2(x.url)}" target="_blank" rel="noopener" class="link link-primary text-[10px] whitespace-nowrap">view &#8599;</a>` : ''}
           </div>`;
@@ -4175,7 +4200,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             + `<details class="pp-more"${open ? ' open' : ''}>`
             + `<summary class="text-[10px] link link-primary cursor-pointer pl-6 py-0.5">${rest.length} more ${esc2(g.src)} price${rest.length === 1 ? '' : 's'}</summary>`
             + rest.map(i => rowHtml(c[i], i)).join('') + `</details>`;
-        }).join('');
+        }).join('')
+          + (c.some(x => x && x.suspect_standing)
+            ? `<div class="text-[10px] leading-snug text-base-content/60 px-2 py-2 border-t border-base-200">&#9432; <b>Possibly standing room.</b> Gametime shows the section of every listing, so standing room is removed from its prices. TickPick, SeatGeek, StubHub and Vivid Seats show only a lowest price, so one more than 30% below Gametime&rsquo;s cheapest real seat is marked and skipped when the price is chosen. A genuinely cheap seat can trip this &mdash; tick it to use it.</div>`
+            : '');
         box.classList.remove('hidden');
       }
 
@@ -9708,7 +9736,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 + ((window.__priceManualBadge && window.__priceManualBadge(r)) || '')
                 + editBtn + saving
                 + '<div class="text-[10px] text-base-content/40">' + (r.__saving ? 'saving…' : 'get-in') + '</div>'
-              : '<span class="text-base-content/40">—</span>' + editBtn + saving;
+              : (() => { const why = window.__priceBlankReason ? window.__priceBlankReason(r) : null;
+                  return '<span class="text-base-content/40"' + (why ? ' title="' + esc2(why.tip) + '"' : '') + '>—</span>' + editBtn + saving
+                    + (why ? '<div class="text-[10px] text-base-content/40" title="' + esc2(why.tip) + '">' + esc2(why.short) + '</div>' : ''); })();
             // The outbound listing link lives here and ONLY here. This is the row the Queue and
             // Campaigns prices now route to, so this is where leaving the app belongs.
             // A row whose stored source is not a marketplace still has a working listing link,
@@ -9911,9 +9941,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const label = priced ? '$' + fmt(row.ticket_price) : '&mdash;';
         const cls = priced ? 'link link-primary font-semibold' : 'link text-base-content/40';
         if(!id) return '<span class="' + (priced ? 'font-semibold text-[#133b49]' : 'text-base-content/40') + '">' + label + '</span>';
-        const tip = priced ? 'Open this event in Ticket Prices' : 'No price yet — open in Ticket Prices to set one';
+        const why = priced ? null : (window.__priceBlankReason ? window.__priceBlankReason(row) : null);
+        const tip = priced ? 'Open this event in Ticket Prices' : (why ? why.tip + '\n\nOpen in Ticket Prices to set one.' : 'No price yet — open in Ticket Prices to set one');
         return '<a href="#prices:' + esc2(String(id)) + '" class="' + cls + '"'
-          + ' title="' + tip + '">' + label + '</a>';
+          + ' title="' + esc2(tip) + '">' + label + '</a>'
+          + (why ? '<div class="text-[10px] text-base-content/40" title="' + esc2(why.tip) + '">' + esc2(why.short) + '</div>' : '');
       };
 
       // A stale price has to say so where the decision is actually made, not only in the price
