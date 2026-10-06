@@ -1547,11 +1547,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <div class="modal-box max-w-2xl">
               <h3 class="font-extrabold text-[#133b49] text-lg">Import contacts</h3>
               <p class="text-sm text-base-content/60 mt-1">
-                Four columns: <span class="font-mono text-xs">First Name</span>,
+                Five columns: <span class="font-mono text-xs">First Name</span>,
                 <span class="font-mono text-xs">Last Name</span>,
                 <span class="font-mono text-xs">Email</span>,
-                <span class="font-mono text-xs">Phone Number</span>.
-                A row needs an email <em>or</em> a phone &mdash; the rest is optional.
+                <span class="font-mono text-xs">Phone Number</span>,
+                <span class="font-mono text-xs">State</span>.
+                A row needs an email <em>or</em> a phone. <b>State</b> decides which market a
+                contact belongs to &mdash; without one they can be stored and searched but never
+                blasted. Full names and codes both work
+                (<span class="font-mono text-xs">California</span>,
+                <span class="font-mono text-xs">CA</span>,
+                <span class="font-mono text-xs">Ontario</span>).
               </p>
 
               <div class="mt-3 flex items-center gap-2 flex-wrap text-xs">
@@ -3743,6 +3749,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         email:      ['email','emailaddress','email1','workemail','contactemail'],
         phone:      ['phonenumber','phone','mobile','mobilephone','cell','cellphone','telephone','number','phone1'],
         full_name:  ['name','fullname','contactname','contact'],
+        // A contact needs a location to belong to a market. Spelt several ways because a
+        // spreadsheet will be: the database resolves whatever arrives through state_alias and
+        // then geo_region, so "CA", "California" and "Ontario" all land correctly.
+        state:      ['state','province','region','stateprovince','statecode','st'],
       };
 
       // What the modal is holding, parsed and ready, pending confirmation.
@@ -3763,7 +3773,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             Download the sample to see the expected headers.` };
         }
         const get = (r, f) => (idx[f] === undefined ? '' : String(r[idx[f]] ?? '').trim());
-        const rows = []; let skipped = 0, badPhone = 0;
+        const rows = []; let skipped = 0, badPhone = 0, noState = 0;
         for(const r of table.slice(1)){
           const email = get(r,'email'), phone = get(r,'phone');
           if(!email && !phone){ skipped++; continue; }
@@ -3777,10 +3787,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // Flagged, not rejected: norm_phone_e164 is the send path's and it accepts short
           // numbers, so the warning is the honest place for this rather than a silent drop.
           if(phone && String(phone).replace(/\D/g,'').length < 10) badPhone++;
-          rows.push({ first_name: first || null, last_name: last || null, email: email || null, phone: phone || null });
+          if(!get(r,'state')) noState++;
+          rows.push({ first_name: first || null, last_name: last || null,
+                      email: email || null, phone: phone || null,
+                      state: get(r,'state') || null });
         }
         if(!rows.length) return { error: 'No row in that file had an email or a phone number.' };
-        return { rows, headers: header, skipped, badPhone, label, kind, truncated };
+        return { rows, headers: header, skipped, badPhone, noState, label, kind, truncated };
       }
 
       function showPreview(m){
@@ -3990,11 +4003,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // The sample is generated rather than served as a file: one fewer thing in /public to
       // drift out of step with the headers the parser above actually accepts.
       function downloadSample(){
-        const csv = 'First Name,Last Name,Email,Phone Number\n'
-                  + 'Ada,Lovelace,ada@example.com,+1 415 555 0100\n'
-                  + 'Grace,Hopper,grace@example.com,+1 415 555 0101\n'
-                  + 'Alan,,alan@example.com,\n'
-                  + 'Katherine,Johnson,,+1 415 555 0103\n';
+        // Deliberately shows both state forms, a province, and one row with none — so the sample
+        // doubles as documentation of what is accepted rather than just a header line.
+        const csv = 'First Name,Last Name,Email,Phone Number,State\n'
+                  + 'Ada,Lovelace,ada@example.com,+1 415 555 0100,California\n'
+                  + 'Grace,Hopper,grace@example.com,+1 415 555 0101,CA\n'
+                  + 'Alan,,alan@example.com,,Ontario\n'
+                  + 'Katherine,Johnson,,+1 415 555 0103,\n';
         const a = document.createElement('a');
         a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
         a.download = 'playbook-contacts-sample.csv';

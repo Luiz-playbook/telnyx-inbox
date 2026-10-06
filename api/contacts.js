@@ -380,6 +380,10 @@ async function handlePost(req, res, call, caller) {
       last_name:  r && r.last_name  ? String(r.last_name).slice(0, 120)  : null,
       email:      r && r.email      ? String(r.email).slice(0, 320)      : null,
       phone:      r && r.phone      ? String(r.phone).slice(0, 40)       : null,
+      // Passed through raw. The database resolves it to a market code through state_alias and
+      // then geo_region (migration 100) -- the browser must not decide what "Ontario" means, or
+      // an upload would map to markets differently from the way the send path does.
+      state:      r && r.state      ? String(r.state).slice(0, 80)       : null,
     })).filter(r => r.email || r.phone);
 
     if (!clean.length) {
