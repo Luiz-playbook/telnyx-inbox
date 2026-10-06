@@ -6043,7 +6043,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // collapse to 101,295 people, so a reach figure overstates by about 14%, and 625 people
       // sit in more than one market where two campaigns can each blast them believing they are
       // alone. The panel says so in words rather than leaving it to be found after a send.
-      const RC = { code: '', seg: '', ev: '', q: '', chan: '', page: 0, total: 0, busy: 0 };
+      const RC = { code: '', seg: '', ev: '', q: '', chan: '', page: 0, total: 0, busy: 0,
+                   lastRows: null, lastSum: null };
 
       function rcOpen(){
         const p = el('rc-panel'); if(!p) return;
@@ -6076,8 +6077,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(mine !== RC.busy) return;                       // a newer request already started
           if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
           RC.total = Number(j.total || 0);
+          RC.lastRows = j.rows || [];
+          RC.lastSum  = j.page_summary || {};
           rcPaintWarn(j.recency);
-          rcPaint(j.rows || [], j.page_summary || {});
+          rcPaint(RC.lastRows, RC.lastSum);
         } catch(e){
           if(mine !== RC.busy) return;
           host.innerHTML = `<div class="text-sm text-error p-3">${esc(e.message || e)}</div>`;
@@ -6121,12 +6124,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const list = rows.filter(r => RC.chan === 'email' ? !!r.email : RC.chan === 'sms' ? !!r.phone : true);
 
         if(sumEl){
-          const bits = [`<b>${RC.total.toLocaleString()}</b> ${RC.total === 1 ? 'person' : 'people'}`];
-          if(sum.emailable != null) bits.push(`${sum.emailable} emailable on this page`);
-          if(sum.smsable != null)   bits.push(`${sum.smsable} textable`);
-          if(sum.suppressed)        bits.push(`<span class="text-[#a8321e]">${sum.suppressed} suppressed</span>`);
-          if(sum.in_other_markets)  bits.push(`<span class="text-[#b4560b]">${sum.in_other_markets} also in another market</span>`);
+          // THE HEADLINE HAS TO MOVE WITH THE FILTER. It used to be the server's page summary
+          // only, so choosing "Email only" changed the list and left every number above it
+          // identical — which reads as the filter having done nothing, especially when the rows
+          // that vanished were below the fold (Vhea, 2026-10-06).
+          const bits = [];
+          if(RC.chan){
+            bits.push(`<b>${list.length.toLocaleString()}</b> shown &mdash; ${RC.chan === 'email' ? 'email only' : 'SMS only'}`);
+            bits.push(`${RC.total.toLocaleString()} ${RC.total === 1 ? 'person' : 'people'} in this market`);
+          } else {
+            bits.push(`<b>${RC.total.toLocaleString()}</b> ${RC.total === 1 ? 'person' : 'people'}`);
+            if(sum.emailable != null) bits.push(`${sum.emailable} emailable on this page`);
+            if(sum.smsable != null)   bits.push(`${sum.smsable} textable`);
+          }
+          if(sum.suppressed)       bits.push(`<span class="text-[#a8321e]">${sum.suppressed} suppressed</span>`);
+          if(sum.in_other_markets) bits.push(`<span class="text-[#b4560b]">${sum.in_other_markets} also in another market</span>`);
           sumEl.innerHTML = bits.join(' &middot; ')
+            // SAID PLAINLY, because it is a real limitation rather than a detail: the channel
+            // filter runs in the browser over the 100 rows on screen, while the person count is
+            // the whole market. Without this line "22 shown" next to "1,560 people" invites the
+            // reading that 22 is the market's email audience.
+            + (RC.chan ? '<div class="mt-1">The channel filter applies to this page of 100, not the whole market.</div>' : '')
             + '<div class="mt-1">Counted per PERSON. The reach figures in the table count contact rows, and the same address can appear under several organisations &mdash; the send collapses them, so it reaches fewer people than the column suggests.</div>';
         }
 
@@ -6182,6 +6200,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       function rcShow(code, seg, ev){
         RC.code = code; RC.seg = seg || ''; RC.ev = ev || ''; RC.q = ''; RC.chan = ''; RC.page = 0;
+        RC.lastRows = null; RC.lastSum = null;   // or the previous market's rows flash first
         const sr = el('rc-search'); if(sr) sr.value = '';
         const ch = el('rc-chan');   if(ch) ch.value = '';
         el('rc-panel-title').textContent = `Recipients - ${code}${seg ? ' / ' + seg : ''}`;
@@ -6207,7 +6226,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         clearTimeout(rcTimer);
         rcTimer = setTimeout(() => { RC.page = 0; rcLoad(); }, 300);
       });
-      el('rc-chan')?.addEventListener('change', e => { RC.chan = e.target.value; rcLoad(); });
+      el('rc-chan')?.addEventListener('change', e => {
+        RC.chan = e.target.value;
+        // Repaint, do not refetch: the filter is applied in the browser, so asking the server
+        // for the identical rows again only adds a round trip before the same answer.
+        if(RC.lastRows) rcPaint(RC.lastRows, RC.lastSum || {});
+        else rcLoad();
+      });
       el('rc-prev')?.addEventListener('click', () => { if(RC.page > 0){ RC.page--; rcLoad(); } });
       el('rc-next')?.addEventListener('click', () => { RC.page++; rcLoad(); });
 
