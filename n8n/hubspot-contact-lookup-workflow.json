@@ -1,14 +1,15 @@
 {
+  "name": "Marketing Blaster - HS look up contact email | Vhea",
   "nodes": [
     {
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        2800,
-        -784
+        4768,
+        -704
       ],
-      "id": "ce833267-477c-4df6-b6ff-66b1112677f9",
+      "id": "1428d1b7-5ee3-43f5-b829-d50d1076f33f",
       "name": "When clicking ‘Execute workflow’"
     },
     {
@@ -21,10 +22,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        2800,
-        -592
+        4768,
+        -512
       ],
-      "id": "ee6ea821-c7f6-460b-b977-555434574cab",
+      "id": "fc875691-7628-4bd8-ae50-ba018c315ac3",
       "name": "Webhook: Look up contact by email",
       "webhookId": "7c9e2a41-6b3d-4f80-9e12-5a7c3d1b8e40"
     },
@@ -35,10 +36,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3024,
-        -688
+        4992,
+        -608
       ],
-      "id": "12d2ff29-38c1-446b-b9af-3802d3692ff9",
+      "id": "7a705dfd-cfa4-4e90-9d1d-b5bd7ef15ed9",
       "name": "Prepare the email to search"
     },
     {
@@ -52,10 +53,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3600,
-        -704
+        5568,
+        -624
       ],
-      "id": "cd8c1b7b-1e7b-493f-a412-48b2eab394bf",
+      "id": "1842f927-1f2b-4a8d-95ab-50ab03bf3645",
       "name": "Look in the mirror first",
       "credentials": {
         "postgres": {
@@ -93,30 +94,30 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3824,
-        -704
+        5792,
+        -624
       ],
-      "id": "9580df2c-cb07-4d9d-83aa-62f434b096f9",
+      "id": "e550d492-d149-45a9-82e8-5dcaa19751e8",
       "name": "Already in the mirror?"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'email', operator: 'EQ', value: $json.email_in }] }],\n  properties: ['email','firstname','lastname','company','state','lifecyclestage','hs_lastmodifieddate'],\n  limit: 1\n}) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        4048,
-        -608
+        6016,
+        -528
       ],
-      "id": "6dc0e949-ac4f-4f92-b6da-c4a9a102360e",
+      "id": "a9650d96-a9e6-499c-b692-662b2870ee17",
       "name": "HubSpot: Search by email",
       "credentials": {
         "hubspotAppToken": {
@@ -132,10 +133,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        4272,
-        -608
+        6240,
+        -528
       ],
-      "id": "4eeb76d8-2bca-45b4-82fc-59edd3e0554e",
+      "id": "3ec19e1a-65ac-4815-a65b-7bed5c093bff",
       "name": "Shape the HubSpot result"
     },
     {
@@ -167,10 +168,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        4496,
-        -608
+        6464,
+        -528
       ],
-      "id": "9dbaa899-680e-4b37-891f-653859ee2f5f",
+      "id": "644426bd-f84c-4eb8-8da0-b6fe8264ed41",
       "name": "Does HubSpot have them?"
     },
     {
@@ -184,10 +185,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        4720,
-        -720
+        6688,
+        -640
       ],
-      "id": "ae8b8883-f1ac-4636-862f-b9be0ed2ed62",
+      "id": "cb8b4a1b-1050-469f-a00b-2621098469ac",
       "name": "Cache the contact",
       "credentials": {
         "postgres": {
@@ -207,10 +208,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        4720,
-        -512
+        6688,
+        -432
       ],
-      "id": "372abef6-e52e-4344-8947-4f3ba13e1832",
+      "id": "a38d4eee-9979-4d02-bcc7-314a6b504436",
       "name": "Respond: no such contact"
     },
     {
@@ -242,10 +243,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3264,
-        -688
+        5232,
+        -608
       ],
-      "id": "53e72f9d-5b5d-44d4-b9ea-30464101303e",
+      "id": "42d062e2-1192-4b2b-9bfc-325583aa1c98",
       "name": "Is the email usable?"
     },
     {
@@ -259,10 +260,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        3600,
-        -512
+        5568,
+        -432
       ],
-      "id": "dd3c0e4d-4249-4f4f-a071-ea8f85e7921b",
+      "id": "0ac94454-1e47-4f4f-9afe-153331a2c8ef",
       "name": "Respond: bad request"
     },
     {
@@ -272,21 +273,21 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5008,
-        -720
+        6976,
+        -640
       ],
-      "id": "6d3e5b66-8bb5-4d34-8d15-dc5006e392fe",
+      "id": "337fa40d-b9a3-4bb4-8f33-4e79f55513c0",
       "name": "Contact to enrich"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v4/associations/contacts/companies/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v4/associations/contacts/companies/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ inputs: [{ id: String($json.contact_id) }] }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -299,10 +300,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5264,
-        -720
+        7232,
+        -640
       ],
-      "id": "5a0e2e0d-0889-4467-b084-c8588060002a",
+      "id": "6ef2257a-2b9c-42a6-96d3-d64de47127bb",
       "name": "HubSpot: Companies on this contact",
       "retryOnFail": true,
       "maxTries": 3,
@@ -316,13 +317,13 @@
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v4/associations/contacts/deals/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v4/associations/contacts/deals/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ inputs: [{ id: String($('Contact to enrich').first().json.contact_id) }] }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -335,10 +336,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        5552,
-        -720
+        7520,
+        -640
       ],
-      "id": "b84c5557-4768-4b4f-b5d9-8cbeb95da896",
+      "id": "3e1c4c0f-7766-4ee7-b36f-4c139390a0c0",
       "name": "HubSpot: Deals on this contact",
       "retryOnFail": true,
       "maxTries": 3,
@@ -357,21 +358,21 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        5776,
-        -720
+        7744,
+        -640
       ],
-      "id": "558f6d27-b298-4ad0-9849-4b1276c0dd44",
+      "id": "48fbd1cf-0eca-4d52-87a4-4952dcf00879",
       "name": "Collect the associated ids"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/objects/companies/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/companies/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ properties: ['name','domain','state','lifecyclestage','hs_lastmodifieddate'], inputs: $json.company_inputs.map(id => ({ id })) }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -384,10 +385,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6000,
-        -720
+        7968,
+        -640
       ],
-      "id": "6557cf7a-50e0-451e-ad8f-506b32b290bd",
+      "id": "01448636-d264-48c7-90f8-46867754193f",
       "name": "HubSpot: Read those companies",
       "retryOnFail": true,
       "maxTries": 3,
@@ -401,13 +402,13 @@
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/objects/deals/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/deals/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ properties: ['dealname','pipeline','dealstage','amount','closedate','hs_lastmodifieddate'], inputs: $('Collect the associated ids').first().json.deal_inputs.map(id => ({ id })) }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -420,10 +421,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        6224,
-        -720
+        8192,
+        -640
       ],
-      "id": "3f08e0ea-aaa8-4654-b1c6-acde308912b6",
+      "id": "931120ab-7fba-467b-b99b-01c1187ddfb8",
       "name": "HubSpot: Read those deals",
       "retryOnFail": true,
       "maxTries": 3,
@@ -442,10 +443,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        6448,
-        -720
+        8416,
+        -640
       ],
-      "id": "6e78c7db-f65c-403d-aa03-8a1fab36b340",
+      "id": "b5f67819-6c27-4d4a-a2af-429282bdd49d",
       "name": "Shape company and deal rows"
     },
     {
@@ -459,10 +460,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        6672,
-        -720
+        8640,
+        -640
       ],
-      "id": "9d6c6f9e-8721-426f-98c0-25e11df7976c",
+      "id": "d24bdffe-7572-4480-809b-998c5a75b017",
       "name": "Cache the companies",
       "credentials": {
         "postgres": {
@@ -482,10 +483,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        6896,
-        -720
+        8864,
+        -640
       ],
-      "id": "fec5e56b-2603-4c2e-bdb7-ad51bbd2952d",
+      "id": "41b9fa68-ad95-475a-a041-befd9302426d",
       "name": "Cache the deals",
       "credentials": {
         "postgres": {
@@ -505,10 +506,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        7120,
-        -720
+        9088,
+        -640
       ],
-      "id": "62f5259f-2bad-4ea4-b8ea-45db93c63650",
+      "id": "4874de5f-b2ee-4155-926e-ebd2a9d4136b",
       "name": "Resolve the deal",
       "credentials": {
         "postgres": {
@@ -526,16 +527,15 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        7344,
-        -720
+        9312,
+        -640
       ],
-      "id": "2ebbcb5b-a817-4f1d-9c00-646b43fe8723",
+      "id": "94cdac80-b017-4c30-9f79-0d0b5f369209",
       "name": "Respond: contact, companies and deal"
     },
     {
       "parameters": {
         "url": "https://api.hubapi.com/crm/v3/pipelines/deals",
-        "method": "GET",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "hubspotAppToken",
         "options": {}
@@ -543,10 +543,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3248,
-        -208
+        5216,
+        -128
       ],
-      "id": "f0580e62-8f33-4d74-8cdd-ab8b0e750837",
+      "id": "ca590f2e-a454-4e2e-8625-94d7c7c2f144",
       "name": "HubSpot: Deal pipelines",
       "retryOnFail": true,
       "maxTries": 3,
@@ -565,10 +565,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        3472,
-        -208
+        5440,
+        -128
       ],
-      "id": "1026f444-977d-4c1e-96e3-95eed8d13cb1",
+      "id": "c09b1323-9299-421c-a865-b20c8e207f4a",
       "name": "Flatten the stages"
     },
     {
@@ -582,10 +582,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        3696,
-        -208
+        5664,
+        -128
       ],
-      "id": "5f273207-aa12-4470-a545-5923e17b994a",
+      "id": "150cc1df-2e67-4ade-8fcc-255c54c0799d",
       "name": "Cache the deal stages",
       "credentials": {
         "postgres": {
@@ -595,6 +595,7 @@
       }
     }
   ],
+  "pinData": {},
   "connections": {
     "When clicking ‘Execute workflow’": {
       "main": [
@@ -865,18 +866,16 @@
       ]
     }
   },
-  "pinData": {},
-  "meta": {
-    "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
-  },
-  "name": "Marketing Blaster - HS look up contact email | Vhea",
-  "id": "NtM1swQyI83OZRob",
   "active": true,
-  "versionId": "b29b8805-1d7e-4971-9e86-27e88f34e916",
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
+  "versionId": "48c7a966-cc52-4fe8-a5b7-6082d7176d3b",
+  "meta": {
+    "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
+  },
   "nodeGroups": [],
+  "id": "NtM1swQyI83OZRob",
   "tags": []
 }
