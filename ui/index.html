@@ -49,6 +49,28 @@
     .seg-all:hover{ border-color:#e8935a; color:#c94d07; background:#fdeee4; }
     .seg-all.on{ background:#133b49; border-color:#133b49; color:#fff; }
     .seg-all.on:hover{ background:#1b4e60; border-color:#1b4e60; color:#fff; }
+    /* Strategy multi-select (AI-1075). Shaped to sit in a row of daisyUI select-sm controls, so
+       it matches their height and border rather than inventing a third control style. */
+    .strat-wrap{ position:relative; }
+    .strat-trigger::-webkit-details-marker{ display:none; }
+    .strat-trigger{ list-style:none; display:inline-flex; align-items:center; gap:6px; height:2rem;
+      padding:0 10px; border:1px solid #d8e2ef; border-radius:8px; background:#fff; cursor:pointer;
+      font-size:13px; font-weight:600; color:#5e6e82; white-space:nowrap; user-select:none; }
+    .strat-trigger:hover{ border-color:#cbd6e2; }
+    .strat-trigger.on{ border-color:#e8935a; background:#fdeee4; color:#c94d07; }
+    .strat-caret{ font-size:10px; opacity:.6; }
+    .strat-menu{ position:absolute; top:100%; left:0; z-index:60; margin-top:4px; min-width:190px;
+      padding:6px; background:#fff; border:1px solid #d8e2ef; border-radius:10px;
+      box-shadow:0 10px 28px rgba(19,59,73,.14); display:flex; flex-direction:column; gap:1px; }
+    .strat-opt{ display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+      font-size:13px; color:#354052; cursor:pointer; }
+    .strat-opt:hover{ background:#f4f7fb; }
+    .strat-clear{ margin-top:3px; padding:5px 8px; border-top:1px solid #edf2f9; font-size:12px;
+      font-weight:700; color:#5e6e82; text-align:left; cursor:pointer; background:none; }
+    .strat-clear:hover{ color:#c94d07; }
+    /* The Type column on Offers - quieter than the segment badge, which states the audience. */
+    .type-pill{ display:inline-block; font-size:11px; font-weight:700; color:#3f7d7d;
+      background:#eef2f1; border:1px solid #e3ebe9; border-radius:9999px; padding:2px 9px; white-space:nowrap; }
     /* agent panel */
     .agent-label{ color:#3f7d7d; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
     .agent-bubble{ background:#eef2f1; border:1px solid #e3ebe9; border-radius:14px; padding:13px 15px; color:#3a4a52; font-size:14px; line-height:1.55; }
@@ -715,6 +737,10 @@
                   <input id="cbs-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Games to">
                   <button id="cbs-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
+                <!-- STRATEGY (AI-1075). First in the row because it is the broadest cut: it
+                     says which KIND of offer you are looking at, and every filter after it
+                     narrows within that. -->
+                <div id="cbs-strategy"></div>
                 <select id="cbs-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
@@ -791,7 +817,11 @@
                            a checkbox sharing a cell with a link is a mis-click waiting to
                            happen, and the Queue already puts it in a column of its own. -->
                       <th class="w-8"><input type="checkbox" id="cbs-all" class="checkbox checkbox-xs align-middle" title="Select every row on this page" aria-label="Select all on this page"></th>
-                      <th>Event</th>
+                      <!-- "Offer", not "Event" (AI-1075): once Youth Events exists, the thing in
+                           this column is not always an event. -->
+                      <th>Offer</th>
+                      <!-- What the recipient is being offered. Tickets today; Youth Events next. -->
+                      <th>Type</th>
                       <!-- Sort lives on the column itself. Events with no price yet always sink
                            to the bottom — an unknown price is not the cheapest. -->
                       <th id="cbs-sort-price" class="sortable" title="Sort by get-in price">Cheapest <span class="sort-ind">&#9650;&#9660;</span></th>
@@ -805,7 +835,7 @@
                       <th>Phone #s</th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -997,6 +1027,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="rejected">Rejected</option>
                   <option value="archived">Archived</option>
                 </select>
+                <!-- STRATEGY (AI-1075). Same control and same position as the Offers tab's,
+                     because a queue row IS an offer that was taken. -->
+                <div id="q-strategy"></div>
                 <select id="q-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
@@ -1153,6 +1186,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="border border-base-300 rounded-lg flex flex-col overflow-hidden">
                     <div class="p-2 border-b border-base-300 space-y-2">
                       <input id="tpl-search" class="input input-bordered input-sm w-full" placeholder="Search name or body…" autocomplete="off" />
+                      <!-- STRATEGY (AI-1075). Above the source buttons because it is the
+                           broader cut: which play the copy belongs to, not where it came from. -->
+                      <div id="tpl-strategy"></div>
                       <div class="flex gap-1.5" id="tpl-sources">
                         <button type="button" class="tpl-src sel" data-src="all">All</button>
                         <button type="button" class="tpl-src" data-src="cole">Cole&rsquo;s</button>
@@ -1283,6 +1319,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    come back to the 2-way number or to Main, and whose mailbox is it in.
                    The options are rebuilt per channel from the rows themselves, so it can never
                    offer a number with nothing behind it. -->
+              <!-- STRATEGY (AI-1075). A reply's strategy is that of the blast it answers, so
+                   this filters on the campaign behind each row rather than on the row itself. -->
+              <div id="rep-strategy"></div>
               <select aria-label="Filter replies by destination" id="rep-dest" class="select select-bordered select-sm w-52">
                 <option value="">Replied to: any</option>
               </select>
@@ -1958,6 +1997,118 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+    // ── STRATEGY (AI-1075) ──────────────────────────────────────────────────────────────────
+    //
+    // What KIND of offer something is. Every blast the system has ever sent is a Ticket Blast;
+    // Youth Events (AI-1076) is the second, and Josh's test of this design is whether the third,
+    // fourth and fifth are then cheap. So the list is READ FROM THE DATABASE, never hard-coded
+    // here - offer_strategies is a table precisely so a new strategy costs a row and not a
+    // deploy. Hard-coding the options here would hand that cost straight back.
+    const STRATEGIES = { list: [], byCode: {}, loaded: false };
+
+    async function loadStrategies(){
+      if(STRATEGIES.loaded || !sb) return STRATEGIES;
+      const { data } = await sb.from('offer_strategies')
+        .select('code,label,offer_type,active,sort_order')
+        .eq('active', true)
+        .order('sort_order', { ascending: true });
+      STRATEGIES.list = data || [];
+      STRATEGIES.byCode = Object.fromEntries(STRATEGIES.list.map(x => [x.code, x]));
+      STRATEGIES.loaded = true;
+      return STRATEGIES;
+    }
+
+    // The filter itself. ONE implementation mounted on four tabs, because four hand-rolled
+    // multi-selects would drift apart the moment one of them gained a fix.
+    //
+    // NOTHING TICKED MEANS EVERYTHING, the convention every other filter on these tabs already
+    // uses (an empty state dropdown is "All states"). The alternative - nothing ticked shows
+    // nothing - turns the first click into an empty screen and reads as a broken page.
+    //
+    // A <details> rather than a JS popup so Esc and Tab work without being written, matching the
+    // Admin menu from AI-1074.
+    function mountStrategyFilter(hostId, onChange){
+      const host = document.getElementById(hostId);
+      if(!host) return { selected: () => [], refresh: () => {} };
+      const picked = new Set();
+
+      function paint(){
+        const n = picked.size;
+        const label = n === 0 ? 'All strategies'
+                    : n === 1 ? ((STRATEGIES.byCode[[...picked][0]] || {}).label || '1 strategy')
+                    : n + ' strategies';
+        const lab = host.querySelector('.strat-label');
+        if(lab) lab.textContent = label;
+        // Marked active only while it is actually narrowing something, same rule as the Cheapest
+        // sort header: a filter that always looks engaged stops meaning anything.
+        const trg = host.querySelector('.strat-trigger');
+        if(trg) trg.classList.toggle('on', n > 0);
+      }
+
+      host.innerHTML = '<details class="strat-wrap">'
+        + '<summary class="strat-trigger"><span class="strat-label">All strategies</span>'
+        + '<span class="strat-caret" aria-hidden="true">&#9662;</span></summary>'
+        + '<div class="strat-menu">'
+        + STRATEGIES.list.map(x => '<label class="strat-opt">'
+            + '<input type="checkbox" class="checkbox checkbox-xs" value="' + esc(x.code) + '">'
+            + '<span>' + esc(x.label) + '</span></label>').join('')
+        + '<button type="button" class="strat-clear">Clear</button>'
+        + '</div></details>';
+
+      host.addEventListener('change', e => {
+        const cb = e.target.closest('input[type=checkbox]');
+        if(!cb) return;
+        if(cb.checked) picked.add(cb.value); else picked.delete(cb.value);
+        paint(); onChange([...picked]);
+      });
+      const clr = host.querySelector('.strat-clear');
+      if(clr) clr.addEventListener('click', () => {
+        picked.clear();
+        host.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+        paint(); onChange([]);
+      });
+      // Same dismissal rules as the Admin menu: a menu that stays open over the page reads as
+      // broken.
+      const det = host.querySelector('details');
+      document.addEventListener('click', e => { if(det && det.open && !host.contains(e.target)) det.open = false; });
+      document.addEventListener('keydown', e => { if(e.key === 'Escape' && det && det.open) det.open = false; });
+
+      paint();
+      return {
+        selected: () => [...picked],
+        refresh: paint,
+        // Used by a tab's own "Clear" button. Does NOT call onChange: the caller is already
+        // clearing its other filters and re-rendering once, and firing here would render twice.
+        clear(){
+          picked.clear();
+          host.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+          paint();
+        },
+      };
+    }
+
+    // Replies carry no strategy of their own, and should not: email_replies already stores the
+    // campaign_id of the blast being answered, so the strategy is that blast's. Copying it onto
+    // the reply would create a second copy of one fact, free to disagree with the first.
+    //
+    // Read through get_campaign_queue() rather than campaign_queue directly, because the browser
+    // has no policy on that table - the RPC is the only way in, which is the same door the Queue
+    // tab already uses.
+    const QUEUE_STRATEGY = { map: {}, loaded: false };
+    async function loadQueueStrategies(){
+      if(QUEUE_STRATEGY.loaded || !sb) return QUEUE_STRATEGY;
+      const { data } = await sb.rpc('get_campaign_queue');
+      (data || []).forEach(r => { if(r && r.id) QUEUE_STRATEGY.map[String(r.id)] = r.strategy || 'ticket_blasts'; });
+      QUEUE_STRATEGY.loaded = true;
+      return QUEUE_STRATEGY;
+    }
+
+    // A row with NO strategy counts as ticket_blasts: every row that predates AI-1075 is one,
+    // and treating unknown as "matches nothing" would hide the whole board behind the filter.
+    const strategyOf = r => (r && r.strategy) || 'ticket_blasts';
+    const passesStrategy = (r, picked) => !picked || !picked.length || picked.indexOf(strategyOf(r)) !== -1;
+    const offerTypeOf = r => ((STRATEGIES.byCode[strategyOf(r)] || {}).offer_type) || 'Tickets';
+
     // ===== US EASTERN, EVERYWHERE =====
     // Every fixture this app sells is North American and every send slot is set in US Eastern,
     // so ET is the house clock — not the operator's. These are global (not per-module) because
@@ -2614,8 +2765,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     function tplDay(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'; }
     function tplMonth(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : 'No date'; }
 
+    // AI-1075. Lives on tpl rather than a loose variable, like every other Templates filter.
+    let tplStratCtl = null;
     function tplVisible(){
-      const all = tpl.src === 'blast' ? tpl.blast : tpl.src === 'cole' ? tpl.cole : tpl.cole.concat(tpl.blast);
+      const all0 = tpl.src === 'blast' ? tpl.blast : tpl.src === 'cole' ? tpl.cole : tpl.cole.concat(tpl.blast);
+      const all = all0.filter(it => passesStrategy(it, tpl.strategy || []));
       const q = tpl.filter.trim().toLowerCase();
       if(!q) return all;
       return all.filter(it =>
@@ -2738,7 +2892,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       const [coleRes, blastRes] = await Promise.all([
         sb.from('message_templates')
-          .select('id,slug,name,play,variant,channel,sender,is_placeholder,subject,body,sort_order')
+          .select('id,slug,name,play,variant,channel,sender,is_placeholder,subject,body,sort_order,strategy')
           .order('sort_order', { ascending:true, nullsFirst:false }),
         sb.from('blast_templates')
           .select('id,name,email_template,created_on')
@@ -2749,10 +2903,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         key: 'cole:' + r.id, id: r.id, source:'cole', name: r.name || 'Untitled template',
         play: r.play || 'Other', variant: r.variant || '', channel: r.channel === 'sms' ? 'sms' : 'email',
         sender: r.sender || '', placeholder: !!r.is_placeholder, subject: r.subject || '', body: r.body || '',
+        strategy: r.strategy || 'ticket_blasts',
       }));
       tpl.blast = (blastRes.data || []).map(r => ({
         key: 'blast:' + r.id, id: r.id, source:'blast', name: r.name || 'Untitled template',
         channel:'email', play:'Historical', sender:'', body: r.email_template || '', created_on: r.created_on,
+        // blast_templates is a dump of CakeMail campaign reports, and every campaign in it was a
+        // ticket blast. Stated here rather than left to the strategyOf() fallback, so the reason
+        // is visible at the point the value is invented.
+        strategy: 'ticket_blasts',
       }));
       tpl.loaded = true;
       renderTplList();
@@ -2764,6 +2923,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     const tplSearch = document.getElementById('tpl-search');
     if(tplSearch) tplSearch.addEventListener('input', e => { tpl.filter = e.target.value; tpl.editing = false; renderTplList(); });
+    // AI-1075. Mounted once the strategies are known, same as the other three tabs.
+    loadStrategies().then(() => { tplStratCtl = mountStrategyFilter('tpl-strategy', picked => {
+      tpl.strategy = picked; tpl.editing = false; renderTplList();
+    }); });
     const tplList = document.getElementById('tpl-list');
     if(tplList) tplList.addEventListener('click', e => {
       const btn = e.target.closest('.tpl-row'); if(!btn) return;
@@ -2792,6 +2955,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!host) return;
       const esc3 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       let chan = 'email', provider = '', dest = '', unreadOnly = false, ROWS = [];
+      let repStratF = [], repStratCtl = null;
 
       const ago = t => {
         if(!t) return '';
@@ -2874,7 +3038,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           dSel.classList.toggle('hidden', seen.length < 2);
         }
         const rows = (unreadOnly ? ROWS.filter(r => r.unread) : ROWS)
-          .filter(r => !dest || r.destination === dest);
+          .filter(r => !dest || r.destination === dest)
+          // A reply whose campaign is not in the queue any more has no strategy to read. It
+          // passes: the alternative is a reply vanishing from the inbox because of bookkeeping
+          // about the blast, and an unanswered customer is a worse outcome than a loose row.
+          .filter(r => !repStratF.length
+                    || !QUEUE_STRATEGY.map[String(r.campaign_id)]
+                    || repStratF.indexOf(QUEUE_STRATEGY.map[String(r.campaign_id)]) !== -1);
         document.querySelectorAll('[data-rtab]').forEach(b => b.classList.toggle('tab-active', b.dataset.rtab === chan));
         if(!rows.length){
           // The most specific true explanation available: unread filter first, then the chosen
@@ -2960,6 +3130,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(u) u.addEventListener('change', e => { unreadOnly = e.target.checked; render(); });
       const rl = document.getElementById('rep-reload');
       if(rl) rl.addEventListener('click', load);
+
+      // AI-1075. The queue map is needed before the filter can mean anything, so both are
+      // loaded together and the control is mounted only once they are in.
+      Promise.all([loadStrategies(), loadQueueStrategies()]).then(() => {
+        repStratCtl = mountStrategyFilter('rep-strategy', picked => { repStratF = picked; render(); });
+      });
 
       window.__loadReplies = load;
     })();
@@ -4494,6 +4670,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // be worse than the three clicks it replaces.
       let lastItems = [];
       let ROWS = [], REGIONS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '', segF = '';
+      // AI-1075. Empty = every strategy, the same convention as every other filter here.
+      let stratF = [];
       // AUDIENCE SPORT (migration 080). '' = everyone, '__off' = everyone whose sport is NOT the
       // game's, or a specific sport. SPORT_REACH is (code|segment|sport) -> {phone,email}, read
       // once; false when migration 080 is not applied, and every use guards on that so the tab
@@ -4536,6 +4714,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(leagueF && (e.league||'') !== leagueF) return false;
           if(stateF  && (e.state_code||'') !== stateF) return false;
           if(segF    && (e.segment||'Other') !== segF) return false;
+          if(!passesStrategy(e, stratF)) return false;
           if(winCut  && (e.event_date||'') > winCut) return false;        // within the upcoming window
           // Both ends are plain YYYY-MM-DD, same as event_date, so a string compare is the whole
           // comparison — no parsing and no timezone to get wrong.
@@ -4592,13 +4771,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const k = lg ? known.find(p => p[0] === lg) : null;
           const hasRows = lg && ROWS.some(e => String(e.league || '').toLowerCase() === lg);
           tb.innerHTML = (k && !hasRows)
-            ? '<tr><td colspan="9" class="text-center py-10">'
+            ? '<tr><td colspan="10" class="text-center py-10">'
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
               + (k[3] ? 'The schedule loads on its own, once a week &mdash; these will appear within a week of the fixtures being published.'
                       : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
-            : '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
+            : '<tr><td colspan="10" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
           return;
         }
         const today = todayYmd();
@@ -4646,6 +4825,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               ? '<span class="text-[#067523] font-bold" title="Already in the queue for this segment">&#10003;</span>'
               : `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-pick="${esc(pk)}" ${picked.has(pk)?'checked':''} aria-label="Select this offer">`}</td>
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}${rescanBtn(e)}</div></td>
+          <td><span class="type-pill">${esc(offerTypeOf(e))}</span></td>
           <td>${e.ticket_price!=null?`${window.__priceLink ? window.__priceLink(e) : `<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}`+`${window.__staleTag?.(e)||''}`+`${window.__priceManualBadge?.(e)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A game with no price is the one MOST worth an edit, not the least: price-refresh
             // drops every price whose listing link the model failed to return (~40% of what it
@@ -5148,12 +5328,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         // counts_refreshed_at is a single timestamp and rides along in the same round trip,
         // so knowing how old the figures are costs nothing.
         const [ev, rg, q, ca] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue'), sb.rpc('counts_refreshed_at') ]);
         paintCountsAge(ca && !ca.error ? ca.data : null);
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="10" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
         // Reach per market x segment x the ORGANISATION's own sport. Absent until migration 080
@@ -5237,7 +5417,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const d = el('cbs-date-clear'); if(d) d.classList.toggle('hidden', !(dateFromF || dateToF));
         const b = el('cbs-clear');
         if(b) b.classList.toggle('hidden',
-          !(filter || sportF || leagueF || stateF || windowF || dateFromF || dateToF || priceF || segF));
+          !(filter || sportF || leagueF || stateF || windowF || dateFromF || dateToF || priceF || segF
+            || stratF.length));
       };
       el('cbs-search').addEventListener('input', e => { filter = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; page = 1; cbsClears(); render(); });
@@ -5254,10 +5435,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; cbsClears(); render(); });
+      // AI-1075. Mounted after the strategies are loaded, because the control renders one
+      // checkbox per strategy and an empty menu would be indistinguishable from a broken one.
+      let stratCtl = null;
+      loadStrategies().then(() => { stratCtl = mountStrategyFilter('cbs-strategy', picked => {
+        stratF = picked; page = 1; cbsClears(); render();
+      }); });
       el('cbs-clear')?.addEventListener('click', () => {
         filter = sportF = leagueF = stateF = windowF = dateFromF = dateToF = priceF = segF = '';
         ['cbs-search','cbs-sport','cbs-league','cbs-state','cbs-window','cbs-date-from','cbs-date-to','cbs-price','cbs-segment']
           .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        stratF = []; if(stratCtl) stratCtl.clear();
         page = 1; cbsClears(); render();
       });
       // Click cycles cheapest-first, most-expensive-first, then back to the default event order.
@@ -7146,6 +7334,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
       // may be blank. They replace the old single-day `dayF`.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
+      // AI-1075. Reads get_campaign_queue()'s new strategy column (migration 091).
+      let qStratF = [], qStratCtl = null;
       // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
       //
       // WHY THIS ONE IS DIFFERENT. Every other filter answers "what am I looking for right now",
@@ -7923,6 +8113,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // fixed tally that disagrees with the rows on screen.
       function matchesRest(r){
         if(segF    && (r.segment||'') !== segF)   return false;
+        if(!passesStrategy(r, qStratF)) return false;
         if(sportF  && (r.sport||'')  !== sportF)  return false;
         if(leagueF && String(r.league||'').toLowerCase() !== leagueF) return false;
         if(stateF  && (r.state_code||'') !== stateF) return false;
@@ -8909,6 +9100,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('q-clear')?.addEventListener('click', clearQueueFilters);
       el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; syncDateClear(); render(); });
+      loadStrategies().then(() => { qStratCtl = mountStrategyFilter('q-strategy', picked => {
+        qStratF = picked; page = 1; syncDateClear(); render();
+      }); });
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
@@ -8943,12 +9137,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // button would be permanently visible with nothing to clear.
         if(all) all.classList.toggle('hidden',
           !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo
-            || targetedF !== TARGETED_DEFAULT));
+            || qStratF.length || targetedF !== TARGETED_DEFAULT));
       }
       // Everything at once, including the search box. The per-filter dropdowns each go back to
       // their "All …" option rather than being emptied of options.
       function clearQueueFilters(){
         qFilter = statusF = segF = sportF = leagueF = stateF = chanF = dateFrom = dateTo = '';
+        qStratF = []; if(qStratCtl) qStratCtl.clear();
         ['q-search','q-status','q-segment','q-sport','q-league','q-state','q-channel','q-date-from','q-date-to']
           .forEach(id => { const e = el(id); if(e) e.value = ''; });
         // BACK TO THE DEFAULT, NOT TO OFF. Clear means "stop narrowing my search", and turning the
