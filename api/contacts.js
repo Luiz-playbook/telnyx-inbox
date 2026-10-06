@@ -301,7 +301,7 @@ export default async function handler(req, res) {
   const call = rpc(url, key);
 
   try {
-    if (req.method === 'GET')  { await handleGet(req, res, call); return; }
+    if (req.method === 'GET')  { await handleGet(req, res, call, url, key); return; }
     if (req.method === 'POST') { await handlePost(req, res, call, caller); return; }
     res.status(405).json({ error: 'GET or POST only' });
   } catch (e) {
@@ -310,7 +310,11 @@ export default async function handler(req, res) {
   }
 }
 
-async function handleGet(req, res, call) {
+// url/key are passed in, not re-read from the environment: the HubSpot-id lookup below talks
+// to PostgREST directly rather than through an RPC, and the first version of it closed over
+// `url` and `key` that only exist in handler() — so every request fetched "undefined/rest/v1/..."
+// and the catch around it turned that into a silent "no links" (Vhea, 2026-10-07).
+async function handleGet(req, res, call, url, key) {
   const q = req.query || {};
 
   // ?stats=1 — the headline numbers, including the overlap figures the tab is really for.
@@ -394,12 +398,37 @@ async function handleGet(req, res, call) {
     p_offset:   page * PAGE,
   });
 
+  // THE HUBSPOT RECORD ID, FETCHED SEPARATELY AND ON PURPOSE. contacts_browse does not return
+  // it, and adding a column to a `returns table(...)` function means DROPping one the deployed
+  // route is calling. contact_directory is a matview in public that service_role can select, so
+  // PostgREST reads the ids for exactly the keys on this page — one extra round trip for at most
+  // 200 rows, against a function drop. Only for rows that HAVE a HubSpot record; the rest need
+  // no lookup and would pad the filter for nothing.
+  const list = Array.isArray(rows) ? rows : [];
+  const hsKeys = list.filter(r => r.in_hubspot).map(r => r.identity_key).filter(Boolean);
+  const hsById = new Map();
+  if (hsKeys.length) {
+    try {
+      // PostgREST's in.() list: a key can hold a comma or a parenthesis, which would end the
+      // filter early, so each is quoted and its quotes escaped.
+      const inList = hsKeys.map(k => `"${String(k).replace(/"/g, '""')}"`).join(',');
+      const r2 = await fetch(
+        `${url}/rest/v1/contact_directory?select=identity_key,hubspot_id&identity_key=in.(${encodeURIComponent(inList)})`,
+        { headers: supabaseHeaders(key) });
+      if (r2.ok) {
+        for (const row of (await r2.json().catch(() => []))) {
+          if (row && row.hubspot_id) hsById.set(row.identity_key, String(row.hubspot_id));
+        }
+      }
+    } catch { /* the link is an affordance, not the data — a failure just means no arrow */ }
+  }
+
   // total rides on every row (one window count, one scan). An empty page carries no total, and
   // 0 is the truthful answer there rather than null.
-  const raw = Array.isArray(rows) && rows.length ? Number(rows[0].total) : 0;
+  const raw = list.length ? Number(list[0].total) : 0;
   res.status(200).json({
     ok: true,
-    rows: Array.isArray(rows) ? rows.map(({ total, ...r }) => r) : [],
+    rows: list.map(({ total, ...r }) => ({ ...r, hubspot_id: hsById.get(r.identity_key) || null })),
     total: Math.min(raw, COUNT_CAP),
     // So the UI can render "10,000+" rather than presenting a capped figure as exact.
     total_capped: raw > COUNT_CAP,

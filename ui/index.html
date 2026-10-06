@@ -371,6 +371,15 @@
     .ct-sec-warn{ background:#fff5f4; border-color:#f0c9c4; }
     .ct-sec-warn .ct-sec-h{ color:#a8321e; }
 
+    /* "OPEN IN HUBSPOT" ARROW. Sits inline after a name, so it must not change the line height
+       or push the text it follows — hence the fixed box and vertical-align rather than a flex
+       wrapper. Dim until hovered: on a page of 50 contacts, 50 bright arrows would out-shout the
+       names they belong to. */
+    .hs-go{ display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px;
+            margin-left:5px; vertical-align:-2px; color:#aab6c4; flex:0 0 auto; }
+    .hs-go:hover{ color:#e55608; }
+    .hs-go svg{ width:12px; height:12px; }
+
     /* THE SELECTED SOURCE TAB, IN BRAND ORANGE. daisyUI's own `btn-active` only darkens the
        button a shade, which on a row of four joined buttons is not enough to say which one you
        are looking at — the tab and its neighbours read as the same control (Vhea, 2026-10-06).
@@ -2322,6 +2331,32 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+    // ===== HUBSPOT RECORD LINKS =====
+    //
+    // GLOBAL, because the portal id is one fact about this company and it was already written
+    // out by hand inside blastHistoryModule. A second copy in the Contacts tab is the kind of
+    // duplication that survives until the portal changes and then only half the links move.
+    //
+    // The id is not a secret — it is in every HubSpot URL a person has ever pasted — so it sits
+    // here rather than in config.js, where it would need an env var and a build step to say the
+    // same thing.
+    //
+    // 0-1 is HubSpot's object-type id for Contacts. /record/0-1/<id> is the current URL shape;
+    // the older /contact/<id> still redirects, but linking at the shape that redirects means
+    // every click pays for a redirect.
+    const HUBSPOT_PORTAL = '4313631';
+    const hsRecordUrl = id => `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-1/${encodeURIComponent(id)}`;
+
+    // The little arrow that marks "this opens HubSpot". Deliberately an icon and not the word,
+    // because it sits inline beside a name in a dense table where a word would compete with it.
+    // title, not just an icon: an arrow alone does not say where it goes.
+    const hsLinkIcon = (id, label) => !id ? '' :
+      `<a href="${hsRecordUrl(id)}" target="_blank" rel="noopener noreferrer"
+          class="hs-go" title="Open ${esc(label || 'this contact')} in HubSpot"
+          aria-label="Open in HubSpot">`
+      + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>`;
+
     // ===== US EASTERN, EVERYWHERE =====
     // Every fixture this app sells is North American and every send slot is set in US Eastern,
     // so ET is the house clock — not the operator's. These are global (not per-module) because
@@ -3430,8 +3465,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // one — "in HubSpot but not in Intel" is the thing worth noticing.
           const badge = (on, label, title) =>
             `<span class="ct-badge ${on ? 'ct-badge-on' : 'ct-badge-off'}" title="${esc5(title)}">${label}</span>`;
+          // The arrow only where there IS a record to open. A link that 404s is worse than no
+          // link, and 68% of these people are not in HubSpot at all.
           return `<tr>
-            <td class="font-semibold text-[#133b49]">${esc5(name) || dash}</td>
+            <td class="font-semibold text-[#133b49]">${esc5(name) || dash}${
+              r.hubspot_id ? hsLinkIcon(r.hubspot_id, name || r.email || r.phone) : ''}</td>
             <td class="font-mono text-xs">${esc5(r.email) || dash}</td>
             <td class="font-mono text-xs">${esc5(r.phone) || dash}</td>
             <td>${esc5(r.company) || dash}</td>
@@ -3523,7 +3561,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         const id = d.identity || {};
         const name = [id.first_name, id.last_name].filter(Boolean).join(' ') || id.email || id.phone || 'Contact';
-        el('ct-panel-title').textContent = name;
+        // innerHTML, not textContent, because the title now carries the HubSpot arrow. `name`
+        // is escaped explicitly since it came from the database rather than from this file.
+        el('ct-panel-title').innerHTML = esc5(name)
+          + (id.hubspot_id ? hsLinkIcon(id.hubspot_id, name) : '');
         el('ct-panel-sub').innerHTML = [
           id.company ? esc5(id.company) : '',
           id.state ? esc5(id.state) : '',
@@ -3581,7 +3622,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               ['Company', esc5(hsc.company) || dash],
               ['State', esc5(hsc.state) || dash],
               ['Lifecycle', esc5(hsc.lifecyclestage) || dash],
-              ['Record', `<span class="font-mono text-xs">${esc5(hsc.hs_object_id)}</span>`],
+              ['Record', `<a class="font-mono text-xs link" href="${hsRecordUrl(hsc.hs_object_id)}"
+                              target="_blank" rel="noopener noreferrer">${esc5(hsc.hs_object_id)}</a>`
+                           + hsLinkIcon(hsc.hs_object_id, 'this contact')],
               ['Last change', esc5(fmtDate2(hsc.hs_lastmodifieddate))],
               ['Mirrored', esc5(fmtDate2(hsc.synced_at))],
             ]) : '<div class="text-sm text-base-content/60">This contact is not in the HubSpot mirror.</div>'}
@@ -12826,7 +12869,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         s.className = 'text-xs text-base-content/40'; s.textContent = text; return s; };
 
       const personName = p => [p.first, p.last].filter(Boolean).join(' ') || p.email || '(unknown)';
-      const hsLink = id => `https://app.hubspot.com/contacts/4313631/record/0-1/${encodeURIComponent(id)}`;
+      // Delegates to the global, so the portal id is stated once (see hsRecordUrl above).
+      const hsLink = id => hsRecordUrl(id);
 
       // A reply body arrives with the whole quoted thread under it. Show what the person wrote,
       // which is everything above the first quote marker — the rest is our own blast read back.
