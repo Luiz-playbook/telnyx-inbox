@@ -11703,9 +11703,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       let ROWS = [], filter = '', chanF = '', statusF = '', fromF = '', toF = '';
 
-      // Sources arrive from the database in lower case — cakemail, textable, salesmsg — which is
-      // how they are stored, not how they should be read in a filter or a chip.
-      const nice = v => { const t = String(v || ''); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; };
+      // Sources arrive from the database in lower case — cakemail, textable, salesmsg, telnyx,
+      // gmail — which is how they are stored, not how they should be read in a filter or a chip.
+      //
+      // A capitalise-the-first-letter rule gets most of them right and "Cakemail" wrong, which is
+      // a product name spelled incorrectly in the UI. The map holds the ones whose casing is not
+      // simply title case; anything unlisted still falls back to the old behaviour, so a source
+      // nobody has seen yet still renders sensibly rather than blank.
+      const SRC_LABEL = { cakemail: 'CakeMail', salesmsg: 'Salesmsg', telnyx: 'Telnyx',
+                          gmail: 'Gmail', textable: 'Textable', log: 'Log', manual: 'Manual' };
+      const nice = v => {
+        const t = String(v || '');
+        return SRC_LABEL[t.toLowerCase()] || (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+      };
       // The blast whose panel is open, or null. Was a Set of expanded row ids; a panel shows one
       // thing at a time, so it is a single id now.
       let selected = null;
