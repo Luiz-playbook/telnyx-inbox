@@ -41,6 +41,7 @@
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
+import { bulkSmsConfigured, stageCampaign, armCampaign, findCampaignByKey } from '../lib/bulk-sms.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
@@ -407,6 +408,52 @@ export default async function handler(req, res) {
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
+        } else if (bulkSmsConfigured()) {
+          // AI-965, option A. Hand the audience to Charles's bulk sender and let its queue do
+          // the sending: per-recipient rows, one shared opt-out list, quiet hours, duplicate
+          // protection, carrier halts, delivery receipts. None of that is re-implemented here.
+          // See lib/bulk-sms.js for why the campaign key is this row's id and why arming on
+          // the operator's confirm click is the brief's rule being followed, not bent.
+          //
+          // Ordered so a crash at any point leaves a row that can be picked up, never a
+          // second send: stage (idempotent on key) -> record the id on OUR row -> arm.
+          const key = String(r.id);
+          const name = r.title || [r.opponent, r.team].filter(Boolean).join(' at ') || key;
+          try {
+            let staged = await stageCampaign({ key, name, body: r.sms_copy || '', fromNumber: r.sms_from, phones });
+            let campaignId = staged.campaignId;
+            let alreadyArmed = false;
+            if (staged.duplicate) {
+              // A previous tick staged this row and died before recording it. Find what it made.
+              const existing = await findCampaignByKey(key);
+              if (!existing || !existing.id) throw new Error('duplicate campaign key, but no campaign found for it');
+              campaignId = existing.id;
+              alreadyArmed = existing.status && existing.status !== 'draft';
+              staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.eligible, blocked: existing.blocked };
+            }
+            // Record the link BEFORE arming, so if arming throws the row still says which
+            // campaign it is, and nobody has to find it by hand in the other app.
+            await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
+              method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
+              body: JSON.stringify({ bulk_campaign_id: String(campaignId), bulk_census: staged.raw || null }),
+            });
+            // Nobody eligible is not a send. Arming it would text no one and mark the market
+            // cooled for 14 days — the exact failure the sent/failed split exists to prevent.
+            if (!alreadyArmed && Number(staged.eligible) === 0) {
+              const why = Object.entries(staged.byReason || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
+              throw new Error(`0 of ${phones.length} eligible after the gate${why ? ` (${why})` : ''}`);
+            }
+            if (!alreadyArmed) await armCampaign({ campaignId, key });
+            sent.push(`SMS ${staged.eligible != null ? staged.eligible : phones.length} ${alreadyArmed ? 'already armed' : 'staged + armed'} via bulk sender`
+              + ` (${staged.fromInbox || r.sms_from || 'route'})`);
+            if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length} (consent, quiet hours, opt-out or route)`);
+            if (staged.collapsedDuplicates) notes.push(`${staged.collapsedDuplicates} duplicate handsets collapsed`);
+            // NO hubspotLog here, on purpose. The bulk sender writes the inbox copy itself
+            // (log-sweep), keyed so the blast and the reply share one thread. Logging it again
+            // from here would put every message on the timeline twice.
+          } catch (e) {
+            failed.push(`Bulk sender failed: ${String((e && e.message) || e)}`);
+          }
         } else if (hookOk(smsHook)) {
           const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
           const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
@@ -553,7 +600,7 @@ export default async function handler(req, res) {
         notes: notes.length ? notes : undefined, recipients: summary, cooldown_overridden: cooling || undefined, hubspot });
     }
 
-    res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS } });
+    res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), bulk_sms: bulkSmsConfigured(), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS } });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
