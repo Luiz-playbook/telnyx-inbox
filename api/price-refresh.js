@@ -55,7 +55,9 @@ const CONCURRENCY = 5;
 // pass never reached are handed to the model rather than skipped — that is what every game cost
 // before this existed, so it can only be cheaper, never dearer.
 const SCRAPE_CONCURRENCY = 8;
-const SCRAPE_BUDGET_MS = 140e3;
+// PRICE_SCRAPE_BUDGET_MS lifts it for a long LOCAL catch-up run (Vercel's 300s ceiling is the hard
+// limit in production, so leave it unset there). The model's own deadline moves with it.
+const SCRAPE_BUDGET_MS = Number(process.env.PRICE_SCRAPE_BUDGET_MS) || 140e3;
 
 // For the pre-run ESTIMATE only: the share of games expected to fall through to the model. From
 // the 40-game test on 2026-09-15 — MLB 0/10 and NFL 0/10 missed, WNBA 5/10, CFB 3/10. Re-measure
@@ -338,7 +340,7 @@ export default async function handler(req, res) {
     // Stop starting new work with enough margin to still write, log and respond inside the
     // platform's 300s ceiling. Overrunning it returns 504 and loses every price already paid
     // for, which is strictly worse than a smaller batch of prices that actually lands.
-    const BUDGET_MS = 200e3;
+    const BUDGET_MS = SCRAPE_BUDGET_MS > 140e3 ? SCRAPE_BUDGET_MS + 60e3 : 200e3;
     const deadline = started + BUDGET_MS;
 
     // pass 1, then one retry pass over the batches that came back empty
