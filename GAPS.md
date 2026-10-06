@@ -333,6 +333,61 @@ forgotten:
 
 ---
 
+## 15. The contact database and HubSpot are two near-disjoint lists — **VERIFIED 2026-10-06**
+
+Josh asked for lists that "match HubSpot one to one and be exhaustive" (Fireflies, Oct 1,
+24:06). Measured against production, they do not overlap in any meaningful sense:
+
+| | distinct email addresses |
+|---|---|
+| `public.contact_intel` (the send audience) | 132,741 |
+| `hubspot.hubspot_contacts` (the 6-hourly mirror) | 80,397 |
+| **in both** | **2,404 (1.8%)** |
+| in HubSpot, in no sendable audience | 77,993 |
+
+Both halves are working as built — the HubSpot sync is live and healthy (n8n
+`Marketing Blaster - HS contacts to supabase`, every 6h, last run within hours of this
+measurement) — but it populates a mirror added for Market History enrichment (migration 062),
+**not** the send audience. `market_contacts` is rebuilt by `refresh_market_contacts()` from
+`contact_intel` + `company_intel` (050) and takes no HubSpot input at all.
+
+So a contact a rep adds to HubSpot can never be blasted, and nothing in the UI said so until
+the Contacts tab (091/092) put the 77,993 on screen.
+
+**Not fixed, and deliberately not.** AI-1101 makes the gap visible and adds a third source
+(`ticketblaster.imported_contacts`, uploaded by hand, migration 090). None of the three is
+wired into the send path: doing that silently enlarges every audience in the app, which is a
+louder decision than adding a place to put the rows. What to do about it — make HubSpot the
+source of the send audience, or keep it as enrichment and import leads separately — is the
+open question, not a missing implementation.
+
+---
+
+## 16. `api/refresh-contacts` ran past its own timeout — **VERIFIED 2026-10-06, FIXED**
+
+`refresh_market_contacts()` takes **~85 seconds** against production (measured end to end
+through the route). The route declared `maxDuration: 60`.
+
+It truncates and rebuilds a 118,000-row table, then refreshes four materialized views
+(`market_counts`, `market_segment_counts`, `market_sport_counts`, `state_segment_summary_mv`),
+none of them concurrently. The route's comment said the rebuild was "well under" 60s, which was
+presumably true when written; the contact table outgrew it and the budget never followed.
+
+**Why nobody noticed.** The function is one transaction, so a timeout drops the connection,
+PostgREST cancels, and the whole rebuild rolls back. No partial state, no error surfaced — just
+a daily cron that achieved nothing while every reach number in the UI aged. A failed refresh is
+indistinguishable from a refresh with nothing to do.
+
+**Fixed** by raising the route to `maxDuration: 300`. That is not an arbitrary bump:
+`refresh_market_contacts()` itself carries `set statement_timeout to '300s'`, so 300 was the
+intended budget and only the HTTP side disagreed. Five routes here already run at 300.
+
+**Still worth doing:** confirm against the Vercel function logs how long this had been failing,
+since it determines whether the reach numbers (and the "No audience" badges that depend on them)
+have been stale for days or months.
+
+---
+
 ## Suggested order
 
 1. **Fix delivery receipts** (gap 1) — everything SMS depends on it, and it is small
