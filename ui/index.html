@@ -4474,7 +4474,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'prices' && target && window.__focusPrice) window.__focusPrice(target);
     }
     window.addEventListener('hashchange', routeHash);
-    routeHash();
+    // DEFERRED BY A TICK, AND IT IS LOAD-BEARING. showTab calls window.__loadQueue,
+    // __loadBlastHistory, __loadPrices and __loadTelnyxUsage — and every one of those is
+    // registered by a module IIFE defined LATER in this file than this line (6715, 13000, 11055,
+    // 11205 against 4477). Calling routeHash() inline therefore ran it while those four were
+    // still undefined, so `if(tab === 'history' && window.__loadBlastHistory)` was false and the
+    // loader never fired: opening or refreshing the app on #queue, #history, #prices or
+    // #reports showed that tab's skeleton rows forever, while CLICKING the same tab worked,
+    // because by then the modules had registered (Vhea, 2026-10-06).
+    //
+    // setTimeout rather than queueMicrotask: a microtask still runs inside this script's own
+    // execution, so the later IIFEs would still not have run. Zero delay is enough — it only has
+    // to land after the current script finishes. The default view is already in the markup, so
+    // nothing flashes.
+    setTimeout(routeHash, 0);
 
     // Market dropdown → phone numbers for the selected market.
     const marketSel = document.getElementById('market-select');
