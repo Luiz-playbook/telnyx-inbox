@@ -205,13 +205,16 @@ export default async function handler(req, res) {
   //
   // MATCHED ON MARKET AND TIME, NOT AN ID, because the rows this tab lists carry no campaign_queue
   // id — ticketblaster_market_blasts_log is a historical import and nothing in this repo writes
-  // it. The message body narrows the telnyx_messages half, which would otherwise sweep in inbox
-  // traffic that merely shares a day with the blast.
+  // it.
+  //
+  // ONE SOURCE: blast_recipients. 095 also read public.telnyx_messages, on the theory that the
+  // two-way inbox was the only pre-existing record of an outbound SMS. Measured across all 11
+  // SMS blasts in the history — 796 reported recipients — it recovered ZERO rows, because that
+  // table is inbox traffic (22 rows, 11 outbound, one number, all on 2026-07-02) and every blast
+  // predates it. It could only ever have answered wrongly, so 097 removed it.
   //
   // EXPECT THIS TO BE EMPTY FOR OLD BLASTS, and that is the honest answer rather than a bug:
-  // per-recipient history did not exist before migration 095 (2026-10-06). The response says
-  // which rows came from our own log and which were recovered from the Telnyx inbox, so a
-  // partial roster is never presented as a complete one.
+  // per-recipient history did not exist before migration 095 (2026-10-06).
   if (String(req.query?.sms_recipients || '').trim()) {
     const at = String(req.query?.at || '').trim();
     const when = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : null;
@@ -222,6 +225,9 @@ export default async function handler(req, res) {
         p_market:  String(req.query?.state || '').trim() || null,
         p_channel: 'sms',
         p_at:      when,
+        // The function ignores this since 097 (it only narrowed the removed telnyx half). Still
+        // passed because the signature kept it, and changing a function's arguments while the
+        // deployed route calls it is a worse trade than one unused parameter.
         p_message: String(req.query?.message || '').trim() || null,
       }),
     });
@@ -232,14 +238,7 @@ export default async function handler(req, res) {
     }
     const list = await r.json().catch(() => []);
     const rows = Array.isArray(list) ? list : [];
-    res.status(200).json({
-      ok: true,
-      recipients: rows,
-      // Counted per origin so the panel can say "12 from our send log, 3 recovered from the
-      // Telnyx inbox" instead of implying all 15 were recorded the same way.
-      from_log:    rows.filter(x => x.source === 'log').length,
-      from_telnyx: rows.filter(x => x.source === 'telnyx').length,
-    });
+    res.status(200).json({ ok: true, recipients: rows, count: rows.length });
     return;
   }
 

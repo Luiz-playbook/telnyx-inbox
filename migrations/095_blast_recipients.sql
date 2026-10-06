@@ -143,6 +143,11 @@ grant execute on function public.record_blast_recipients(jsonb) to service_role;
 
 
 -- ---------------------------------------------------------------------------------------------
+-- SUPERSEDED IN PART BY 097: the telnyx_messages half of this function was removed. Measured
+-- across all 11 historic SMS blasts it recovered zero rows, because that table is the two-way
+-- inbox and every blast predates its contents. Read 097 before trusting the paragraphs below
+-- that describe the merge.
+--
 -- blast_recipients_for(market, channel, at, message) -> who a Market History row reached
 --
 -- WHY IT MATCHES ON MARKET AND TIME RATHER THAN AN ID. The rows Market History lists come from

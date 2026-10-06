@@ -12592,9 +12592,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // WHO AN SMS BLAST ACTUALLY REACHED (AI-1101).
       //
       // Unlike the CakeMail roster below, this is not "the list as it stands today" — it is the
-      // recipients recorded at send time in blast_recipients, merged with anything recoverable
-      // from telnyx_messages (the two-way inbox, and the only place an outbound SMS was ever
-      // stored per recipient before migration 095).
+      // recipients recorded at send time in blast_recipients. (095 also read telnyx_messages;
+      // across all 11 historic SMS blasts it recovered zero rows, because that table is the
+      // two-way inbox and every blast predates its contents, so 097 removed it.)
       //
       // IT WILL BE EMPTY FOR OLD BLASTS, and the empty state has to say WHY. Nothing recorded
       // SMS recipients before 2026-10-06, so "no recipients" here means "never written down",
@@ -12620,15 +12620,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </div></div>`;
             return;
           }
-          // The provenance line. A roster half-recovered from the inbox is not the same claim as
-          // one we wrote ourselves, so it never presents as a single uniform list.
-          const bits = [];
-          if(st.from_log)    bits.push(`<span class="font-semibold text-[#133b49]">${st.from_log.toLocaleString()}</span> from our send log`);
-          if(st.from_telnyx) bits.push(`<span class="font-semibold text-[#133b49]">${st.from_telnyx.toLocaleString()}</span> recovered from the Telnyx inbox`);
+          // ONE SOURCE SINCE 097, so no provenance column: every row here was written by this
+          // application at send time. The incompleteness line stays, because the roster can still
+          // be shorter than the blast's own count -- a partial send, or a blast that predates the
+          // log entirely.
           host.innerHTML = `<div class="text-xs text-base-content/50 mb-2 leading-relaxed">
-              <div>${bits.join(' &middot; ')}.</div>
+              <div><span class="font-semibold text-[#133b49]">${list.length.toLocaleString()}</span> recipient${list.length === 1 ? '' : 's'} recorded.</div>
               ${row.recipients != null && Number(row.recipients) !== list.length
-                ? `<div class="mt-0.5">The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span> recipients, so this roster is incomplete.</div>`
+                ? `<div class="mt-0.5">The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span>, so this roster is incomplete.</div>`
                 : ''}
               <div class="mt-1">Recorded at send time. &ldquo;Handed off&rdquo; means the carrier accepted the message, not that a handset received it.</div>
             </div>
@@ -12636,14 +12635,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <thead><tr>
                 <th class="text-left py-1 pr-2">Number</th><th class="text-left py-1 pr-2">Name</th>
                 <th class="text-left py-1 pr-2">Company</th><th class="text-left py-1 pr-2">Outcome</th>
-                <th class="text-left py-1">Source</th>
+                <th class="text-left py-1">Sent</th>
               </tr></thead>
               <tbody>${list.map(x => `<tr class="border-t border-base-200">
                 <td class="py-1 pr-2 font-mono">${esc(x.address)}</td>
                 <td class="py-1 pr-2">${esc([x.first_name, x.last_name].filter(Boolean).join(' ')) || '<span class="text-base-content/30">&mdash;</span>'}</td>
                 <td class="py-1 pr-2">${esc(x.company) || '<span class="text-base-content/30">&mdash;</span>'}</td>
                 <td class="py-1 pr-2 text-base-content/60">${esc((x.outcome || '').replace(/_/g, ' '))}</td>
-                <td class="py-1 text-base-content/50">${x.source === 'telnyx' ? 'Telnyx inbox' : 'send log'}</td>
+                <td class="py-1 text-base-content/50 whitespace-nowrap">${esc(fmtDate(x.sent_at))}</td>
               </tr>`).join('')}</tbody>
             </table></div>`;
         };
