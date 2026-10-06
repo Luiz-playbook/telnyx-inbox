@@ -592,6 +592,9 @@
               <!-- Do Not Contact was not named in the ticket. It sits here because it is
                    consulted, not worked -- the same reason it was last among the data tabs. -->
               <a href="#" data-tab="dnc" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Do Not Contact</a>
+              <!-- AI-1077. Lives under Admin because it is configuration you set once and check
+                   occasionally, not daily work. -->
+              <a href="#" data-tab="forwarding" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>Call Forwarding</a>
             </div>
           </details>
         </nav>
@@ -1346,6 +1349,51 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                page or a server-side count, and the search asks the database rather than
                filtering something already downloaded. Ask for it all and the browser dies and
                PostgREST caps you at 1,000 rows anyway, silently, which is the worse half.       -->
+          <!-- ===== CALL FORWARDING (AI-1077) ===== -->
+          <div data-view id="view-forwarding" class="hidden space-y-4">
+            <div>
+              <h2 class="font-extrabold text-[#133b49]">Call forwarding</h2>
+              <p class="text-sm text-base-content/60 mt-1 max-w-3xl leading-relaxed">
+                People who get a blast sometimes ring the number back. Without forwarding those calls
+                reach nobody &mdash; there is no voicemail &mdash; so the callback is lost. Point them at
+                one phone someone answers.
+                <span class="block mt-1.5">This changes <b>calls only</b>. The texting setup on each number is shown
+                below so you can see it is left alone.</span>
+              </p>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl p-4 space-y-3">
+              <div class="flex items-end gap-3 flex-wrap">
+                <label class="text-sm">
+                  <span class="block font-semibold text-[#133b49] mb-1">Forward to</span>
+                  <input id="fw-dest" type="tel" class="input input-bordered input-sm w-56" placeholder="+15551234567" />
+                </label>
+                <button id="fw-apply" class="btn btn-sm btn-warning text-white hover:text-white" disabled>Forward selected</button>
+                <button id="fw-off" class="btn btn-sm btn-ghost" disabled>Turn forwarding off</button>
+                <button id="fw-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+              </div>
+              <div id="fw-status" class="text-xs text-base-content/60 leading-relaxed">
+                Nothing is dialled from this page &mdash; it only sets where a call would go.
+              </div>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-420px)]">
+                <table class="q-table w-full">
+                  <thead class="sticky top-0 z-10">
+                    <tr class="border-b border-base-300 bg-base-100">
+                      <th class="w-8"><input type="checkbox" id="fw-all" class="checkbox checkbox-xs align-middle" aria-label="Select every changeable number"></th>
+                      <th>Number</th><th>Name</th><th>Calls go to</th>
+                      <!-- Shown to prove, not to edit: this page never writes a messaging setting. -->
+                      <th>Texting (unchanged)</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="fw-rows"><tr><td colspan="6" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <div data-view id="view-dnc" class="hidden space-y-3">
 
             <div class="flex items-start gap-3 flex-wrap">
@@ -3395,8 +3443,144 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       window.__loadDnc = () => { if(loadedOnce) return; loadedOnce = true; loadStats(); load(); };
     })();
 
+    // ===== CALL FORWARDING (AI-1077) =====
+    //
+    // Sets where a call to one of our sender numbers goes. It never places a call, and it never
+    // writes a messaging setting - the server route enforces both, and this page only ever asks.
+    (() => {
+      if(!document.getElementById('fw-rows')) return;
+      const el = id => document.getElementById(id);
+      let ROWS = [];
+      const picked = new Set();
+
+      const say = (html, tone) => {
+        const n = el('fw-status'); if(!n) return;
+        n.className = 'text-xs leading-relaxed ' + (tone === 'bad' ? 'text-[#c0341a]' : tone === 'good' ? 'text-[#067523]' : 'text-base-content/60');
+        n.innerHTML = html;
+      };
+      // Changeable only when the number is on this account AND nothing already answers it.
+      const editable = r => r.on_this_account && !r.locked;
+      const E164 = /^\+[1-9]\d{7,14}$/;
+
+      function paint(){
+        const any = picked.size > 0;
+        const dest = (el('fw-dest') ? el('fw-dest').value : '').trim();
+        // Forwarding needs somewhere to forward TO; turning it off does not.
+        if(el('fw-apply')) el('fw-apply').disabled = !any || !E164.test(dest);
+        if(el('fw-off'))   el('fw-off').disabled   = !any;
+        const box = el('fw-all');
+        if(box){
+          const keys = ROWS.filter(editable).map(r => r.phone_number);
+          const on = keys.filter(k => picked.has(k)).length;
+          box.checked = keys.length > 0 && on === keys.length;
+          box.indeterminate = on > 0 && on < keys.length;
+          box.disabled = keys.length === 0;
+        }
+      }
+
+      function render(){
+        const tb = el('fw-rows'); if(!tb) return;
+        if(!ROWS.length){ tb.innerHTML = '<tr><td colspan="6" class="text-center text-base-content/50 py-8">No sender numbers found.</td></tr>'; return; }
+        tb.innerHTML = ROWS.map(r => {
+          // WHY A ROW MIGHT NOT BE EDITABLE, said on the row itself. Both reasons are real and
+          // neither is the operator's fault, so neither is left to be guessed at.
+          const why = !r.on_this_account
+            ? '<span class="badge badge-sm bg-[#fdeee4] text-[#c94d07] border-[#f6cfae]" title="This number is not on the Telnyx account this app has a key for, so it cannot be read or changed from here.">other account</span>'
+            : r.locked
+              ? '<span class="badge badge-sm badge-ghost" title="Something already answers this number (' + esc(r.connection_name) + '). Forwarding would take the call before it got there, so it is not offered.">already answered</span>'
+              : '';
+          const to = r.on_this_account
+            ? (r.forwarding && r.forwards_to
+                ? '<span class="font-semibold text-[#067523]">' + esc(r.forwards_to) + '</span>'
+                : '<span class="text-base-content/40">nobody &mdash; calls are lost</span>')
+            : '<span class="text-base-content/30">&mdash;</span>';
+          const pick = editable(r)
+            ? '<input type="checkbox" class="checkbox checkbox-xs align-middle" data-fw="' + esc(r.phone_number) + '"'
+              + (picked.has(r.phone_number) ? ' checked' : '') + ' aria-label="Select ' + esc(r.phone_number) + '">'
+            : '<span class="text-base-content/30">&mdash;</span>';
+          return '<tr>'
+            + '<td>' + pick + '</td>'
+            + '<td class="font-semibold text-[#133b49] whitespace-nowrap">' + esc(r.phone_number) + '</td>'
+            + '<td class="text-base-content/70">' + esc(r.label && r.label !== r.phone_number ? r.label : '') + '</td>'
+            + '<td>' + to + '</td>'
+            + '<td class="text-xs text-base-content/50">' + esc(r.messaging_profile || '—') + '</td>'
+            + '<td>' + why + '</td>'
+            + '</tr>';
+        }).join('');
+        paint();
+      }
+
+      async function load(){
+        const tb = el('fw-rows');
+        tb.innerHTML = '<tr><td colspan="6" class="text-center text-base-content/50 py-8">Reading Telnyx&hellip;</td></tr>';
+        try {
+          const res = await fetch('/api/telnyx-forwarding', { headers: await apiHeaders() });
+          const d = await res.json().catch(() => ({}));
+          if(!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+          ROWS = d.numbers || [];
+          picked.clear();
+          render();
+          const live = ROWS.filter(r => r.forwarding).length;
+          say(live
+            ? '<b>' + live + '</b> of ' + ROWS.length + ' numbers currently forward. Nothing is dialled from this page.'
+            : 'No number forwards anywhere yet. Nothing is dialled from this page.');
+        } catch(e){
+          tb.innerHTML = '<tr><td colspan="6" class="text-center text-error py-8">' + esc(e.message || e) + '</td></tr>';
+        }
+      }
+
+      async function apply(enable){
+        const nums = [...picked];
+        if(!nums.length) return;
+        const dest = (el('fw-dest') ? el('fw-dest').value : '').trim();
+        if(el('fw-apply')) el('fw-apply').disabled = true;
+        if(el('fw-off'))   el('fw-off').disabled   = true;
+        say(enable ? 'Pointing ' + nums.length + ' number(s) at ' + esc(dest) + '&hellip;'
+                   : 'Turning forwarding off on ' + nums.length + ' number(s)&hellip;');
+        try {
+          const res = await fetch('/api/telnyx-forwarding', {
+            method: 'POST',
+            headers: await apiHeaders(),
+            body: JSON.stringify({ enable: enable, forwards_to: dest, numbers: nums }),
+          });
+          const d = await res.json().catch(() => ({}));
+          if(!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+          // Per-number outcomes, not one total: the server skips rows it will not touch, and
+          // "8 changed" alone would hide which two did not, and why.
+          const bad = (d.results || []).filter(x => !x.ok);
+          say('<b>' + d.changed + '</b> changed' + (d.skipped ? ' &middot; ' + d.skipped + ' skipped' : '')
+            + (bad.length ? '<div class="text-[#c0341a] mt-1">' + bad.map(x => esc(x.phone_number) + ': ' + esc(x.error || '')).join('<br>') + '</div>' : ''),
+            bad.length ? 'bad' : 'good');
+          await load();
+        } catch(e){
+          say(esc(e.message || e), 'bad');
+        } finally { paint(); }
+      }
+
+      el('fw-rows') && el('fw-rows').addEventListener('change', ev => {
+        const cb = ev.target.closest('[data-fw]');
+        if(!cb) return;
+        const k = cb.getAttribute('data-fw');
+        if(cb.checked) picked.add(k); else picked.delete(k);
+        paint();
+      });
+      el('fw-all') && el('fw-all').addEventListener('change', ev => {
+        ROWS.filter(editable).forEach(r => { if(ev.target.checked) picked.add(r.phone_number); else picked.delete(r.phone_number); });
+        render();
+      });
+      el('fw-dest')   && el('fw-dest').addEventListener('input', paint);
+      el('fw-apply')  && el('fw-apply').addEventListener('click', () => apply(true));
+      el('fw-off')    && el('fw-off').addEventListener('click', () => apply(false));
+      el('fw-reload') && el('fw-reload').addEventListener('click', load);
+
+      // Loaded on first view: this makes ~50 Telnyx calls, which is not work to do for somebody
+      // who opened the app to look at the Queue.
+      let once = false;
+      window.__loadForwarding = () => { if(once) return; once = true; load(); };
+    })();
+
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', forwarding:'view-forwarding' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -3409,6 +3593,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
+      if(tab === 'forwarding' && window.__loadForwarding) window.__loadForwarding();
       // AI-1074. A tab inside Admin lights the Admin trigger instead: the row must still say
       // where you are when the page you are on is not one of the three visible tabs.
       const aw = document.getElementById('admin-menu');
