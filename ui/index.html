@@ -3801,6 +3801,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       const sayImp = html => { const e = el('ct-import-status'); if(e) e.innerHTML = html; };
 
+      // Just the parsed batch and its preview — NOT the URL or the tab list, which a failed read
+      // still needs so the person can pick a different tab. resetImport() clears everything and
+      // is for closing or reopening the modal.
+      function clearStaged(){
+        staged = null;
+        el('ct-preview')?.classList.add('hidden');
+        const go = el('ct-import-go'); if(go) go.disabled = true;
+      }
+
       function resetImport(){
         staged = null;
         el('ct-preview')?.classList.add('hidden');
@@ -3866,6 +3875,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const btn = el('ct-sheet-load');
         if(btn) btn.disabled = true;
         if(gid == null) el('ct-sheet-tabs')?.classList.add('hidden');
+
+        // DROP WHATEVER IS STAGED BEFORE READING ANYTHING, and that is a correctness fix rather
+        // than tidiness. Picking an empty tab used to leave the PREVIOUS tab's preview on screen
+        // with Import still enabled, under an error saying the new tab was empty — so the button
+        // would have imported a tab the person had just navigated away from, while reading that
+        // it had no rows (Vhea, 2026-10-06). Nothing may stay staged across a read.
+        clearStaged();
         sayImp('Opening the sheet&hellip;');
         try {
           const j = await post({ action:'sheet', url, ...(gid != null ? { gid } : {}) });
@@ -3879,9 +3895,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             const sel = el('ct-sheet-tab');
             if(!sel || !Array.isArray(sheets) || !sheets.length) return;
             sel.innerHTML = (selected == null ? '<option value="">Choose a tab&hellip;</option>' : '')
+              // THE TITLE ONLY. The row count Google reports is gridProperties.rowCount, which is
+              // the size of the grid, not how much of it is filled — a brand new empty tab says
+              // 1,000. Labelling an empty tab "test (1,000 rows)" is worse than saying nothing,
+              // because it reads as a promise the next click contradicts (Vhea, 2026-10-06).
               + sheets.map(s => `<option value="${esc5(s.gid)}"${
-                  String(s.gid) === String(selected) ? ' selected' : ''}>${esc5(s.title)}${
-                  s.rows ? ` (${Number(s.rows).toLocaleString()} rows)` : ''}</option>`).join('');
+                  String(s.gid) === String(selected) ? ' selected' : ''}>${esc5(s.title)}</option>`).join('');
             el('ct-sheet-tabs').classList.remove('hidden');
             const note = el('ct-sheet-tabnote');
             if(note) note.textContent = sheets.length === 1
