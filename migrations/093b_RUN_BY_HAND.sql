@@ -75,3 +75,18 @@ select count(*)                                              as people,
        count(*) filter (where in_hubspot and not in_intel)   as hubspot_only,
        count(*) filter (where phone is not null)             as have_phone
 from public.contact_directory;
+
+
+-- =============================================================================================
+-- PART 4 (added 2026-10-06) — remove the two seeded rows used to verify blast_recipients (095).
+--
+-- Fake Washington numbers written while testing the send log and its retry guard. They are the
+-- only rows in the table, since nothing has blasted since the migration landed. Blocked by the
+-- same guard on destructive SQL as Part 1.
+-- =============================================================================================
+
+delete from ticketblaster.blast_recipients
+where queue_id = '11111111-1111-1111-1111-111111111111';
+
+-- Should return 0 afterwards, until the first real blast runs.
+select count(*) as blast_recipient_rows from ticketblaster.blast_recipients;
