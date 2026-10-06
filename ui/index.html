@@ -898,7 +898,7 @@
                       <th class="w-20"></th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="11" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="11" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="11" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -5934,13 +5934,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const k = lg ? known.find(p => p[0] === lg) : null;
           const hasRows = lg && ROWS.some(e => String(e.league || '').toLowerCase() === lg);
           tb.innerHTML = (k && !hasRows)
-            ? '<tr><td colspan="10" class="text-center py-10">'
+            ? '<tr><td colspan="11" class="text-center py-10">'
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
               + (k[3] ? 'The schedule loads on its own, once a week &mdash; these will appear within a week of the fixtures being published.'
                       : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
-            : '<tr><td colspan="10" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
+            : '<tr><td colspan="11" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
           return;
         }
         const today = todayYmd();
@@ -6674,12 +6674,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="11" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         // counts_refreshed_at is a single timestamp and rides along in the same round trip,
         // so knowing how old the figures are costs nothing.
         const [ev, rg, q, ca] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue'), sb.rpc('counts_refreshed_at') ]);
         paintCountsAge(ca && !ca.error ? ca.data : null);
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="10" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="11" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
         // Reach per market x segment x the ORGANISATION's own sport. Absent until migration 080
