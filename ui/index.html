@@ -1420,7 +1420,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 </select>
               </div>
               <div id="rc-sum" class="text-xs text-base-content/50 mb-2 leading-relaxed"></div>
-              <div id="rc-rows" class="flex-1 min-h-0 overflow-auto border border-base-300 rounded-lg"></div>
+              <div id="rc-rows" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden border border-base-300 rounded-lg"></div>
               <div class="flex items-center gap-2 pt-2 text-xs">
                 <button id="rc-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
                 <span id="rc-page" class="text-base-content/60"></span>
@@ -6136,31 +6136,41 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return;
         }
 
-        host.innerHTML = `<table class="w-full text-xs">
+        // table-fixed, so one long cell cannot widen the whole table and push the panel into a
+        // horizontal scroll. The widths are declared once here rather than fought per row.
+        host.innerHTML = `<table class="w-full text-xs table-fixed">
           <thead class="sticky top-0 bg-base-100"><tr class="border-b border-base-300">
-            <th class="text-left py-1.5 px-2">Who</th>
-            <th class="text-left py-1.5 px-2">Email</th>
-            <th class="text-left py-1.5 px-2">Phone</th>
-            <th class="text-left py-1.5 px-2">Flags</th>
+            <th class="text-left py-1.5 px-2 w-[30%]">Who</th>
+            <th class="text-left py-1.5 px-2 w-[28%]">Email</th>
+            <th class="text-left py-1.5 px-2 w-[18%]">Phone</th>
+            <th class="text-left py-1.5 px-2 w-[24%]">Flags</th>
           </tr></thead>
           <tbody>${list.map(r => {
             const flags = [];
             if(r.suppressed_email || r.suppressed_phone)
               flags.push(`<span class="ct-badge" style="background:#fff5f4;border-color:#f0c9c4;color:#a8321e" title="On the do-not-contact list. The send path skips them.">suppressed</span>`);
-            if((r.other_markets || []).length)
-              flags.push(`<span class="ct-badge" style="background:#fff8f3;border-color:#f3cfae;color:#b4560b" title="Also reachable under ${esc((r.other_markets||[]).join(', '))} - a blast to that market would reach them too.">also ${esc(r.other_markets.join(', '))}</span>`);
+            if((r.other_markets || []).length){
+              // CAPPED AT THREE, THEN "+N". One contact sits in 30 markets, and spelling all of
+              // them out made the badge wider than the rest of the table put together -- the panel
+              // grew a horizontal scrollbar and squeezed the Who column into four-line wrapping
+              // (Vhea, 2026-10-06). The full list stays on the tooltip, so nothing is lost.
+              const mk = r.other_markets;
+              const shown = mk.slice(0, 3).join(', ') + (mk.length > 3 ? ` +${mk.length - 3}` : '');
+              flags.push(`<span class="ct-badge" style="background:#fff8f3;border-color:#f3cfae;color:#b4560b" title="Also reachable under ${esc(mk.join(', '))} — a blast to any of those markets would reach them too.">also ${esc(shown)}</span>`);
+            }
             if(r.dupe_in_market > 1)
               flags.push(`<span class="ct-badge ct-badge-off" title="${r.dupe_in_market} contact rows in this market share this person. The send collapses them into one message.">${r.dupe_in_market}&times; in market</span>`);
             if(r.blast_count)
               flags.push(`<span class="ct-badge ct-badge-on" title="Recorded in the send log.">blasted ${esc(rcAgo(r.last_blasted_at) || '')}</span>`);
-            return `<tr class="border-b border-base-200">
+            const org = [r.organization_name, r.city].filter(Boolean).join(' · ');
+            return `<tr class="border-b border-base-200 align-top">
               <td class="py-1.5 px-2">
-                <div class="font-semibold text-[#133b49]">${esc(r.contact_name) || '<span class="text-base-content/30">&mdash;</span>'}</div>
-                <div class="text-base-content/50">${esc(r.organization_name) || ''}${r.city ? ' &middot; ' + esc(r.city) : ''}</div>
+                <div class="font-semibold text-[#133b49] truncate" title="${esc(r.contact_name) || ''}">${esc(r.contact_name) || '<span class="text-base-content/30">&mdash;</span>'}</div>
+                <div class="text-base-content/50 truncate" title="${esc(org)}">${esc(org)}</div>
               </td>
-              <td class="py-1.5 px-2 font-mono ${r.suppressed_email ? 'line-through text-base-content/40' : ''}">${esc(r.email) || '<span class="text-base-content/30">&mdash;</span>'}</td>
-              <td class="py-1.5 px-2 font-mono ${r.suppressed_phone ? 'line-through text-base-content/40' : ''}">${esc(r.phone) || '<span class="text-base-content/30">&mdash;</span>'}</td>
-              <td class="py-1.5 px-2">${flags.join(' ') || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2 font-mono truncate ${r.suppressed_email ? 'line-through text-base-content/40' : ''}" title="${esc(r.email) || ''}">${esc(r.email) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2 font-mono truncate ${r.suppressed_phone ? 'line-through text-base-content/40' : ''}" title="${esc(r.phone) || ''}">${esc(r.phone) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2"><div class="flex flex-wrap gap-1">${flags.join('') || '<span class="text-base-content/30">&mdash;</span>'}</div></td>
             </tr>`;
           }).join('')}</tbody></table>`;
 
