@@ -893,9 +893,12 @@
                       <th>Companies</th>
                       <th>Emails</th>
                       <th>Phone #s</th>
+                      <!-- The reach figures to the left are the number an operator sends on, and
+                           until now nothing could open them. This column does. -->
+                      <th class="w-20"></th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="9" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="9" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -1389,6 +1392,40 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div id="rep-list" class="divide-y divide-base-300 max-h-[calc(100vh-260px)] overflow-auto"></div>
+            </div>
+          </div>
+
+          <!-- RECIPIENTS PANEL (Offers). Reuses .bh-panel wholesale: same geometry, same
+               transform, same margin:0 fix it needs for the same reason -- #view-compose carries
+               Tailwind space-y-5 and would otherwise push a fixed element down. -->
+          <div id="rc-panel" class="bh-panel ct-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="rc-panel-title">
+            <div class="bh-panel-head">
+              <div class="min-w-0">
+                <div id="rc-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
+                <div id="rc-panel-sub" class="text-xs text-base-content/50 mt-0.5"></div>
+              </div>
+              <button id="rc-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
+            </div>
+            <div class="bh-panel-body">
+              <div id="rc-warn" class="hidden"></div>
+              <div class="flex items-center gap-2 flex-wrap mb-2">
+                <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100 flex-1 min-w-[12rem]">
+                  <span class="text-base-content/40">&#128269;</span>
+                  <input id="rc-search" type="text" class="grow" placeholder="Search a name, org, city, email or phone&hellip;" autocomplete="off">
+                </label>
+                <select id="rc-chan" class="select select-bordered select-sm" aria-label="Channel">
+                  <option value="">Email and SMS</option>
+                  <option value="email">Email only</option>
+                  <option value="sms">SMS only</option>
+                </select>
+              </div>
+              <div id="rc-sum" class="text-xs text-base-content/50 mb-2 leading-relaxed"></div>
+              <div id="rc-rows" class="flex-1 min-h-0 overflow-auto border border-base-300 rounded-lg"></div>
+              <div class="flex items-center gap-2 pt-2 text-xs">
+                <button id="rc-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
+                <span id="rc-page" class="text-base-content/60"></span>
+                <button id="rc-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
+              </div>
             </div>
           </div>
 
@@ -5897,13 +5934,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const k = lg ? known.find(p => p[0] === lg) : null;
           const hasRows = lg && ROWS.some(e => String(e.league || '').toLowerCase() === lg);
           tb.innerHTML = (k && !hasRows)
-            ? '<tr><td colspan="9" class="text-center py-10">'
+            ? '<tr><td colspan="10" class="text-center py-10">'
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
               + (k[3] ? 'The schedule loads on its own, once a week &mdash; these will appear within a week of the fixtures being published.'
                       : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
-            : '<tr><td colspan="9" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
+            : '<tr><td colspan="10" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
           return;
         }
         const today = todayYmd();
@@ -5985,10 +6022,184 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             const tag = ar.filtered ? ' <span class="text-[10px] text-[#c94d07]" title="Filtered to the audience sport chosen above — this is a subset of the market, not its total.">&#9662;</span>' : '';
             return `<td>${reachCell(ar.email)}${tag}</td><td>${reachCell(ar.phone)}${tag}</td>`;
           })()}
+          <!-- OPENS THE REACH FIGURES TO THE LEFT. Disabled where there is no market, because
+               there is no audience to resolve and the panel would have nothing to show. -->
+          <td>${noMkt
+            ? '<span class="text-base-content/30 text-xs">&mdash;</span>'
+            : `<button class="btn btn-xs" data-viewrecips="${esc(e.state_code || '')}" data-seg="${esc(e.segment || '')}" data-ev="${esc(evTitle(e))}">View</button>`}</td>
         </tr>`;
         }).join('');
         paintPick();
       }
+
+      // ===== RECIPIENTS PANEL (AI-1101) =====
+      //
+      // The reach figures in this table are the number an operator sends on, and nothing could
+      // open them. This does, and shows the three things that decide whether a row is really
+      // reachable: suppression, duplication, and whether we have already blasted them.
+      //
+      // THE COUNTS HERE ARE DEDUPLICATED AND THE TABLE'S ARE NOT, which is the point rather than
+      // an inconsistency to hide. market_contacts holds one row per contact ROW: 118,493 rows
+      // collapse to 101,295 people, so a reach figure overstates by about 14%, and 625 people
+      // sit in more than one market where two campaigns can each blast them believing they are
+      // alone. The panel says so in words rather than leaving it to be found after a send.
+      const RC = { code: '', seg: '', ev: '', q: '', chan: '', page: 0, total: 0, busy: 0 };
+
+      function rcOpen(){
+        const p = el('rc-panel'); if(!p) return;
+        const m = document.querySelector('main');
+        if(m){ const r = m.getBoundingClientRect(); p.style.top = `${Math.max(0, r.top)}px`; p.style.height = `${r.height}px`; }
+        p.classList.add('open'); p.setAttribute('aria-hidden','false');
+      }
+      function rcClose(){
+        const p = el('rc-panel'); if(!p) return;
+        p.classList.remove('open'); p.setAttribute('aria-hidden','true');
+      }
+
+      const rcAgo = t => {
+        if(!t) return null;
+        const d = new Date(t); if(isNaN(d)) return null;
+        const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+        return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+      };
+
+      async function rcLoad(){
+        const host = el('rc-rows'); if(!host) return;
+        const mine = ++RC.busy;
+        host.innerHTML = '<div class="text-sm text-base-content/50 p-3">Loading recipients&hellip;</div>';
+        const qs = new URLSearchParams({ market_recipients: '1', code: RC.code, page: String(RC.page), limit: '100' });
+        if(RC.seg) qs.set('segment', RC.seg);
+        if(RC.q.trim()) qs.set('q', RC.q.trim());
+        try {
+          const r = await fetch(`/api/contacts?${qs}`, { headers: await apiHeaders() });
+          const j = await r.json().catch(() => ({}));
+          if(mine !== RC.busy) return;                       // a newer request already started
+          if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+          RC.total = Number(j.total || 0);
+          rcPaintWarn(j.recency);
+          rcPaint(j.rows || [], j.page_summary || {});
+        } catch(e){
+          if(mine !== RC.busy) return;
+          host.innerHTML = `<div class="text-sm text-error p-3">${esc(e.message || e)}</div>`;
+        }
+      }
+
+      // THE BANNER IS BUILT FROM ALL THREE LEDGERS. The cooldown reads one of them, so a banner
+      // built from that alone would say "no recent sends" about a market blasted yesterday
+      // through a different path.
+      function rcPaintWarn(rec){
+        const box = el('rc-warn'); if(!box) return;
+        if(!rec){ box.classList.add('hidden'); return; }
+        const last = [rec.last_app, rec.last_textable, rec.last_logged].filter(Boolean)
+          .sort((a,b) => new Date(b) - new Date(a))[0];
+        const ago = rcAgo(last);
+        if(!ago){
+          box.className = 'text-xs rounded-lg px-3 py-2 mb-2 bg-base-200 text-base-content/60';
+          box.textContent = 'No send to this market has ever been recorded.';
+          box.classList.remove('hidden');
+          return;
+        }
+        // Inside the cooldown floor is the case worth colouring. 14 days matches the decider's
+        // own floor; outside it this is context, not a warning.
+        const days = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+        const hot = days < 14;
+        box.className = `text-xs rounded-lg px-3 py-2 mb-2 ${hot
+          ? 'bg-[#fff5f4] border border-[#f0c9c4] text-[#a8321e]'
+          : 'bg-base-200 text-base-content/60'}`;
+        box.innerHTML = `${hot ? '&#9888; ' : ''}This market was last blasted <b>${esc(ago)}</b>`
+          + (rec.sends_90d ? ` &middot; ${Number(rec.sends_90d).toLocaleString()} send${rec.sends_90d === 1 ? '' : 's'} in the last 90 days` : '')
+          + (hot ? ' &mdash; inside the 14-day cooldown floor.' : '.');
+        box.classList.remove('hidden');
+      }
+
+      function rcPaint(rows, sum){
+        const host = el('rc-rows');
+        const sumEl = el('rc-sum');
+
+        // Channel is filtered in the browser, not the query: the page is at most 100 rows and a
+        // round trip to hide a column would be slower than the filter it replaces.
+        const list = rows.filter(r => RC.chan === 'email' ? !!r.email : RC.chan === 'sms' ? !!r.phone : true);
+
+        if(sumEl){
+          const bits = [`<b>${RC.total.toLocaleString()}</b> ${RC.total === 1 ? 'person' : 'people'}`];
+          if(sum.emailable != null) bits.push(`${sum.emailable} emailable on this page`);
+          if(sum.smsable != null)   bits.push(`${sum.smsable} textable`);
+          if(sum.suppressed)        bits.push(`<span class="text-[#a8321e]">${sum.suppressed} suppressed</span>`);
+          if(sum.in_other_markets)  bits.push(`<span class="text-[#b4560b]">${sum.in_other_markets} also in another market</span>`);
+          sumEl.innerHTML = bits.join(' &middot; ')
+            + '<div class="mt-1">Counted per PERSON. The reach figures in the table count contact rows, and the same address can appear under several organisations &mdash; the send collapses them, so it reaches fewer people than the column suggests.</div>';
+        }
+
+        if(!list.length){
+          host.innerHTML = `<div class="text-sm text-base-content/50 p-3">${
+            RC.q || RC.chan ? 'Nobody in this market matches that.' : 'This market has no contacts.'}</div>`;
+          return;
+        }
+
+        host.innerHTML = `<table class="w-full text-xs">
+          <thead class="sticky top-0 bg-base-100"><tr class="border-b border-base-300">
+            <th class="text-left py-1.5 px-2">Who</th>
+            <th class="text-left py-1.5 px-2">Email</th>
+            <th class="text-left py-1.5 px-2">Phone</th>
+            <th class="text-left py-1.5 px-2">Flags</th>
+          </tr></thead>
+          <tbody>${list.map(r => {
+            const flags = [];
+            if(r.suppressed_email || r.suppressed_phone)
+              flags.push(`<span class="ct-badge" style="background:#fff5f4;border-color:#f0c9c4;color:#a8321e" title="On the do-not-contact list. The send path skips them.">suppressed</span>`);
+            if((r.other_markets || []).length)
+              flags.push(`<span class="ct-badge" style="background:#fff8f3;border-color:#f3cfae;color:#b4560b" title="Also reachable under ${esc((r.other_markets||[]).join(', '))} - a blast to that market would reach them too.">also ${esc(r.other_markets.join(', '))}</span>`);
+            if(r.dupe_in_market > 1)
+              flags.push(`<span class="ct-badge ct-badge-off" title="${r.dupe_in_market} contact rows in this market share this person. The send collapses them into one message.">${r.dupe_in_market}&times; in market</span>`);
+            if(r.blast_count)
+              flags.push(`<span class="ct-badge ct-badge-on" title="Recorded in the send log.">blasted ${esc(rcAgo(r.last_blasted_at) || '')}</span>`);
+            return `<tr class="border-b border-base-200">
+              <td class="py-1.5 px-2">
+                <div class="font-semibold text-[#133b49]">${esc(r.contact_name) || '<span class="text-base-content/30">&mdash;</span>'}</div>
+                <div class="text-base-content/50">${esc(r.organization_name) || ''}${r.city ? ' &middot; ' + esc(r.city) : ''}</div>
+              </td>
+              <td class="py-1.5 px-2 font-mono ${r.suppressed_email ? 'line-through text-base-content/40' : ''}">${esc(r.email) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2 font-mono ${r.suppressed_phone ? 'line-through text-base-content/40' : ''}">${esc(r.phone) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2">${flags.join(' ') || '<span class="text-base-content/30">&mdash;</span>'}</td>
+            </tr>`;
+          }).join('')}</tbody></table>`;
+
+        const pages = Math.max(1, Math.ceil(RC.total / 100));
+        const pg = el('rc-page'); if(pg) pg.textContent = `Page ${RC.page + 1} of ${pages.toLocaleString()}`;
+        const pv = el('rc-prev'); if(pv) pv.disabled = RC.page === 0;
+        const nx = el('rc-next'); if(nx) nx.disabled = RC.page + 1 >= pages;
+      }
+
+      function rcShow(code, seg, ev){
+        RC.code = code; RC.seg = seg || ''; RC.ev = ev || ''; RC.q = ''; RC.chan = ''; RC.page = 0;
+        const sr = el('rc-search'); if(sr) sr.value = '';
+        const ch = el('rc-chan');   if(ch) ch.value = '';
+        el('rc-panel-title').textContent = `Recipients - ${code}${seg ? ' / ' + seg : ''}`;
+        el('rc-panel-sub').textContent = ev || '';
+        rcOpen();
+        rcLoad();
+      }
+
+      // Delegated: render() replaces the whole tbody on every page and filter change.
+      el('cbs-rows')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-viewrecips]');
+        if(!b) return;
+        e.stopPropagation();   // the row itself is clickable for selection
+        rcShow(b.dataset.viewrecips, b.dataset.seg, b.dataset.ev);
+      });
+      el('rc-panel-close')?.addEventListener('click', rcClose);
+      document.addEventListener('keydown', e => {
+        if(e.key === 'Escape' && el('rc-panel')?.classList.contains('open')) rcClose();
+      });
+      let rcTimer = null;
+      el('rc-search')?.addEventListener('input', e => {
+        RC.q = e.target.value;
+        clearTimeout(rcTimer);
+        rcTimer = setTimeout(() => { RC.page = 0; rcLoad(); }, 300);
+      });
+      el('rc-chan')?.addEventListener('change', e => { RC.chan = e.target.value; rcLoad(); });
+      el('rc-prev')?.addEventListener('click', () => { if(RC.page > 0){ RC.page--; rcLoad(); } });
+      el('rc-next')?.addEventListener('click', () => { RC.page++; rcLoad(); });
 
       // AI-964. The bulk bar, mirroring the Queue's paintBulk — including the indeterminate
       // header checkbox, which matters: without it a part-selected page shows an empty box that
@@ -6453,12 +6664,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="9" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         // counts_refreshed_at is a single timestamp and rides along in the same round trip,
         // so knowing how old the figures are costs nothing.
         const [ev, rg, q, ca] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue'), sb.rpc('counts_refreshed_at') ]);
         paintCountsAge(ca && !ca.error ? ca.data : null);
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="9" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="10" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
         // Reach per market x segment x the ORGANISATION's own sport. Absent until migration 080

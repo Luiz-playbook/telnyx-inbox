@@ -319,6 +319,55 @@ async function handleGet(req, res, call) {
     return;
   }
 
+  // ?market_recipients=1&code=WA[&segment=ICP][&q=][&page=] — who a market blast would reach.
+  //
+  // The Offers tab shows a reach NUMBER and nothing behind it. "2,684 emails" is the figure an
+  // operator decides to send on, and the only way to see who they were was to send to them.
+  //
+  // The counts here are DEDUPLICATED where the tab's own are not. market_contacts holds one row
+  // per contact row, not per person -- 118,493 rows collapse to 101,295 people, so a reach figure
+  // overstates by about 14% -- and 625 people sit in more than one market, which means two
+  // campaigns can each blast them believing they are the only one. Both facts are per-row in the
+  // response so the panel can show them rather than leave them to be discovered after a send.
+  if (q.market_recipients) {
+    const code = String(q.code || '').trim();
+    if (!code) { res.status(400).json({ error: 'code=<market> is required' }); return; }
+    const PAGE = Math.min(Math.max(Number(q.limit) || 100, 1), 500);
+    const page = Math.max(Number(q.page) || 0, 0);
+
+    const [rows, recency] = await Promise.all([
+      call('market_recipients', {
+        p_code:    code,
+        p_segment: q.segment ? String(q.segment) : null,
+        p_q:       q.q ? String(q.q) : null,
+        p_limit:   PAGE,
+        p_offset:  page * PAGE,
+      }),
+      // When this market was last blasted, across all three ledgers. The cooldown reads one of
+      // them, so a banner built from that alone would say "no recent sends" about a market
+      // blasted yesterday through a different path.
+      call('market_blast_recency', { p_code: code }).catch(() => null),
+    ]);
+
+    const list = Array.isArray(rows) ? rows : [];
+    const total = list.length ? Number(list[0].total) : 0;
+    res.status(200).json({
+      ok: true,
+      rows: list.map(({ total: _t, ...r }) => r),
+      total, page, limit: PAGE,
+      recency: recency || null,
+      // Counted over THIS PAGE only, and named so, because the whole point of the panel is not
+      // to quietly produce another number nobody can trace.
+      page_summary: {
+        emailable: list.filter(r => r.email && !r.suppressed_email).length,
+        smsable:   list.filter(r => r.phone && !r.suppressed_phone).length,
+        suppressed: list.filter(r => r.suppressed_email || r.suppressed_phone).length,
+        in_other_markets: list.filter(r => (r.other_markets || []).length).length,
+      },
+    });
+    return;
+  }
+
   // ?states=1 — the options for the state filter, counted, busiest first.
   if (q.states) {
     res.status(200).json({ ok: true, states: (await call('contacts_states')) || [] });
