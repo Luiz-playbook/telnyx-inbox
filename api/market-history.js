@@ -196,6 +196,53 @@ export default async function handler(req, res) {
   // Pennsylvania list has been sent to seven times — so this is the market audience rather than
   // this campaign than anyone else. The UI says so; the honest framing has to travel with the
   // data, or it becomes a per-send recipient list in the reader mind.
+  // ?sms_recipients=1&state=<code>&at=<iso>[&message=<copy>] — who an SMS blast went to.
+  //
+  // A DIFFERENT PARAMETER FROM ?recipients BECAUSE IT IS A DIFFERENT FACT. That one returns the
+  // CakeMail list as it stands today; this returns recipients actually recorded at send time.
+  // Collapsing them into one endpoint would mean one label over two things that disagree about
+  // what they are claiming, which is the confusion the CakeMail note above exists to avoid.
+  //
+  // MATCHED ON MARKET AND TIME, NOT AN ID, because the rows this tab lists carry no campaign_queue
+  // id — ticketblaster_market_blasts_log is a historical import and nothing in this repo writes
+  // it. The message body narrows the telnyx_messages half, which would otherwise sweep in inbox
+  // traffic that merely shares a day with the blast.
+  //
+  // EXPECT THIS TO BE EMPTY FOR OLD BLASTS, and that is the honest answer rather than a bug:
+  // per-recipient history did not exist before migration 095 (2026-10-06). The response says
+  // which rows came from our own log and which were recovered from the Telnyx inbox, so a
+  // partial roster is never presented as a complete one.
+  if (String(req.query?.sms_recipients || '').trim()) {
+    const at = String(req.query?.at || '').trim();
+    const when = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : null;
+    if (!when) { res.status(400).json({ error: 'at=<ISO timestamp> is required' }); return; }
+    const r = await fetch(`${url}/rest/v1/rpc/blast_recipients_for`, {
+      method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        p_market:  String(req.query?.state || '').trim() || null,
+        p_channel: 'sms',
+        p_at:      when,
+        p_message: String(req.query?.message || '').trim() || null,
+      }),
+    });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => '');
+      res.status(502).json({ error: `blast_recipients_for failed (HTTP ${r.status})`, detail: detail.slice(0, 300) });
+      return;
+    }
+    const list = await r.json().catch(() => []);
+    const rows = Array.isArray(list) ? list : [];
+    res.status(200).json({
+      ok: true,
+      recipients: rows,
+      // Counted per origin so the panel can say "12 from our send log, 3 recovered from the
+      // Telnyx inbox" instead of implying all 15 were recorded the same way.
+      from_log:    rows.filter(x => x.source === 'log').length,
+      from_telnyx: rows.filter(x => x.source === 'telnyx').length,
+    });
+    return;
+  }
+
   const wantRecips = String(req.query?.recipients || '').trim();
   if (wantRecips) {
     if (!/^[0-9]+$/.test(wantRecips)) { res.status(400).json({ error: 'recipients must be a campaign id' }); return; }

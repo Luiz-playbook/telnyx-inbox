@@ -12350,9 +12350,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // is four numbers and it is what the row is judged on — while the copy, the replies and
         // the roster each get the full remaining height instead of stacking into a long scroll.
         const cid2 = cid;
+        // AI-1101. Recipients is no longer CakeMail-only. An SMS blast now has a roster too —
+        // from blast_recipients, written at send time, merged with anything recoverable from the
+        // Telnyx inbox. It will be empty for blasts sent before 2026-10-06, because nothing
+        // recorded recipients until then; the tab says so rather than being hidden, since
+        // "nobody knows" and "this cannot be asked" are different answers.
+        const isSms = r.channel === 'SMS';
         const tabs = [
           ['copy', r.channel === 'SMS' ? 'Message' : 'Copy'],
-          ...(cid2 ? [['replies', 'Replies'], ['recipients', 'Recipients']] : []),
+          ...(cid2 ? [['replies', 'Replies']] : []),
+          ...(cid2 || isSms ? [['recipients', 'Recipients']] : []),
           // FOLLOW UP AS A TAB, not the header button it started as (Vhea, 2026-09-17). It is
           // one of the things you do with a blast you are reading, and the panel already has a
           // row for those. A button in the header read as chrome — same visual weight as Close.
@@ -12385,7 +12392,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           panelTab = b.dataset.ptab; renderPanel();
         }));
         if(panelTab === 'replies')    loadReplies(cid2, body.querySelector('[data-people]'));
-        if(panelTab === 'recipients') loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+        if(panelTab === 'recipients'){
+          // Two different facts, two different loaders. CakeMail's is the list as it stands
+          // today; the SMS one is who we actually recorded sending to. One renderer for both
+          // would have to caveat itself twice over and would end up claiming neither clearly.
+          if(isSms) loadSmsRecipients(r, body.querySelector('[data-people]'));
+          else      loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+        }
         if(panelTab === 'followup')   renderFollowUpTab(r, body.querySelector('[data-followupform]'));
 
         fitPanel();
@@ -12513,6 +12526,83 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // whole list on every page: keeping this in the render would slam every expanded row shut
       // the moment you pressed Load more.
       const RECIP_OPEN = new Set();
+
+      // WHO AN SMS BLAST ACTUALLY REACHED (AI-1101).
+      //
+      // Unlike the CakeMail roster below, this is not "the list as it stands today" — it is the
+      // recipients recorded at send time in blast_recipients, merged with anything recoverable
+      // from telnyx_messages (the two-way inbox, and the only place an outbound SMS was ever
+      // stored per recipient before migration 095).
+      //
+      // IT WILL BE EMPTY FOR OLD BLASTS, and the empty state has to say WHY. Nothing recorded
+      // SMS recipients before 2026-10-06, so "no recipients" here means "never written down",
+      // not "sent to nobody" — and those two readings differ by the entire credibility of the
+      // number next to it.
+      const SMS_RECIP_CACHE = new Map();
+      async function loadSmsRecipients(row, host){
+        if(!host || !row) return;
+        const key = String(row.id);
+        const paint = (st) => {
+          if(st.error){ host.innerHTML = `<div class="text-sm text-error p-2">${esc(st.error)}</div>`; return; }
+          const list = st.recipients || [];
+          if(!list.length){
+            host.innerHTML = `<div class="text-sm text-base-content/60 p-2 leading-relaxed">
+              No recipients were recorded for this blast.
+              <div class="text-xs text-base-content/50 mt-1">
+                Per-recipient history for SMS only began on 6 October 2026. Before that nothing
+                stored who a blast went to &mdash; the numbers were resolved at send time and
+                discarded &mdash; so this is &ldquo;never written down&rdquo;, not &ldquo;sent to
+                nobody&rdquo;. ${row.recipients != null
+                  ? `The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span> recipients.`
+                  : ''}
+              </div></div>`;
+            return;
+          }
+          // The provenance line. A roster half-recovered from the inbox is not the same claim as
+          // one we wrote ourselves, so it never presents as a single uniform list.
+          const bits = [];
+          if(st.from_log)    bits.push(`<span class="font-semibold text-[#133b49]">${st.from_log.toLocaleString()}</span> from our send log`);
+          if(st.from_telnyx) bits.push(`<span class="font-semibold text-[#133b49]">${st.from_telnyx.toLocaleString()}</span> recovered from the Telnyx inbox`);
+          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2 leading-relaxed">
+              <div>${bits.join(' &middot; ')}.</div>
+              ${row.recipients != null && Number(row.recipients) !== list.length
+                ? `<div class="mt-0.5">The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span> recipients, so this roster is incomplete.</div>`
+                : ''}
+              <div class="mt-1">Recorded at send time. &ldquo;Handed off&rdquo; means the carrier accepted the message, not that a handset received it.</div>
+            </div>
+            <div class="border border-base-300 rounded-lg overflow-auto"><table class="w-full text-xs">
+              <thead><tr>
+                <th class="text-left py-1 pr-2">Number</th><th class="text-left py-1 pr-2">Name</th>
+                <th class="text-left py-1 pr-2">Company</th><th class="text-left py-1 pr-2">Outcome</th>
+                <th class="text-left py-1">Source</th>
+              </tr></thead>
+              <tbody>${list.map(x => `<tr class="border-t border-base-200">
+                <td class="py-1 pr-2 font-mono">${esc(x.address)}</td>
+                <td class="py-1 pr-2">${esc([x.first_name, x.last_name].filter(Boolean).join(' ')) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+                <td class="py-1 pr-2">${esc(x.company) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+                <td class="py-1 pr-2 text-base-content/60">${esc((x.outcome || '').replace(/_/g, ' '))}</td>
+                <td class="py-1 text-base-content/50">${x.source === 'telnyx' ? 'Telnyx inbox' : 'send log'}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>`;
+        };
+
+        if(SMS_RECIP_CACHE.has(key)){ paint(SMS_RECIP_CACHE.get(key)); return; }
+        host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Loading recipients&hellip;</div>';
+        try {
+          const qs = new URLSearchParams({ sms_recipients: '1', at: row.sent_at || '' });
+          if(row.state_code) qs.set('state', row.state_code);
+          // The body narrows the Telnyx half, which would otherwise return any outbound message
+          // that merely shares a day with this blast.
+          if(row.message) qs.set('message', row.message);
+          const rr = await fetch(`/api/market-history?${qs}`, { headers: await apiHeaders() });
+          const j = await rr.json().catch(() => ({}));
+          const st = rr.ok ? j : { error: j.error || `HTTP ${rr.status}` };
+          SMS_RECIP_CACHE.set(key, st);
+          paint(st);
+        } catch(e){
+          paint({ error: String((e && e.message) || e) });
+        }
+      }
 
       async function loadRecipients(cid, host, more, row){
         if(!cid || !host) return;
