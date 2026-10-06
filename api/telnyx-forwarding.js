@@ -37,6 +37,18 @@ const TELNYX = 'https://api.telnyx.com/v2';
 // about their own phone number is a support ticket waiting to happen.
 const E164 = /^\+[1-9]\d{7,14}$/;
 
+// TELNYX ATTACHES ITS OWN CONNECTION WHEN FORWARDING IS TURNED ON, named "Forward Only". It is
+// not a voice app anybody built - it is the plumbing that makes forwarding work, and it appears
+// as a side effect of the very thing this page does.
+//
+// That matters because "has a connection" is otherwise exactly how we identify a number an AI
+// assistant answers, which must never be touched. Counting Telnyx's own artefact as such locked
+// every number the moment it was forwarded, so the off switch stopped working on the only rows
+// that had anything to switch off. Found on 2026-10-06, after forwarding the first ten.
+const FORWARDING_CONNECTION = 'Forward Only';
+const answeredBySomethingElse = n =>
+  !!n.connection_id && String(n.connection_name || '').trim() !== FORWARDING_CONNECTION;
+
 async function telnyx(path, key, init) {
   const r = await fetch(`${TELNYX}${path}`, {
     ...init,
@@ -105,8 +117,9 @@ export default async function handler(req, res) {
         // Shown so the operator can see for themselves that changing a call route left texting
         // alone. This is the reassurance the page exists to give.
         messaging_profile: hit.messaging_profile_name || '',
-        // A number already answered by something else. Listed, never editable here.
-        locked: !!hit.connection_id,
+        // A number already answered by something else. Listed, never editable here. The
+        // forwarding plumbing does not count - see answeredBySomethingElse.
+        locked: answeredBySomethingElse(hit),
         connection_name: hit.connection_name || '',
       });
     }
@@ -141,7 +154,7 @@ export default async function handler(req, res) {
       const q = await telnyx(`/phone_numbers?filter%5Bphone_number%5D=${encodeURIComponent(num)}`, key);
       const hit = q.ok && q.body && Array.isArray(q.body.data) && q.body.data[0];
       if (!hit) { results.push({ phone_number: num, ok: false, error: 'not on this Telnyx account' }); continue; }
-      if (hit.connection_id) {
+      if (answeredBySomethingElse(hit)) {
         results.push({ phone_number: num, ok: false, error: `answered by ${hit.connection_name || 'a voice connection'} — not changed` });
         continue;
       }
