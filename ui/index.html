@@ -1575,17 +1575,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <div class="flex items-center gap-2 mt-1">
                   <input id="ct-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/&hellip;"
                          class="input input-bordered input-sm flex-1">
-                  <button id="ct-sheet-load" class="btn btn-sm">Load</button>
+                  <!-- "Read", not "Load": pasting already loads the sheet, so by the time this
+                       button is reachable the only thing left for it to do is read the chosen tab
+                       AGAIN — after someone edits the sheet, or to retry a failure. -->
+                  <button id="ct-sheet-load" class="btn btn-sm" title="Read the selected tab again">Read</button>
                 </div>
                 <div id="ct-sheet-help" class="text-xs text-base-content/50 mt-1.5 leading-relaxed"></div>
-                <!-- TAB PICKER. Shown only when the file has more than one tab and the link named
-                     none — reading the first one silently is how an import loads "Sheet1 (old)"
-                     instead of the list someone meant. A link that already carries a #gid= skips
-                     this entirely. -->
                 <!-- TAB PICKER, as a dropdown rather than a row of buttons: a spreadsheet can
-                     carry a dozen tabs and a dozen buttons is a wall, not a choice. It stays on
-                     screen after a tab is read, so switching to another is one change rather
-                     than a re-paste of the URL. -->
+                     carry a dozen tabs and a dozen buttons is a wall, not a choice.
+                     SHOWN WHENEVER A SHEET IS OPEN, even a single-tab one, and defaulted to
+                     whatever the link pointed at. It used to appear only when the file had
+                     several tabs AND the link named none, which meant the common case — paste a
+                     link, get its tab — offered no way to switch without re-pasting a different
+                     URL (Vhea, 2026-10-06). A control that is sometimes there is harder to find
+                     than one that is always there. -->
                 <div id="ct-sheet-tabs" class="hidden mt-2">
                   <label class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50" for="ct-sheet-tab">
                     Which tab?
@@ -3810,6 +3813,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         el('ct-sheet-tabs')?.classList.add('hidden');
         const tl = el('ct-sheet-tab'); if(tl) tl.innerHTML = '';
         const tn = el('ct-sheet-tabnote'); if(tn) tn.textContent = '';
+        // Cleared with the field, or reopening the modal and pasting the SAME link would be
+        // treated as "already read" and do nothing.
+        lastSheetUrl = '';
+        clearTimeout(sheetTimer);
       }
 
       // SheetJS IS LOADED ON DEMAND, NOT AT STARTUP. It is ~900KB and only an .xlsx import needs
@@ -3865,6 +3872,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
           // Fills the dropdown and marks which tab is currently loaded. `selected` is the gid
           // actually read, so the control always agrees with what is in the preview below it.
+          // ALWAYS SHOWN once a sheet is open, whatever it holds — one tab or twelve, link with
+          // a gid or without. `selected` is the tab actually read, so the control states what is
+          // in the preview below it rather than asking a question that has already been answered.
           const fillTabs = (sheets, selected) => {
             const sel = el('ct-sheet-tab');
             if(!sel || !Array.isArray(sheets) || !sheets.length) return;
@@ -3874,7 +3884,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   s.rows ? ` (${Number(s.rows).toLocaleString()} rows)` : ''}</option>`).join('');
             el('ct-sheet-tabs').classList.remove('hidden');
             const note = el('ct-sheet-tabnote');
-            if(note) note.textContent = `${sheets.length} tab${sheets.length === 1 ? '' : 's'} in this sheet`;
+            if(note) note.textContent = sheets.length === 1
+              ? 'the only tab in this sheet'
+              : `${sheets.length} tabs in this sheet`;
           };
 
           // Several tabs and the link named none: ask rather than guess. Nothing has been read.
@@ -3889,12 +3901,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(m.error){
             // Keep the picker up on a failure too: "that tab has no Email column" is most often
             // fixed by choosing a different tab, and hiding the control would hide the fix.
-            if(Array.isArray(j.sheets) && j.sheets.length > 1) fillTabs(j.sheets, gid ?? null);
+            //
+            // Selected on the tab that was actually READ, resolved the same way as the success
+            // path below. Passing `gid` alone showed "Choose a tab..." after a paste, which
+            // reads as "nothing was tried" next to an error about the columns of a specific tab.
+            if(Array.isArray(j.sheets) && j.sheets.length){
+              fillTabs(j.sheets, (j.sheets.find(x => x.title === j.tab) || {}).gid ?? gid ?? null);
+            }
             sayImp(`<span class="text-[#c0341a]">${m.error}</span>`);
             return;
           }
 
-          if(Array.isArray(j.sheets) && j.sheets.length > 1){
+          // No length test: a one-tab sheet gets the control too, so the UI does not change shape
+          // between sheets and there is always somewhere to look for "which tab is this".
+          if(Array.isArray(j.sheets) && j.sheets.length){
             fillTabs(j.sheets, (j.sheets.find(s => s.title === j.tab) || {}).gid ?? gid ?? null);
           }
 
@@ -4141,13 +4161,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       el('ct-import-cancel')?.addEventListener('click', () => dlg?.close());
       el('ct-sample')?.addEventListener('click', downloadSample);
-      el('ct-sheet-load')?.addEventListener('click', () => takeSheet());
-      // Choosing a tab reads it immediately — a separate "Load" press after picking from a
-      // dropdown that only appeared because we asked the question is a step with no decision in
-      // it. The empty placeholder is ignored so re-selecting it does nothing.
+      // "Read" re-reads whatever tab is currently selected, which is the only job left for it
+      // once pasting loads the sheet by itself: the sheet changed, or the last attempt failed.
+      el('ct-sheet-load')?.addEventListener('click', () => {
+        const g = el('ct-sheet-tab')?.value;
+        takeSheet(g || undefined);
+      });
+
+      // Choosing a tab reads it immediately — a separate button press after picking from a
+      // dropdown is a step with no decision in it. The empty placeholder is ignored so
+      // re-selecting it does nothing.
       el('ct-sheet-tab')?.addEventListener('change', e => {
         if(e.target.value !== '') takeSheet(e.target.value);
       });
+
+      // PASTE A LINK AND IT OPENS. Requiring a button press after pasting a URL is a step that
+      // carries no decision — there is nothing to configure first, and the tab picker that
+      // follows is more useful once there is something in it to pick from.
+      //
+      // Guarded against re-reading what is already open: `paste` fires before the value lands,
+      // hence the tick, and `change` fires on blur for a URL typed or dropped rather than
+      // pasted. Both funnel through one place so a paste followed by a blur reads once, not
+      // twice — the sheet is a network round trip, not a local file.
+      let lastSheetUrl = '', sheetTimer = null;
+      const maybeAutoRead = () => {
+        const v = (el('ct-sheet-url')?.value || '').trim();
+        if(!v || v === lastSheetUrl) return;
+        // Only once it looks like a Sheets link. Firing on every keystroke of a half-typed URL
+        // would be a request per character and an error message per request.
+        if(!/\/spreadsheets\/d\/[a-zA-Z0-9-_]{10,}/.test(v)) return;
+        lastSheetUrl = v;
+        takeSheet();
+      };
+      el('ct-sheet-url')?.addEventListener('paste', () => setTimeout(maybeAutoRead, 0));
+      el('ct-sheet-url')?.addEventListener('change', maybeAutoRead);
+      // Covers drag-and-drop into the field and autofill, neither of which fires `paste`.
+      el('ct-sheet-url')?.addEventListener('input', () => { clearTimeout(sheetTimer); sheetTimer = setTimeout(maybeAutoRead, 600); });
       el('ct-import-go')?.addEventListener('click', runImport);
 
       const drop = el('ct-drop');
