@@ -73,7 +73,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // 3. Register. The failure text matters here, so it is printed in full rather than summarised:
   //    10DLC rejections explain themselves (campaign full, brand mismatch, number not eligible)
   //    and the explanation is the whole value.
-  const assign = await api('/phone_number_campaigns', {
+  // The path is /10dlc/phone_number_campaigns. /phone_number_campaigns (no 10dlc prefix) returns
+  // a 404 that looks exactly like a Telnyx rejection of the number, which cost a round trip to
+  // tell apart - the field names were right all along, the path was not.
+  const assign = await api('/10dlc/phone_number_campaigns', {
     method: 'POST',
     body: JSON.stringify({ phoneNumber: NUMBER, campaignId: CAMPAIGN }),
   });
