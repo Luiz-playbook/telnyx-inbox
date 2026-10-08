@@ -5,6 +5,12 @@
 //
 // Vercel is still the real runtime; this just mimics enough of it (req.query, req.body,
 // res.status().json()) to exercise the handlers locally with the same env vars.
+//
+// THERE ARE TWO OF THESE AND IT IS A TRAP. scripts/dev-server.mjs does the same job and is the
+// one actually run in practice (`node scripts/dev-server.mjs 3000`) because it loads .env itself
+// and takes the port positionally — while README.md documents this file. See the longer note at
+// the top of that file, including the stale-lib fix that was written here, where nothing was
+// executing it. Any change to the request path must be made in both until one is deleted.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
