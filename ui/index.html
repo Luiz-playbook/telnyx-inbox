@@ -148,10 +148,14 @@
     .nt-bell svg{ width:16px; height:16px; }
     /* THE COUNT IS DELIBERATELY NOT A RED DOT while this is a shell. A red badge is a promise
        that something needs attention, and inventing one over sample data would train people to
-       ignore the real thing the week it ships. Muted until the feed is live. */
-    .nt-dot{ position:absolute; top:3px; right:3px; min-width:15px; height:15px; padding:0 4px;
-             border-radius:999px; background:#64748b; color:#fff; font-size:9px; font-weight:800;
-             line-height:15px; text-align:center; }
+       ignore the real thing the week it ships. Muted until the feed is live.
+       SMALLER THAN THE GLYPH IT SITS ON. At 15px against a 16px bell the two were the same size,
+       so the badge read as the control and the bell as decoration behind it (Vhea, 2026-10-08).
+       12px core, which is three quarters of the icon. The white ring is a box-shadow rather than
+       a border so detaching it from the bell underneath costs no layout size. */
+    .nt-dot{ position:absolute; top:2px; right:2px; min-width:12px; height:12px; padding:0 3px;
+             border-radius:999px; background:#64748b; color:#fff; font-size:8px; font-weight:800;
+             line-height:12px; text-align:center; box-shadow:0 0 0 1.5px #fff; }
     .nt-panel{ position:fixed; z-index:70; width:min(390px, calc(100vw - 24px)); max-height:70vh;
                display:flex; flex-direction:column; overflow:hidden; background:#fff;
                border:1px solid #e3e8ef; border-radius:11px;
