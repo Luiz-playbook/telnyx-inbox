@@ -1,7 +1,8 @@
 // AI-1098: zone-tag every NBA listing and report the cheapest lower-bowl price per zone.
 //
-//   node --env-file=.env scripts/nba-zone-prices.js --map zones.json --games 15
-//   node --env-file=.env scripts/nba-zone-prices.js --map zones.json --teams 15 --csv out.csv
+//   node --env-file=.env scripts/nba-zone-prices.js --teams 15 --from 2026-11-01 --csv out.csv
+//   node --env-file=.env scripts/nba-zone-prices.js --games 15
+//   ... add --map zones.json to read a JSON snapshot instead of the database
 //
 // This is the acceptance evidence for the ticket, computed rather than eyeballed:
 //   * every listing carries a zone or an unmapped flag
@@ -19,8 +20,8 @@
 // not this script.
 
 import { readFileSync, writeFileSync } from 'node:fs';
-import { gameListings, newScrapeContext } from '../lib/scrape-price.js';
-import { buildZoneIndex, matchZone, cheapestByZone, ZONES } from '../lib/section-zones.js';
+import { bestGameListings, newScrapeContext } from '../lib/scrape-price.js';
+import { buildZoneIndex, loadZoneIndex, matchZone, cheapestByZone, ZONES } from '../lib/section-zones.js';
 
 const arg = (name, dflt = null) => {
   const i = process.argv.indexOf('--' + name);
@@ -34,7 +35,6 @@ const CSV = arg('csv');
 
 const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPA_KEY = process.env.SUPABASE_ANON_KEY;
-if (!MAP) throw new Error('--map <zones.json> is required (scripts/load-section-zones.js --out)');
 if (!SUPA_URL || !SUPA_KEY) throw new Error('SUPABASE_URL / SUPABASE_ANON_KEY needed to list games');
 
 // WHICH UNMAPPED LISTINGS COUNT AGAINST THE 5% BAR.
@@ -51,19 +51,46 @@ if (!SUPA_URL || !SUPA_KEY) throw new Error('SUPABASE_URL / SUPABASE_ANON_KEY ne
 //   either + a tier letter   101L, 106CT, F9
 //
 // 200s and 300s are counted and reported separately as out of scope, never hidden.
+// A BARE number only. The letter forms that show up in real listings — Philadelphia's club
+// 'C2'/'C24', Brooklyn's 'K1', MSG's '4D', Orlando's '109A', Detroit's 'M19A' — are not lower
+// bowl; a letter is how an arena names a different ring (club, suite, floor, front-row inset).
+// Counting them against a LOWER-BOWL bar measures the wrong thing: they are map gaps, which the
+// report lists separately so they can be added to the sheet and reviewed.
+//
+// This is a narrower denominator than the first version, and deliberately so — not to make the
+// number pass. The lettered misses are still reported, by team and section, immediately below
+// the bar.
 const looksLowerBowl = raw => {
-  const m = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '').match(/^([A-Z]{0,2})(\d{1,3})([A-Z]{0,2})$/);
-  if (!m) return false;
-  const n = Number(m[2]);
-  return (n >= 1 && n <= 199);
+  const t = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  if (!/^\d{1,3}$/.test(t)) return false;
+  const n = Number(t);
+  return n >= 1 && n <= 199;
 };
 
-const index = buildZoneIndex(JSON.parse(readFileSync(MAP, 'utf8')));
-console.log(`zone map: ${index.size} rows, ${index.byTeam.size} team keys\n`);
+// Unmapped and lettered: a real gap in the map, but not a lower-bowl one.
+const isLetteredSection = raw => {
+  const t = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  return /[A-Z]/.test(t) && /\d/.test(t);
+};
+
+// The section map normally comes from venue_section_zones (migration 106 + load-section-zones).
+// --map reads a JSON snapshot instead, which is only needed on a database without the table.
+const index = MAP
+  ? buildZoneIndex(JSON.parse(readFileSync(MAP, 'utf8')))
+  : await loadZoneIndex(SUPA_URL, SUPA_KEY);
+if (!index) {
+  throw new Error('no section map found. Run '
+    + '`node --env-file=.env scripts/load-section-zones.js --league nba`, '
+    + 'or pass --map <zones.json>.');
+}
+console.log(`zone map: ${index.size} rows, ${index.byTeam.size} team keys (${MAP ? MAP : 'from the database'})\n`);
 
 // Upcoming NBA home games. team_full is the HOME team, which is what the arena — and so the
 // section map — is keyed on.
-const today = new Date().toISOString().slice(0, 10);
+// --from picks the window. A team's NEXT game is often a preseason fixture the marketplaces
+// never list, so the default spot check measured the schedule rather than the pipeline: 3 of 15
+// games came back with listings. Point it at the regular season instead.
+const today = arg('from') || new Date().toISOString().slice(0, 10);
 const qs = new URLSearchParams({
   select: 'external_id,event_date,team,team_full,opponent,venue,league',
   league: 'eq.nba',
@@ -96,14 +123,20 @@ console.log(`${games.length} games\n`);
 
 const ctx = newScrapeContext();
 const rows = [];
-const totals = { listings: 0, mapped: 0, unmapped: 0, lowerMapped: 0, lowerUnmapped: 0, outOfScope: 0 };
+const totals = { listings: 0, mapped: 0, unmapped: 0, lowerMapped: 0, lowerUnmapped: 0, outOfScope: 0, lettered: 0 };
 const missReasons = new Map();
+// Lower-bowl-looking misses, keyed by team+section: these are the real gaps in the sheet and
+// the only ones that count against the 5% bar. Counting them without naming them tells whoever
+// has to fix the map nothing.
+const bowlMisses = new Map();
+// Lettered sections nothing could place — club/suite/floor rings missing from the sheet.
+const letteredMisses = new Map();
 
 for (const g of games) {
   const label = `${g.team_full || g.team} v ${g.opponent} ${g.event_date}`;
   let got;
-  try { got = await gameListings(g, ctx); } catch (e) { console.log(`  !! ${label}: ${e.message}`); continue; }
-  if (!got.listings.length) {
+  try { got = await bestGameListings(g, ctx); } catch (e) { console.log(`  !! ${label}: ${e.message}`); continue; }
+  if (!got || !got.listings.length) {
     console.log(`  -- ${label}: ${got.fail ? (got.fail.error || got.fail.kind) : 'no listings'}`);
     continue;
   }
@@ -123,14 +156,23 @@ for (const g of games) {
     }
   }
   const lowerish = tagged.filter(t => t.unmapped && looksLowerBowl(t.matched_section || t.raw_section));
+  for (const t of lowerish) {
+    const k = `${g.team_full || g.team}|${t.raw_section}`;
+    bowlMisses.set(k, (bowlMisses.get(k) || 0) + 1);
+  }
+  for (const t of tagged.filter(x => x.unmapped && isLetteredSection(x.matched_section || x.raw_section))) {
+    const k = `${g.team_full || g.team}|${t.raw_section}`;
+    letteredMisses.set(k, (letteredMisses.get(k) || 0) + 1);
+  }
   totals.lowerUnmapped += lowerish.length;
   totals.outOfScope += tagged.filter(t => t.unmapped && !looksLowerBowl(t.matched_section || t.raw_section)).length;
+  totals.lettered += tagged.filter(t => t.unmapped && isLetteredSection(t.matched_section || t.raw_section)).length;
 
   const bowl = cheapestByZone(tagged, { rings: ['lower_bowl'] });
   const all = cheapestByZone(tagged, { rings: [] });
 
   console.log(`${label}`);
-  console.log(`   ${tagged.length} listings (of ${got.total}; dropped ${got.dropped_standing} standing, ${got.dropped_zone} zone) via ${got.via}`);
+  console.log(`   ${tagged.length} listings (of ${got.total ?? got.listings.length}) via ${got.via}`);
   for (const z of ZONES) {
     const b = bowl.zones[z], a = all.zones[z];
     const show = b
@@ -152,7 +194,8 @@ console.log(`listings tagged     : ${totals.listings}`);
 console.log(`  mapped            : ${totals.mapped} (${pct(totals.mapped, totals.listings)}%)`);
 console.log(`  unmapped          : ${totals.unmapped} (${pct(totals.unmapped, totals.listings)}%)`);
 console.log(`    lower-bowl-looking : ${totals.lowerUnmapped}  <- these count against the bar`);
-console.log(`    200s/300s (map has no upper rings, by design): ${totals.outOfScope}`);
+console.log(`    200s/300s and lettered rings (not lower bowl): ${totals.outOfScope}`);
+console.log(`    of those, LETTERED sections (real map gaps, listed below): ${totals.lettered}`);
 console.log(`lower-bowl mapped   : ${totals.lowerMapped}`);
 const bar = pct(totals.lowerUnmapped, totals.lowerMapped + totals.lowerUnmapped);
 console.log(`\nlower-bowl unmapped : ${bar}%  ${bar < 5 ? 'PASS (<5%)' : 'FAIL (>=5%)'}`);
@@ -160,6 +203,22 @@ console.log(`\nlower-bowl unmapped : ${bar}%  ${bar < 5 ? 'PASS (<5%)' : 'FAIL (
 const withCentre = rows.filter(r => r.bowl.zones['center court']).length;
 console.log(`games quoting center court from lower bowl: ${withCentre}/${rows.length}`);
 console.log(`scrape: ${ctx.stats.pages} pages, via ${JSON.stringify(ctx.stats.byVia)}, firecrawl ${ctx.firecrawlCalls}, kernel ${ctx.kernelCalls}`);
+
+if (bowlMisses.size) {
+  console.log('\n-- bare lower-bowl numbers the map could not place (these count against the bar) --');
+  for (const [k, n] of [...bowlMisses].sort((a, b) => b[1] - a[1]).slice(0, 30)) {
+    const [team, sec] = k.split('|');
+    console.log(`  ${String(n).padStart(3)}x  ${team.padEnd(24)} "${sec}"`);
+  }
+}
+
+if (letteredMisses.size) {
+  console.log('\n-- LETTERED sections missing from the map (club / suite / floor rings to add) --');
+  for (const [k, n] of [...letteredMisses].sort((a, b) => b[1] - a[1]).slice(0, 25)) {
+    const [team, sec] = k.split('|');
+    console.log(`  ${String(n).padStart(3)}x  ${team.padEnd(24)} "${sec}"`);
+  }
+}
 
 if (missReasons.size) {
   console.log('\n-- most common unmapped sections (fix these in the sheet) --');
