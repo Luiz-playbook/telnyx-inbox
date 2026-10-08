@@ -2287,8 +2287,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <!-- Shown only when nothing rendered, so an empty Reports tab explains itself
                  rather than looking broken. -->
             <div id="rep-empty" class="text-sm text-base-content/50 hidden">
-              No reports could be loaded. The Telnyx volume report needs
-              <code>api/telnyx-usage-sync</code> to have run at least once.
+              No reports could be loaded. The SMS volume report needs its nightly usage sync to
+              have run at least once; the others need the blast history to have synced.
             </div>
           </div>
 
@@ -12591,7 +12591,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             fresh.textContent = `partial — synced from ${etDate(new Date(j.usage_from), { month:'short', day:'numeric' })}`;
             fresh.className = 'text-[11px] text-warning font-semibold';
             fresh.title = 'Usage is only held from that date, so earlier days in this period count as zero. '
-              + 'The nightly sync keeps a rolling 30 days; a longer backfill needs api/telnyx-usage-sync?days=90.';
+              + 'The nightly sync keeps a rolling 30 days, so anything older than that was never stored.';
           } else if(!j.usage_through){
             fresh.textContent = 'no usage synced yet';
             fresh.className = 'text-[11px] text-warning';
@@ -12841,13 +12841,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         // The three ways the numbers above can be wrong, each named with its fix.
         const gaps = [];
-        if(tot.noReport) gaps.push(`<li><span class="font-semibold">${nf(tot.noReport)}</span> campaign${sfx(tot.noReport)} ${verb(tot.noReport, 'carries', 'carry')} no report figures at all, so ${verb(tot.noReport, 'it counts', 'they count')} toward Campaigns and ${verb(tot.noReport, 'contributes', 'contribute')} nothing to any rate. Usually a send whose report never came back &mdash; the Market History sync names the failures.</li>`);
-        if(META.unbridged) gaps.push(`<li><span class="font-semibold">${nf(META.unbridged)}</span> campaign${sfx(META.unbridged)} ${verb(META.unbridged, 'sits', 'sit')} on a list no market resolves, so ${verb(META.unbridged, 'it is', 'they are')} invisible to the decider&rsquo;s market scoring. Fixed by adding a <code>market_bridge_list</code> row.</li>`);
-        if(META.noListName) gaps.push(`<li><span class="font-semibold">${nf(META.noListName)}</span> campaign${sfx(META.noListName)} ${verb(META.noListName, 'records', 'record')} no list name, so there is nothing to bridge <em>on</em>. ${verb(META.noListName, 'This cannot', 'These cannot')} be fixed by adding bridge rows.</li>`);
+        if(tot.noReport) gaps.push(`<li><span class="font-semibold">${nf(tot.noReport)}</span> campaign${sfx(tot.noReport)} ${verb(tot.noReport, 'carries', 'carry')} no report figures at all, so ${verb(tot.noReport, 'it counts', 'they count')} toward Campaigns and ${verb(tot.noReport, 'contributes', 'contribute')} nothing to any rate. Usually a send whose figures never came back from CakeMail; the next sync tries again, and the sync readout on Market History names what failed.</li>`);
+        if(META.unbridged) gaps.push(`<li><span class="font-semibold">${nf(META.unbridged)}</span> campaign${sfx(META.unbridged)} ${verb(META.unbridged, 'sits', 'sit')} on a mailing list that is not tied to any market, so ${verb(META.unbridged, 'it does', 'they do')} not count toward how that market is performing. Naming the list after its market, or pairing the two, fixes it.</li>`);
+        if(META.noListName) gaps.push(`<li><span class="font-semibold">${nf(META.noListName)}</span> campaign${sfx(META.noListName)} ${verb(META.noListName, 'records', 'record')} no mailing list at all, so there is nothing to tie to a market in the first place. ${verb(META.noListName, 'That one', 'Those')} cannot be matched up later &mdash; only a future send can be sent to a named list.</li>`);
         if(days) gaps.push(`<li><span class="font-semibold">${nf(all.length - rows.length)}</span> campaign${sfx(all.length - rows.length)} ${verb(all.length - rows.length, 'falls', 'fall')} outside this period or have no send date recorded. Switch to All time to include them.</li>`);
         $('cm-gaps').innerHTML = gaps.length
           ? `<ul class="text-xs text-base-content/70 list-disc pl-4 space-y-1">${gaps.join('')}</ul>`
-          : '<div class="text-sm text-base-content/50">Nothing missing: every campaign in this period has report figures and resolves to a market.</div>';
+          : '<div class="text-sm text-base-content/50">Nothing missing: every campaign in this period has its figures and belongs to a market.</div>';
 
         $('cm-prov').textContent = META.synced_at
           ? `From the CakeMail sync, which last wrote ${dt(META.synced_at)}. No live CakeMail call.`
@@ -12933,10 +12933,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           : `<tr><td colspan="9" class="text-center text-base-content/50 py-4">No blasts in this period.</td></tr>`;
 
         $('sb-plat-note').textContent =
-          'Recipients is what was handed to the carrier, not what a handset received — api/queue-tick.js '
-          + 'deliberately records no delivery count, because the carrier accepting a message is not the '
-          + 'same as it arriving. Averages divide by the blasts that recorded a count, so a platform with '
-          + 'unrecorded blasts has a reliable average over an understated total.';
+          'Recipients is what was handed to the carrier, not what a handset received. No delivery count is '
+          + 'recorded on purpose: the carrier accepting a message is not the same as it arriving, and a '
+          + 'number here would claim more than we know. Averages divide by the blasts that recorded a '
+          + 'count, so a platform with unrecorded blasts has a reliable average over an understated total.';
 
         // Month by month, newest first. Bars are scaled to the busiest month, not to a cap:
         // the only ceiling in play is T-Mobile's DAILY one, which the strip above reports, and
