@@ -5264,9 +5264,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             { key: 'state', label: 'All states', col: 'state_code' },
           ],
           columns: [
-            // "vs", not "v". The app already says "vs" elsewhere, and a lone lowercase v
-            // between two names reads as a typo rather than a separator.
-            { h: 'Game', v: r => esc(`${titleCase(r.team_full || r.team || '')} vs ${titleCase(r.opponent || '')}`) },
+            // The separator only appears when there are two names to separate. A row missing
+            // either side used to render a bare "vs" floating in the cell, which looked like a
+            // loading glitch — and during a reload, with the previous rows still on screen,
+            // that is exactly what it was mistaken for.
+            { h: 'Game', v: r => {
+                const home = titleCase(r.team_full || r.team || '');
+                const away = titleCase(r.opponent || '');
+                if (!home && !away) return '<span class="text-base-content/30">—</span>';
+                return esc(home && away ? `${home} vs ${away}` : (home || away));
+              } },
             { h: 'Date', v: r => esc(r.event_date || '') },
             { h: 'League', v: r => `<span class="cat-pill">${esc(String(r.league || '').toUpperCase())}</span>` },
             { h: 'Venue', v: r => esc(r.venue || '—') },
@@ -5299,8 +5306,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             { h: 'Level', v: r => esc(String(r.level || '').toUpperCase()) },
             // Medium = the venue name has not been checked against a primary source. Shown, not
             // hidden, for the same reason the zone map flags its derived sections.
-            { h: '', v: r => (r.confidence === 'Medium'
-                ? '<span class="cat-warn" title="Venue name not verified against a primary source">check</span>' : '') },
+            // Labelled "unverified" rather than "check": "check" reads as an instruction with no
+            // object — check what, against what? — and the column header now says so too.
+            { h: 'Source', v: r => (r.confidence === 'Medium'
+                ? '<span class="cat-warn" title="This venue name came from research and has not been confirmed against the organisation’s own site. Confirm before using it in a blast.">unverified</span>'
+                : '<span class="text-base-content/30" title="Flagship programme — the venue name is unambiguous.">confirmed</span>') },
           ],
         },
       };
@@ -5359,9 +5369,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // way the pager below is driven from the same two numbers.
         const list = c.serverSide ? all : all.slice(page * PAGE, page * PAGE + PAGE);
         const count = c.serverSide ? total : all.length;
-        el('cat-body').innerHTML = list.length
-          ? list.map(r => '<tr>' + c.columns.map(x => `<td>${x.v(r)}</td>`).join('') + '</tr>').join('')
-          : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-10">${loading ? 'Loading…' : 'Nothing matches that.'}</td></tr>`;
+        // Loading looks the same here as it does on the Queue, Ticket Prices and Blast History:
+        // three pulsing skeleton rows with a screen-reader label. A plain "Loading…" line was
+        // this tab inventing its own convention for something the app had already settled.
+        const skeleton = w =>
+          `<tr class="border-0"><td colspan="${c.columns.length}" class="py-2.5"><div class="skeleton h-7 ${w}"></div></td></tr>`;
+        el('cat-body').innerHTML = loading
+          ? `<tr class="border-0" aria-busy="true"><td colspan="${c.columns.length}" class="py-2.5">`
+            + `<span class="sr-only">Loading ${esc(c.label.toLowerCase())}&hellip;</span>`
+            + `<div class="skeleton h-7 w-full"></div></td></tr>`
+            + skeleton('w-11/12') + skeleton('w-full')
+          : list.length
+            ? list.map(r => '<tr>' + c.columns.map(x => `<td>${x.v(r)}</td>`).join('') + '</tr>').join('')
+            : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-10">Nothing matches that.</td></tr>`;
         el('cat-summary').textContent = loading ? 'Loading…' : `${count} ${count === 1 ? 'row' : 'rows'}`;
 
         const from = count ? page * PAGE + 1 : 0, to = Math.min(page * PAGE + list.length, count);
@@ -5376,7 +5396,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       async function load(){
         const c = conf();
-        loading = true; paint();
+        // Clear before painting the loading state. Repainting with the previous catalog's rows
+        // still in memory showed Venues columns against Games data for a frame, which is where
+        // the half-rendered cells came from.
+        loading = true; rows = []; total = 0; paint();
         const qs = new URLSearchParams({ select: c.select, order: c.order });
         if (c.serverSide) {
           // One page per request. The old flat limit of 300 silently truncated a 4,600-row table
