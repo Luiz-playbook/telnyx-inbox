@@ -375,6 +375,24 @@
        composedPath misses it, so a panel appended to <body> would dismiss the box the moment
        you touched the map. position:fixed takes it out of the popover's scroll box while
        keeping it inside the popover's event path. */
+    /* Catalog (AI-1086). A Preview badge on the group heading, because the tab works but its
+       shape is not agreed — small, quiet, and never competing with the item labels. */
+    .cat-badge{ margin-left:6px; padding:0 5px; border-radius:999px; background:#e7eef3;
+                color:#4a6b7c; font-size:8px; font-weight:800; letter-spacing:.06em;
+                text-transform:uppercase; vertical-align:1px; }
+    .cat-sub{ display:flex; gap:4px; }
+    .cat-sub button{ border:1px solid #e3e9ee; background:#fff; border-radius:7px;
+                     padding:4px 12px; font-size:12px; font-weight:600; color:#5b7383; cursor:pointer; }
+    .cat-sub button.active{ background:#133b49; border-color:#133b49; color:#fff; }
+    .cat-table{ width:100%; border-collapse:collapse; font-size:12px; }
+    .cat-table th{ text-align:left; font-size:10px; font-weight:800; letter-spacing:.04em;
+                   text-transform:uppercase; color:#8695a7; padding:6px 8px;
+                   border-bottom:1px solid #e9eef2; position:sticky; top:0; background:#fff; z-index:1; }
+    .cat-table td{ padding:6px 8px; border-bottom:1px solid #f2f6f8; color:#2f4858; vertical-align:top; }
+    .cat-table tbody tr:hover{ background:#fbfcfe; }
+    .cat-pill{ display:inline-block; padding:0 6px; border-radius:999px; background:#eef3f6;
+               color:#4a6b7c; font-size:10px; margin-right:3px; white-space:nowrap; }
+    .cat-warn{ color:#9a7b45; }
     .price-pop .pp-mapwrap{ position:fixed; z-index:60; width:min(430px, 40vw); max-height:82vh;
                             display:flex; flex-direction:column; overflow:hidden;
                             background:#fff; border:1px solid #efe2cd; border-radius:9px;
@@ -858,6 +876,20 @@
                    vocabulary rather than a new one.
                    Do Not Contact moved in here from the flat list: it is the other half of the
                    same question. One list is who we can message, the other is who we must not. -->
+              <!-- CATALOG (AI-1086). The master lists the offers are generated FROM, as opposed to
+                   the offers themselves. Same reasoning that put Ticket Prices under Admin: you
+                   configure these, you do not action them. Games is every ticketed game we could
+                   blast about; Venues is every place we could host a youth event.
+                   Badged Preview because the shape is still being agreed — "Preview" rather than
+                   "Beta" or "Test", which imply finished-but-buggy and throwaway respectively.
+                   This one is neither: it works, and it will change. -->
+              <details class="admin-group" id="admin-group-catalog" open>
+                <summary role="menuitem" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Catalog<span class="cat-badge">Preview</span><span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
+                <div class="admin-group-items">
+                  <a href="#" data-tab="catalog-games" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Games</a>
+                  <a href="#" data-tab="catalog-venues" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>Venues</a>
+                </div>
+              </details>
               <details class="admin-group" id="admin-group-audience" open>
                 <summary role="menuitem" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Audience<span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
                 <div class="admin-group-items">
@@ -1537,6 +1569,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <!-- ===== MARKET HISTORY / AI DECIDER ===== -->
           <!-- Same shell as Campaigns and Queue: title row, search left / filters right, the
                tab's own action on its own right-aligned row, then the table. -->
+          <!-- CATALOG (AI-1086). One view, two catalogs. Josh's structure keeps strategy as a
+               FILTER rather than a tab, so these are not two strategies side by side — they are
+               the two master lists the strategies draw from, and the sub-tabs only swap which
+               list is on screen. -->
+          <div data-view id="view-catalog" class="hidden space-y-4">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+              <div class="cat-sub" id="cat-sub"></div>
+              <span class="text-sm text-base-content/50 mr-auto" id="cat-summary">Loading&hellip;</span>
+              <div class="flex items-center gap-2 flex-wrap justify-end" id="cat-filters"></div>
+              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
+                <span class="text-base-content/40">&#128269;</span>
+                <input id="cat-search" type="text" class="grow w-64" placeholder="Search&hellip;" autocomplete="off" />
+              </label>
+              <button id="cat-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
+            </div>
+            <div id="cat-note" class="text-xs text-base-content/50"></div>
+            <div class="overflow-auto border border-base-300 rounded-lg" style="max-height:66vh">
+              <table class="cat-table"><thead id="cat-head"></thead><tbody id="cat-body"></tbody></table>
+            </div>
+          </div>
+
           <div data-view id="view-history" class="hidden space-y-5">
             <!-- Heading removed, count kept beside the search — see the note on Campaigns. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
@@ -5164,8 +5217,203 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       window.__loadDnc = () => { if(loadedOnce) return; loadedOnce = true; loadStats(); load(); };
     })();
 
+    // ---- Catalog: the master lists behind the offers (AI-1086) ---------------------------------
+    //
+    // ONE RENDERER, TWO CONFIGS. A master list is a master list — browse, search, filter,
+    // inspect. The rows differ; the behaviour does not. This file already carries seventeen
+    // bespoke renderX functions, and two more for tables that behave identically would make
+    // nineteen.
+    //
+    // The one real divergence is VOLUME, and it is a flag rather than a fork. events_master is
+    // ~4,600 rows, so its search and filters are pushed into PostgREST and the result is capped;
+    // youth_event_venues is 89, so it loads once and filters in memory. Doing Games client-side
+    // would download the whole table so someone can type in a search box.
+    //
+    // Uses the top-level `cfg` and `esc`. esc2 and initcap exist in this file but live inside
+    // other IIFEs, so they are not in scope here — the small helpers below are local on purpose
+    // rather than reaching for something that only looks global.
+    (() => {
+      const titleCase = v => String(v || '').replace(/[0-9A-Za-z]+/g,
+        w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+
+      const CATALOGS = {
+        games: {
+          label: 'Games',
+          table: 'events_master',
+          serverSide: true,
+          select: 'id,league,team_full,team,opponent,event_date,venue,market_code,state_code,best_price',
+          order: 'event_date.asc',
+          note: 'Every ticketed game we could blast about — the source the Ticket Blast offers are built from.',
+          search: ['team_full', 'opponent', 'venue', 'market_code'],
+          filters: [
+            { key: 'league', label: 'All leagues', col: 'league' },
+            { key: 'state', label: 'All states', col: 'state_code' },
+          ],
+          columns: [
+            { h: 'Game', v: r => esc(`${titleCase(r.team_full || r.team || '')} v ${titleCase(r.opponent || '')}`) },
+            { h: 'Date', v: r => esc(r.event_date || '') },
+            { h: 'League', v: r => `<span class="cat-pill">${esc(String(r.league || '').toUpperCase())}</span>` },
+            { h: 'Venue', v: r => esc(r.venue || '—') },
+            { h: 'Market', v: r => esc(r.market_code || '—') },
+            { h: 'State', v: r => esc(r.state_code || '—') },
+            { h: 'Get-in', v: r => (r.best_price != null ? '$' + esc(r.best_price) : '<span class="text-base-content/30">—</span>') },
+          ],
+        },
+        venues: {
+          label: 'Venues',
+          table: 'youth_event_venues',
+          serverSide: false,
+          select: 'state_code,state_name,market_city,org,level,venue,venue_type,sports,confidence,notes',
+          order: 'state_code.asc',
+          note: 'Places we could HOST a youth event — not where a ticketed game is played. Greenfield states only so far, and the venue names are a research starting point that has not been verified.',
+          search: ['venue', 'org', 'market_city', 'state_name'],
+          filters: [
+            { key: 'state', label: 'All states', col: 'state_code' },
+            { key: 'type', label: 'All venue types', col: 'venue_type' },
+            { key: 'level', label: 'All levels', col: 'level' },
+          ],
+          columns: [
+            { h: 'Venue', v: r => esc(r.venue) },
+            { h: 'Organisation', v: r => esc(r.org) },
+            { h: 'Type', v: r => `<span class="cat-pill">${esc(r.venue_type)}</span>` },
+            // The supported sports are the point of this list: you only invite a programme whose
+            // sport the venue can actually host.
+            { h: 'Supports', v: r => (r.sports || []).map(x => `<span class="cat-pill">${esc(x)}</span>`).join('') },
+            { h: 'Market', v: r => esc(`${r.market_city}, ${r.state_code}`) },
+            { h: 'Level', v: r => esc(String(r.level || '').toUpperCase()) },
+            // Medium = the venue name has not been checked against a primary source. Shown, not
+            // hidden, for the same reason the zone map flags its derived sections.
+            { h: '', v: r => (r.confidence === 'Medium'
+                ? '<span class="cat-warn" title="Venue name not verified against a primary source">check</span>' : '') },
+          ],
+        },
+      };
+
+      let current = 'games', rows = [], total = 0, loading = false;
+      const el = id => document.getElementById(id);
+      const conf = () => CATALOGS[current];
+      const supa = () => String(cfg.SUPABASE_URL || '').replace(/\/$/, '');
+
+      function renderSubTabs(){
+        el('cat-sub').innerHTML = Object.entries(CATALOGS)
+          .map(([k, c]) => `<button type="button" data-cat="${k}"${k === current ? ' class="active"' : ''}>${esc(c.label)}</button>`)
+          .join('');
+      }
+
+      const filterState = () => Object.fromEntries(
+        [...el('cat-filters').querySelectorAll('[data-catfilter]')].map(x => [x.dataset.catfilter, x.value]));
+
+      function renderFilters(){
+        const c = conf(), keep = filterState();
+        el('cat-filters').innerHTML = c.filters.map(f =>
+          `<select class="select select-bordered select-sm" aria-label="${esc(f.label)}" data-catfilter="${esc(f.key)}"><option value="">${esc(f.label)}</option></select>`).join('');
+        // Options come from the rows actually present, so a filter can never offer a value that
+        // returns nothing. On the server-side catalog the rows are already filtered, so the
+        // current selection is re-added explicitly or it would vanish from its own dropdown.
+        for (const f of c.filters) {
+          const sel = el('cat-filters').querySelector(`[data-catfilter="${f.key}"]`);
+          const vals = [...new Set(rows.map(r => r[f.col]).filter(Boolean).concat(keep[f.key] ? [keep[f.key]] : []))].sort();
+          for (const v of vals) sel.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(String(v).toUpperCase())}</option>`);
+          if (keep[f.key]) sel.value = keep[f.key];
+        }
+      }
+
+      function visibleRows(){
+        const c = conf();
+        if (c.serverSide) return rows;                 // the server already applied it
+        const q = el('cat-search').value.trim().toLowerCase();
+        const f = filterState();
+        return rows.filter(r => {
+          for (const [k, v] of Object.entries(f)) {
+            if (!v) continue;
+            const col = c.filters.find(x => x.key === k).col;
+            if (String(r[col] || '') !== v) return false;
+          }
+          return !q || c.search.some(k => String(r[k] || '').toLowerCase().includes(q));
+        });
+      }
+
+      function paint(){
+        const c = conf();
+        el('cat-head').innerHTML = '<tr>' + c.columns.map(x => `<th>${esc(x.h)}</th>`).join('') + '</tr>';
+        const list = visibleRows();
+        el('cat-body').innerHTML = list.length
+          ? list.map(r => '<tr>' + c.columns.map(x => `<td>${x.v(r)}</td>`).join('') + '</tr>').join('')
+          : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-6">${loading ? 'Loading…' : 'Nothing matches that.'}</td></tr>`;
+        const shown = list.length;
+        el('cat-summary').textContent = loading ? 'Loading…'
+          : (c.serverSide && total > shown) ? `${shown} of ${total} — narrow the search to see the rest`
+          : `${shown} ${shown === 1 ? 'row' : 'rows'}`;
+        el('cat-note').textContent = c.note;
+        const dirty = !!el('cat-search').value.trim() || Object.values(filterState()).some(Boolean);
+        el('cat-clear').classList.toggle('hidden', !dirty);
+      }
+
+      async function load(){
+        const c = conf();
+        loading = true; paint();
+        const qs = new URLSearchParams({ select: c.select, order: c.order, limit: c.serverSide ? '300' : '2000' });
+        if (c.serverSide) {
+          const q = el('cat-search').value.trim().replace(/[(),*]/g, '');
+          if (q) qs.set('or', `(${c.search.map(k => `${k}.ilike.*${q}*`).join(',')})`);
+          for (const [k, v] of Object.entries(filterState())) {
+            if (v) qs.set(c.filters.find(x => x.key === k).col, 'eq.' + v);
+          }
+        }
+        try {
+          const r = await fetch(`${supa()}/rest/v1/${c.table}?${qs}`, {
+            headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY, Prefer: 'count=exact' },
+          });
+          const body = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((body && body.message) || ('HTTP ' + r.status));
+          rows = Array.isArray(body) ? body : [];
+          total = Number((r.headers.get('content-range') || '').split('/')[1]) || rows.length;
+          renderFilters();
+        } catch (e) {
+          rows = []; total = 0;
+          loading = false; paint();
+          el('cat-note').textContent = 'Could not load this list: ' + String(e.message || e);
+          return;
+        }
+        loading = false;
+        paint();
+      }
+
+      // Debounced, so a server-side search is not one request per keystroke. The client-side
+      // catalog repaints immediately — there is nothing to wait for.
+      let t = null;
+      function onSearch(){
+        clearTimeout(t);
+        if (!conf().serverSide) return paint();
+        t = setTimeout(load, 300);
+      }
+
+      document.addEventListener('click', e => {
+        const b = e.target.closest('[data-cat]');
+        if (b) { current = b.dataset.cat; el('cat-search').value = ''; renderSubTabs(); load(); return; }
+        if (e.target.closest('#cat-clear')) {
+          el('cat-search').value = '';
+          el('cat-filters').querySelectorAll('select').forEach(x => { x.value = ''; });
+          conf().serverSide ? load() : paint();
+        }
+      });
+      document.addEventListener('input', e => { if (e.target.id === 'cat-search') onSearch(); });
+      document.addEventListener('change', e => {
+        if (e.target && e.target.dataset && e.target.dataset.catfilter) conf().serverSide ? load() : paint();
+      });
+
+      // Opened from the Admin menu; reloads each time so a catalog edited elsewhere is not stale.
+      window.__openCatalog = which => {
+        current = CATALOGS[which] ? which : 'games';
+        renderSubTabs();
+        load();
+      };
+    })();
+
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', contacts:'view-contacts' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', contacts:'view-contacts',
+      // Both catalogs render into one view; the tab decides which config it opens with.
+      'catalog-games':'view-catalog', 'catalog-venues':'view-catalog' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -5183,6 +5431,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
       if(tab === 'contacts' && window.__loadContacts) window.__loadContacts();
+      if(tab.startsWith('catalog-') && window.__openCatalog) window.__openCatalog(tab.slice(8));
       // AI-1074. A tab inside Admin lights the Admin trigger instead: the row must still say
       // where you are when the page you are on is not one of the three visible tabs.
       const aw = document.getElementById('admin-menu');
