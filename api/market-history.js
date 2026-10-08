@@ -629,7 +629,14 @@ export default async function handler(req, res) {
       getOrFallback(
         'blast_templates?select=campaign_id,account_id,name,list_name,scheduled_for,sent_emails,active_emails,opens,unique_opens,clicks,unique_clicks,bounces,unsubscribes,spams,open_rate,click_rate,clickthru_rate,bounce_rate,email_template,subject,sender&order=scheduled_for.desc&limit=1000',
         'blast_templates?select=campaign_id,name,list_name,scheduled_for,sent_emails,open_rate,clickthru_rate,email_template&order=scheduled_for.desc&limit=1000'),
-      get('market_bridge_list?select=list_name,market_key&limit=1000'),
+      // v_list_market, NOT market_bridge_list. The view is what v_blast_scored joins on, and it
+      // resolves a list name three ways: an exact bridge row, a trailing state code
+      // ('… · ICP — AZ' -> AZ -> phoenix), or a state name in the text ('Wisconsin' ->
+      // milwaukee) — the last two only for states holding exactly one market. Reading the raw
+      // bridge here would make this tab disagree with the decider it is meant to explain:
+      // a blast would read "not bridged to a market" while v_market_performance was scoring it.
+      // See migration 103.
+      get('v_list_market?select=list_name,market_key&limit=5000'),
       // When the CakeMail sync last actually wrote. AI-970 asks the tab to state its own
       // freshness, and until now nothing did — the history could be three months stale and the
       // page looked identical to the day it was current.
@@ -648,9 +655,9 @@ export default async function handler(req, res) {
       get('campaign_queue?select=id,title,state_code,state_name,segment,sms,email,sms_copy,email_copy,email_subject,phone_count,email_count,sms_from,email_from,sent_at,event_id&status=eq.sent&order=sent_at.desc&limit=1000'),
     ]);
 
-    // list_name -> market_key, the same mapping v_blast_scored joins on. A list with no bridge
-    // row shows with market null rather than being dropped: an unmapped list is a gap to fix,
-    // not a campaign that did not happen.
+    // list_name -> market_key, the same mapping v_blast_scored joins on. A list the resolver
+    // cannot place shows with market null rather than being dropped: an unmapped list is a gap
+    // to fix, not a campaign that did not happen.
     const marketOf = new Map(bridge.map(b => [b.list_name, b.market_key]));
     const acctLabel = accountLabels();
 
@@ -834,6 +841,10 @@ export default async function handler(req, res) {
       // The first is fixed by adding market_bridge_list rows; the second cannot be, because
       // there is nothing to bridge ON. Reporting them as one number invites someone to add 76
       // bridge rows and wonder why the count barely moves.
+      //
+      // `unbridged` counts what the RESOLVER could not place (migration 103), not what lacks an
+      // exact bridge row — a list auto-resolved from its state code or state name is mapped and
+      // must not be reported as a gap, or this number would nag about lists that need nothing.
       //
       // Both still cost the decider the same way: v_blast_scored inner-joins the bridge, so
       // either kind contributes nothing to v_market_performance and the market reads no_history.
