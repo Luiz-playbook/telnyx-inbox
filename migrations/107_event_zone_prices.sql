@@ -8,7 +8,7 @@
 -- Oct 7) is that the cheapest lower-bowl seat is usually behind the basket, and the offer wants
 -- to quote centre court instead.
 --
--- SHAPE. One object keyed by zone, matching cheapestByZone() in lib/nba-zones.js:
+-- SHAPE. One object keyed by zone, matching cheapestByZone() in lib/section-zones.js:
 --   {"center court": {all_in, price, section, row, source, url, confidence}, "sideline": {...}, …}
 -- Zones are the four from the NBA_Arena_Section_Map: center court, sideline, corner,
 -- behind basket. A zone with no lower-bowl listing is simply absent rather than null, so the UI
@@ -17,7 +17,7 @@
 -- LOWER BOWL ONLY, and that is a deliberate narrowing. "Center court from $X" is a bowl claim;
 -- a mezzanine seat carrying a bowl section number (Cavs M101-M126) or a suite whose name happens
 -- to contain a bowl number ("Loge Suites 106") would undercut the quote with a seat nobody would
--- call centre court. lib/nba-zones.js filters on the ring, preferring the one the listing states
+-- call centre court. lib/section-zones.js filters on the ring, preferring the one the listing states
 -- over the one inferred from its number.
 --
 -- CONFIDENCE TRAVELS WITH THE PRICE. A third of the section map is "Derived" — placed by counting

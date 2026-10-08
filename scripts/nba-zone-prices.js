@@ -9,9 +9,9 @@
 //   * the unmapped rate for lower-bowl listings, against the "under 5%" bar
 //   * one game per team, so the 15-team spot check is a filter on this output
 //
-// --map takes the JSON snapshot from `scripts/load-nba-zones.js --out`. The matcher is
+// --map takes the JSON snapshot from `scripts/load-section-zones.js --out`. The matcher is
 // source-agnostic on purpose, so this runs with no database and no migration applied; point it
-// at public.nba_section_zones instead once 106 is in.
+// at public.venue_section_zones instead once 106 is in.
 //
 // SOURCE IS GAMETIME ONLY, TODAY. It is the only marketplace that serves per-seat sections to a
 // plain request. TickPick, SeatGeek and StubHub wall their event pages, and Vivid's needs the
@@ -20,7 +20,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { gameListings, newScrapeContext } from '../lib/scrape-price.js';
-import { buildZoneIndex, matchZone, cheapestByZone, ZONES } from '../lib/nba-zones.js';
+import { buildZoneIndex, matchZone, cheapestByZone, ZONES } from '../lib/section-zones.js';
 
 const arg = (name, dflt = null) => {
   const i = process.argv.indexOf('--' + name);
@@ -34,7 +34,7 @@ const CSV = arg('csv');
 
 const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPA_KEY = process.env.SUPABASE_ANON_KEY;
-if (!MAP) throw new Error('--map <zones.json> is required (scripts/load-nba-zones.js --out)');
+if (!MAP) throw new Error('--map <zones.json> is required (scripts/load-section-zones.js --out)');
 if (!SUPA_URL || !SUPA_KEY) throw new Error('SUPABASE_URL / SUPABASE_ANON_KEY needed to list games');
 
 // WHICH UNMAPPED LISTINGS COUNT AGAINST THE 5% BAR.

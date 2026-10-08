@@ -26,7 +26,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import crypto from 'node:crypto';
 import { gameListings, newScrapeContext, parseGametimeListings, isStandingRoom } from '../lib/scrape-price.js';
-import { buildZoneIndex, matchZone, cheapestByZone, ZONES } from '../lib/nba-zones.js';
+import { buildZoneIndex, matchZone, cheapestByZone, ZONES } from '../lib/section-zones.js';
 import { openKernelSession } from '../lib/kernel-browser.js';
 import { parseVividListings, parseVividProductions, vividListingsUrl } from '../lib/vivid-listings.js';
 import { fetchGametimeListings, gametimeEventId, gametimeListingsUrl, parseGametimeApi } from '../lib/gametime-api.js';
@@ -43,7 +43,7 @@ const SHEET_ID = process.env.NBA_ZONE_SHEET_ID || '1j2pTC85y7yUoS7IRLNP5Z30_g79m
 
 const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPA_KEY = process.env.SUPABASE_ANON_KEY;
-if (!MAP) throw new Error('--map <zones.json> required (scripts/load-nba-zones.js --out)');
+if (!MAP) throw new Error('--map <zones.json> required (scripts/load-section-zones.js --out)');
 
 const index = buildZoneIndex(JSON.parse(readFileSync(MAP, 'utf8')));
 const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');

@@ -34,7 +34,7 @@
 
 import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, OR_COST_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
 import { scrapeGamePrice, scrapeToPriceRow, newScrapeContext, errorCandidate } from '../lib/scrape-price.js';
-import { loadZoneIndex } from '../lib/nba-zones.js';
+import { loadZoneIndex } from '../lib/section-zones.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };

@@ -1,7 +1,10 @@
-// Loads the NBA_Arena_Section_Map "By Section" tab into public.nba_section_zones (AI-1089).
+// Loads an arena section-map sheet into public.venue_section_zones (AI-1089).
 //
-//   node --env-file=.env scripts/load-nba-zones.js --dry     # report coverage, write nothing
-//   node --env-file=.env scripts/load-nba-zones.js           # upsert into Supabase
+// NBA today, every league eventually — --league is what makes adding a sport data rather than
+// code. The zone vocabulary is checked per league so a typo in a sheet cannot invent a zone.
+//
+//   node --env-file=.env scripts/load-section-zones.js --dry     # report coverage, write nothing
+//   node --env-file=.env scripts/load-section-zones.js           # upsert into Supabase
 //
 // The sheet is shared with the playbook-scrapes service account, so this reads it with
 // GOOGLE_SERVICE_ACCOUNT_KEY. Self-contained like the other scripts/ one-offs: the JWT is a
@@ -18,6 +21,15 @@ import crypto from 'node:crypto';
 const SHEET_ID = process.env.NBA_ZONE_SHEET_ID || '1j2pTC85y7yUoS7IRLNP5Z30_g79mw7Vz7SuNlATd90o';
 const TAB = process.env.NBA_ZONE_SHEET_TAB || 'By Section';
 const DRY = process.argv.includes('--dry');
+const li = process.argv.indexOf('--league');
+const LEAGUE = (li > -1 && process.argv[li + 1] ? process.argv[li + 1] : 'nba').toLowerCase();
+
+// The zones this league is allowed to use. A sheet that spells one differently should fail
+// loudly here rather than quietly create a fifth zone nothing queries for.
+const LEAGUE_ZONES = {
+  nba: { 'center court': 1, sideline: 2, corner: 3, 'behind basket': 4 },
+};
+if (!LEAGUE_ZONES[LEAGUE]) throw new Error(`no zone vocabulary for league "${LEAGUE}" — add it to LEAGUE_ZONES`);
 
 const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -26,12 +38,7 @@ const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 //
 // Rank is the premium order Josh quotes in, and it is also the tie-break: the sheet lists the
 // midcourt sections a second time under sideline, so the lowest rank seen for a section wins.
-const ZONES = {
-  'center court': 1,
-  sideline: 2,
-  corner: 3,
-  'behind basket': 4,
-};
+const ZONES = LEAGUE_ZONES[LEAGUE];
 
 // The sheet writes them title-cased and has used a couple of spellings for the baseline.
 function zoneOf(raw) {
@@ -155,6 +162,7 @@ for (let n = 1; n < rows.length; n++) {
   t.n++; tiers.set(tier, t);
 
   const rec = {
+    league: LEAGUE,
     team,
     arena: String(r[iArena] || '').trim() || team,
     tier,
@@ -217,9 +225,10 @@ if (DRY) { console.log('\n--dry: nothing written to the database.\n'); process.e
 
 if (!SUPA_URL || !SUPA_KEY) throw new Error('SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY needed to write');
 
-// Replace wholesale rather than merge: a section that moved zone in the sheet has to stop
-// answering with its old one, and a merge would leave the stale row behind forever.
-const del = await fetch(`${SUPA_URL}/rest/v1/nba_section_zones?team=neq.__none__`, {
+// Replace this league's rows wholesale rather than merging: a section that moved zone in the
+// sheet has to stop answering with its old one, and a merge would leave the stale row behind
+// forever. Scoped to the league so loading the NBA map never touches another sport's rows.
+const del = await fetch(`${SUPA_URL}/rest/v1/venue_section_zones?league=eq.${encodeURIComponent(LEAGUE)}`, {
   method: 'DELETE',
   headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, Prefer: 'return=minimal' },
 });
@@ -227,7 +236,7 @@ if (!del.ok) throw new Error('clear failed: ' + (await del.text()).slice(0, 300)
 
 for (let i = 0; i < out.length; i += 500) {
   const chunk = out.slice(i, i + 500);
-  const r = await fetch(`${SUPA_URL}/rest/v1/nba_section_zones`, {
+  const r = await fetch(`${SUPA_URL}/rest/v1/venue_section_zones`, {
     method: 'POST',
     headers: {
       apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
