@@ -248,6 +248,62 @@
     .price-pop .pp-cand input[type=checkbox]{ width:auto; margin-top:2px; accent-color:#e8935a; flex:none; }
     .price-pop .pp-cand-err{ cursor:default; }
     .price-pop .pp-cand-err:hover{ background:transparent; }
+
+    /* Premium seats (AI-1098). Same row shape as a normal price so it is obviously the same
+       kind of thing to tick, but warmer and set apart: a gold rail down the left, a deeper
+       ink for the price, and a crest on the summary. A premium seat is a different CLAIM from
+       a get-in — "center court from $X" rather than "cheapest ticket" — so it has to read as a
+       deliberate upgrade rather than another row in the same list. */
+    .price-pop details.pp-zones{ border:1px solid #efe2cd; border-radius:7px; background:
+        linear-gradient(180deg,#fffdf9 0%,#fffefc 100%); overflow:hidden; }
+    .price-pop details.pp-zones > summary{ cursor:pointer; list-style:none; display:flex; align-items:center;
+                           justify-content:space-between; padding:5px 8px; font-size:10px; font-weight:800;
+                           letter-spacing:.04em; text-transform:uppercase; color:#9a7b45; }
+    .price-pop details.pp-zones > summary::-webkit-details-marker{ display:none; }
+    .price-pop details.pp-zones > summary .pp-caret{ transition:transform .12s; }
+    .price-pop details.pp-zones[open] > summary .pp-caret{ transform:rotate(90deg); }
+    .price-pop .pp-zone{ display:flex; gap:7px; align-items:flex-start; padding:6px 8px 6px 7px;
+                         border-top:1px solid #f3e9d8; border-left:2px solid transparent;
+                         font-size:11px; color:#2f4858; cursor:pointer; }
+    .price-pop .pp-zone:hover{ background:#fffaf1; }
+    .price-pop .pp-zone.pp-sel{ background:#fdf3e3; border-left-color:#c9972f; }
+    .price-pop .pp-zone.pp-zone-empty{ cursor:default; color:#9aa7b4; }
+    .price-pop .pp-zone.pp-zone-empty:hover{ background:transparent; }
+    .price-pop .pp-zone input[type=checkbox]{ width:auto; margin-top:2px; accent-color:#c9972f; flex:none; }
+    .price-pop .pp-zone-best{ border-left-color:#e3cb92; }
+    .price-pop .pp-zone-amt{ font-weight:700; color:#8a6516; }
+    /* The arena map opens as a SIDE PANEL, not inline. Inline pushed the popover past the
+       bottom of the screen and buried the Save button under a seating chart — the map is a
+       reference you read ALONGSIDE the prices, not another row in the list.
+       It is a DOM child of .price-pop on purpose: the popover closes on any click whose
+       composedPath misses it, so a panel appended to <body> would dismiss the box the moment
+       you touched the map. position:fixed takes it out of the popover's scroll box while
+       keeping it inside the popover's event path. */
+    .price-pop .pp-mapwrap{ position:fixed; z-index:60; width:min(430px, 40vw); max-height:82vh;
+                            display:flex; flex-direction:column; overflow:hidden;
+                            background:#fff; border:1px solid #efe2cd; border-radius:9px;
+                            box-shadow:0 10px 34px rgba(19,59,73,.18); }
+    .price-pop .pp-mapwrap header{ display:flex; align-items:center; justify-content:space-between;
+                            gap:8px; padding:7px 10px; border-bottom:1px solid #f3e9d8;
+                            background:linear-gradient(180deg,#fffdf9,#fffefc); }
+    .price-pop .pp-mapwrap h4{ margin:0; font-size:11px; font-weight:800; letter-spacing:.03em;
+                            text-transform:uppercase; color:#9a7b45; }
+    .price-pop .pp-mapwrap .pp-map-x{ background:none; border:0; cursor:pointer; width:auto;
+                            font-size:15px; line-height:1; color:#9a7b45; padding:0 2px; }
+    .price-pop .pp-mapwrap .pp-map-body{ overflow:auto; padding:8px; }
+    /* 30 files at ~240KB, so the <img> only exists while the panel is open. */
+    .price-pop .pp-mapwrap img{ width:100%; height:auto; display:block; border-radius:5px;
+                            border:1px solid #efe2cd; background:#fff; }
+    .price-pop .pp-map-hint{ font-size:10px; color:#9a7b45; padding:6px 10px 8px; }
+    .price-pop .pp-map{ border-top:1px solid #f3e9d8; padding:6px 8px; }
+    .price-pop .pp-map-toggle{ font-size:10px; font-weight:700; color:#9a7b45; cursor:pointer;
+                               background:none; border:0; padding:0; text-decoration:underline; width:auto; }
+
+    /* The badge that marks a price as premium. Also used on the summary line above the inputs,
+       so an operator who reopens the box sees WHY the price is what it is. */
+    .pp-prem-badge{ display:inline-block; margin-left:5px; padding:0 5px; border-radius:999px;
+                    background:#f6e7c6; color:#7a5a12; font-size:9px; font-weight:800;
+                    letter-spacing:.05em; text-transform:uppercase; vertical-align:1px; }
     .price-pop .pp-cand input[type=checkbox]:disabled{ opacity:.35; cursor:not-allowed; }
     .price-pop .pp-errsign{ display:inline-block; font-size:10px; font-weight:800; color:#b45309; background:#fef3c7;
                             border:1px solid #fde68a; border-radius:9999px; padding:0 6px; margin-left:3px; cursor:help; }
@@ -5271,7 +5327,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           data-priceedit="${esc2(r.event_id)}" data-pricescope="${esc2(scope)}"
           data-priceval="${r.ticket_price != null ? esc2(r.ticket_price) : ''}"
           data-priceurl="${esc2(r.ticket_url || '')}"
-          data-pricesrc="${esc2(r.price_source || '')}">&#9998;</button>`;
+          data-pricesrc="${esc2(r.price_source || '')}"
+          data-priceleague="${esc2(r.league || '')}"
+          data-pricevenue="${esc2(r.venue || '')}">&#9998;</button>`;
       }
 
       // A hand-typed figure and a model's are the same number on screen and very different
@@ -5420,6 +5478,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             <summary><span class="pp-cands-title">Prices</span><span class="pp-caret">&#9656;</span></summary>
             <div class="pp-cands-body"></div>
           </details>
+          <details class="pp-zones mb-2">
+            <summary><span class="pp-zones-title">Premium seats by zone</span><span class="pp-caret">&#9656;</span></summary>
+            <div class="pp-zones-body"></div>
+          </details>
+          <div class="pp-mapwrap hidden"></div>
           <div class="pp-hist mb-2 hidden text-[10px] leading-snug text-base-content/60"></div>
           <div class="pp-err mb-2 hidden"></div>
           <div class="flex items-center gap-1">
@@ -5445,6 +5508,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             pickCandidate(Number(cb.dataset.ppcand), cb.checked);
             return;
           }
+          const mapBtn = e.target.closest('[data-ppmap]');
+          if(mapBtn){ current.mapOpen = !current.mapOpen; renderZones(); return; }
+          if(e.target.closest('[data-ppmapclose]')){ current.mapOpen = false; renderZones(); return; }
+          const zrow = e.target.closest('.pp-zone');
+          if(zrow && !e.target.closest('a') && e.target.type !== 'checkbox'){
+            const zcb = zrow.querySelector('input[type=checkbox]');
+            if(!zcb || zcb.disabled) return;     // a zone with no price yet
+            zcb.checked = !zcb.checked;
+            pickZone(zcb.dataset.ppzone, zcb.checked);
+            return;
+          }
           const act = e.target.closest('[data-pp]')?.dataset.pp;
           if(!act) return;
           if(act === 'cancel') return close();
@@ -5454,11 +5528,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         pop.addEventListener('change', e => {
           const cb = e.target.closest('[data-ppcand]');
           if(cb) pickCandidate(Number(cb.dataset.ppcand), cb.checked);
+          const zb = e.target.closest('[data-ppzone]');
+          if(zb) pickZone(zb.dataset.ppzone, zb.checked);
         });
         // Typing over a picked listing's number or link turns it into a hand-typed price: the
         // checkbox clears so the box never claims a listing the value no longer matches.
         pop.addEventListener('input', e => {
-          if(!current || current.pending == null || !e.target.matches('#pp-price, #pp-url')) return;
+          if(!current || !e.target.matches('#pp-price, #pp-url')) return;
+          // A hand-edited number is no longer the zone's price, so the premium tick clears —
+          // the same rule the scraped listings follow just below.
+          if(current.zonePick){ current.zonePick = null; renderZones(); }
+          if(current.pending == null) return;
           const c = current.cands && current.cands[current.pending];
           const p = pop.querySelector('#pp-price').value.trim(), u = pop.querySelector('#pp-url').value.trim();
           if(!c || Number(p) !== Number(c.price) || u !== (c.url || '')){ current.pending = null; renderCandidates(); }
@@ -5497,11 +5577,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         renderCandidates();
         let list = null;
         try {
-          const url = cfg.SUPABASE_URL + '/rest/v1/events_master?select=price_candidates&id=eq.' + encodeURIComponent(cur.id);
-          const r = await fetch(url, { headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY } });
-          const body = await r.json().catch(() => null);
-          if(!r.ok) throw new Error((body && body.message) || ('HTTP ' + r.status));
+          // zone_prices (AI-1098, migration 107) is asked for on the same read, but it CANNOT be
+          // asked for unconditionally: PostgREST rejects the whole select with a 400 when a named
+          // column does not exist, so on a database that has not run 107 this would take the
+          // candidate list down with it — breaking a working feature for the sake of a new one.
+          // So: ask once with the column, and on failure ask again without it.
+          const base = cfg.SUPABASE_URL + '/rest/v1/events_master?id=eq.' + encodeURIComponent(cur.id) + '&select=';
+          const hdr = { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY };
+          let r = await fetch(base + 'price_candidates,zone_prices', { headers: hdr });
+          let body = await r.json().catch(() => null);
+          if(!r.ok){
+            r = await fetch(base + 'price_candidates', { headers: hdr });
+            body = await r.json().catch(() => null);
+            if(!r.ok) throw new Error((body && body.message) || ('HTTP ' + r.status));
+          }
           list = Array.isArray(body) && body[0] ? body[0].price_candidates : null;
+          cur.zonePrices = (Array.isArray(body) && body[0] && body[0].zone_prices) || null;
           cur.loadState = 'loaded';
         } catch(e){
           cur.loadState = 'error';
@@ -5510,6 +5601,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(current !== cur) return;            // the box was closed or moved to another row meanwhile
         cur.cands = Array.isArray(list) && list.length ? list : null;
         renderCandidates();
+        renderZones();
         loadHistory(cur);
       }
 
@@ -5549,6 +5641,180 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         } catch(e){ /* history is optional */ }
       }
 
+      // ---- Premium seats by zone (AI-1098) — PLACEHOLDER --------------------------------------
+      //
+      // The premium offer quotes "center court from $X" rather than a get-in, because the cheapest
+      // lower-bowl seat is usually behind the basket (Josh, Oct 7 call). The zone pipeline that
+      // fills this is built — lib/nba-zones.js tags each listing from the NBA_Arena_Section_Map —
+      // but nothing writes a per-zone price onto the event row yet, so this renders the four zones
+      // empty with a line saying why.
+      //
+      // IT IS ALWAYS SHOWN, never hidden, for the same reason the Prices accordion always is
+      // (Vhea, 2026-09-15): an operator looking for a center-court price should find out that the
+      // feature exists and is not filled in yet, rather than wonder whether they missed it.
+      //
+      // WHEN THE DATA LANDS, the only change needed here is reading it. Expected shape, one
+      // object on the event row keyed by zone, matching cheapestByZone() in lib/nba-zones.js:
+      //   zone_prices: { "center court": { all_in, price, section, row, source, url, confidence } , … }
+      // NBA only — every other league has no section map, so the block says so instead of
+      // showing four permanently empty rows.
+      // Zone names differ by sport: a baseball park has no "center court". Keyed by league so
+      // adding one is a line here plus its rows in the section map, not a code change.
+      const PP_LEAGUE_ZONES = {
+        nba: ['center court', 'sideline', 'corner', 'behind basket'],
+      };
+      // Where each league's seating charts live under ui/assets/venue/.
+      const PP_VENUE_DIR = { nba: 'nba-arena' };
+
+      function renderZones(){
+        if(!pop || !current) return;
+        const box = pop.querySelector('.pp-zones'), body = pop.querySelector('.pp-zones-body');
+        if(!box || !body) return;
+        const title = pop.querySelector('.pp-zones-title');
+        // Starts open, same as the Prices list and for the same reason: a collapsed accordion is
+        // one nobody finds. The seat map toggle lives inside it, so leaving it shut hid both.
+        if(!current.zonesOpened){ current.zonesOpened = true; box.open = true; }
+
+        // WHICH LEAGUES HAVE ZONES IS DATA, NOT CODE. Only the NBA section map is loaded today,
+        // but the pipeline is league-agnostic and the others are coming, so a league without a
+        // map reads as "not mapped yet" rather than "not supported". The pencil also renders in
+        // scopes that carry no league at all (queue placeholder rows); an unknown league is NOT
+        // "some other league", so it falls through to the normal empty state.
+        const lg = String(current.league || '').toLowerCase();
+        const zonesFor = PP_LEAGUE_ZONES[lg] || (lg ? null : PP_LEAGUE_ZONES.nba);
+
+        if(!zonesFor){
+          title.innerHTML = '&#9733; Premium seats by zone';
+          body.innerHTML = `<div class="pp-zone pp-zone-empty">
+            <div class="flex-1 min-w-0">No section map for ${esc2(lg.toUpperCase())} yet &mdash; only NBA arenas are mapped so far.</div>
+          </div>`;
+          return;
+        }
+        const PP_ZONES = zonesFor;
+
+        const z = current.zonePrices && typeof current.zonePrices === 'object' ? current.zonePrices : null;
+        const priced = PP_ZONES.filter(k => z && z[k] && Number(z[k].all_in) > 0);
+        title.innerHTML = '&#9733; Premium seats by zone' + (priced.length ? ` (${priced.length})` : '');
+
+        // TICKABLE, exactly like a price above (Vhea, Oct 8). A premium seat is an alternative
+        // price for the game, not a read-only footnote: the operator picks "center court $240"
+        // the same way they pick a Gametime listing, and Save writes it as the game's price.
+        const rows = PP_ZONES.map(k => {
+          const v = z && z[k];
+          const ok = v && Number(v.all_in) > 0;
+          const sel = current.zonePick === k;
+          // Center court is the one the premium offer leads with, so it carries the rail even
+          // when unticked — the eye should land on it first.
+          const best = k === 'center court' ? ' pp-zone-best' : '';
+
+          if(!ok){
+            return `<div class="pp-zone pp-zone-empty${best}">
+              <input type="checkbox" disabled aria-label="No price for this zone yet">
+              <div class="flex-1 min-w-0">${esc2(k)}</div>
+              <div class="shrink-0 text-right">&mdash;</div>
+            </div>`;
+          }
+          // The section travels with every price because it is what makes the number checkable:
+          // "center court $240" is a claim, "center court $240, section 107" can be opened and
+          // verified. That is exactly what the 15-team spot check does.
+          const where = `sec ${esc2(v.section || '?')}${v.row ? ' row ' + esc2(v.row) : ''}`;
+          const warn = v.confidence === 'Medium'
+            ? ` <span class="text-[10px] text-warning" title="This section was placed by counting around the bowl rather than read off a label. Verify before quoting it.">verify</span>` : '';
+          return `<div class="pp-zone${best}${sel ? ' pp-sel' : ''}">
+            <input type="checkbox" data-ppzone="${esc2(k)}" ${sel ? 'checked' : ''} aria-label="Use the ${esc2(k)} price">
+            <div class="flex-1 min-w-0">
+              <div><b>${esc2(k)}</b>${sel ? '<span class="pp-prem-badge">Premium</span>' : ''}</div>
+              <div class="text-[10px] text-base-content/60">${where}${v.source ? ' · ' + esc2(v.source) : ''}${warn}</div>
+            </div>
+            <div class="shrink-0 text-right">
+              <span class="pp-zone-amt">${esc2(ppMoney(v.all_in))}</span>
+              <div class="text-[10px] text-base-content/50">all-in</div>
+            </div>
+            ${v.url ? `<a href="${esc2(v.url)}" target="_blank" rel="noopener" class="link text-[10px] whitespace-nowrap" style="color:#9a7b45">view &#8599;</a>` : ''}
+          </div>`;
+        }).join('');
+
+        const note = priced.length
+          ? `<div class="px-2 py-1 text-[10px] text-base-content/55">Cheapest lower-bowl seat per zone, all-in per ticket. Standing room excluded. Ticking one uses it as this game's price.</div>`
+          : `<div class="px-2 py-1 text-[10px] text-base-content/55">Not filled in yet &mdash; the next price refresh will populate these once per-zone pricing is switched on.</div>`;
+
+        // THE SEAT MAP IS THE VERIFICATION STEP, which is the whole reason it is here. A section
+        // number is a claim; the map is how an operator (or Josh and Cole doing the 15-team spot
+        // check) confirms that 101 really is centre court at this arena without leaving the app.
+        //
+        // Internal only. These are third-party seating charts, fine for checking our own work and
+        // NOT for offer emails (Vhea, Oct 8) — a different use with a different licensing question.
+        //
+        // Keyed on the arena name, which needs no alias table: the files in
+        // ui/assets/venue/<league>-arena are named exactly as the section map's `arena` column
+        // spells them, verified 30/30 for the NBA. Extension varies, so both are tried.
+        const arena = (current.venue || '').trim();
+        // Which folder this league's seating charts live in. Lost when the inline map became a
+        // side panel, which threw ReferenceError on every open of the price box — so the whole
+        // premium block failed, not just the map.
+        const venueDir = PP_VENUE_DIR[lg] || (lg ? lg + '-arena' : 'nba-arena');
+        const mapBlock = arena
+          ? `<div class="pp-map"><button type="button" class="pp-map-toggle" data-ppmap="1">${current.mapOpen ? '&#9666; Hide' : '&#9656; Show'} the ${esc2(arena)} seat map</button></div>`
+          : '';
+
+        body.innerHTML = rows + note + mapBlock;
+        renderSeatMap(arena, venueDir);
+      }
+
+      // The panel itself. Rendered beside the popover rather than inside its scroll box, and
+      // placed on whichever side has room so it never lands on top of the prices it explains.
+      function renderSeatMap(arena, venueDir){
+        const wrap = pop && pop.querySelector('.pp-mapwrap');
+        if(!wrap) return;
+        if(!current || !current.mapOpen || !arena){ wrap.classList.add('hidden'); wrap.innerHTML = ''; return; }
+
+        wrap.innerHTML = `<header>
+            <h4>${esc2(arena)}</h4>
+            <button type="button" class="pp-map-x" data-ppmapclose="1" aria-label="Close the seat map">&times;</button>
+          </header>
+          <div class="pp-map-body">
+            <img src="assets/venue/${venueDir}/${encodeURIComponent(arena)}.png" alt="${esc2(arena)} seating chart"
+                 onerror="this.onerror=null;this.src='assets/venue/${venueDir}/${encodeURIComponent(arena)}.jpg';
+                          this.onerror=function(){this.replaceWith(Object.assign(document.createElement('div'),{className:'pp-map-hint',textContent:'No seat map saved for this arena.'}));};">
+          </div>
+          <div class="pp-map-hint">Reference only &mdash; check the section numbers above against the chart.</div>`;
+        wrap.classList.remove('hidden');
+        placeSeatMap();
+      }
+
+      // Sit beside the popover, flipping to whichever side has room. The popover is fixed, so
+      // these are viewport coordinates.
+      function placeSeatMap(){
+        const wrap = pop && pop.querySelector('.pp-mapwrap');
+        if(!wrap || wrap.classList.contains('hidden')) return;
+        const r = pop.getBoundingClientRect();
+        const w = wrap.offsetWidth || 430, gap = 10;
+        const right = r.right + gap, left = r.left - w - gap;
+        // Prefer the right of the popover; fall back to its left; if neither fits, pin to the
+        // edge with the most room rather than letting it hang off screen.
+        let x = right + w <= window.innerWidth ? right
+              : left >= 0 ? left
+              : (window.innerWidth - r.right > r.left ? Math.max(gap, window.innerWidth - w - gap) : gap);
+        let y = Math.max(gap, Math.min(r.top, window.innerHeight - wrap.offsetHeight - gap));
+        wrap.style.left = x + 'px';
+        wrap.style.top = y + 'px';
+      }
+
+      // Ticking a zone is mutually exclusive with ticking a scraped listing: both set the game's
+      // one price, so the other selection is cleared rather than left looking half-chosen.
+      function pickZone(zone, on){
+        if(!current) return;
+        const z = current.zonePrices && current.zonePrices[zone];
+        current.zonePick = on && z ? zone : null;
+        if(current.zonePick){
+          current.pending = null;                       // drop any ticked scraped listing
+          const el = pop.querySelector('#pp-price'); if(el) el.value = z.all_in != null ? z.all_in : '';
+          const u  = pop.querySelector('#pp-url');   if(u)  u.value  = z.url || '';
+        }
+        renderCandidates();
+        renderZones();
+      }
+
       function renderCandidates(){
         if(!pop || !current) return;
         const box = pop.querySelector('.pp-cands'), body = pop.querySelector('.pp-cands-body');
@@ -5561,7 +5827,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // has no list — the accordion still appears and says so, rather than vanishing and leaving
         // the operator unsure whether the feature exists for this game at all.
         if(!c){
-          tk.classList.add('hidden');
+          // A game with no scraped listings can still have a premium zone ticked, and the badge
+          // explaining the price must not disappear with the (empty) listings summary.
+          const zp = current.zonePick, zv = zp && current.zonePrices && current.zonePrices[zp];
+          if(zp && zv){
+            tk.innerHTML = `<b>Premium &middot; ${esc2(zp)}</b><span class="pp-prem-badge">Premium</span>`
+              + ` &middot; ${esc2(ppMoney(zv.all_in))} all-in`
+              + `<br>section ${esc2(zv.section || '?')}${zv.row ? ', row ' + esc2(zv.row) : ''}`;
+            tk.classList.remove('hidden');
+          } else {
+            tk.classList.add('hidden');
+          }
           const state = current.loadState;
           pop.querySelector('.pp-cands-title').textContent = state === 'loading' ? 'Prices · loading…' : 'Prices (0)';
           const msg = state === 'loading'
@@ -5585,7 +5861,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         // Ticket info for the price as it stands now.
         const cur = nowIdx >= 0 ? c[nowIdx] : null;
-        tk.innerHTML = cur
+        // A premium pick is a different claim from a get-in, so it is labelled wherever the
+        // price is described — here, above the inputs, is where an operator reopening the box
+        // finds out WHY the number is what it is.
+        const zp = current.zonePick;
+        const zv = zp && current.zonePrices && current.zonePrices[zp];
+        tk.innerHTML = zp && zv
+          ? `<b>Premium &middot; ${esc2(zp)}</b><span class="pp-prem-badge">Premium</span>`
+            + ` &middot; ${esc2(ppMoney(zv.all_in))} all-in`
+            + `<br>section ${esc2(zv.section || '?')}${zv.row ? ', row ' + esc2(zv.row) : ''}${zv.source ? ' · ' + esc2(zv.source) : ''}`
+          : cur
           ? `<b>${esc2(ppSourceLabel(cur))}</b> · ${esc2(ppPrices(cur))}`
             + `<br>${esc2(ppListing(cur))}`
             + (cur.chosen_by === 'operator' ? ' · <span class="text-base-content/50">picked by an operator</span>' : '')
@@ -5662,6 +5947,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(c && ppIsError(c)) return;          // an error row has no price to use
         if(on && c){
           current.pending = i;
+          current.zonePick = null;             // mutually exclusive with a premium zone pick
           pop.querySelector('#pp-price').value = c.price != null ? c.price : '';
           pop.querySelector('#pp-url').value   = c.url || '';
         } else if(current.pending === i){
@@ -5671,17 +5957,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         }
         showErr('');
         renderCandidates();
+        renderZones();
       }
 
       function open(btn){
         const p = ensurePop();
         current = { id: btn.dataset.priceedit, scope: btn.dataset.pricescope, src: btn.dataset.pricesrc || '',
                     origPrice: btn.dataset.priceval || '', origUrl: btn.dataset.priceurl || '', cands: null, pending: null,
+                    league: btn.dataset.priceleague || '', venue: btn.dataset.pricevenue || '', zonePrices: null,
                     loadState: 'loading', loadError: '' };
         p.querySelector('#pp-price').value = current.origPrice;
         p.querySelector('#pp-url').value   = current.origUrl;
         showErr('');
+        current.zonePick = null;
+        current.mapOpen = false;
         renderCandidates();                    // clears any list left from the previous row
+        renderZones();
         const opened = current;
         loadCandidates(opened).then(() => { if(current === opened) placePop(btn); });
         p.classList.remove('hidden');
@@ -5701,6 +5992,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         p.style.top  = Math.max(8, Math.min(r.bottom + 6, window.innerHeight - h - 8)) + 'px';
         // Placed twice — on open, and again once the scraped list has loaded and widened the box
         // — so focus is NOT taken here; open() takes it once, and a re-place never yanks the cursor.
+        // The map sits relative to the popover, so it moves when the popover does.
+        placeSeatMap();
       }
 
       // Save a picked listing. The RPC takes the listing's INDEX, never a price: the number, link,
