@@ -4702,8 +4702,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // query — instead of a private one-off lookup. A second code path would drift from the
       // visible filters and leave the box empty while the list was filtered, so the person
       // could not see or clear what had been applied.
-      window.__findContact = (email) => {
-        const q = String(email || '').trim();
+      // ANY HANDLE, NOT JUST AN EMAIL. The market recipients panel is half phone-only rows, and
+      // those people are in the directory too — contact_directory's search_text concatenates
+      // name, email, phone and company, so a phone lands exactly as an address does. Both that
+      // view and market_contacts read `phone` straight from the same source tables without
+      // reformatting, so the strings agree and the LIKE matches.
+      //
+      // Email is still preferred by every caller that has one: it is unique, while a phone can
+      // be shared by a household or a club.
+      window.__findContact = (handle) => {
+        const q = String(handle || '').trim();
         if(!q) return;
         const box = el('ct-search');
         if(box) box.value = q;
@@ -6858,9 +6866,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             if(r.blast_count)
               flags.push(`<span class="ct-badge ct-badge-on" title="Recorded in the send log.">blasted ${esc(rcAgo(r.last_blasted_at) || '')}</span>`);
             const org = [r.organization_name, r.city].filter(Boolean).join(' · ');
+            // OPEN THIS PERSON IN CONTACTS, the same control the Market History roster carries
+            // (Vhea, 2026-10-08). This panel answers "who would this blast reach"; the directory
+            // answers "who is this person" — state, every source they came from, the blasts they
+            // are already on. There was no way across.
+            //
+            // Prefers the email, falls back to the phone: an address is unique, a number can be
+            // shared by a club or a household. A row with neither is a contact the directory
+            // cannot be searched for either, so it gets no control rather than a dead one.
+            const handle = r.email || r.phone || '';
+            const jump = handle
+              ? `<button class="ct-go shrink-0" data-rcjump="${esc(handle)}" aria-label="Open in Contacts"
+                   title="Open this person in Contacts — their directory record, state, sources and every blast they are on">`
+                + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0"/></svg></button>`
+              : '';
             return `<tr class="border-b border-base-200 align-top">
               <td class="py-1.5 px-2">
-                <div class="font-semibold text-[#133b49] truncate" title="${esc(r.contact_name) || ''}">${esc(r.contact_name) || '<span class="text-base-content/30">&mdash;</span>'}</div>
+                <div class="flex items-center gap-1.5">
+                  <div class="font-semibold text-[#133b49] truncate" title="${esc(r.contact_name) || ''}">${esc(r.contact_name) || '<span class="text-base-content/30">&mdash;</span>'}</div>
+                  ${jump}
+                </div>
                 <div class="text-base-content/50 truncate" title="${esc(org)}">${esc(org)}</div>
               </td>
               <td class="py-1.5 px-2 font-mono truncate ${r.suppressed_email ? 'line-through text-base-content/40' : ''}" title="${esc(r.email) || ''}">${esc(r.email) || '<span class="text-base-content/30">&mdash;</span>'}</td>
@@ -6892,6 +6918,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if(!b) return;
         e.stopPropagation();   // the row itself is clickable for selection
         rcShow(b.dataset.viewrecips, b.dataset.seg, b.dataset.ev);
+      });
+      // Delegated on the panel body, which rcPaint replaces wholesale on every page and filter.
+      // The panel is CLOSED on the way out: it is an overlay above the Offers table, so leaving
+      // it open would drop the operator on Contacts with this market's roster still covering it.
+      el('rc-rows')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-rcjump]');
+        if(!b) return;
+        rcClose();
+        // showTab runs __loadContacts on a cold tab, so the jump goes AFTER it — otherwise the
+        // module's own first load overwrites the filters this just set.
+        if(typeof showTab === 'function') showTab('contacts');
+        if(typeof window.__findContact === 'function') window.__findContact(b.dataset.rcjump);
       });
       el('rc-panel-close')?.addEventListener('click', rcClose);
       document.addEventListener('keydown', e => {
