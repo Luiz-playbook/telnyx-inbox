@@ -2175,27 +2175,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </div>
             </details>
 
-            <!-- SENDBLASTER — the bulk-sending side, i.e. everything that is NOT a CakeMail
-                 campaign: SMS through Telnyx and Salesmsg, the imported Textable history, and
-                 email pushed through the Gmail webhook.
+            <!-- SENDBLASTER — the whole sending operation in one place: every blast, SMS and
+                 email, across every platform. CakeMail campaigns, Telnyx bulk SMS, Salesmsg
+                 broadcasts, the imported Textable history and email through the Gmail webhook.
 
-                 GROUPED BY PLATFORM FIRST, because the platform is what decides what we can
-                 know. A Telnyx blast and a Salesmsg broadcast are both "SMS sent" and neither
-                 carries open or click tracking, so a report that led with engagement would be a
-                 grid of dashes. Volume, reach and recency are the real measurements here.
+                 IT INCLUDES CAKEMAIL (Vhea, 2026-10-08). It was built as "everything that is NOT
+                 a CakeMail campaign", which made it a report about the leftovers and made its
+                 totals quietly wrong as a picture of the system. CakeMail keeps its own accordion
+                 above because it is the only channel with engagement to report; it is simply no
+                 longer missing from the volume.
+
+                 GROUPED BY PLATFORM FIRST, because the platform decides what can be known. A
+                 Telnyx blast and a Salesmsg broadcast are both "SMS sent" and neither carries
+                 open or click tracking, so a report that led with engagement would be mostly
+                 dashes. Reach is the figure every row can answer.
 
                  "Recipients" is HANDED TO THE CARRIER, never confirmed delivered — the same
-                 distinction api/queue-tick.js draws when it refuses to write sent_count. -->
+                 distinction the send path draws when it refuses to record a delivery count. -->
             <details id="sb-strip" class="collapse collapse-arrow border border-base-300 bg-base-100 hidden">
               <summary class="collapse-title">
-                <span class="font-semibold text-sm">SendBlaster &mdash; SMS and bulk sending</span>
+                <span class="font-semibold text-sm">SendBlaster &mdash; all sending, SMS and email</span>
               </summary>
               <div class="collapse-content">
                 <div class="flex flex-col gap-3 pb-1">
 
                   <div class="flex items-baseline justify-between flex-wrap gap-2 -mt-1">
                     <div class="min-w-0">
-                      <div class="text-sm font-semibold">Everything we blasted that was not a CakeMail campaign</div>
+                      <div class="text-sm font-semibold">Every blast we have sent, on every platform</div>
                       <div class="text-xs text-base-content/50" id="sb-prov"></div>
                     </div>
                     <label class="flex items-center gap-2 shrink-0">
@@ -2217,9 +2223,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       <div class="text-[11px] uppercase tracking-wide text-base-content/50">1 &middot; By platform</div>
                       <div class="text-sm font-semibold">Who carried it &mdash; and what that platform can tell us</div>
                       <div class="text-[11px] text-base-content/60">
-                        The tracking column is not a setting we can change. None of these channels
-                        reports opens or clicks, which is why this report counts reach rather than
-                        engagement.
+                        The tracking column is not a setting we can change. Only CakeMail measures
+                        opens and clicks &mdash; and those are in its own report above &mdash; which is
+                        why this one compares reach instead.
                       </div>
                     </div>
                     <div class="overflow-x-auto">
@@ -12853,14 +12859,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         cm.classList.remove('hidden');
       }
 
-      // ---- SendBlaster — everything that is not a CakeMail campaign ---------------------------
+      // ---- SendBlaster — EVERY blast, SMS and email, across every platform ---------------------
       //
-      // WHY VOLUME AND NOT ENGAGEMENT. None of these platforms reports an open or a click: SMS
-      // carries no tracking at all, and the Gmail webhook pushes a message without a pixel. So
-      // the measurable facts are how many blasts, how many recipients, which market and when —
-      // and the Tracking column states the limitation rather than leaving a row of dashes to be
-      // read as zero engagement.
+      // Scope changed on request (Vhea, 2026-10-08): this was "everything that is not a CakeMail
+      // campaign", which made it a report about the leftovers rather than about the system. It now
+      // counts every send we have. CakeMail still gets its own accordion above, because it is the
+      // only channel with opens and clicks to report on and that deserves the space — but it is no
+      // longer missing from the system-wide totals, which is what made them misleading.
+      //
+      // WHY VOLUME AND NOT ENGAGEMENT, STILL. Only CakeMail measures anything: SMS carries no
+      // tracking at all and the Gmail webhook sends without a pixel. Reach is the one figure every
+      // row can answer, so it is what the tables compare — and the Tracking column states each
+      // platform's limit rather than leaving dashes to be read as zero engagement.
       const PLATFORM = {
+        cakemail: { label: 'CakeMail (email)',        track: 'Opens, clicks, bounces — in the report above' },
         telnyx:   { label: 'Telnyx (bulk SMS)',       track: 'None — SMS has no open or click tracking' },
         salesmsg: { label: 'Salesmsg (broadcasts)',   track: 'None — broadcasts report no opens or clicks' },
         gmail:    { label: 'Gmail webhook (email)',   track: 'None — sent without a tracking pixel' },
@@ -12872,8 +12884,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function renderSendblaster(){
         if(!sb) return;
         const days = Number($('sb-period')?.value || 0);
-        const all = ROWS.filter(r => r.source !== 'cakemail');
-        const rows = all.filter(r => inPeriod(r, days));
+        // EVERY row, CakeMail included. See the note above the platform table.
+        const rows = ROWS.filter(r => inPeriod(r, days));
 
         // Keyed on platform AND channel: the app can push email through the Gmail webhook and
         // SMS through Telnyx on the same queue row, and merging them would report an email reach
@@ -12918,7 +12930,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <td class="whitespace-nowrap text-base-content/60">${p.last ? dt(new Date(p.last).toISOString()) : '—'}</td>
               <td class="text-[11px] text-base-content/55">${esc(platTrack(p.source))}</td>
             </tr>`).join('')
-          : `<tr><td colspan="9" class="text-center text-base-content/50 py-4">No non-CakeMail blasts in this period.</td></tr>`;
+          : `<tr><td colspan="9" class="text-center text-base-content/50 py-4">No blasts in this period.</td></tr>`;
 
         $('sb-plat-note').textContent =
           'Recipients is what was handed to the carrier, not what a handset received — api/queue-tick.js '
@@ -12994,11 +13006,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           ? `Top ${TOP} markets by reach; the rest are rolled into one row rather than truncated away.`
           : 'Every market with a blast in this period is listed.';
 
-        $('sb-prov').textContent = 'Merged from the blast log, the Salesmsg broadcast sync and this app’s own sends. CakeMail campaigns are excluded — they have their own report above.';
+        $('sb-prov').textContent = 'Every blast we have, merged from the CakeMail sync, the blast log, the Salesmsg broadcast sync and this app’s own sends — the same set the Market History tab lists.';
         $('sb-note').textContent =
-          'There are no open or click figures here because none of these platforms produces any. '
-          + 'That is a limitation of SMS and of the Gmail webhook, not a gap in the sync, and it is '
-          + 'why the only email channel with a real report is CakeMail.';
+          'Reach only. CakeMail is the one channel that measures opens and clicks, and those are in '
+          + 'its own report above; SMS and the Gmail webhook produce none at all, which is a limit of '
+          + 'those channels rather than a gap in the sync. Recipients counts sends, not people — the '
+          + 'same person reached on two blasts is two.';
         sb.classList.remove('hidden');
       }
 
