@@ -36,7 +36,7 @@ export const config = { maxDuration: 60 };
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 // event_date is a PLAIN date and already local to the venue (see the note in
-// docs/events-pipeline.md). Parsing it through Date() would shift it a day for half of
+// docs/documentation/events-pipeline.md). Parsing it through Date() would shift it a day for half of
 // every UTC day, so it is formatted from its own digits and never becomes a Date.
 function prettyDate(ymd) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));

@@ -1,5 +1,5 @@
 -- Cole directives: durable operator feedback that steers the queueing decision across runs.
--- See docs/OPENCLAW_QUEUE_RULES.md §4. The Campaign Agent (OpenClaw) chooses which markets go
+-- See docs/knowledge-base/OPENCLAW_QUEUE_RULES.md §4. The Campaign Agent (OpenClaw) chooses which markets go
 -- into the queue; a human's standing instruction ("don't send Nashville for 4 days", "push
 -- Columbus to the front") must persist beyond the chat that created it — Thursday's run in a
 -- fresh session with no history must still obey Monday's directive. Chat memory alone is too
