@@ -41,6 +41,7 @@
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
+import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, armCampaign, findCampaignByKey, listCampaigns } from '../lib/bulk-sms.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
@@ -230,6 +231,45 @@ export default async function handler(req, res) {
   const emailHook = process.env.EMAIL_SEND_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/gmail-bulk-send';
   const hookOk = u => u && !String(u).startsWith('<<');
+
+  // AI-965, step 4 of the brief: poll the bulk sender for what happened. Staging stores the
+  // census (eligible/blocked); it says nothing about what was then DELIVERED. Without this the
+  // row reads "staged + armed" forever and sent/failed/skipped live only in the other app.
+  //
+  // Bounded on purpose: rows handed off in the last 48 hours, one GET for all of them, and
+  // never fatal — a reconcile that cannot reach the pipeline must not stop a blast going out.
+  // The pipeline's counts land under bulk_census.pipeline, beside the staging census, so the
+  // two are never confused: `eligible` is what the gate let through, `sent` is what left.
+  async function reconcileBulk() {
+    if (!bulkSmsConfigured()) return { checked: 0, updated: 0 };
+    try {
+      const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+      const q = `${supaUrl}/rest/v1/campaign_queue?select=id,bulk_campaign_id,bulk_census`
+        + `&bulk_campaign_id=not.is.null&sent_at=gte.${encodeURIComponent(since)}`;
+      const rows = await (await fetch(q, { headers: sh })).json();
+      if (!Array.isArray(rows) || !rows.length) return { checked: 0, updated: 0 };
+      const byId = new Map((await listCampaigns()).map(c => [String(c.id), c]));
+      let updated = 0;
+      for (const row of rows) {
+        const c = byId.get(String(row.bulk_campaign_id));
+        if (!c) continue;
+        const pipeline = { status: c.status, from_inbox: c.from_inbox, pending: c.pending, sent: c.sent, failed: c.failed, skipped: c.skipped, seen_at: new Date().toISOString() };
+        const prev = (row.bulk_census && row.bulk_census.pipeline) || {};
+        // Only write when something moved. A PATCH per row per tick for an unchanged campaign
+        // is write noise on a table the Queue reads every page load.
+        if (['status', 'pending', 'sent', 'failed', 'skipped'].every(k => prev[k] === pipeline[k])) continue;
+        await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(row.id)}`, {
+          method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
+          body: JSON.stringify({ bulk_census: { ...(row.bulk_census || {}), pipeline } }),
+        });
+        updated++;
+      }
+      return { checked: rows.length, updated };
+    } catch (e) {
+      return { checked: 0, updated: 0, error: String((e && e.message) || e) };
+    }
+  }
+  const bulkReconcile = await reconcileBulk();
 
   // Manual "Send now" from the Queue posts { id } and targets exactly that row. It is an
   // explicit operator action on one blast, so it skips the two gates the CRON pass needs and
@@ -426,6 +466,52 @@ export default async function handler(req, res) {
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
+        } else if (bulkSmsConfigured()) {
+          // AI-965, option A. Hand the audience to Charles's bulk sender and let its queue do
+          // the sending: per-recipient rows, one shared opt-out list, quiet hours, duplicate
+          // protection, carrier halts, delivery receipts. None of that is re-implemented here.
+          // See lib/bulk-sms.js for why the campaign key is this row's id and why arming on
+          // the operator's confirm click is the brief's rule being followed, not bent.
+          //
+          // Ordered so a crash at any point leaves a row that can be picked up, never a
+          // second send: stage (idempotent on key) -> record the id on OUR row -> arm.
+          const key = String(r.id);
+          const name = r.title || [r.opponent, r.team].filter(Boolean).join(' at ') || key;
+          try {
+            let staged = await stageCampaign({ key, name, body: r.sms_copy || '', fromNumber: r.sms_from, phones });
+            let campaignId = staged.campaignId;
+            let alreadyArmed = false;
+            if (staged.duplicate) {
+              // A previous tick staged this row and died before recording it. Find what it made.
+              const existing = await findCampaignByKey(key);
+              if (!existing || !existing.id) throw new Error('duplicate campaign key, but no campaign found for it');
+              campaignId = existing.id;
+              alreadyArmed = existing.status && existing.status !== 'draft';
+              staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.eligible, blocked: existing.blocked };
+            }
+            // Record the link BEFORE arming, so if arming throws the row still says which
+            // campaign it is, and nobody has to find it by hand in the other app.
+            await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
+              method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
+              body: JSON.stringify({ bulk_campaign_id: String(campaignId), bulk_census: staged.raw || null }),
+            });
+            // Nobody eligible is not a send. Arming it would text no one and mark the market
+            // cooled for 14 days — the exact failure the sent/failed split exists to prevent.
+            if (!alreadyArmed && Number(staged.eligible) === 0) {
+              const why = Object.entries(staged.byReason || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
+              throw new Error(`0 of ${phones.length} eligible after the gate${why ? ` (${why})` : ''}`);
+            }
+            if (!alreadyArmed) await armCampaign({ campaignId, key });
+            sent.push(`SMS ${staged.eligible != null ? staged.eligible : phones.length} ${alreadyArmed ? 'already armed' : 'staged + armed'} via bulk sender`
+              + ` (${staged.fromInbox || r.sms_from || 'route'})`);
+            if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length} (consent, quiet hours, opt-out or route)`);
+            if (staged.collapsedDuplicates) notes.push(`${staged.collapsedDuplicates} duplicate handsets collapsed`);
+            // NO hubspotLog here, on purpose. The bulk sender writes the inbox copy itself
+            // (log-sweep), keyed so the blast and the reply share one thread. Logging it again
+            // from here would put every message on the timeline twice.
+          } catch (e) {
+            failed.push(`Bulk sender failed: ${String((e && e.message) || e)}`);
+          }
         } else if (hookOk(smsHook)) {
           const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
           const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
@@ -620,7 +706,7 @@ export default async function handler(req, res) {
         hubspot, recipients_logged });
     }
 
-    res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS } });
+    res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), bulk_sms: bulkSmsStatus(), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS }, bulk_reconcile: bulkReconcile });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }

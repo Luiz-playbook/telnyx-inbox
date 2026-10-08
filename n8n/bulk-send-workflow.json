@@ -72,7 +72,7 @@
         "nodeCredentialType": "supabaseApi",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ { \"p_from\": \"+16158050766\", \"p_to\": $('Split Messages').item.json.to, \"p_body\": $('Split Messages').item.json.text, \"p_telnyx_message_id\": ($json.data && $json.data.id) ? $json.data.id : null } }}",
+        "jsonBody": "={{ { \"p_from\": ($('Split Messages').item.json.from || \"+16158050766\"), \"p_to\": $('Split Messages').item.json.to, \"p_body\": $('Split Messages').item.json.text, \"p_telnyx_message_id\": ($json.data && $json.data.id) ? $json.data.id : null } }}",
         "options": {}
       },
       "id": "96e3aeb7-fa0b-4a37-af46-f4b9b5e82b13",

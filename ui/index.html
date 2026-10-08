@@ -77,6 +77,28 @@
     .seg-all:hover{ border-color:#e8935a; color:#c94d07; background:#fdeee4; }
     .seg-all.on{ background:#133b49; border-color:#133b49; color:#fff; }
     .seg-all.on:hover{ background:#1b4e60; border-color:#1b4e60; color:#fff; }
+    /* Strategy multi-select (AI-1075). Shaped to sit in a row of daisyUI select-sm controls, so
+       it matches their height and border rather than inventing a third control style. */
+    .strat-wrap{ position:relative; }
+    .strat-trigger::-webkit-details-marker{ display:none; }
+    .strat-trigger{ list-style:none; display:inline-flex; align-items:center; gap:6px; height:2rem;
+      padding:0 10px; border:1px solid #d8e2ef; border-radius:8px; background:#fff; cursor:pointer;
+      font-size:13px; font-weight:600; color:#5e6e82; white-space:nowrap; user-select:none; }
+    .strat-trigger:hover{ border-color:#cbd6e2; }
+    .strat-trigger.on{ border-color:#e8935a; background:#fdeee4; color:#c94d07; }
+    .strat-caret{ font-size:10px; opacity:.6; }
+    .strat-menu{ position:absolute; top:100%; left:0; z-index:60; margin-top:4px; min-width:190px;
+      padding:6px; background:#fff; border:1px solid #d8e2ef; border-radius:10px;
+      box-shadow:0 10px 28px rgba(19,59,73,.14); display:flex; flex-direction:column; gap:1px; }
+    .strat-opt{ display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+      font-size:13px; color:#354052; cursor:pointer; }
+    .strat-opt:hover{ background:#f4f7fb; }
+    .strat-clear{ margin-top:3px; padding:5px 8px; border-top:1px solid #edf2f9; font-size:12px;
+      font-weight:700; color:#5e6e82; text-align:left; cursor:pointer; background:none; }
+    .strat-clear:hover{ color:#c94d07; }
+    /* The Type column on Offers - quieter than the segment badge, which states the audience. */
+    .type-pill{ display:inline-block; font-size:11px; font-weight:700; color:#3f7d7d;
+      background:#eef2f1; border:1px solid #e3ebe9; border-radius:9999px; padding:2px 9px; white-space:nowrap; }
     /* agent panel */
     .agent-label{ color:#3f7d7d; font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
     .agent-bubble{ background:#eef2f1; border:1px solid #e3ebe9; border-radius:14px; padding:13px 15px; color:#3a4a52; font-size:14px; line-height:1.55; }
@@ -849,6 +871,9 @@
           <!-- Replies stays a main tab: history is what we said, replies is what came back, and
                replying is daily work. The reporting and setup pages it used to sit beside are
                now behind Admin (AI-1074), which is why it reads as a main tab on its own. -->
+          <!-- Inbox (AI-1102): Cole's demo-booking emails, pulled nightly from his Gmail. A main
+               tab because it is read every morning, which is the test Replies passed. -->
+          <a href="#" data-tab="inbox"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12l3-8h12l3 8v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 12h5l2 3h4l2-3h5"/></svg>Inbox</a>
           <a href="#" data-tab="replies"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v5"/></svg>Replies</a>
           <!-- ADMIN (AI-1074). Everything you configure or consult rather than work through
                every day: templates, Cole's rules, ticket prices, market history, reports and the
@@ -894,6 +919,9 @@
                   <a href="#" data-tab="catalog-venues" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>Venues</a>
                 </div>
               </details>
+              <!-- AI-1077. Lives under Admin because it is configuration you set once and check
+                   occasionally, not daily work. -->
+              <a href="#" data-tab="forwarding" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>Call Forwarding</a>
             </div>
           </details>
         </nav>
@@ -1105,6 +1133,10 @@
                   <input id="cbs-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Games to">
                   <button id="cbs-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
+                <!-- STRATEGY (AI-1075). First in the row because it is the broadest cut: it
+                     says which KIND of offer you are looking at, and every filter after it
+                     narrows within that. -->
+                <div id="cbs-strategy"></div>
                 <select id="cbs-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
@@ -1181,7 +1213,11 @@
                            a checkbox sharing a cell with a link is a mis-click waiting to
                            happen, and the Queue already puts it in a column of its own. -->
                       <th class="w-8"><input type="checkbox" id="cbs-all" class="checkbox checkbox-xs align-middle" title="Select every row on this page" aria-label="Select all on this page"></th>
-                      <th>Event</th>
+                      <!-- "Offer", not "Event" (AI-1075): once Youth Events exists, the thing in
+                           this column is not always an event. -->
+                      <th>Offer</th>
+                      <!-- What the recipient is being offered. Tickets today; Youth Events next. -->
+                      <th>Type</th>
                       <!-- Sort lives on the column itself. Events with no price yet always sink
                            to the bottom — an unknown price is not the cheapest. -->
                       <th id="cbs-sort-price" class="sortable" title="Sort by get-in price">Cheapest <span class="sort-ind">&#9650;&#9660;</span></th>
@@ -1390,6 +1426,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="rejected">Rejected</option>
                   <option value="archived">Archived</option>
                 </select>
+                <!-- STRATEGY (AI-1075). Same control and same position as the Offers tab's,
+                     because a queue row IS an offer that was taken. -->
+                <div id="q-strategy"></div>
                 <select id="q-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
@@ -1546,6 +1585,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <div class="border border-base-300 rounded-lg flex flex-col overflow-hidden">
                     <div class="p-2 border-b border-base-300 space-y-2">
                       <input id="tpl-search" class="input input-bordered input-sm w-full" placeholder="Search name or body…" autocomplete="off" />
+                      <!-- STRATEGY (AI-1075). Above the source buttons because it is the
+                           broader cut: which play the copy belongs to, not where it came from. -->
+                      <div id="tpl-strategy"></div>
                       <div class="flex gap-1.5" id="tpl-sources">
                         <button type="button" class="tpl-src sel" data-src="all">All</button>
                         <button type="button" class="tpl-src" data-src="cole">Cole&rsquo;s</button>
@@ -1698,6 +1740,65 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                blank panel. Email has no ingestion wired at all; SMS only ever receives replies to
                +16158050766, because the eight 2-way numbers post to Charles's HubSpot endpoint
                instead. Verified against the live Telnyx account, 2026-09-17. -->
+          <!-- ===== INBOX (AI-1102) ===== -->
+          <!-- Cole's Gmail, as the n8n sync left it in public.inbox_emails: every message of the
+               last two days, tagged is_demo_booking by a classifier. The default view is the
+               bookings; "Show everything" is one click away because a wrongly-classified mail
+               should be findable, not gone. Read-only here - the mailbox is the source of truth. -->
+          <div data-view id="view-inbox" class="hidden space-y-3">
+            <div class="flex items-start gap-3 flex-wrap">
+              <div class="flex gap-3">
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Demo bookings</div>
+                  <div id="ib-demo" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">All synced</div>
+                  <div id="ib-total" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[9rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Last sync</div>
+                  <div id="ib-synced" class="text-base font-bold text-[#133b49] mt-1">&mdash;</div>
+                </div>
+              </div>
+              <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 flex-1 min-w-[20rem] text-xs text-base-content/60 leading-relaxed">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50 mb-1.5">Where this comes from</div>
+                Cole's Gmail, read once a day at 06:00 by the n8n workflow <span class="font-mono">[Inbox] [Sync] Cole Gmail</span>.
+                Subject, sender and the first line are kept; the email itself stays in Gmail.
+                Tag an email in Gmail and it shows up here under that label after the next sync.
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <input id="ib-search" type="search" placeholder="Search subject, sender or snippet&hellip;"
+                     class="input input-bordered input-sm w-80" aria-label="Search the inbox">
+              <!-- Options are built from the labels actually on the rows, so it never offers a
+                   label with nothing behind it. -->
+              <select id="ib-label" class="select select-bordered select-sm" aria-label="Filter by Gmail label">
+                <option value="">Any label</option>
+              </select>
+              <label class="label cursor-pointer gap-2 text-sm"><input id="ib-all" type="checkbox" class="checkbox checkbox-xs"> <span>Show everything, not just demo bookings</span></label>
+              <span id="ib-count" class="text-xs text-base-content/60"></span>
+              <button id="ib-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-380px)]">
+                <table class="q-table w-full">
+                  <thead>
+                    <tr><th>Received</th><th>From</th><th>Subject</th><th>Labels</th><th>Tagged</th></tr>
+                  </thead>
+                  <tbody id="ib-rows"><tr><td colspan="5" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr></tbody>
+                </table>
+              </div>
+              <div class="flex items-center gap-2 px-4 py-2.5 border-t border-base-300 text-xs">
+                <button id="ib-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
+                <span id="ib-page" class="text-base-content/60"></span>
+                <button id="ib-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
+              </div>
+            </div>
+          </div>
+
           <div data-view id="view-replies" class="hidden space-y-3">
             <div class="flex items-center gap-3 flex-wrap">
               <div role="tablist" class="tabs tabs-boxed bg-base-200/60">
@@ -1714,6 +1815,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    come back to the 2-way number or to Main, and whose mailbox is it in.
                    The options are rebuilt per channel from the rows themselves, so it can never
                    offer a number with nothing behind it. -->
+              <!-- STRATEGY (AI-1075). A reply's strategy is that of the blast it answers, so
+                   this filters on the campaign behind each row rather than on the row itself. -->
+              <div id="rep-strategy"></div>
               <select aria-label="Filter replies by destination" id="rep-dest" class="select select-bordered select-sm w-52">
                 <option value="">Replied to: any</option>
               </select>
@@ -2017,6 +2121,51 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                page or a server-side count, and the search asks the database rather than
                filtering something already downloaded. Ask for it all and the browser dies and
                PostgREST caps you at 1,000 rows anyway, silently, which is the worse half.       -->
+          <!-- ===== CALL FORWARDING (AI-1077) ===== -->
+          <div data-view id="view-forwarding" class="hidden space-y-4">
+            <div>
+              <h2 class="font-extrabold text-[#133b49]">Call forwarding</h2>
+              <p class="text-sm text-base-content/60 mt-1 max-w-3xl leading-relaxed">
+                People who get a blast sometimes ring the number back. Without forwarding those calls
+                reach nobody &mdash; there is no voicemail &mdash; so the callback is lost. Point them at
+                one phone someone answers.
+                <span class="block mt-1.5">This changes <b>calls only</b>. The texting setup on each number is shown
+                below so you can see it is left alone.</span>
+              </p>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl p-4 space-y-3">
+              <div class="flex items-end gap-3 flex-wrap">
+                <label class="text-sm">
+                  <span class="block font-semibold text-[#133b49] mb-1">Forward to</span>
+                  <input id="fw-dest" type="tel" class="input input-bordered input-sm w-56" placeholder="+15551234567" />
+                </label>
+                <button id="fw-apply" class="btn btn-sm btn-warning text-white hover:text-white" disabled>Forward selected</button>
+                <button id="fw-off" class="btn btn-sm btn-ghost" disabled>Turn forwarding off</button>
+                <button id="fw-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+              </div>
+              <div id="fw-status" class="text-xs text-base-content/60 leading-relaxed">
+                Nothing is dialled from this page &mdash; it only sets where a call would go.
+              </div>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-420px)]">
+                <table class="q-table w-full">
+                  <thead class="sticky top-0 z-10">
+                    <tr class="border-b border-base-300 bg-base-100">
+                      <th class="w-8"><input type="checkbox" id="fw-all" class="checkbox checkbox-xs align-middle" aria-label="Select every changeable number"></th>
+                      <th>Number</th><th>Name</th><th>Calls go to</th>
+                      <!-- Shown to prove, not to edit: this page never writes a messaging setting. -->
+                      <th>Texting (unchanged)</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="fw-rows"><tr><td colspan="6" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
           <div data-view id="view-dnc" class="hidden space-y-3">
 
             <div class="flex items-start gap-3 flex-wrap">
@@ -2911,6 +3060,117 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           aria-label="Open in HubSpot">`
       + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>`;
+    // ── STRATEGY (AI-1075) ──────────────────────────────────────────────────────────────────
+    //
+    // What KIND of offer something is. Every blast the system has ever sent is a Ticket Blast;
+    // Youth Events (AI-1076) is the second, and Josh's test of this design is whether the third,
+    // fourth and fifth are then cheap. So the list is READ FROM THE DATABASE, never hard-coded
+    // here - offer_strategies is a table precisely so a new strategy costs a row and not a
+    // deploy. Hard-coding the options here would hand that cost straight back.
+    const STRATEGIES = { list: [], byCode: {}, loaded: false };
+
+    async function loadStrategies(){
+      if(STRATEGIES.loaded || !sb) return STRATEGIES;
+      const { data } = await sb.from('offer_strategies')
+        .select('code,label,offer_type,active,sort_order')
+        .eq('active', true)
+        .order('sort_order', { ascending: true });
+      STRATEGIES.list = data || [];
+      STRATEGIES.byCode = Object.fromEntries(STRATEGIES.list.map(x => [x.code, x]));
+      STRATEGIES.loaded = true;
+      return STRATEGIES;
+    }
+
+    // The filter itself. ONE implementation mounted on four tabs, because four hand-rolled
+    // multi-selects would drift apart the moment one of them gained a fix.
+    //
+    // NOTHING TICKED MEANS EVERYTHING, the convention every other filter on these tabs already
+    // uses (an empty state dropdown is "All states"). The alternative - nothing ticked shows
+    // nothing - turns the first click into an empty screen and reads as a broken page.
+    //
+    // A <details> rather than a JS popup so Esc and Tab work without being written, matching the
+    // Admin menu from AI-1074.
+    function mountStrategyFilter(hostId, onChange){
+      const host = document.getElementById(hostId);
+      if(!host) return { selected: () => [], refresh: () => {} };
+      const picked = new Set();
+
+      function paint(){
+        const n = picked.size;
+        const label = n === 0 ? 'All strategies'
+                    : n === 1 ? ((STRATEGIES.byCode[[...picked][0]] || {}).label || '1 strategy')
+                    : n + ' strategies';
+        const lab = host.querySelector('.strat-label');
+        if(lab) lab.textContent = label;
+        // Marked active only while it is actually narrowing something, same rule as the Cheapest
+        // sort header: a filter that always looks engaged stops meaning anything.
+        const trg = host.querySelector('.strat-trigger');
+        if(trg) trg.classList.toggle('on', n > 0);
+      }
+
+      host.innerHTML = '<details class="strat-wrap">'
+        + '<summary class="strat-trigger"><span class="strat-label">All strategies</span>'
+        + '<span class="strat-caret" aria-hidden="true">&#9662;</span></summary>'
+        + '<div class="strat-menu">'
+        + STRATEGIES.list.map(x => '<label class="strat-opt">'
+            + '<input type="checkbox" class="checkbox checkbox-xs" value="' + esc(x.code) + '">'
+            + '<span>' + esc(x.label) + '</span></label>').join('')
+        + '<button type="button" class="strat-clear">Clear</button>'
+        + '</div></details>';
+
+      host.addEventListener('change', e => {
+        const cb = e.target.closest('input[type=checkbox]');
+        if(!cb) return;
+        if(cb.checked) picked.add(cb.value); else picked.delete(cb.value);
+        paint(); onChange([...picked]);
+      });
+      const clr = host.querySelector('.strat-clear');
+      if(clr) clr.addEventListener('click', () => {
+        picked.clear();
+        host.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+        paint(); onChange([]);
+      });
+      // Same dismissal rules as the Admin menu: a menu that stays open over the page reads as
+      // broken.
+      const det = host.querySelector('details');
+      document.addEventListener('click', e => { if(det && det.open && !host.contains(e.target)) det.open = false; });
+      document.addEventListener('keydown', e => { if(e.key === 'Escape' && det && det.open) det.open = false; });
+
+      paint();
+      return {
+        selected: () => [...picked],
+        refresh: paint,
+        // Used by a tab's own "Clear" button. Does NOT call onChange: the caller is already
+        // clearing its other filters and re-rendering once, and firing here would render twice.
+        clear(){
+          picked.clear();
+          host.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+          paint();
+        },
+      };
+    }
+
+    // Replies carry no strategy of their own, and should not: email_replies already stores the
+    // campaign_id of the blast being answered, so the strategy is that blast's. Copying it onto
+    // the reply would create a second copy of one fact, free to disagree with the first.
+    //
+    // Read through get_campaign_queue() rather than campaign_queue directly, because the browser
+    // has no policy on that table - the RPC is the only way in, which is the same door the Queue
+    // tab already uses.
+    const QUEUE_STRATEGY = { map: {}, loaded: false };
+    async function loadQueueStrategies(){
+      if(QUEUE_STRATEGY.loaded || !sb) return QUEUE_STRATEGY;
+      const { data } = await sb.rpc('get_campaign_queue');
+      (data || []).forEach(r => { if(r && r.id) QUEUE_STRATEGY.map[String(r.id)] = r.strategy || 'ticket_blasts'; });
+      QUEUE_STRATEGY.loaded = true;
+      return QUEUE_STRATEGY;
+    }
+
+    // A row with NO strategy counts as ticket_blasts: every row that predates AI-1075 is one,
+    // and treating unknown as "matches nothing" would hide the whole board behind the filter.
+    const strategyOf = r => (r && r.strategy) || 'ticket_blasts';
+    const passesStrategy = (r, picked) => !picked || !picked.length || picked.indexOf(strategyOf(r)) !== -1;
+    const offerTypeOf = r => ((STRATEGIES.byCode[strategyOf(r)] || {}).offer_type) || 'Tickets';
 
     // ===== US EASTERN, EVERYWHERE =====
     // Every fixture this app sells is North American and every send slot is set in US Eastern,
@@ -3568,8 +3828,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     function tplDay(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '—'; }
     function tplMonth(s){ const d=tplDate(s); return d ? d.toLocaleDateString('en-US',{month:'long',year:'numeric'}) : 'No date'; }
 
+    // AI-1075. Lives on tpl rather than a loose variable, like every other Templates filter.
+    let tplStratCtl = null;
     function tplVisible(){
-      const all = tpl.src === 'blast' ? tpl.blast : tpl.src === 'cole' ? tpl.cole : tpl.cole.concat(tpl.blast);
+      const all0 = tpl.src === 'blast' ? tpl.blast : tpl.src === 'cole' ? tpl.cole : tpl.cole.concat(tpl.blast);
+      const all = all0.filter(it => passesStrategy(it, tpl.strategy || []));
       const q = tpl.filter.trim().toLowerCase();
       if(!q) return all;
       return all.filter(it =>
@@ -3692,7 +3955,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       const [coleRes, blastRes] = await Promise.all([
         sb.from('message_templates')
-          .select('id,slug,name,play,variant,channel,sender,is_placeholder,subject,body,sort_order')
+          .select('id,slug,name,play,variant,channel,sender,is_placeholder,subject,body,sort_order,strategy')
           .order('sort_order', { ascending:true, nullsFirst:false }),
         sb.from('blast_templates')
           .select('id,name,email_template,created_on')
@@ -3703,10 +3966,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         key: 'cole:' + r.id, id: r.id, source:'cole', name: r.name || 'Untitled template',
         play: r.play || 'Other', variant: r.variant || '', channel: r.channel === 'sms' ? 'sms' : 'email',
         sender: r.sender || '', placeholder: !!r.is_placeholder, subject: r.subject || '', body: r.body || '',
+        strategy: r.strategy || 'ticket_blasts',
       }));
       tpl.blast = (blastRes.data || []).map(r => ({
         key: 'blast:' + r.id, id: r.id, source:'blast', name: r.name || 'Untitled template',
         channel:'email', play:'Historical', sender:'', body: r.email_template || '', created_on: r.created_on,
+        // blast_templates is a dump of CakeMail campaign reports, and every campaign in it was a
+        // ticket blast. Stated here rather than left to the strategyOf() fallback, so the reason
+        // is visible at the point the value is invented.
+        strategy: 'ticket_blasts',
       }));
       tpl.loaded = true;
       renderTplList();
@@ -3718,6 +3986,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     const tplSearch = document.getElementById('tpl-search');
     if(tplSearch) tplSearch.addEventListener('input', e => { tpl.filter = e.target.value; tpl.editing = false; renderTplList(); });
+    // AI-1075. Mounted once the strategies are known, same as the other three tabs.
+    loadStrategies().then(() => { tplStratCtl = mountStrategyFilter('tpl-strategy', picked => {
+      tpl.strategy = picked; tpl.editing = false; renderTplList();
+    }); });
     const tplList = document.getElementById('tpl-list');
     if(tplList) tplList.addEventListener('click', e => {
       const btn = e.target.closest('.tpl-row'); if(!btn) return;
@@ -3746,6 +4018,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(!host) return;
       const esc3 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       let chan = 'email', provider = '', dest = '', unreadOnly = false, ROWS = [];
+      let repStratF = [], repStratCtl = null;
 
       const ago = t => {
         if(!t) return '';
@@ -3828,7 +4101,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           dSel.classList.toggle('hidden', seen.length < 2);
         }
         const rows = (unreadOnly ? ROWS.filter(r => r.unread) : ROWS)
-          .filter(r => !dest || r.destination === dest);
+          .filter(r => !dest || r.destination === dest)
+          // A reply whose campaign is not in the queue any more has no strategy to read. It
+          // passes: the alternative is a reply vanishing from the inbox because of bookkeeping
+          // about the blast, and an unanswered customer is a worse outcome than a loose row.
+          .filter(r => !repStratF.length
+                    || !QUEUE_STRATEGY.map[String(r.campaign_id)]
+                    || repStratF.indexOf(QUEUE_STRATEGY.map[String(r.campaign_id)]) !== -1);
         document.querySelectorAll('[data-rtab]').forEach(b => b.classList.toggle('tab-active', b.dataset.rtab === chan));
         if(!rows.length){
           // The most specific true explanation available: unread filter first, then the chosen
@@ -3914,6 +4193,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(u) u.addEventListener('change', e => { unreadOnly = e.target.checked; render(); });
       const rl = document.getElementById('rep-reload');
       if(rl) rl.addEventListener('click', load);
+
+      // AI-1075. The queue map is needed before the filter can mean anything, so both are
+      // loaded together and the control is mounted only once they are in.
+      Promise.all([loadStrategies(), loadQueueStrategies()]).then(() => {
+        repStratCtl = mountStrategyFilter('rep-strategy', picked => { repStratF = picked; render(); });
+      });
 
       window.__loadReplies = load;
     })();
@@ -5469,8 +5754,259 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       };
     })();
 
+    // ===== CALL FORWARDING (AI-1077) =====
+    //
+    // Sets where a call to one of our sender numbers goes. It never places a call, and it never
+    // writes a messaging setting - the server route enforces both, and this page only ever asks.
+    (() => {
+      if(!document.getElementById('fw-rows')) return;
+      const el = id => document.getElementById(id);
+      let ROWS = [];
+      const picked = new Set();
+
+      const say = (html, tone) => {
+        const n = el('fw-status'); if(!n) return;
+        n.className = 'text-xs leading-relaxed ' + (tone === 'bad' ? 'text-[#c0341a]' : tone === 'good' ? 'text-[#067523]' : 'text-base-content/60');
+        n.innerHTML = html;
+      };
+      // Changeable only when the number is on this account AND nothing already answers it.
+      const editable = r => r.on_this_account && !r.locked;
+      const E164 = /^\+[1-9]\d{7,14}$/;
+
+      function paint(){
+        const any = picked.size > 0;
+        const dest = (el('fw-dest') ? el('fw-dest').value : '').trim();
+        // Forwarding needs somewhere to forward TO; turning it off does not.
+        if(el('fw-apply')) el('fw-apply').disabled = !any || !E164.test(dest);
+        if(el('fw-off'))   el('fw-off').disabled   = !any;
+        const box = el('fw-all');
+        if(box){
+          const keys = ROWS.filter(editable).map(r => r.phone_number);
+          const on = keys.filter(k => picked.has(k)).length;
+          box.checked = keys.length > 0 && on === keys.length;
+          box.indeterminate = on > 0 && on < keys.length;
+          box.disabled = keys.length === 0;
+        }
+      }
+
+      function render(){
+        const tb = el('fw-rows'); if(!tb) return;
+        if(!ROWS.length){ tb.innerHTML = '<tr><td colspan="6" class="text-center text-base-content/50 py-8">No sender numbers found.</td></tr>'; return; }
+        tb.innerHTML = ROWS.map(r => {
+          // WHY A ROW MIGHT NOT BE EDITABLE, said on the row itself. Both reasons are real and
+          // neither is the operator's fault, so neither is left to be guessed at.
+          const why = !r.on_this_account
+            ? '<span class="badge badge-sm bg-[#fdeee4] text-[#c94d07] border-[#f6cfae]" title="This number is not on the Telnyx account this app has a key for, so it cannot be read or changed from here.">other account</span>'
+            : r.locked
+              ? '<span class="badge badge-sm badge-ghost" title="Something already answers this number (' + esc(r.connection_name) + '). Forwarding would take the call before it got there, so it is not offered.">already answered</span>'
+              : '';
+          const to = r.on_this_account
+            ? (r.forwarding && r.forwards_to
+                ? '<span class="font-semibold text-[#067523]">' + esc(r.forwards_to) + '</span>'
+                : '<span class="text-base-content/40">nobody &mdash; calls are lost</span>')
+            : '<span class="text-base-content/30">&mdash;</span>';
+          const pick = editable(r)
+            ? '<input type="checkbox" class="checkbox checkbox-xs align-middle" data-fw="' + esc(r.phone_number) + '"'
+              + (picked.has(r.phone_number) ? ' checked' : '') + ' aria-label="Select ' + esc(r.phone_number) + '">'
+            : '<span class="text-base-content/30">&mdash;</span>';
+          return '<tr>'
+            + '<td>' + pick + '</td>'
+            + '<td class="font-semibold text-[#133b49] whitespace-nowrap">' + esc(r.phone_number) + '</td>'
+            + '<td class="text-base-content/70">' + esc(r.label && r.label !== r.phone_number ? r.label : '') + '</td>'
+            + '<td>' + to + '</td>'
+            + '<td class="text-xs text-base-content/50">' + esc(r.messaging_profile || '—') + '</td>'
+            + '<td>' + why + '</td>'
+            + '</tr>';
+        }).join('');
+        paint();
+      }
+
+      async function load(){
+        const tb = el('fw-rows');
+        tb.innerHTML = '<tr><td colspan="6" class="text-center text-base-content/50 py-8">Reading Telnyx&hellip;</td></tr>';
+        try {
+          const res = await fetch('/api/telnyx-forwarding', { headers: await apiHeaders() });
+          const d = await res.json().catch(() => ({}));
+          if(!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+          ROWS = d.numbers || [];
+          picked.clear();
+          render();
+          const live = ROWS.filter(r => r.forwarding).length;
+          say(live
+            ? '<b>' + live + '</b> of ' + ROWS.length + ' numbers currently forward. Nothing is dialled from this page.'
+            : 'No number forwards anywhere yet. Nothing is dialled from this page.');
+        } catch(e){
+          tb.innerHTML = '<tr><td colspan="6" class="text-center text-error py-8">' + esc(e.message || e) + '</td></tr>';
+        }
+      }
+
+      async function apply(enable){
+        const nums = [...picked];
+        if(!nums.length) return;
+        const dest = (el('fw-dest') ? el('fw-dest').value : '').trim();
+        if(el('fw-apply')) el('fw-apply').disabled = true;
+        if(el('fw-off'))   el('fw-off').disabled   = true;
+        say(enable ? 'Pointing ' + nums.length + ' number(s) at ' + esc(dest) + '&hellip;'
+                   : 'Turning forwarding off on ' + nums.length + ' number(s)&hellip;');
+        try {
+          const res = await fetch('/api/telnyx-forwarding', {
+            method: 'POST',
+            headers: await apiHeaders(),
+            body: JSON.stringify({ enable: enable, forwards_to: dest, numbers: nums }),
+          });
+          const d = await res.json().catch(() => ({}));
+          if(!res.ok) throw new Error(d.error || ('HTTP ' + res.status));
+          // Per-number outcomes, not one total: the server skips rows it will not touch, and
+          // "8 changed" alone would hide which two did not, and why.
+          const bad = (d.results || []).filter(x => !x.ok);
+          say('<b>' + d.changed + '</b> changed' + (d.skipped ? ' &middot; ' + d.skipped + ' skipped' : '')
+            + (bad.length ? '<div class="text-[#c0341a] mt-1">' + bad.map(x => esc(x.phone_number) + ': ' + esc(x.error || '')).join('<br>') + '</div>' : ''),
+            bad.length ? 'bad' : 'good');
+          await load();
+        } catch(e){
+          say(esc(e.message || e), 'bad');
+        } finally { paint(); }
+      }
+
+      el('fw-rows') && el('fw-rows').addEventListener('change', ev => {
+        const cb = ev.target.closest('[data-fw]');
+        if(!cb) return;
+        const k = cb.getAttribute('data-fw');
+        if(cb.checked) picked.add(k); else picked.delete(k);
+        paint();
+      });
+      el('fw-all') && el('fw-all').addEventListener('change', ev => {
+        ROWS.filter(editable).forEach(r => { if(ev.target.checked) picked.add(r.phone_number); else picked.delete(r.phone_number); });
+        render();
+      });
+      el('fw-dest')   && el('fw-dest').addEventListener('input', paint);
+      el('fw-apply')  && el('fw-apply').addEventListener('click', () => apply(true));
+      el('fw-off')    && el('fw-off').addEventListener('click', () => apply(false));
+      el('fw-reload') && el('fw-reload').addEventListener('click', load);
+
+      // Loaded on first view: this makes ~50 Telnyx calls, which is not work to do for somebody
+      // who opened the app to look at the Queue.
+      let once = false;
+      window.__loadForwarding = () => { if(once) return; once = true; load(); };
+    })();
+
+    // ===== INBOX (AI-1102) =====
+    //
+    // Reads public.inbox_emails with the anon key (select policy, migration 094). Nothing here
+    // writes: the sync owns the rows and Gmail owns the mail. Paged server-side like the DNC
+    // tab, because a year of a busy mailbox is thousands of rows.
+    (() => {
+      if(!document.getElementById('ib-rows')) return;
+      const el = id => document.getElementById(id);
+      const SOURCE = 'gmail:cole';
+      const PAGE = 50;
+      let page = 0, term = '', label = '', showAll = false, lastCount = 0;
+
+      const when = iso => {
+        if(!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      };
+      const ago = iso => {
+        if(!iso) return 'never';
+        const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+        return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m/60) + ' h ago' : Math.round(m/1440) + ' d ago';
+      };
+
+      async function loadStats(){
+        if(!sb) return;
+        const [demo, all, last] = await Promise.all([
+          sb.from('inbox_emails').select('id', { count: 'exact', head: true }).eq('source', SOURCE).eq('is_demo_booking', true),
+          sb.from('inbox_emails').select('id', { count: 'exact', head: true }).eq('source', SOURCE),
+          sb.from('inbox_emails').select('synced_at').eq('source', SOURCE).order('synced_at', { ascending: false }).limit(1),
+        ]);
+        if(el('ib-demo'))  el('ib-demo').textContent  = (demo.count ?? 0).toLocaleString();
+        if(el('ib-total')) el('ib-total').textContent = (all.count ?? 0).toLocaleString();
+        const s = last.data && last.data[0] && last.data[0].synced_at;
+        if(el('ib-synced')){ el('ib-synced').textContent = ago(s); el('ib-synced').title = s || 'The sync has not run yet'; }
+      }
+
+      // The label dropdown is built from what is on the rows - the last 500 synced - so it
+      // can never offer a label nothing carries. Gmail system labels (INBOX, UNREAD, …) are
+      // noise here and are dropped; a user's own labels are what "tag it to include it" means.
+      const SYSTEM = new Set(['INBOX','SENT','UNREAD','IMPORTANT','STARRED','CATEGORY_PERSONAL','CATEGORY_SOCIAL','CATEGORY_PROMOTIONS','CATEGORY_UPDATES','CATEGORY_FORUMS','DRAFT','SPAM','TRASH','CHAT']);
+      async function loadLabels(){
+        if(!sb) return;
+        const r = await sb.from('inbox_emails').select('labels').eq('source', SOURCE).order('received_at', { ascending: false }).limit(500);
+        const seen = new Set();
+        (r.data || []).forEach(x => (x.labels || []).forEach(l => { if(l && !SYSTEM.has(l)) seen.add(l); }));
+        const sel = el('ib-label'); if(!sel) return;
+        const keep = label;
+        sel.innerHTML = '<option value="">Any label</option>' + [...seen].sort().map(l => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join('');
+        sel.value = seen.has(keep) ? keep : '';
+        if(sel.value !== keep) label = sel.value;
+      }
+
+      async function load(){
+        const tb = el('ib-rows'); if(!tb) return;
+        if(!sb){ tb.innerHTML = '<tr><td colspan="5" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        let q = sb.from('inbox_emails')
+          .select('id,gmail_message_id,gmail_thread_id,from_email,from_name,subject,snippet,labels,received_at,is_demo_booking,classifier_reason,read_at', { count: 'exact' })
+          .eq('source', SOURCE);
+        if(!showAll) q = q.eq('is_demo_booking', true);
+        if(label) q = q.contains('labels', [label]);
+        if(term.trim()){
+          const t = term.trim().replace(/[%,()]/g, ' ');
+          q = q.or('subject.ilike.%' + t + '%,from_email.ilike.%' + t + '%,from_name.ilike.%' + t + '%,snippet.ilike.%' + t + '%');
+        }
+        const r = await q.order('received_at', { ascending: false, nullsFirst: false }).range(page * PAGE, page * PAGE + PAGE - 1);
+        if(r.error){ tb.innerHTML = '<tr><td colspan="5" class="text-center text-error py-8">' + esc(r.error.message) + '</td></tr>'; return; }
+        const rows = r.data || [];
+        lastCount = r.count || 0;
+        if(el('ib-count')) el('ib-count').textContent = lastCount ? lastCount.toLocaleString() + (showAll ? ' emails' : ' demo bookings') : '';
+        if(el('ib-page')) el('ib-page').textContent = lastCount ? ('page ' + (page + 1) + ' of ' + Math.max(1, Math.ceil(lastCount / PAGE))) : '';
+        if(el('ib-prev')) el('ib-prev').disabled = page === 0;
+        if(el('ib-next')) el('ib-next').disabled = (page + 1) * PAGE >= lastCount;
+        if(!rows.length){
+          // The most specific true reason, because "nothing here" with a filter on reads as
+          // "the sync is broken", which is a much bigger claim.
+          const why = term.trim() || label ? 'Nothing matches that filter.'
+                    : showAll ? 'Nothing has been synced yet. The sync runs daily at 06:00; its first run fills this.'
+                    : 'No demo-booking emails in what has been synced. Tick "Show everything" to see the rest.';
+          tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">' + why + '</td></tr>';
+          return;
+        }
+        tb.innerHTML = rows.map(r => {
+          const labels = (r.labels || []).filter(l => !SYSTEM.has(l));
+          const from = r.from_name && r.from_name !== r.from_email
+            ? '<div class="font-semibold text-[#133b49]">' + esc(r.from_name) + '</div><div class="text-xs text-base-content/50">' + esc(r.from_email || '') + '</div>'
+            : '<div class="font-semibold text-[#133b49]">' + esc(r.from_email || '') + '</div>';
+          // A link into the very message in Gmail: the tab shows the first line, Gmail has the rest.
+          const open = r.gmail_message_id ? ' <a class="text-xs text-[#1d4fd7] hover:underline" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + esc(r.gmail_message_id) + '">open in Gmail</a>' : '';
+          return '<tr>'
+            + '<td class="whitespace-nowrap text-xs text-base-content/60">' + esc(when(r.received_at)) + '</td>'
+            + '<td>' + from + '</td>'
+            + '<td><div class="font-semibold text-[#133b49]">' + esc(r.subject || '(no subject)') + open + '</div><div class="text-xs text-base-content/60 max-w-[52ch] truncate" title="' + esc(r.snippet || '') + '">' + esc(r.snippet || '') + '</div></td>'
+            + '<td>' + (labels.length ? labels.map(l => '<span class="badge badge-sm badge-ghost mr-1">' + esc(l) + '</span>').join('') : '<span class="text-base-content/30">&mdash;</span>') + '</td>'
+            + '<td>' + (r.is_demo_booking
+                ? '<span class="badge badge-sm bg-[#eaf5ee] text-[#067523] border-[#cfe9d8]" title="' + esc(r.classifier_reason || '') + '">demo booking</span>'
+                : '<span class="badge badge-sm badge-ghost" title="' + esc(r.classifier_reason || '') + '">other</span>') + '</td>'
+            + '</tr>';
+        }).join('');
+      }
+
+      let t = null;
+      el('ib-search') && el('ib-search').addEventListener('input', e => { term = e.target.value; clearTimeout(t); t = setTimeout(() => { page = 0; load(); }, 300); });
+      el('ib-label')  && el('ib-label').addEventListener('change', e => { label = e.target.value; page = 0; load(); });
+      el('ib-all')    && el('ib-all').addEventListener('change', e => { showAll = !!e.target.checked; page = 0; load(); });
+      el('ib-prev')   && el('ib-prev').addEventListener('click', () => { if(page > 0){ page--; load(); } });
+      el('ib-next')   && el('ib-next').addEventListener('click', () => { page++; load(); });
+      el('ib-reload') && el('ib-reload').addEventListener('click', () => { loadStats(); loadLabels(); load(); });
+
+      // Loaded on first view, like the other data tabs.
+      let once = false;
+      window.__loadInbox = () => { if(once) return; once = true; loadStats(); loadLabels().then(load); };
+    })();
+
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', contacts:'view-contacts',
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates',
+      history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc',
+      contacts:'view-contacts', forwarding:'view-forwarding', inbox:'view-inbox',
       // Both catalogs render into one view; the tab decides which config it opens with.
       'catalog-games':'view-catalog', 'catalog-venues':'view-catalog' };
     function showTab(tab){
@@ -5491,6 +6027,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
       if(tab === 'contacts' && window.__loadContacts) window.__loadContacts();
       if(tab.startsWith('catalog-') && window.__openCatalog) window.__openCatalog(tab.slice(8));
+      if(tab === 'forwarding' && window.__loadForwarding) window.__loadForwarding();
+      if(tab === 'inbox' && window.__loadInbox) window.__loadInbox();
       // AI-1074. A tab inside Admin lights the Admin trigger instead: the row must still say
       // where you are when the page you are on is not one of the three visible tabs.
       const aw = document.getElementById('admin-menu');
@@ -7124,6 +7662,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // be worse than the three clicks it replaces.
       let lastItems = [];
       let ROWS = [], REGIONS = [], filter = '', sportF = '', leagueF = '', stateF = '', windowF = '', priceF = '', segF = '';
+      // AI-1075. Empty = every strategy, the same convention as every other filter here.
+      let stratF = [];
       // AUDIENCE SPORT (migration 080). '' = everyone, '__off' = everyone whose sport is NOT the
       // game's, or a specific sport. SPORT_REACH is (code|segment|sport) -> {phone,email}, read
       // once; false when migration 080 is not applied, and every use guards on that so the tab
@@ -7166,6 +7706,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(leagueF && (e.league||'') !== leagueF) return false;
           if(stateF  && (e.state_code||'') !== stateF) return false;
           if(segF    && (e.segment||'Other') !== segF) return false;
+          if(!passesStrategy(e, stratF)) return false;
           if(winCut  && (e.event_date||'') > winCut) return false;        // within the upcoming window
           // Both ends are plain YYYY-MM-DD, same as event_date, so a string compare is the whole
           // comparison — no parsing and no timezone to get wrong.
@@ -7276,6 +7817,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               ? '<span class="text-[#067523] font-bold" title="Already in the queue for this segment">&#10003;</span>'
               : `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-pick="${esc(pk)}" ${picked.has(pk)?'checked':''} aria-label="Select this offer">`}</td>
           <td><div class="font-bold text-[#133b49] whitespace-nowrap">${esc(evTitle(e))}${sendTag}${isToday?'<span class="today-warn" title="This game is TODAY — a blast queued now reaches people with almost no time to act on the offer.">&#9888; today</span>':''}</div><div class="text-xs ${isToday?'text-[#c94d07] font-semibold':'text-base-content/50'}">${esc(shortDate(e.event_date))}${rescanBtn(e)}</div></td>
+          <td><span class="type-pill">${esc(offerTypeOf(e))}</span></td>
           <td>${e.ticket_price!=null?`${window.__priceLink ? window.__priceLink(e) : `<span class="font-semibold text-[#133b49]">$${fmt(e.ticket_price)}</span>`}`+`${window.__staleTag?.(e)||''}`+`${window.__priceManualBadge?.(e)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             // A game with no price is the one MOST worth an edit, not the least: price-refresh
             // drops every price whose listing link the model failed to return (~40% of what it
@@ -8106,7 +8648,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const d = el('cbs-date-clear'); if(d) d.classList.toggle('hidden', !(dateFromF || dateToF));
         const b = el('cbs-clear');
         if(b) b.classList.toggle('hidden',
-          !(filter || sportF || leagueF || stateF || windowF || dateFromF || dateToF || priceF || segF));
+          !(filter || sportF || leagueF || stateF || windowF || dateFromF || dateToF || priceF || segF
+            || stratF.length));
       };
       el('cbs-search').addEventListener('input', e => { filter = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-sport')?.addEventListener('change', e => { sportF = e.target.value; page = 1; cbsClears(); render(); });
@@ -8123,10 +8666,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; cbsClears(); render(); });
+      // AI-1075. Mounted after the strategies are loaded, because the control renders one
+      // checkbox per strategy and an empty menu would be indistinguishable from a broken one.
+      let stratCtl = null;
+      loadStrategies().then(() => { stratCtl = mountStrategyFilter('cbs-strategy', picked => {
+        stratF = picked; page = 1; cbsClears(); render();
+      }); });
       el('cbs-clear')?.addEventListener('click', () => {
         filter = sportF = leagueF = stateF = windowF = dateFromF = dateToF = priceF = segF = '';
         ['cbs-search','cbs-sport','cbs-league','cbs-state','cbs-window','cbs-date-from','cbs-date-to','cbs-price','cbs-segment']
           .forEach(id => { const e = el(id); if(e) e.value = ''; });
+        stratF = []; if(stratCtl) stratCtl.clear();
         page = 1; cbsClears(); render();
       });
       // Click cycles cheapest-first, most-expensive-first, then back to the default event order.
@@ -10015,6 +10565,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
       // may be blank. They replace the old single-day `dayF`.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
+      // AI-1075. Reads get_campaign_queue()'s new strategy column (migration 091).
+      let qStratF = [], qStratCtl = null;
       // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
       //
       // WHY THIS ONE IS DIFFERENT. Every other filter answers "what am I looking for right now",
@@ -10792,6 +11344,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // fixed tally that disagrees with the rows on screen.
       function matchesRest(r){
         if(segF    && (r.segment||'') !== segF)   return false;
+        if(!passesStrategy(r, qStratF)) return false;
         if(sportF  && (r.sport||'')  !== sportF)  return false;
         if(leagueF && String(r.league||'').toLowerCase() !== leagueF) return false;
         if(stateF  && (r.state_code||'') !== stateF) return false;
@@ -11778,6 +12331,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('q-clear')?.addEventListener('click', clearQueueFilters);
       el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; syncDateClear(); render(); });
+      loadStrategies().then(() => { qStratCtl = mountStrategyFilter('q-strategy', picked => {
+        qStratF = picked; page = 1; syncDateClear(); render();
+      }); });
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
@@ -11812,12 +12368,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // button would be permanently visible with nothing to clear.
         if(all) all.classList.toggle('hidden',
           !(qFilter || statusF || segF || sportF || leagueF || stateF || chanF || dateFrom || dateTo
-            || targetedF !== TARGETED_DEFAULT));
+            || qStratF.length || targetedF !== TARGETED_DEFAULT));
       }
       // Everything at once, including the search box. The per-filter dropdowns each go back to
       // their "All …" option rather than being emptied of options.
       function clearQueueFilters(){
         qFilter = statusF = segF = sportF = leagueF = stateF = chanF = dateFrom = dateTo = '';
+        qStratF = []; if(qStratCtl) qStratCtl.clear();
         ['q-search','q-status','q-segment','q-sport','q-league','q-state','q-channel','q-date-from','q-date-to']
           .forEach(id => { const e = el(id); if(e) e.value = ''; });
         // BACK TO THE DEFAULT, NOT TO OFF. Clear means "stop narrowing my search", and turning the

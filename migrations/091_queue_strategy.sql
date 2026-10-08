@@ -1,0 +1,110 @@
+-- 091: return strategy from get_campaign_queue(), so the Queue can be filtered by it (AI-1075).
+--
+-- WHY A MIGRATION AT ALL. 090 put a strategy column on campaign_queue, but the browser cannot
+-- see it: campaign_queue has no RLS policy, deliberately, and the Queue tab reads it only through
+-- this SECURITY DEFINER function. A column the function does not return does not exist as far as
+-- the UI is concerned.
+--
+-- WHY DROP AND RECREATE. Postgres will not let CREATE OR REPLACE change a function's return
+-- type, and adding a column to RETURNS TABLE is a return-type change. There is no way round it.
+--
+-- ⚠️ THIS FUNCTION HAS BEEN BROKEN THIS EXACT WAY BEFORE. Its own body carries the scar: 058
+-- dropped and recreated it and silently left trigger_instructions off the new signature, so the
+-- value went on being written to the table and simply stopped being readable, until 071 put it
+-- back. The body below is therefore the live definition copied verbatim, with two additions and
+-- nothing else — `strategy text` at the end of the signature, and `q.strategy` as the last
+-- selected column. Nothing is reordered: the UI reads these by name, but PostgREST builds that
+-- mapping from position, and reordering is how the 058 class of bug happens.
+--
+-- GRANTS ARE RESTATED BELOW. A drop takes the function's ACL with it. The live grants before
+-- this migration were EXECUTE to anon, authenticated, service_role and readonly_preview, and
+-- those four are re-granted explicitly rather than left to the PUBLIC default — the UI's anon
+-- key reads the Queue through this function, so a missed grant is an empty Queue tab.
+
+drop function if exists public.get_campaign_queue();
+
+create function public.get_campaign_queue()
+returns table(
+  id uuid, title text, state_code text, state_name text, event_id uuid,
+  email boolean, sms boolean, phone_count integer, sms_count integer, ticket_price numeric,
+  email_copy text, sms_copy text, scheduled_for timestamp with time zone, status text,
+  confirmed_at timestamp with time zone, snooze_count integer, sent_at timestamp with time zone,
+  is_placeholder boolean, created_at timestamp with time zone, email_from text, sms_from text,
+  email_count integer, team text, opponent text, event_date date, league text, sport text,
+  venue text, market_key text, country text, ticket_url text, email_subject text,
+  archived_at timestamp with time zone, segment text, rejected_at timestamp with time zone,
+  reject_note text, price_source text, priced_at timestamp with time zone, price_seats smallint,
+  price_currency text, segment_email_count integer, segment_phone_count integer,
+  send_failures text, trigger_instructions text,
+  -- NEW, and last on purpose. Appending cannot shift the position of any existing column.
+  strategy text
+)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select
+    q.id, q.title, q.state_code, q.state_name, q.event_id,
+    q.email, q.sms,
+    case when q.status in ('sent','partial') then q.phone_count
+         else coalesce(mc.phone_count::int, q.phone_count) end as phone_count,
+    case when q.status in ('sent','partial') then q.sms_count
+         else coalesce(mc.phone_count::int, q.sms_count) end   as sms_count,
+    coalesce(q.ticket_price, em.best_price) as ticket_price,
+    q.email_copy, q.sms_copy, q.scheduled_for, q.status, q.confirmed_at,
+    q.snooze_count, q.sent_at, q.is_placeholder, q.created_at,
+    q.email_from, q.sms_from,
+    case when q.status in ('sent','partial') then q.email_count
+         else coalesce(mc.email_count::int, q.email_count) end as email_count,
+    coalesce(em.team_full, initcap(nullif(btrim(q.team), '')), q.team)      as team,
+    coalesce(initcap(nullif(btrim(em.opponent), '')), q.opponent)           as opponent,
+    em.event_date,
+    upper(em.league) as league,
+    case lower(em.league)
+      when 'mlb' then 'Baseball'
+      when 'nba' then 'Basketball'
+      when 'nhl' then 'Ice Hockey'
+      when 'nfl' then 'Football'
+      -- CFB is football played in a different competition, so it shares the SPORT and is
+      -- separated by LEAGUE — which is how nhl/mlb/nfl already work. Without this branch the
+      -- CASE falls through to initcap(league) and the Sport filter grows a bogus "Cfb"
+      -- sitting next to "Football", splitting one sport across two filter options.
+      when 'cfb' then 'Football'
+      -- WNBA is its own league sharing the sport, exactly as CFB does with the NFL. Without
+      -- this the CASE falls through to initcap(league) and the Sport filter gains a "Wnba"
+      -- option beside "Basketball", splitting one sport in two.
+      when 'wnba' then 'Basketball'
+      else initcap(em.league)
+    end as sport,
+    em.venue,
+    em.market_code as market_key,
+    gr.country,
+    em.price_url as ticket_url,
+    q.email_subject,
+    q.archived_at,
+    q.segment,
+    q.rejected_at,
+    q.reject_note,
+    em.price_source,
+    em.priced_at,
+    em.price_seats,
+    em.price_currency,
+    case when q.status in ('sent','partial') then q.email_count else msc.email_count::int end as segment_email_count,
+    case when q.status in ('sent','partial') then q.phone_count else msc.phone_count::int end as segment_phone_count,
+    q.send_failures,
+    -- Restored here. 058 predates 071 and its drop+recreate took this column off the
+    -- function while leaving it on the table, so the value was still being written and
+    -- simply stopped being readable.
+    q.trigger_instructions,
+    q.strategy
+  from public.campaign_queue q
+  left join public.events_master em on em.id = q.event_id
+  left join public.market_counts mc on mc.code = q.state_code
+  left join public.market_segment_counts msc
+         on msc.code = q.state_code and msc.segment = q.segment
+  left join public.geo_region gr    on gr.code = q.state_code
+  order by q.scheduled_for asc, q.created_at asc;
+$function$;
+
+grant execute on function public.get_campaign_queue() to anon, authenticated, service_role, readonly_preview;
