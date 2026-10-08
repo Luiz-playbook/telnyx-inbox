@@ -13296,14 +13296,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // was raised about. Capped so a miscounted `remaining` cannot spin forever.
       async function syncCakemail(onProgress){
         let inserted = 0, updated = 0, unmapped = [], pass = 0;
+        // Report failures accumulate across passes: a broken token fails every campaign on its
+        // account, and the batch that happens to be last must not be the only one that counts.
+        let reportErrors = [], reportErrorsTotal = 0;
         for (;;) {
           const d = await post('/api/cakemail-sync');
           pass++;
           inserted += Number(d.inserted || 0);
           updated  += Number(d.updated  || 0);
           unmapped = d.unmapped_lists || unmapped;
+          if(Array.isArray(d.report_errors) && d.report_errors.length){
+            reportErrors = reportErrors.concat(d.report_errors);
+            reportErrorsTotal += Number(d.report_errors_total || d.report_errors.length);
+          }
           if(onProgress) onProgress(pass, d.remaining || 0);
-          if(!d.remaining || pass >= 12) return { inserted, updated, unmapped, remaining: d.remaining || 0 };
+          if(!d.remaining || pass >= 12) return { inserted, updated, unmapped, reportErrors, reportErrorsTotal, remaining: d.remaining || 0 };
         }
       }
 
@@ -13343,6 +13350,27 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             ? `CakeMail: ${v.inserted} new${v.updated ? `, ${v.updated} updated` : ''}`
             : 'CakeMail: nothing new');
           if(v.remaining) errs.push(`${v.remaining} CakeMail campaigns still unfetched — press Sync now again to finish.`);
+          // NAME THE LISTS, do not just count them. The sync has always returned
+          // unmapped_lists and this code has always thrown it away, so the standing readout
+          // could say "21 on lists not bridged to a market" with no way to learn WHICH — which
+          // is the entire difference between a 10-second fix and a gap nobody ever closes.
+          // Since the accounts are not exclusive to this app, people name lists by hand and new
+          // unknowns keep arriving; this is the recurring chore made visible.
+          //
+          // report_errors is separate and worse: it means the sync ran, looked healthy and
+          // stored nothing useful because a token could not read /reports. Never silent.
+          if(Array.isArray(v.reportErrors) && v.reportErrors.length){
+            const first = v.reportErrors[0] || {};
+            errs.push(`${v.reportErrorsTotal || v.reportErrors.length} campaign reports failed `
+              + `(account ${first.account_id || '?'}: ${first.msg || 'unknown error'}) — stats were NOT stored. `
+              + `Check that account's CakeMail token has the reports scope.`);
+          }
+          if(Array.isArray(v.unmapped) && v.unmapped.length){
+            const names = v.unmapped.slice(0, 6).map(u => u.list_name).filter(Boolean);
+            const more = v.unmapped.length - names.length;
+            parts.push(`${v.unmapped.length} list${v.unmapped.length === 1 ? '' : 's'} not mapped to a market: `
+              + names.join(', ') + (more > 0 ? ` +${more} more` : ''));
+          }
         } else errs.push('CakeMail sync failed: ' + ((cm.reason && cm.reason.message) || cm.reason));
 
         if(sm.status === 'fulfilled'){
