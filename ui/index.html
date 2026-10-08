@@ -12639,6 +12639,143 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
       // The old name, kept so the on-demand lookup path reads the same as the render path.
       const dealLine = recordPanel;
+      // THE REPORTS TAB — CakeMail's per-campaign report, rebuilt from blast_templates.
+      //
+      // Nothing here calls CakeMail. Every figure is a column api/cakemail-sync.js already
+      // stores, which is why this works for all 311 campaigns (including the 140 seeded ones
+      // that predate the API integration) and keeps working when a token loses a scope.
+      //
+      // The "of the last N campaigns" line beside each rate is CakeMail's own comparison:
+      // the unweighted mean of that rate across the last 10 campaigns on the same account,
+      // including this one. Derived from a real CakeMail report and verified to the second
+      // decimal — see the note in api/market-history.js. It is NOT volume-weighted, so a
+      // 2-recipient test send counts as much as a 13,599-recipient blast; that is why the
+      // production account's average open rate reads 60% when its real blasts read 51%.
+      function renderReportTab(r, host){
+        if(!host) return;
+        const rep = r.report;
+        // Only CakeMail measures any of this. Rather than hide the tab, say which channel the
+        // blast used and what that channel can and cannot answer.
+        if(!rep || !rep.available){
+          const why = r.channel === 'SMS'
+            ? 'SMS blasts carry no open, click or bounce tracking, so there is nothing to report on.'
+            : (r.source === 'gmail'
+                ? 'This blast went out through the Gmail webhook, which carries no open or click tracking.'
+                : (r.source === 'salesmsg'
+                    ? 'Salesmsg broadcasts carry no open or click tracking.'
+                    : 'No report figures were recorded for this blast.'));
+          host.innerHTML = `<div class="p-2">
+              <div class="text-sm font-semibold text-[#133b49] mb-1">Reporting coming soon</div>
+              <div class="text-sm text-base-content/60">${esc(why)}</div>
+              <div class="text-xs text-base-content/40 mt-2">Full per-campaign reporting is available on CakeMail email blasts.</div>
+            </div>`;
+          return;
+        }
+
+        const base = rep.baseline || {};
+        const pct = v => v == null || !Number.isFinite(Number(v)) ? null : Number(v);
+        const pc  = v => pct(v) == null ? '—' : pct(v).toFixed(2) + '%';
+        const n   = v => v == null ? '—' : fmt(v);
+        // The baseline caption names how many campaigns it averaged. CakeMail always says
+        // "last 10"; this account may only have five, and claiming ten would be a lie.
+        const avgLine = (label, v) => {
+          const p = pct(v);
+          if(p == null) return '';
+          const many = base.n == null ? 10 : base.n;
+          return `<div class="text-[11px] text-base-content/45 mt-1">${esc(label)} of the last
+                   ${many} campaign${many === 1 ? '' : 's'}
+                   <span class="font-semibold text-base-content/60">${p.toFixed(2)}% avg.</span></div>`;
+        };
+        // One block per rate: the headline percentage, the sentence CakeMail puts under it, the
+        // count it came from, and the baseline.
+        const block = (title, rate, sentence, countLabel, countVal, countPct, avgLabel, avgVal) => `
+          <div class="border border-base-200 rounded-lg p-3">
+            <div class="text-[10px] uppercase tracking-wide text-base-content/40">${esc(title)}</div>
+            <div class="text-2xl font-bold text-[#133b49] leading-tight">${pc(rate)}</div>
+            <div class="text-xs text-base-content/60 mt-1">${esc(sentence)}</div>
+            ${countVal == null ? '' : `<div class="text-sm mt-2">
+                <span class="font-semibold text-[#133b49]">${n(countVal)}</span>${
+                  countPct == null ? '' : ` <span class="text-base-content/45">(${pc(countPct)})</span>`}
+                <span class="text-base-content/50">${esc(countLabel)}</span>
+              </div>`}
+            ${avgLine(avgLabel, avgVal)}
+          </div>`;
+
+        const hard = rep.bounces_hard, other = rep.bounces_other, tot = rep.bounces;
+        const share = v => (tot && Number(tot) > 0 && v != null) ? ((Number(v) / Number(tot)) * 100) : null;
+
+        host.innerHTML = `
+          <div class="grid gap-2.5 md:grid-cols-2">
+            ${block('Open rate', rep.open_rate,
+                `${pc(rep.open_rate)} of your audience opened this campaign after they received it.`,
+                'people opened', rep.opens_unique, null, 'Open rate', base.open_rate)}
+            ${block('Click rate', rep.click_rate,
+                `${pc(rep.click_rate)} of your audience clicked a link in this campaign.`,
+                'people clicked', rep.clicks_unique, null, 'Click rate', base.click_rate)}
+            ${block('Clicks per unique opens', rep.clickthru_rate,
+                `${pc(rep.clickthru_rate)} of people in your audience both opened your campaign and engaged with it by clicking a link.`,
+                null, null, null, 'Clicks per unique opens', base.clickthru_rate)}
+            ${block('Unsubscribe rate', rep.unsubscribe_rate,
+                `${pc(rep.unsubscribe_rate)} of people in your audience weren't interested in receiving this campaign.`,
+                'people unsubscribed', rep.unsubscribes, rep.unsubscribe_rate,
+                'Unsubscribe rate', base.unsubscribe_rate)}
+            ${block('Spam rate', rep.spam_rate,
+                `${n(rep.spams)} ${Number(rep.spams) === 1 ? 'person' : 'people'} flagged this campaign as spam.`,
+                'people flagged as SPAM', rep.spams, rep.spam_rate, 'Spam rate', base.spam_rate)}
+            ${block('Delivery rate', rep.delivery_rate,
+                `${pc(rep.delivery_rate)} of the emails you've sent to your audience during this campaign were delivered.`,
+                'emails delivered',
+                (rep.sent != null && rep.bounces != null) ? Number(rep.sent) - Number(rep.bounces) : null,
+                rep.delivery_rate, 'Delivery rate', base.delivery_rate)}
+            ${block('Bounce rate', rep.bounce_rate,
+                `${n(rep.bounces)} of the ${n(rep.sent)} emails sent could not be delivered.`,
+                'emails bounced', rep.bounces, rep.bounce_rate, 'Bounce rate', base.bounce_rate)}
+          </div>
+
+          <div class="border border-base-200 rounded-lg p-3 mt-2.5">
+            <div class="text-[10px] uppercase tracking-wide text-base-content/40">Bounces</div>
+            <div class="text-2xl font-bold text-[#133b49] leading-tight">${n(tot)}</div>
+            <div class="flex gap-6 mt-2 text-sm">
+              <div><span class="font-semibold text-[#133b49]">${n(hard)}</span>
+                   <span class="text-base-content/45">(${share(hard) == null ? '—' : share(hard).toFixed(0) + '%'})</span>
+                   <span class="text-base-content/50">Hard bounces</span></div>
+              <div><span class="font-semibold text-[#133b49]">${n(other)}</span>
+                   <span class="text-base-content/45">(${share(other) == null ? '—' : share(other).toFixed(0) + '%'})</span>
+                   <span class="text-base-content/50">Soft bounces</span></div>
+            </div>
+            <div class="text-xs text-base-content/55 mt-3 space-y-2">
+              <div><span class="font-semibold">Hard bounces (permanently failed).</span>
+                This may indicate you've uploaded invalid email addresses or have been flagged as a
+                spammer by an ISP receiving the email. If this rate regularly exceeds CakeMail's
+                acceptable standard, your account may be suspended until their team can investigate.</div>
+              <div><span class="font-semibold">Soft bounces (temporarily failed).</span>
+                A subscriber's inbox could be full, the receiving server might be down, or the message
+                was too large. An ISP may also have blocked you temporarily over spam complaints.
+                CakeMail retries for 72 hours; addresses that keep bouncing across 4 campaigns are
+                cleaned from your contacts.</div>
+              ${/* The split CakeMail shows is hard vs everything-else, which can mislead: a
+                   "soft" half made mostly of DNS failures is a dead-domain problem, not a full
+                   inbox. The real breakdown is spelled out when it differs. */ ''}
+              ${(rep.bounces_soft != null && other != null && Number(rep.bounces_soft) !== Number(other))
+                ? `<div class="text-base-content/45">Of those ${n(other)} non-hard bounces:
+                     ${[['soft', rep.bounces_soft], ['DNS failure', rep.bounces_dns_failure],
+                        ['mailbox full', rep.bounces_full_mailbox], ['blocked', rep.bounces_mail_blocked],
+                        ['transient', rep.bounces_transient], ['address changed', rep.bounces_address_changed],
+                        ['challenge/response', rep.bounces_challenge_response]]
+                       .filter(([, v]) => v != null && Number(v) > 0)
+                       .map(([k, v]) => `${fmt(v)} ${k}`).join(', ') || 'no further breakdown recorded'}.</div>`
+                : ''}
+            </div>
+          </div>
+
+          <div class="text-[11px] text-base-content/40 mt-2.5">
+            ${n(rep.opens_total)} total opens${rep.clicks_total == null ? '' : ` · ${n(rep.clicks_total)} total clicks`}${
+              rep.active == null ? '' : ` · ${n(rep.active)} active addresses`}.
+            Rates are CakeMail's own definitions. Figures update as the sync runs, so they can
+            trail the CakeMail screen by a few opens.
+          </div>`;
+      }
+
       function engStrip(r){
         const e = r.engagement || {};
         if(!e.available) return '';
@@ -13158,6 +13295,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const isSms = r.channel === 'SMS';
         const tabs = [
           ['copy', r.channel === 'SMS' ? 'Message' : 'Copy'],
+          // ALWAYS PRESENT, even where there is nothing to report. A CakeMail blast gets the
+          // full per-campaign report; everything else gets a tab that says why it cannot have
+          // one. Hiding it would make "this channel does not measure opens" look identical to
+          // "this panel has no reporting at all" — the same reasoning the Follow up tab uses.
+          ['reports', 'Reports'],
           ...(cid2 ? [['replies', 'Replies']] : []),
           ...(cid2 || isSms ? [['recipients', 'Recipients']] : []),
           // FOLLOW UP AS A TAB, not the header button it started as (Vhea, 2026-09-17). It is
@@ -13186,7 +13328,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  </div>`
               : panelTab === 'followup'
                 ? `<div class="bh-copy"><div class="bh-copy-scroll p-3" data-followupform></div></div>`
-                : '<div class="bh-copy"><div class="bh-copy-scroll p-3" data-people></div></div>');
+                : panelTab === 'reports'
+                  ? `<div class="bh-copy"><div class="bh-copy-scroll p-3" data-report></div></div>`
+                  : '<div class="bh-copy"><div class="bh-copy-scroll p-3" data-people></div></div>');
 
         body.querySelectorAll('[data-ptab]').forEach(b => b.addEventListener('click', () => {
           panelTab = b.dataset.ptab; renderPanel();
@@ -13199,6 +13343,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(isSms) loadSmsRecipients(r, body.querySelector('[data-people]'));
           else      loadRecipientsTab(cid2, body.querySelector('[data-people]'), r);
         }
+        if(panelTab === 'reports')    renderReportTab(r, body.querySelector('[data-report]'));
         if(panelTab === 'followup')   renderFollowUpTab(r, body.querySelector('[data-followupform]'));
 
         fitPanel();

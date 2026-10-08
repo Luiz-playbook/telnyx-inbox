@@ -627,7 +627,10 @@ export default async function handler(req, res) {
       // it belonged in the tab named Market History from the start. Kept fresh by
       // api/cakemail-sync.js.
       getOrFallback(
-        'blast_templates?select=campaign_id,account_id,name,list_name,scheduled_for,sent_emails,active_emails,opens,unique_opens,clicks,unique_clicks,bounces,unsubscribes,spams,open_rate,click_rate,clickthru_rate,bounce_rate,email_template,subject,sender&order=scheduled_for.desc&limit=1000',
+        // The bounce breakdown and the remaining rates are here for the panel's Reports tab,
+        // which reproduces CakeMail's own per-campaign report. They were already synced by
+        // api/cakemail-sync.js and simply never read.
+        'blast_templates?select=campaign_id,account_id,name,list_name,scheduled_for,sent_emails,active_emails,opens,unique_opens,unopens,implied_opens,forwards,clicks,unique_clicks,bounces,bounces_hard,bounces_soft,bounces_dns_failure,bounces_full_mailbox,bounces_mail_blocked,bounces_transient,bounces_address_changed,bounces_challenge_response,unsubscribes,spams,open_rate,click_rate,clickthru_rate,bounce_rate,unsubscribe_rate,spam_rate,unopen_rate,sent_rate,email_template,subject,sender&order=scheduled_for.desc&limit=1000',
         'blast_templates?select=campaign_id,name,list_name,scheduled_for,sent_emails,open_rate,clickthru_rate,email_template&order=scheduled_for.desc&limit=1000'),
       // v_list_market, NOT market_bridge_list. The view is what v_blast_scored joins on, and it
       // resolves a list name three ways: an exact bridge row, a trailing state code
@@ -660,6 +663,60 @@ export default async function handler(req, res) {
     // to fix, not a campaign that did not happen.
     const marketOf = new Map(bridge.map(b => [b.list_name, b.market_key]));
     const acctLabel = accountLabels();
+
+    // ---- "of the last 10 campaigns" ------------------------------------------------------
+    //
+    // CakeMail's per-campaign report puts an average beside every rate ("Open rate of the last
+    // 10 campaigns — 60.49% avg."). Reproduced here rather than linked to, so the panel's
+    // Reports tab reads the same as the CakeMail screen it mirrors.
+    //
+    // THE DEFINITION IS NOT A GUESS. It was derived from a real CakeMail report (campaign
+    // 15501805, account 1761047) and every published average reproduces exactly:
+    //
+    //   open       (51.76 + 50.71 + 100 + 0 + 100) / 5 = 60.49%
+    //   unsub      (1.27 + 1.28 + 0 + 0 + 0)       / 5 =  0.51%
+    //   delivery   (90.45 + 90.46 + 100 + 100+100) / 5 = 96.18%
+    //   bounce     (9.55 + 9.54 + 0 + 0 + 0)       / 5 =  3.82%
+    //
+    // So: the UNWEIGHTED mean of each campaign's own rate, over the ten most recent campaigns
+    // ON THE SAME ACCOUNT, INCLUDING the campaign being viewed, and over however many exist
+    // when there are fewer than ten. Not weighted by volume — a 2-recipient test send counts
+    // as much as a 13,599-recipient blast, which is why those 100% test opens drag the average
+    // to 60%. That is what CakeMail shows, so it is what this shows.
+    //
+    // Delivery rate is the one figure CakeMail does not store: it is (sent - bounces) / sent,
+    // which matches the 90.45% on the report above (314 sent, 30 bounced, 284 delivered).
+    const deliveryRate = c => {
+      const sent = Number(c.sent_emails);
+      if (!Number.isFinite(sent) || sent <= 0) return null;
+      const b = Number(c.bounces) || 0;
+      return ((sent - b) / sent) * 100;
+    };
+    const RATE_KEYS = ['open_rate', 'click_rate', 'clickthru_rate', 'bounce_rate',
+                       'unsubscribe_rate', 'spam_rate'];
+    // Campaigns per account, newest first. The outer query already orders by scheduled_for
+    // desc, so pushing in order preserves it.
+    const byAccount = new Map();
+    for (const c of campaigns) {
+      const k = String(c.account_id || '');
+      if (!byAccount.has(k)) byAccount.set(k, []);
+      byAccount.get(k).push(c);
+    }
+    // campaign_id -> { open_rate: n, ..., delivery_rate: n, n: howManyCampaignsAveraged }
+    const baselineOf = new Map();
+    for (const [, list] of byAccount) {
+      for (let i = 0; i < list.length; i++) {
+        // "Last 10 including this one" = this campaign and the nine sent before it.
+        const window = list.slice(i, i + 10);
+        const avg = pick => {
+          const vals = window.map(pick).filter(v => Number.isFinite(v));
+          return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+        };
+        const out = { n: window.length, delivery_rate: avg(deliveryRate) };
+        for (const key of RATE_KEYS) out[key] = avg(c => Number(c[key]));
+        baselineOf.set(String(list[i].campaign_id), out);
+      }
+    }
 
     // One shape for both, so the table does not care where a row came from. `source` is the
     // platform, and it is shown — a Textable blast and a CakeMail one are not interchangeable
@@ -815,6 +872,48 @@ export default async function handler(req, res) {
             clickthru_rate: num(c.clickthru_rate), bounce_rate: num(c.bounce_rate),
             bounces: num(c.bounces), unsubscribes: num(c.unsubscribes), spams: num(c.spams),
             delivered: num(c.active_emails),
+          },
+
+          // THE PANEL'S REPORTS TAB — CakeMail's per-campaign report, rebuilt from data this
+          // app already holds. No CakeMail call: every figure below is a blast_templates
+          // column, so the tab works for all 311 campaigns including the 140 seeded ones, and
+          // keeps working when a token loses a scope.
+          //
+          // Rates are passed through as CakeMail defines them (open_rate against
+          // active_emails, clickthru_rate as clicks-over-opens) — see the engagement note
+          // above for why they are never recomputed here.
+          //
+          // delivery_rate and the hard/soft split are the two things CakeMail derives rather
+          // than stores. The split is hard vs EVERYTHING ELSE, which is how the CakeMail screen
+          // presents it: a 30-bounce campaign with 15 hard reads "50% hard, 50% soft" even
+          // though 14 of the other 15 were DNS failures, not classic soft bounces.
+          report: {
+            available: c.sent_emails != null || c.bounces != null || c.open_rate != null,
+            sent: num(c.sent_emails),
+            active: num(c.active_emails),
+            opens_unique: num(c.unique_opens), opens_total: num(c.opens),
+            clicks_unique: num(c.unique_clicks), clicks_total: num(c.clicks),
+            unsubscribes: num(c.unsubscribes), spams: num(c.spams),
+            bounces: num(c.bounces),
+            bounces_hard: num(c.bounces_hard),
+            // Named `_other` rather than `_soft` because that is what it is. The genuine
+            // bounces_soft column is carried separately for anyone who wants the real figure.
+            bounces_other: (() => {
+              const b = Number(c.bounces), hard = Number(c.bounces_hard);
+              return Number.isFinite(b) && Number.isFinite(hard) ? Math.max(0, b - hard) : null;
+            })(),
+            bounces_soft: num(c.bounces_soft),
+            bounces_dns_failure: num(c.bounces_dns_failure),
+            bounces_full_mailbox: num(c.bounces_full_mailbox),
+            bounces_mail_blocked: num(c.bounces_mail_blocked),
+            bounces_transient: num(c.bounces_transient),
+            bounces_address_changed: num(c.bounces_address_changed),
+            bounces_challenge_response: num(c.bounces_challenge_response),
+            open_rate: num(c.open_rate), click_rate: num(c.click_rate),
+            clickthru_rate: num(c.clickthru_rate), bounce_rate: num(c.bounce_rate),
+            unsubscribe_rate: num(c.unsubscribe_rate), spam_rate: num(c.spam_rate),
+            delivery_rate: deliveryRate(c),
+            baseline: baselineOf.get(String(c.campaign_id)) || null,
           },
         };
       }),
