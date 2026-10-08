@@ -2336,22 +2336,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   </li>
                   <li>
                     <b>It leaves the Queue one of two ways.</b>
-                    <b>Send now</b> moves the slot to this moment and fires immediately.
-                    Otherwise the <b>scheduled slot</b> fires it &mdash; and that happens
-                    <b>whether or not anyone confirmed it</b>. <b>Confirm</b> approves without
-                    changing the send time; <b>Snooze</b> pushes it out 7 days. So confirming is a
-                    review step, not a gate: to hold a blast you must reschedule, reject or
-                    archive it. Leaving it alone is not holding it.
+                    The <b>scheduled slot</b> fires it &mdash; but only once somebody has
+                    <b>confirmed</b> it. A row left pending waits however long its slot has been
+                    and gone: it is not late, it is unapproved. The other way is <b>Send now</b>,
+                    which fires one named row immediately and <i>is</i> the approval.
                   </li>
                   <li>
-                    <b>Right now, neither path is live.</b> The auto-send job is not scheduled
-                    (<code>queue-tick</code> is absent from <code>vercel.json</code>), "Send now"
-                    is switched off in the UI, and every queued row is a placeholder, which the
-                    job skips regardless. Three independent brakes &mdash; all three would have to
-                    be released for a blast to reach anyone.
-                    <span class="text-base-content/50">This paragraph is the one most likely to go
-                    stale: check <code>vercel.json</code> and <code>SEND_NOW_DISABLED</code> rather
-                    than trusting it.</span>
+                    <b>So confirming is the gate, and leaving a blast alone holds it.</b>
+                    <b>Snooze</b> moves the slot out 7 days. <b>Reject</b> and <b>Archive</b> both
+                    mean no, and they mean it on either path &mdash; a rejected or archived row is
+                    never sent, by the schedule or by a person.
+                  </li>
+                  <li>
+                    <b>The chain is live.</b> The hourly send runs, and a confirmed blast whose
+                    slot has passed goes out to real people. Demo rows are the one exception: they
+                    are marked as placeholders and are never sent automatically, whatever their
+                    status. In a non-production build, <b>Send now</b> is switched off as well
+                    &mdash; the button says so when that applies.
                   </li>
                 </ol>
 
