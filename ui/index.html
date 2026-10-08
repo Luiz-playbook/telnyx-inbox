@@ -1582,11 +1582,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <button id="cat-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
             </div>
             <div id="cat-note" class="text-xs text-base-content/50"></div>
-            <div class="overflow-auto border border-base-300 rounded-lg" style="max-height:62vh">
-              <table class="camp-table w-full min-w-[980px]">
-                <thead class="sticky top-0 z-10" id="cat-head"></thead>
-                <tbody id="cat-body"></tbody>
-              </table>
+            <!-- The card is what gives the table its background — camp-table sets none, so a
+                 bare scroll box rendered transparent against the page. Same two nested divs
+                 every other table in this app uses: card outside, scroller inside. -->
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto" style="max-height:62vh">
+                <table class="camp-table w-full min-w-[980px]">
+                  <thead class="sticky top-0 z-10" id="cat-head"></thead>
+                  <tbody id="cat-body"></tbody>
+                </table>
+              </div>
             </div>
             <!-- Pager. Both catalogs page, for different reasons: Games because 4,600 rows in one
                  scroll is unusable, Venues because consistency beats saving a click on 89. -->
