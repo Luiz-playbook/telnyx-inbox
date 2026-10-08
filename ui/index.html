@@ -380,6 +380,19 @@
     .hs-go:hover{ color:#e55608; }
     .hs-go svg{ width:12px; height:12px; }
 
+    /* The sortable Name header. Inherits every th property so it reads as the column label it
+       replaced, and only the cursor and the arrow's weight say it is pressable. */
+    .ct-sort{ font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit;
+              background:none; border:0; padding:0; cursor:pointer; display:inline-flex;
+              align-items:center; gap:4px; }
+    .ct-sort:hover{ color:#133b49; }
+    .ct-sort [data-arrow]{ font-size:12px; line-height:1; color:#c3ccd6; }
+    .ct-sort:hover [data-arrow]{ color:#8695a7; }
+    /* Sorted: the arrow stops being decoration and becomes the answer to "what order is this?",
+       so it takes the house blue and the header darkens with it. */
+    .ct-sort.on{ color:#133b49; }
+    .ct-sort.on [data-arrow]{ color:#133b49; }
+
     /* THE SELECTED SOURCE TAB, IN BRAND ORANGE. daisyUI's own `btn-active` only darkens the
        button a shade, which on a row of four joined buttons is not enough to say which one you
        are looking at — the tab and its neighbours read as the same control (Vhea, 2026-10-06).
@@ -1553,7 +1566,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <table class="q-table w-full">
                   <thead>
                     <tr>
-                      <th>Name</th><th>Email</th><th>Phone</th><th>Company</th>
+                      <!-- SORTING IS SERVER-SIDE, and the arrow is the only sign of it here. The
+                           button cycles A-Z, Z-A, then back to the default (most recently
+                           updated) — three states, because recency is a real ordering somebody
+                           chose and a two-state toggle would strand you away from it. The icon
+                           carries the current state and the title says what the NEXT click does,
+                           since an arrow alone cannot distinguish the two. -->
+                      <th><button id="ct-sort-name" class="ct-sort" type="button"
+                                  aria-label="Sort by name">Name <span data-arrow>&#8597;</span></button></th>
+                      <th>Email</th><th>Phone</th><th>Company</th>
                       <th>State</th><th>Sources</th><th>Updated</th><th class="w-28"></th>
                     </tr>
                   </thead>
@@ -3380,6 +3401,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const PAGE = 50;
       let page = 0, term = '', source = 'all', presence = '', stateF = '';
       let total = null, capped = false, seq = 0;
+      // recent | name_asc | name_desc. NOT a filter: it survives Clear, because "I was reading
+      // this A–Z" is not something you are asking to be rid of when you drop a state filter.
+      let sort = 'recent';
+      // Set false by the route when the database has not had migration 105 applied, so the
+      // header can say the sort is unavailable instead of silently snapping back.
+      let sortAvailable = true;
 
       const el = id => document.getElementById(id);
       const dash = '<span class="text-base-content/30">&mdash;</span>';
@@ -3427,11 +3454,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           ...(term.trim() ? { q: term.trim() } : {}),
           ...(presence ? { presence } : {}),
           ...(stateF ? { state: stateF } : {}),
+          ...(sort !== 'recent' ? { sort } : {}),
         });
         try {
           const j = await api(qs);
           if(mine !== seq) return;          // a newer filter is already in flight — that one wins
           total = Number(j.total || 0); capped = !!j.total_capped;
+          // THE SERVER SAYS WHAT ORDER THESE ROWS ARE IN, and the arrow follows that, not the
+          // click. Without migration 105 the route answers in the default order and sets
+          // sort_available: false; drawing the arrow from the local variable would leave it
+          // pointing at A–Z over rows that are still by recency.
+          sort = j.sort || 'recent';
+          sortAvailable = j.sort_available !== false;
+          syncSortBtn();
           render(j.rows || []);
         } catch(e){
           if(mine !== seq) return;          // and a stale FAILURE must not overwrite a live table
@@ -4113,6 +4148,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         page = 0; load();
       });
       el('ct-state')?.addEventListener('change', e => { stateF = e.target.value; page = 0; load(); });
+
+      // NAME SORT. page = 0 on every change, because keeping the page number across a reorder
+      // lands you on "page 7 of the alphabet" — a position that meant something in the old order
+      // and nothing in the new one.
+      const SORT_NEXT  = { recent: 'name_asc', name_asc: 'name_desc', name_desc: 'recent' };
+      const SORT_ARROW = { recent: '↕', name_asc: '↑', name_desc: '↓' };
+      // What the NEXT click does. The arrow shows the state; without this the two name states
+      // are a guess, and "back to most recent" is not guessable at all.
+      const SORT_TITLE = {
+        recent:    'Sorted by most recently updated — click to sort A–Z by name',
+        name_asc:  'Sorted A–Z by name — click to sort Z–A',
+        name_desc: 'Sorted Z–A by name — click to go back to most recently updated',
+      };
+      function syncSortBtn(){
+        const b = el('ct-sort-name');
+        if(!b) return;
+        b.classList.toggle('on', sort !== 'recent');
+        // Named, not generic. "Sorting is unavailable" sends someone looking for a bug; naming
+        // the migration points at the one thing that fixes it.
+        b.title = sortAvailable
+          ? (SORT_TITLE[sort] || '')
+          : 'Name sorting needs migration 105 applied to the database — showing most recently updated';
+        // aria-sort belongs on the cell, not the button — a screen reader announces it with the
+        // column header. 'none' rather than omitting it, so the column still reads as sortable.
+        b.closest('th')?.setAttribute('aria-sort',
+          sort === 'name_asc' ? 'ascending' : sort === 'name_desc' ? 'descending' : 'none');
+        const a = b.querySelector('[data-arrow]');
+        if(a) a.textContent = SORT_ARROW[sort];
+      }
+      el('ct-sort-name')?.addEventListener('click', () => {
+        sort = SORT_NEXT[sort] || 'recent';
+        syncSortBtn();
+        page = 0; load();
+      });
+      syncSortBtn();
+
       el('ct-prev')?.addEventListener('click', () => { if(page > 0){ page--; load(); } });
       el('ct-next')?.addEventListener('click', () => { page++; load(); });
       // Reload re-reads the TILES as well as the list. They are two queries over the same

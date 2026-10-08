@@ -65,6 +65,10 @@ const rpc = (url, key) => async (fn, body) => {
     const e = new Error(msg);
     e.detail = inner && inner.message ? undefined : text.slice(0, 500);
     e.status = r.status;
+    // Carried through so a caller can branch on WHICH failure this was. The contacts list tests
+    // for PGRST202 (function not in the schema cache) to fall back to the default sort order;
+    // matching on the message text alone would break the moment PostgREST rewords it.
+    if (inner && inner.code) e.code = inner.code;
     // A P0001 is a rule this code chose to enforce, i.e. the caller's input is wrong — 400, not
     // a 502 blaming the database for doing what it was told.
     if (inner && inner.code === 'P0001') e.status = 400;
@@ -387,16 +391,54 @@ async function handleGet(req, res, call, url, key) {
   }
 
   // Default: one page of the list.
+  //
+  // p_sort IS OMITTED FOR THE DEFAULT ORDER, NOT SENT AS 'recent'. The sort lives in
+  // contacts_browse (migration 105) because the ORDER BY has to run before the LIMIT — a browser
+  // sort would order the 50 rows on screen and leave the other 256,422 alone. Sending p_sort on
+  // every request would make this route depend on 105 having been applied, and a database that
+  // still has the six-argument function answers PGRST202 — the whole tab would read "function not
+  // found" rather than just the sort being unavailable. Omitting it keeps the default view working
+  // against either version, and only a name sort needs the newer one.
   const PAGE = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
   const page = Math.max(Number(q.page) || 0, 0);
-  const rows = await call('contacts_browse', {
+  // VALIDATED HERE AS WELL AS IN THE FUNCTION, so a typo answers the same way whether or not
+  // migration 105 is applied. Without this check, `sort=bogus` is indistinguishable from
+  // `sort=name_asc` on an un-migrated database — both come back as PGRST202 and both quietly
+  // fall back — and then starts returning 400 the day the migration lands.
+  const SORTS = new Set(['recent', 'name_asc', 'name_desc']);
+  const sort = String(q.sort || '').trim();
+  if (sort && !SORTS.has(sort)) {
+    res.status(400).json({ error: `unknown sort: ${sort}. Use one of ${[...SORTS].join(', ')}.` });
+    return;
+  }
+  const args = {
     p_source:   String(q.source || 'all'),
     p_q:        q.q ? String(q.q) : null,
     p_state:    q.state ? String(q.state) : null,
     p_presence: q.presence ? String(q.presence) : null,
     p_limit:    PAGE,
     p_offset:   page * PAGE,
-  });
+  };
+
+  // AND IF 105 HAS NOT BEEN APPLIED, FALL BACK RATHER THAN FAIL. A database still carrying the
+  // six-argument contacts_browse answers a p_sort request with PGRST202 — "Could not find the
+  // function public.contacts_browse(p_limit, p_offset, p_presence, p_q, p_sort, p_source,
+  // p_state) in the schema cache". Surfaced raw that lands in the table as a Postgres error
+  // where the contacts should be, over a button the operator was invited to press. So the rows
+  // come back in the default order and `sort_available: false` says why, which the tab can show
+  // as one line instead of an outage.
+  let rows, sortApplied = sort && sort !== 'recent' ? sort : null, sortAvailable = true;
+  try {
+    rows = await call('contacts_browse', sortApplied ? { ...args, p_sort: sortApplied } : args);
+  } catch (e) {
+    // Only this one error, and only when a sort was what we added. Anything else is a real
+    // failure and has to keep propagating.
+    const missing = e && (e.code === 'PGRST202' || /schema cache/i.test(String(e.message || '')));
+    if (!sortApplied || !missing) throw e;
+    rows = await call('contacts_browse', args);
+    sortApplied = null;
+    sortAvailable = false;
+  }
 
   // THE HUBSPOT RECORD ID, FETCHED SEPARATELY AND ON PURPOSE. contacts_browse does not return
   // it, and adding a column to a `returns table(...)` function means DROPping one the deployed
@@ -433,6 +475,11 @@ async function handleGet(req, res, call, url, key) {
     // So the UI can render "10,000+" rather than presenting a capped figure as exact.
     total_capped: raw > COUNT_CAP,
     page, limit: PAGE,
+    // WHICH ORDER THESE ROWS ARE ACTUALLY IN, not which one was asked for. The two differ when
+    // migration 105 is missing, and the header arrow is drawn from this rather than from what the
+    // click set — an arrow pointing at an order the rows are not in is the lie this is for.
+    sort: sortApplied || 'recent',
+    sort_available: sortAvailable,
   });
 }
 
