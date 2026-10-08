@@ -384,15 +384,12 @@
     .cat-sub button{ border:1px solid #e3e9ee; background:#fff; border-radius:7px;
                      padding:4px 12px; font-size:12px; font-weight:600; color:#5b7383; cursor:pointer; }
     .cat-sub button.active{ background:#133b49; border-color:#133b49; color:#fff; }
-    .cat-table{ width:100%; border-collapse:collapse; font-size:12px; }
-    .cat-table th{ text-align:left; font-size:10px; font-weight:800; letter-spacing:.04em;
-                   text-transform:uppercase; color:#8695a7; padding:6px 8px;
-                   border-bottom:1px solid #e9eef2; position:sticky; top:0; background:#fff; z-index:1; }
-    .cat-table td{ padding:6px 8px; border-bottom:1px solid #f2f6f8; color:#2f4858; vertical-align:top; }
-    .cat-table tbody tr:hover{ background:#fbfcfe; }
-    .cat-pill{ display:inline-block; padding:0 6px; border-radius:999px; background:#eef3f6;
+    /* The catalog tables use .camp-table, the same class every other table in this app uses —
+       a master list that looks like a different product is a master list people distrust. Only
+       the two things camp-table has no opinion about are set here. */
+    .cat-pill{ display:inline-block; padding:1px 7px; border-radius:999px; background:#eef3f6;
                color:#4a6b7c; font-size:10px; margin-right:3px; white-space:nowrap; }
-    .cat-warn{ color:#9a7b45; }
+    .cat-warn{ color:#9a7b45; font-size:10px; font-weight:700; }
     .price-pop .pp-mapwrap{ position:fixed; z-index:60; width:min(430px, 40vw); max-height:82vh;
                             display:flex; flex-direction:column; overflow:hidden;
                             background:#fff; border:1px solid #efe2cd; border-radius:9px;
@@ -876,6 +873,13 @@
                    vocabulary rather than a new one.
                    Do Not Contact moved in here from the flat list: it is the other half of the
                    same question. One list is who we can message, the other is who we must not. -->
+              <details class="admin-group" id="admin-group-audience">
+                <summary role="menuitem" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Audience<span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
+                <div class="admin-group-items">
+                  <a href="#" data-tab="contacts" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Contacts</a>
+                  <a href="#" data-tab="dnc" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Do Not Contact</a>
+                </div>
+              </details>
               <!-- CATALOG (AI-1086). The master lists the offers are generated FROM, as opposed to
                    the offers themselves. Same reasoning that put Ticket Prices under Admin: you
                    configure these, you do not action them. Games is every ticketed game we could
@@ -883,18 +887,11 @@
                    Badged Preview because the shape is still being agreed — "Preview" rather than
                    "Beta" or "Test", which imply finished-but-buggy and throwaway respectively.
                    This one is neither: it works, and it will change. -->
-              <details class="admin-group" id="admin-group-catalog" open>
+              <details class="admin-group" id="admin-group-catalog">
                 <summary role="menuitem" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>Catalog<span class="cat-badge">Preview</span><span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
                 <div class="admin-group-items">
                   <a href="#" data-tab="catalog-games" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Games</a>
                   <a href="#" data-tab="catalog-venues" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>Venues</a>
-                </div>
-              </details>
-              <details class="admin-group" id="admin-group-audience" open>
-                <summary role="menuitem" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Audience<span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
-                <div class="admin-group-items">
-                  <a href="#" data-tab="contacts" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Contacts</a>
-                  <a href="#" data-tab="dnc" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Do Not Contact</a>
                 </div>
               </details>
             </div>
@@ -1585,8 +1582,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <button id="cat-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
             </div>
             <div id="cat-note" class="text-xs text-base-content/50"></div>
-            <div class="overflow-auto border border-base-300 rounded-lg" style="max-height:66vh">
-              <table class="cat-table"><thead id="cat-head"></thead><tbody id="cat-body"></tbody></table>
+            <div class="overflow-auto border border-base-300 rounded-lg" style="max-height:62vh">
+              <table class="camp-table w-full min-w-[980px]">
+                <thead class="sticky top-0 z-10" id="cat-head"></thead>
+                <tbody id="cat-body"></tbody>
+              </table>
+            </div>
+            <!-- Pager. Both catalogs page, for different reasons: Games because 4,600 rows in one
+                 scroll is unusable, Venues because consistency beats saving a click on 89. -->
+            <div class="flex items-center justify-between gap-3" id="cat-pager">
+              <span class="text-xs text-base-content/50" id="cat-range"></span>
+              <div class="join">
+                <button class="btn btn-sm join-item" id="cat-prev">&laquo; Prev</button>
+                <button class="btn btn-sm join-item" id="cat-next">Next &raquo;</button>
+              </div>
             </div>
           </div>
 
@@ -5250,7 +5259,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             { key: 'state', label: 'All states', col: 'state_code' },
           ],
           columns: [
-            { h: 'Game', v: r => esc(`${titleCase(r.team_full || r.team || '')} v ${titleCase(r.opponent || '')}`) },
+            // "vs", not "v". The app already says "vs" elsewhere, and a lone lowercase v
+            // between two names reads as a typo rather than a separator.
+            { h: 'Game', v: r => esc(`${titleCase(r.team_full || r.team || '')} vs ${titleCase(r.opponent || '')}`) },
             { h: 'Date', v: r => esc(r.event_date || '') },
             { h: 'League', v: r => `<span class="cat-pill">${esc(String(r.league || '').toUpperCase())}</span>` },
             { h: 'Venue', v: r => esc(r.venue || '—') },
@@ -5289,7 +5300,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         },
       };
 
-      let current = 'games', rows = [], total = 0, loading = false;
+      const PAGE = 50;
+      let current = 'games', rows = [], total = 0, loading = false, page = 0;
       const el = id => document.getElementById(id);
       const conf = () => CATALOGS[current];
       const supa = () => String(cfg.SUPABASE_URL || '').replace(/\/$/, '');
@@ -5335,15 +5347,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       function paint(){
         const c = conf();
-        el('cat-head').innerHTML = '<tr>' + c.columns.map(x => `<th>${esc(x.h)}</th>`).join('') + '</tr>';
-        const list = visibleRows();
+        el('cat-head').innerHTML = '<tr class="border-b border-base-300 bg-base-100">'
+          + c.columns.map(x => `<th>${esc(x.h)}</th>`).join('') + '</tr>';
+        const all = visibleRows();
+        // Server-side catalogs arrive already paged; client-side ones are sliced here. Either
+        // way the pager below is driven from the same two numbers.
+        const list = c.serverSide ? all : all.slice(page * PAGE, page * PAGE + PAGE);
+        const count = c.serverSide ? total : all.length;
         el('cat-body').innerHTML = list.length
           ? list.map(r => '<tr>' + c.columns.map(x => `<td>${x.v(r)}</td>`).join('') + '</tr>').join('')
-          : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-6">${loading ? 'Loading…' : 'Nothing matches that.'}</td></tr>`;
-        const shown = list.length;
-        el('cat-summary').textContent = loading ? 'Loading…'
-          : (c.serverSide && total > shown) ? `${shown} of ${total} — narrow the search to see the rest`
-          : `${shown} ${shown === 1 ? 'row' : 'rows'}`;
+          : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-10">${loading ? 'Loading…' : 'Nothing matches that.'}</td></tr>`;
+        el('cat-summary').textContent = loading ? 'Loading…' : `${count} ${count === 1 ? 'row' : 'rows'}`;
+
+        const from = count ? page * PAGE + 1 : 0, to = Math.min(page * PAGE + list.length, count);
+        el('cat-range').textContent = count ? `${from}–${to} of ${count}` : '';
+        el('cat-prev').disabled = page === 0 || loading;
+        el('cat-next').disabled = loading || to >= count;
+        el('cat-pager').classList.toggle('hidden', count <= PAGE);
         el('cat-note').textContent = c.note;
         const dirty = !!el('cat-search').value.trim() || Object.values(filterState()).some(Boolean);
         el('cat-clear').classList.toggle('hidden', !dirty);
@@ -5352,13 +5372,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       async function load(){
         const c = conf();
         loading = true; paint();
-        const qs = new URLSearchParams({ select: c.select, order: c.order, limit: c.serverSide ? '300' : '2000' });
+        const qs = new URLSearchParams({ select: c.select, order: c.order });
         if (c.serverSide) {
+          // One page per request. The old flat limit of 300 silently truncated a 4,600-row table
+          // and called it the answer.
+          qs.set('offset', String(page * PAGE));
+          qs.set('limit', String(PAGE));
           const q = el('cat-search').value.trim().replace(/[(),*]/g, '');
           if (q) qs.set('or', `(${c.search.map(k => `${k}.ilike.*${q}*`).join(',')})`);
           for (const [k, v] of Object.entries(filterState())) {
             if (v) qs.set(c.filters.find(x => x.key === k).col, 'eq.' + v);
           }
+        } else {
+          qs.set('limit', '2000');            // 89 rows today; paged in the browser below
         }
         try {
           const r = await fetch(`${supa()}/rest/v1/${c.table}?${qs}`, {
@@ -5384,14 +5410,18 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       let t = null;
       function onSearch(){
         clearTimeout(t);
+        page = 0;                              // a new search starts at the first page
         if (!conf().serverSide) return paint();
         t = setTimeout(load, 300);
       }
 
       document.addEventListener('click', e => {
         const b = e.target.closest('[data-cat]');
-        if (b) { current = b.dataset.cat; el('cat-search').value = ''; renderSubTabs(); load(); return; }
+        if (b) { current = b.dataset.cat; page = 0; el('cat-search').value = ''; renderSubTabs(); load(); return; }
+        if (e.target.closest('#cat-prev')) { if (page > 0) { page--; conf().serverSide ? load() : paint(); } return; }
+        if (e.target.closest('#cat-next')) { page++; conf().serverSide ? load() : paint(); return; }
         if (e.target.closest('#cat-clear')) {
+          page = 0;
           el('cat-search').value = '';
           el('cat-filters').querySelectorAll('select').forEach(x => { x.value = ''; });
           conf().serverSide ? load() : paint();
@@ -5399,12 +5429,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       });
       document.addEventListener('input', e => { if (e.target.id === 'cat-search') onSearch(); });
       document.addEventListener('change', e => {
-        if (e.target && e.target.dataset && e.target.dataset.catfilter) conf().serverSide ? load() : paint();
+        if (e.target && e.target.dataset && e.target.dataset.catfilter) { page = 0; conf().serverSide ? load() : paint(); }
       });
 
       // Opened from the Admin menu; reloads each time so a catalog edited elsewhere is not stale.
       window.__openCatalog = which => {
         current = CATALOGS[which] ? which : 'games';
+        page = 0;
         renderSubTabs();
         load();
       };
