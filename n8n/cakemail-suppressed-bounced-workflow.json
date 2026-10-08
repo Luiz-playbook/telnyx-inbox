@@ -1,0 +1,1754 @@
+{
+  "name": "Cakemail: Suppressed and Bounced Emails (Cole + Josh)",
+  "nodes": [
+    {
+      "id": "a4b4966c-81c0-459b-8e26-4c7651f8a580",
+      "name": "Sheets: Upsert Suppressed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2320,
+        32
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ARB75ZXlZPUg5fyOkFrp4bGAEarV18U4wgTipuyngMw/edit?usp=sharing",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Suppressed",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ARB75ZXlZPUg5fyOkFrp4bGAEarV18U4wgTipuyngMw/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "dedupe_key"
+          ],
+          "schema": [
+            {
+              "id": "owner",
+              "displayName": "owner",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dedupe_key",
+              "displayName": "dedupe_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fetched_at",
+              "displayName": "fetched_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wRFd2nktkv6L4eOT",
+          "name": "Vhea"
+        }
+      }
+    },
+    {
+      "id": "1a48b22d-0ba7-40ce-9cee-b75727333c34",
+      "name": "Sheets: Upsert Bounced",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2320,
+        400
+      ],
+      "parameters": {
+        "resource": "sheet",
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1ARB75ZXlZPUg5fyOkFrp4bGAEarV18U4wgTipuyngMw/edit?usp=sharing",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Bounced",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [
+            "dedupe_key"
+          ],
+          "schema": [
+            {
+              "id": "owner",
+              "displayName": "owner",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "campaign_id",
+              "displayName": "campaign_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "campaign_name",
+              "displayName": "campaign_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "bounce_type",
+              "displayName": "bounce_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "bounce_reason",
+              "displayName": "bounce_reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "bounced_at",
+              "displayName": "bounced_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            },
+            {
+              "id": "dedupe_key",
+              "displayName": "dedupe_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fetched_at",
+              "displayName": "fetched_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "wRFd2nktkv6L4eOT",
+          "name": "Vhea"
+        }
+      }
+    },
+    {
+      "id": "404d6a83-204f-4628-b258-66c0328ed8a4",
+      "name": "Run Now",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        176
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c7343b7b-52a0-46d1-851c-b4982efa089e",
+      "name": "Weekly Monday 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 6,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "af192fd7-8e45-4dcd-b3f2-e9c3b42e9d20",
+      "name": "Fetch Suppressed [Cole]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.cakemail.dev/suppressed-emails",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "account_id",
+              "value": "1679383"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "with_count",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.data.length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 200,
+              "requestInterval": 300
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "GDmsPQKknDsFffbr",
+          "name": "Cakemail [Cole]"
+        }
+      }
+    },
+    {
+      "id": "311040dd-29f0-4d2c-84c3-f05141af88db",
+      "name": "Split Out Suppressed [Cole]",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "4f22f962-a2f3-434f-8625-e5ecb1f9a39c",
+      "name": "Shape Suppressed [Cole]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        740,
+        0
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "Cole",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "source",
+              "name": "source",
+              "value": "={{ $json.source || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "dedupe_key",
+              "name": "dedupe_key",
+              "value": "=Cole|{{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "fetched_at",
+              "name": "fetched_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "bd0c5712-3fff-4902-9711-320d796a4246",
+      "name": "Fetch Campaigns [Cole]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        300,
+        176
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.cakemail.dev/campaigns",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "account_id",
+              "value": "1679383"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "with_count",
+              "value": "true"
+            },
+            {
+              "name": "sort",
+              "value": "-scheduled_on"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.data.length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 200,
+              "requestInterval": 300
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "GDmsPQKknDsFffbr",
+          "name": "Cakemail [Cole]"
+        }
+      }
+    },
+    {
+      "id": "c36604db-0db7-4778-bd72-d11f5cda7dbe",
+      "name": "Split Out Campaigns [Cole]",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        520,
+        176
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "d883b4a2-b80c-4839-b4af-0dc91d483e52",
+      "name": "Keep Campaigns Last 30 Days [Cole]",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        740,
+        176
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "in-window",
+              "leftValue": "={{ $json.scheduled_on || 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              },
+              "rightValue": "={{ Math.floor($now.minus({ days: 30 }).toSeconds()) }}"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "ed3780d4-cc22-4df9-89f6-b3b7dfd49d2d",
+      "name": "Expand By Bounce Type [Cole]",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        176
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const BOUNCE_TYPES = [\"bounce_hb\", \"bounce_sb\", \"bounce_mb\", \"bounce_df\", \"bounce_fm\", \"bounce_tr\", \"bounce_cr\", \"bounce_ac\", \"bounce_ar\"];\nconst OWNER = \"Cole\";\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const bounceType of BOUNCE_TYPES) {\n    rows.push({\n      json: {\n        owner: OWNER,\n        campaign_id: item.json.id,\n        campaign_name: item.json.name,\n        bounce_type: bounceType\n      }\n    });\n  }\n}\nreturn rows;"
+      }
+    },
+    {
+      "id": "c027ff78-6074-44aa-be15-38dce653e1b7",
+      "name": "Fetch Bounce Logs [Cole]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1180,
+        176
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.cakemail.dev/logs/campaigns/{{ $json.campaign_id }}",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "account_id",
+              "value": "1679383"
+            },
+            {
+              "name": "filter",
+              "value": "=type=={{ $json.bounce_type }}"
+            },
+            {
+              "name": "start_time",
+              "value": "={{ Math.floor($now.minus({ days: 30 }).toSeconds()) }}"
+            },
+            {
+              "name": "end_time",
+              "value": "={{ Math.floor($now.toSeconds()) }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "with_count",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.data.length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 200,
+              "requestInterval": 300
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "GDmsPQKknDsFffbr",
+          "name": "Cakemail [Cole]"
+        }
+      }
+    },
+    {
+      "id": "52387373-e97f-43b4-b993-3b7636cdf4e7",
+      "name": "Drop Empty Log Responses [Cole]",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1400,
+        176
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-data",
+              "leftValue": "={{ $json.data ? $json.data.length : 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "d158c027-184c-4e16-8de7-523e0cca9aab",
+      "name": "Split Out Bounce Logs [Cole]",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        176
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "a7968e13-4b35-41ca-869c-f3fd4551bc34",
+      "name": "Shape Bounced [Cole]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1840,
+        176
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "Cole",
+              "type": "string"
+            },
+            {
+              "id": "campaign_id",
+              "name": "campaign_id",
+              "value": "={{ $('Expand By Bounce Type [Cole]').item.json.campaign_id }}",
+              "type": "string"
+            },
+            {
+              "id": "campaign_name",
+              "name": "campaign_name",
+              "value": "={{ $('Expand By Bounce Type [Cole]').item.json.campaign_name }}",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "bounce_type",
+              "name": "bounce_type",
+              "value": "={{ $json.type }}",
+              "type": "string"
+            },
+            {
+              "id": "bounce_reason",
+              "name": "bounce_reason",
+              "value": "={{ $json.additional_info || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "bounced_at",
+              "name": "bounced_at",
+              "value": "={{ $json.time ? new Date($json.time * 1000).toISOString() : \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "dedupe_key",
+              "name": "dedupe_key",
+              "value": "=Cole|{{ $('Expand By Bounce Type [Cole]').item.json.campaign_id }}|{{ $json.email }}|{{ $json.type }}",
+              "type": "string"
+            },
+            {
+              "id": "fetched_at",
+              "name": "fetched_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ffdc6651-c5d3-440a-a773-7d9f10774deb",
+      "name": "Fetch Suppressed [Josh]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        300,
+        544
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.cakemail.dev/suppressed-emails",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "account_id",
+              "value": "1761047"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "with_count",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.data.length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 200,
+              "requestInterval": 300
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ChQfbu9YAecCTIuW",
+          "name": "Cakemail [Josh]"
+        }
+      }
+    },
+    {
+      "id": "96efd33e-7f06-48f0-a809-8699287ef7ce",
+      "name": "Split Out Suppressed [Josh]",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        520,
+        544
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "0e86212f-e17c-42e5-bc68-1e3bd51dac3d",
+      "name": "Shape Suppressed [Josh]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        740,
+        544
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "Josh",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "source",
+              "name": "source",
+              "value": "={{ $json.source || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "dedupe_key",
+              "name": "dedupe_key",
+              "value": "=Josh|{{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "fetched_at",
+              "name": "fetched_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "41c9d0a1-b6be-4bdc-ac12-9a47328f2f4f",
+      "name": "Fetch Campaigns [Josh]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        300,
+        720
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.cakemail.dev/campaigns",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "account_id",
+              "value": "1761047"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "with_count",
+              "value": "true"
+            },
+            {
+              "name": "sort",
+              "value": "-scheduled_on"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.data.length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 200,
+              "requestInterval": 300
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ChQfbu9YAecCTIuW",
+          "name": "Cakemail [Josh]"
+        }
+      }
+    },
+    {
+      "id": "0a053c1c-dff9-43d8-89d1-8466cf68bf48",
+      "name": "Split Out Campaigns [Josh]",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        520,
+        720
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "752d6ad4-9c57-4e9b-b800-155d32f2acc4",
+      "name": "Keep Campaigns Last 30 Days [Josh]",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        740,
+        720
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "in-window",
+              "leftValue": "={{ $json.scheduled_on || 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              },
+              "rightValue": "={{ Math.floor($now.minus({ days: 30 }).toSeconds()) }}"
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "a4fbe899-0229-40c0-82b2-a140866f10b6",
+      "name": "Expand By Bounce Type [Josh]",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        720
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const BOUNCE_TYPES = [\"bounce_hb\", \"bounce_sb\", \"bounce_mb\", \"bounce_df\", \"bounce_fm\", \"bounce_tr\", \"bounce_cr\", \"bounce_ac\", \"bounce_ar\"];\nconst OWNER = \"Josh\";\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const bounceType of BOUNCE_TYPES) {\n    rows.push({\n      json: {\n        owner: OWNER,\n        campaign_id: item.json.id,\n        campaign_name: item.json.name,\n        bounce_type: bounceType\n      }\n    });\n  }\n}\nreturn rows;"
+      }
+    },
+    {
+      "id": "2e62630b-ed20-4689-b85b-39ada443b1d2",
+      "name": "Fetch Bounce Logs [Josh]",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1180,
+        720
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.cakemail.dev/logs/campaigns/{{ $json.campaign_id }}",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "account_id",
+              "value": "1761047"
+            },
+            {
+              "name": "filter",
+              "value": "=type=={{ $json.bounce_type }}"
+            },
+            {
+              "name": "start_time",
+              "value": "={{ Math.floor($now.minus({ days: 30 }).toSeconds()) }}"
+            },
+            {
+              "name": "end_time",
+              "value": "={{ Math.floor($now.toSeconds()) }}"
+            },
+            {
+              "name": "per_page",
+              "value": "50"
+            },
+            {
+              "name": "with_count",
+              "value": "true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.data.length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 200,
+              "requestInterval": 300
+            }
+          }
+        },
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth"
+      },
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "ChQfbu9YAecCTIuW",
+          "name": "Cakemail [Josh]"
+        }
+      }
+    },
+    {
+      "id": "b8225ced-1650-4881-87ea-4f6959bdd6e8",
+      "name": "Drop Empty Log Responses [Josh]",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1400,
+        720
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-data",
+              "leftValue": "={{ $json.data ? $json.data.length : 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "ac478053-a81c-4088-93ee-b0c945220bed",
+      "name": "Split Out Bounce Logs [Josh]",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        720
+      ],
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "include": "noOtherFields",
+        "options": {}
+      }
+    },
+    {
+      "id": "1f6c987a-a2e1-4330-b881-5470dc5c6775",
+      "name": "Shape Bounced [Josh]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1840,
+        720
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "Josh",
+              "type": "string"
+            },
+            {
+              "id": "campaign_id",
+              "name": "campaign_id",
+              "value": "={{ $('Expand By Bounce Type [Josh]').item.json.campaign_id }}",
+              "type": "string"
+            },
+            {
+              "id": "campaign_name",
+              "name": "campaign_name",
+              "value": "={{ $('Expand By Bounce Type [Josh]').item.json.campaign_name }}",
+              "type": "string"
+            },
+            {
+              "id": "email",
+              "name": "email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "bounce_type",
+              "name": "bounce_type",
+              "value": "={{ $json.type }}",
+              "type": "string"
+            },
+            {
+              "id": "bounce_reason",
+              "name": "bounce_reason",
+              "value": "={{ $json.additional_info || \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "bounced_at",
+              "name": "bounced_at",
+              "value": "={{ $json.time ? new Date($json.time * 1000).toISOString() : \"\" }}",
+              "type": "string"
+            },
+            {
+              "id": "dedupe_key",
+              "name": "dedupe_key",
+              "value": "=Josh|{{ $('Expand By Bounce Type [Josh]').item.json.campaign_id }}|{{ $json.email }}|{{ $json.type }}",
+              "type": "string"
+            },
+            {
+              "id": "fetched_at",
+              "name": "fetched_at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "470be1c0-c274-4cf3-b04b-b259d5c0121a",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        0
+      ],
+      "parameters": {
+        "color": 3,
+        "width": 620,
+        "height": 520,
+        "content": "## Cakemail suppressed + bounced\n\nAuth is the generic **Bearer Auth** credential per person:\n- `Cakemail [Cole]` -> account **1679383**\n- `Cakemail [Josh]` -> account **1761047**\n\nNo Postgres, no token in the file.\n\n**Before the first run:** pick the spreadsheet on the two Sheets nodes. Tabs must be named `Suppressed` and `Bounced`, each with a header row matching the column names.\n\n`account_id` is set explicitly on each fetch node. It CANNOT be read from the token: Josh PAT is parent-scoped, so `GET /accounts/self` returns the PARENT account 1594688 (\"Playbook Mail\"), not the sending sub-account. Verified live 2026-10-07. Same ids as lib/cakemail.js."
+      }
+    },
+    {
+      "id": "d675d89d-bb26-4e95-b426-9c683997d3ac",
+      "name": "How bounces are fetched",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -660,
+        560
+      ],
+      "parameters": {
+        "color": 5,
+        "width": 620,
+        "height": 480,
+        "content": "## How bounces are fetched\n\nCakemail has no account-wide bounce list, so bounces come from campaign logs.\n\nCampaigns scheduled in the last 30 days are expanded into one request per bounce type (`bounce_hb`, `bounce_sb`, `bounce_mb`, `bounce_df`, `bounce_fm`, `bounce_tr`, `bounce_cr`, `bounce_ac`, `bounce_ar`) because the API `filter` only accepts a single `type==` value.\n\nThat is 9 requests per campaign per person. To widen the window, change the Filter node AND the `start_time` query param together.\n\nThe two people's branches are independent on purpose — no Merge, so one person having no campaigns in the window cannot stall the other."
+      }
+    },
+    {
+      "id": "9912bf48-bf62-449a-af38-099f9660ec54",
+      "name": "Bounce Log Errors [Cole]",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1400,
+        376
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "no-data",
+              "leftValue": "={{ $json.data ? 1 : 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "c02c899e-4424-45d7-a1f0-d0176be92feb",
+      "name": "Report Bounce Log Error [Cole]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1620,
+        376
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "Cole",
+              "type": "string"
+            },
+            {
+              "id": "campaign_id",
+              "name": "campaign_id",
+              "value": "={{ $('Expand By Bounce Type [Cole]').item.json.campaign_id }}",
+              "type": "string"
+            },
+            {
+              "id": "bounce_type",
+              "name": "bounce_type",
+              "value": "={{ $('Expand By Bounce Type [Cole]').item.json.bounce_type }}",
+              "type": "string"
+            },
+            {
+              "id": "error",
+              "name": "error",
+              "value": "={{ $json.detail ? JSON.stringify($json.detail) : ($json.error ? JSON.stringify($json.error) : JSON.stringify($json)) }}",
+              "type": "string"
+            },
+            {
+              "id": "at",
+              "name": "at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "3be0f5c3-8efa-416a-b483-12c6c700e363",
+      "name": "Bounce Log Errors [Josh]",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        1400,
+        920
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "no-data",
+              "leftValue": "={{ $json.data ? 1 : 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "rightValue": 0
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "614b7a28-a3d4-46a2-b0af-6aae1c8d38ca",
+      "name": "Report Bounce Log Error [Josh]",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        1620,
+        920
+      ],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "owner",
+              "name": "owner",
+              "value": "Josh",
+              "type": "string"
+            },
+            {
+              "id": "campaign_id",
+              "name": "campaign_id",
+              "value": "={{ $('Expand By Bounce Type [Josh]').item.json.campaign_id }}",
+              "type": "string"
+            },
+            {
+              "id": "bounce_type",
+              "name": "bounce_type",
+              "value": "={{ $('Expand By Bounce Type [Josh]').item.json.bounce_type }}",
+              "type": "string"
+            },
+            {
+              "id": "error",
+              "name": "error",
+              "value": "={{ $json.detail ? JSON.stringify($json.detail) : ($json.error ? JSON.stringify($json.error) : JSON.stringify($json)) }}",
+              "type": "string"
+            },
+            {
+              "id": "at",
+              "name": "at",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Run Now": {
+      "main": [
+        [
+          {
+            "node": "Fetch Suppressed [Cole]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Campaigns [Cole]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Suppressed [Josh]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Campaigns [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Weekly Monday 06:00": {
+      "main": [
+        [
+          {
+            "node": "Fetch Suppressed [Cole]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Campaigns [Cole]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Suppressed [Josh]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Fetch Campaigns [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Suppressed [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Split Out Suppressed [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Suppressed [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Shape Suppressed [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Suppressed [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Upsert Suppressed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Campaigns [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Split Out Campaigns [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Campaigns [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Keep Campaigns Last 30 Days [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Campaigns Last 30 Days [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Expand By Bounce Type [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand By Bounce Type [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Fetch Bounce Logs [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Bounce Logs [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Drop Empty Log Responses [Cole]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Bounce Log Errors [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Empty Log Responses [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Split Out Bounce Logs [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Bounce Logs [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Shape Bounced [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Bounced [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Upsert Bounced",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Suppressed [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Split Out Suppressed [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Suppressed [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Shape Suppressed [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Suppressed [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Upsert Suppressed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Campaigns [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Split Out Campaigns [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Campaigns [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Keep Campaigns Last 30 Days [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Keep Campaigns Last 30 Days [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Expand By Bounce Type [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Expand By Bounce Type [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Fetch Bounce Logs [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Bounce Logs [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Drop Empty Log Responses [Josh]",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Bounce Log Errors [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Drop Empty Log Responses [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Split Out Bounce Logs [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out Bounce Logs [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Shape Bounced [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape Bounced [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Sheets: Upsert Bounced",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bounce Log Errors [Cole]": {
+      "main": [
+        [
+          {
+            "node": "Report Bounce Log Error [Cole]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Bounce Log Errors [Josh]": {
+      "main": [
+        [
+          {
+            "node": "Report Bounce Log Error [Josh]",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
+  },
+  "nodeGroups": [],
+  "tags": []
+}
