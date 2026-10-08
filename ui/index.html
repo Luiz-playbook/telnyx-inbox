@@ -436,6 +436,15 @@
     .hs-go:hover{ color:#e55608; }
     .hs-go svg{ width:12px; height:12px; }
 
+    /* "Open this person in Contacts". Same 14px footprint and same grey as .hs-go so the two
+       sit together as a pair of destinations rather than a link next to a button — it was the
+       word "Contacts" before, which outweighed the name it belonged to. Hovers to the house
+       blue, not HubSpot's orange: this one stays inside the app. */
+    .ct-go{ display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px;
+            color:#aab6c4; flex:0 0 auto; background:none; border:0; padding:0; cursor:pointer; }
+    .ct-go:hover{ color:#133b49; }
+    .ct-go svg{ width:13px; height:13px; }
+
     /* The sortable Name header. Inherits every th property so it reads as the column label it
        replaced, and only the cursor and the arrow's weight say it is pressable. */
     .ct-sort{ font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit;
@@ -4455,6 +4464,38 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       window.__loadContacts = () => {
         if(loadedOnce2) return; loadedOnce2 = true;
         loadStats(); fillStates(); load();
+      };
+
+      // JUMP HERE FROM SOMEWHERE ELSE, pre-filtered to one person. The blast panel's recipient
+      // roster can show a name, an address and a HubSpot link, but not the directory record —
+      // state, source, phone, every blast they are on. This is how it hands over.
+      //
+      // Exposed as a function rather than a URL because this app has no routing: tabs are
+      // show/hide over one document, so there is no address to link to.
+      //
+      // Written to go through the SAME path a typed search takes — set the box, run the same
+      // query — instead of a private one-off lookup. A second code path would drift from the
+      // visible filters and leave the box empty while the list was filtered, so the person
+      // could not see or clear what had been applied.
+      window.__findContact = (email) => {
+        const q = String(email || '').trim();
+        if(!q) return;
+        const box = el('ct-search');
+        if(box) box.value = q;
+        // The source tab and the "not in the send audience" checkbox would silently exclude the
+        // very person being looked up, so both are reset. Arriving at an empty result for a
+        // contact that exists is the one outcome this must not produce.
+        // stateF too: a roster is one market, so the state filter is exactly the one most
+        // likely to be set and most likely to hide the person.
+        term = q; page = 0; presence = ''; source = 'all'; stateF = '';
+        const un = el('ct-unreachable'); if(un) un.checked = false;
+        const stSel = el('ct-state'); if(stSel) stSel.value = '';
+        document.querySelectorAll('#ct-sources [data-src]').forEach(b => {
+          const on = b.dataset.src === 'all';
+          b.classList.toggle('ct-src-on', on);
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        load();
       };
     })();
 
@@ -13156,7 +13197,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           // today; the SMS one is who we actually recorded sending to. One renderer for both
           // would have to caveat itself twice over and would end up claiming neither clearly.
           if(isSms) loadSmsRecipients(r, body.querySelector('[data-people]'));
-          else      loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+          else      loadRecipientsTab(cid2, body.querySelector('[data-people]'), r);
         }
         if(panelTab === 'followup')   renderFollowUpTab(r, body.querySelector('[data-followupform]'));
 
@@ -13285,134 +13326,115 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // WHICH ROWS ARE OPEN, BY EMAIL. Held outside loadRecipients because paint() rebuilds the
       // whole list on every page: keeping this in the render would slam every expanded row shut
       // the moment you pressed Load more.
-      const RECIP_OPEN = new Set();
-
-      // WHO AN SMS BLAST ACTUALLY REACHED (AI-1101).
+      // ONE ROW RENDERER FOR BOTH ROSTERS. The Recipients tab shows either the list as it
+      // stands today (?recipients=) or who this send actually reached (?activity=), and a
+      // person must look identical in both — same name, same status, same Contacts and HubSpot
+      // controls, same CRM accordion. Two copies of this drifted within one edit the first time
+      // it was tried, so there is deliberately only one.
       //
-      // Unlike the CakeMail roster below, this is not "the list as it stands today" — it is the
-      // recipients recorded at send time in blast_recipients. (095 also read telnyx_messages;
-      // across all 11 historic SMS blasts it recovered zero rows, because that table is the
-      // two-way inbox and every blast predates its contents, so 097 removed it.)
-      //
-      // IT WILL BE EMPTY FOR OLD BLASTS, and the empty state has to say WHY. Nothing recorded
-      // SMS recipients before 2026-10-06, so "no recipients" here means "never written down",
-      // not "sent to nobody" — and those two readings differ by the entire credibility of the
-      // number next to it.
-      const SMS_RECIP_CACHE = new Map();
-      async function loadSmsRecipients(row, host){
-        if(!host || !row) return;
-        const key = String(row.id);
-        const paint = (st) => {
-          if(st.error){ host.innerHTML = `<div class="text-sm text-error p-2">${esc(st.error)}</div>`; return; }
-          const list = st.recipients || [];
-          if(!list.length){
-            host.innerHTML = `<div class="text-sm text-base-content/60 p-2 leading-relaxed">
-              No recipients were recorded for this blast.
-              <div class="text-xs text-base-content/50 mt-1">
-                Per-recipient history for SMS only began on 6 October 2026. Before that nothing
-                stored who a blast went to &mdash; the numbers were resolved at send time and
-                discarded &mdash; so this is &ldquo;never written down&rdquo;, not &ldquo;sent to
-                nobody&rdquo;. ${row.recipients != null
-                  ? `The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span> recipients.`
-                  : ''}
-              </div></div>`;
-            return;
-          }
-          // ONE SOURCE SINCE 097, so no provenance column: every row here was written by this
-          // application at send time. The incompleteness line stays, because the roster can still
-          // be shorter than the blast's own count -- a partial send, or a blast that predates the
-          // log entirely.
-          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2 leading-relaxed">
-              <div><span class="font-semibold text-[#133b49]">${list.length.toLocaleString()}</span> recipient${list.length === 1 ? '' : 's'} recorded.</div>
-              ${row.recipients != null && Number(row.recipients) !== list.length
-                ? `<div class="mt-0.5">The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span>, so this roster is incomplete.</div>`
-                : ''}
-              <div class="mt-1">Recorded at send time. &ldquo;Handed off&rdquo; means the carrier accepted the message, not that a handset received it.</div>
-            </div>
-            <div class="border border-base-300 rounded-lg overflow-auto"><table class="w-full text-xs">
-              <thead><tr>
-                <th class="text-left py-1 pr-2">Number</th><th class="text-left py-1 pr-2">Name</th>
-                <th class="text-left py-1 pr-2">Company</th><th class="text-left py-1 pr-2">Outcome</th>
-                <th class="text-left py-1">Sent</th>
-              </tr></thead>
-              <tbody>${list.map(x => `<tr class="border-t border-base-200">
-                <td class="py-1 pr-2 font-mono">${esc(x.address)}</td>
-                <td class="py-1 pr-2">${esc([x.first_name, x.last_name].filter(Boolean).join(' ')) || '<span class="text-base-content/30">&mdash;</span>'}</td>
-                <td class="py-1 pr-2">${esc(x.company) || '<span class="text-base-content/30">&mdash;</span>'}</td>
-                <td class="py-1 pr-2 text-base-content/60">${esc((x.outcome || '').replace(/_/g, ' '))}</td>
-                <td class="py-1 text-base-content/50 whitespace-nowrap">${esc(fmtDate(x.sent_at))}</td>
-              </tr>`).join('')}</tbody>
-            </table></div>`;
-        };
-
-        if(SMS_RECIP_CACHE.has(key)){ paint(SMS_RECIP_CACHE.get(key)); return; }
-        host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Loading recipients&hellip;</div>';
-        try {
-          const qs = new URLSearchParams({ sms_recipients: '1', at: row.sent_at || '' });
-          if(row.state_code) qs.set('state', row.state_code);
-          // The body narrows the Telnyx half, which would otherwise return any outbound message
-          // that merely shares a day with this blast.
-          if(row.message) qs.set('message', row.message);
-          const rr = await fetch(`/api/market-history?${qs}`, { headers: await apiHeaders() });
-          const j = await rr.json().catch(() => ({}));
-          const st = rr.ok ? j : { error: j.error || `HTTP ${rr.status}` };
-          SMS_RECIP_CACHE.set(key, st);
-          paint(st);
-        } catch(e){
-          paint({ error: String((e && e.message) || e) });
-        }
+      // `extra` is the one cell that differs: the activity list puts "opened 3x, 23 Sep" there.
+      function rosterRowHtml(c, i, extra){
+        const detail = recordPanel(c);
+        // Indexed fallback: a few list rows carry neither an address nor an id, and without
+        // it they would all share the key "" and toggle one another.
+        const key = (c.email || String(c.hubspot_id || '') || 'row-' + i).toLowerCase();
+        const open = RECIP_OPEN.has(key);
+        const name = [c.first, c.last].filter(Boolean).join(' ');
+        // Six tracks: caret, name, status, activity, Contacts, HubSpot. The detail panel spans
+        // the row underneath via rec-detail, so it is not a track of its own.
+        //
+        // CONTACTS IS AN ICON, NOT THE WORD (Vhea, 2026-10-07). As a btn-xs reading "Contacts"
+        // it was the widest thing on a row whose point is the person's name, and on a roster of
+        // 50 it repeated 50 times. A person glyph, 14px, with the sentence kept in the title —
+        // deliberately NOT the external-link arrow .hs-go uses, because that arrow means "leaves
+        // this app" and this one does not.
+        return `<div class="grid items-center gap-x-2 border-b border-base-200 py-1.5" data-crow
+             style="grid-template-columns: 16px minmax(0,1fr) auto auto auto auto">
+             <button class="rec-caret${open ? " open" : ""}" data-rtoggle="${esc(key)}" aria-expanded="${open ? "true" : "false"}" title="${open ? "Hide" : "Show"} this contact&#39;s record">&#9654;</button>
+             <span class="font-semibold text-[#133b49] truncate" title="${esc(name || c.email || '')}">${esc(name || c.email || '—')}</span>
+             <span class="text-xs ${c.status && c.status !== "active" ? "text-warning" : "text-base-content/40"}">${esc(c.status || '')}</span>
+             <span class="text-xs text-base-content/50 whitespace-nowrap">${extra || ''}</span>
+             ${c.email
+               ? `<button class="ct-go" data-ctjump="${esc(c.email)}" aria-label="Open in Contacts"
+                    title="Open this person in Contacts — their directory record, state, source and phone">`
+                 + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.4"/><path d="M5.2 20a6.8 6.8 0 0 1 13.6 0"/></svg></button>`
+               : ''}
+             ${c.hubspot_id
+               ? `<a class="text-xs link" target="_blank" rel="noopener" href="${hsLink(c.hubspot_id)}">HubSpot</a>`
+               : (c.email
+                   ? `<button class="btn btn-outline btn-xs whitespace-nowrap" data-hslookup="${esc(c.email)}" title="Look this address up in HubSpot and cache the record">Find in HubSpot</button>`
+                   : '')}
+             <div class="rec-detail${open ? "" : " hidden"}" data-rdetail="${esc(key)}">${detail}</div>
+           </div>`;
       }
 
-      async function loadRecipients(cid, host, more, row){
-        if(!cid || !host) return;
-        const st = RECIP_CACHE.get(cid) || { contacts: [], next: null, done: false, note: '' };
-        const paint = () => {
-          if(st.unavailable){ host.innerHTML = `<div class="text-sm text-base-content/60 p-2">${esc(st.unavailable)}</div>`; return; }
-          // SAY IT WITH THIS BLAST'S OWN NUMBERS. The first version explained the caveat in the
-          // abstract ("the list as it stands today, shared by every blast to this market") and
-          // had to be explained in turn. "2,684 on the list today; this blast went to 2,051" is
-          // the same fact and needs no gloss (Vhea, 2026-09-09).
-          const sent = row && row.sent_count != null ? Number(row.sent_count) : null;
-          const shown = st.contacts.length;
-          const total = st.done ? shown : null;                 // only known once fully paged
-          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2">
-                 <div><span class="font-semibold text-[#133b49]">${shown.toLocaleString()}</span> shown${st.done ? '' : ' so far'}${st.list ? ' from the &ldquo;'+esc(st.list)+'&rdquo; list' : ''}.</div>
-                 ${sent != null ? `<div class="mt-0.5">This blast went to <span class="font-semibold text-[#133b49]">${sent.toLocaleString()}</span> addresses on ${esc(fmtDate(row.sent_at))}.</div>` : ''}
-                 <div class="mt-1">Who is on the list <em>now</em> &mdash; CakeMail keeps no record of who a past send reached, and this list is reused by every blast to this market.</div>
-               </div>`
-            // A GRID, NOT A FLEX ROW. Flex let a two-word name wrap onto a second line and push
-            // the whole row out of alignment with its neighbours. Fixed tracks with truncation
-            // keep every row the same height, and the full value stays available on hover.
-            // items-START, not items-baseline. A row carrying a deal line is two lines tall, and
-            // baseline would leave the email and the link aligned to the second line instead of
-            // the first. The name column also widens, since it now holds two things.
-            // AN ACCORDION. The roster is the thing being scanned — a hundred names, who they are
-            // and whether we can reach them — so the row stays one line and the CRM detail goes
-            // underneath a caret. Two-line rows made a long list hard to read past.
-            //
-            // The caret is only drawn when there IS detail, so it doubles as the indicator: an
-            // arrow means we know something about this person, no arrow means we do not.
-            + st.contacts.map((c, i) => {
-              const detail = recordPanel(c);
-              // Indexed fallback: a few list rows carry neither an address nor an id, and without
-              // it they would all share the key "" and toggle one another.
-              const key = (c.email || String(c.hubspot_id || '') || 'row-' + i).toLowerCase();
-              const open = RECIP_OPEN.has(key);
-              return `<div class="grid items-center gap-x-2 border-b border-base-200 py-1.5" data-crow
-                 style="grid-template-columns: 16px minmax(0,1fr) auto auto">
-                 <button class="rec-caret${open ? " open" : ""}" data-rtoggle="${esc(key)}" aria-expanded="${open ? "true" : "false"}" title="${open ? "Hide" : "Show"} this contact&#39;s record">&#9654;</button>
-                 <span class="font-semibold text-[#133b49] truncate" title="${esc([c.first,c.last].filter(Boolean).join(' '))}">${esc([c.first,c.last].filter(Boolean).join(' ') || '—')}</span>
-                 <span class="text-xs ${c.status && c.status !== "active" ? "text-warning" : "text-base-content/40"}">${esc(c.status || '')}</span>
-                 ${c.hubspot_id
-                   ? `<a class="text-xs link" target="_blank" rel="noopener" href="${hsLink(c.hubspot_id)}">HubSpot</a>`
-                   : (c.email
-                       ? `<button class="btn btn-outline btn-xs whitespace-nowrap" data-hslookup="${esc(c.email)}" title="Look this address up in HubSpot and cache the record">Find in HubSpot</button>`
-                       : '')}
-                 <div class="rec-detail${open ? "" : " hidden"}" data-rdetail="${esc(key)}">${detail}</div>
-               </div>`;
-            }).join('')
-            + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
-          // A page is 100 contacts from CakeMail plus a mirror lookup for the ones without an
+      // THE RECIPIENTS FILTER. CakeMail's campaign report has these exact tabs, and the names
+      // are kept so the two screens can be read side by side.
+      //
+      // The values are the API's log types, which are NOT the UI labels: `clickthru` not
+      // `click`, and there is no `delivered` type at all (both were rejected by the live API).
+      // `bounce` is an aggregate — one request returns every bounce with its subtype on the row.
+      //
+      // 'list' is the odd one out and sits last: it is the only option that does not describe
+      // this send. It answers "who could I reach next time", which is a planning question, and
+      // it was the ONLY thing this tab used to show.
+      const RECIP_MODES = [
+        ['sent', 'Sent to'], ['open', 'Opened'], ['clickthru', 'Clicked'],
+        ['unsubscribe', 'Unsubscribed'], ['spam', 'Flagged as spam'], ['bounce', 'Bounced'],
+        ['list', 'On the list today'],
+      ];
+      // Defaults to who the send reached, not to the list. The tab is called Recipients and it
+      // is opened to ask about a blast that already went out.
+      let recipMode = 'sent';
+      const ACT_CACHE = new Map();     // `${cid}:${type}` -> { contacts, next, done }
+
+      // A SELECT, NOT A ROW OF CHIPS (Vhea, 2026-10-07). Seven options as buttons ran the full
+      // width of the panel and read as navigation — the tab bar directly above it is already a
+      // row of things to click, and two stacked rows made the panel look like it was mostly
+      // chrome. One control, same height as the Contacts tab's own filters.
+      //
+      // The two groups are kept, because the distinction is real: everything under "This send"
+      // describes the blast that went out, while "On the list today" answers a planning question
+      // about the next one. An optgroup says that without needing a sentence.
+      function recipFilterBar(){
+        const opt = ([k, label]) =>
+          `<option value="${k}"${recipMode === k ? ' selected' : ''}>${esc(label)}</option>`;
+        const sendModes = RECIP_MODES.filter(m => m[0] !== 'list');
+        const listMode  = RECIP_MODES.find(m => m[0] === 'list');
+        return `<div class="flex items-center gap-2 mb-2.5">
+            <span class="text-xs text-base-content/50">Show</span>
+            <select class="select select-bordered select-sm max-w-[16rem]" data-rmode
+                    aria-label="Which recipients to show">
+              <optgroup label="This send">${sendModes.map(opt).join('')}</optgroup>
+              <optgroup label="The list">${opt(listMode)}</optgroup>
+            </select>
+          </div>`;
+      }
+
+      // Wiring shared by both loaders, so switching filter works whichever one painted last.
+      function bindRecipFilter(host, cid, row){
+        const sel = host.querySelector('[data-rmode]');
+        if(!sel) return;
+        sel.addEventListener('change', () => {
+          if(recipMode === sel.value) return;
+          recipMode = sel.value;
+          loadRecipientsTab(cid, host, row);
+        });
+      }
+
+      // The dispatcher the panel calls. Keeps the mode decision in one place.
+      function loadRecipientsTab(cid, host, row){
+        if(recipMode === 'list') loadRecipients(cid, host, false, row);
+        else                     loadActivity(cid, host, false, row);
+      }
+
+      // ROW BINDINGS, SHARED. Both rosters render rosterRowHtml, so both need the same four
+      // behaviours wired: jump to Contacts, toggle the CRM accordion, find an address in
+      // HubSpot, and resync one that was already found. Bound per paint rather than delegated
+      // because paint() replaces the whole list.
+      function bindRosterRow(host){
+        if(!host) return;
           // id — comfortably over a second. Without this the button just sat there and the
           // obvious response was to press it again, which fetches the same page twice.
           // Toggling does NOT re-render: paint() rebuilds a hundred rows and would drop the scroll
@@ -13451,6 +13473,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               btn.disabled = false; btn.innerHTML = orig;
               btn.title = String((e && e.message) || e);
             }
+          }));
+
+          // Jump to the Contacts page, filtered to this person. showTab runs __loadContacts on
+          // first visit, so __findContact is called AFTER it — on a cold tab the module has to
+          // exist before its filters can be set, or the search box would be populated and then
+          // overwritten by the module's own first load.
+          host.querySelectorAll('[data-ctjump]').forEach(btn => btn.addEventListener('click', () => {
+            const email = btn.dataset.ctjump;
+            if(typeof showTab === 'function') showTab('contacts');
+            if(typeof window.__findContact === 'function') window.__findContact(email);
           }));
 
           host.querySelectorAll('[data-rtoggle]').forEach(btn => btn.addEventListener('click', () => {
@@ -13541,6 +13573,203 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               }
             }catch(e){ b.disabled = false; b.textContent = 'Find in HubSpot'; b.title = String((e && e.message) || e); }
           }));
+      }
+
+      // WHO THIS SEND REACHED, from /logs/campaigns via ?activity=. One row per person even
+      // though the API returns one row per event — 444 open events on this campaign are 88
+      // people, several of whom read it more than once, and the repeat is shown rather than
+      // flattened away.
+      async function loadActivity(cid, host, more, row){
+        if(!cid || !host) return;
+        const key = `${cid}:${recipMode}`;
+        const st = ACT_CACHE.get(key) || { contacts: [], next: null, done: false };
+        const label = (RECIP_MODES.find(m => m[0] === recipMode) || [,''])[1];
+
+        const paint = () => {
+          if(st.unavailable){
+            // A scope failure is reported, never shown as "nobody did this". The API names the
+            // missing scope and the account; repeating it verbatim is what makes it fixable.
+            host.innerHTML = recipFilterBar()
+              + `<div class="text-sm text-base-content/60 p-2">${esc(st.unavailable)}</div>`;
+            bindRecipFilter(host, cid, row);
+            return;
+          }
+          const n = st.contacts.length;
+          host.innerHTML = recipFilterBar()
+            + `<div class="text-xs text-base-content/50 mb-2">
+                 <div><span class="font-semibold text-[#133b49]">${n.toLocaleString()}</span>
+                   ${esc(label.toLowerCase())}${st.done ? '' : ' so far'}${
+                   st.events != null && st.events !== n
+                     ? ` &mdash; ${Number(st.events).toLocaleString()} event${st.events === 1 ? '' : 's'} in total, so some people more than once`
+                     : ''}.</div>
+                 <div class="mt-1">From CakeMail's own log for this campaign, so this is who the
+                   send actually reached &mdash; not the list as it stands today.</div>
+               </div>`
+            + (n ? st.contacts.map((c, i) => {
+                const when = c.last_at ? fmtDate(c.last_at) : '';
+                // The subtype is the useful part of a bounce: bounce_hb is a dead address,
+                // bounce_fm is a full inbox. Shown instead of the generic filter name.
+                const sub = (recipMode === 'bounce' && c.activity_type) ? c.activity_type : '';
+                const bits = [
+                  sub ? `<span class="text-warning">${esc(sub)}</span>` : '',
+                  Number(c.occurrences) > 1 ? `${fmt(c.occurrences)}&times;` : '',
+                  when ? esc(when) : '',
+                ].filter(Boolean).join(' &middot; ');
+                return rosterRowHtml(c, i, bits);
+              }).join('')
+              : `<div class="text-sm text-base-content/50 p-2">Nobody ${esc(label.toLowerCase())} for this campaign.</div>`)
+            + (st.done || !n ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
+
+          bindRecipFilter(host, cid, row);
+          bindRosterRow(host);
+          const moreBtn = host.querySelector('[data-more]');
+          moreBtn?.addEventListener('click', () => {
+            moreBtn.disabled = true;
+            moreBtn.innerHTML = '<span class="loading loading-spinner loading-xs"></span> Loading&hellip;';
+            loadActivity(cid, host, true, row);
+          });
+        };
+
+        if(!more && st.contacts.length){ paint(); return; }
+        if(!more) host.innerHTML = recipFilterBar() + '<div class="text-sm text-base-content/50 p-2">Loading&hellip;</div>';
+        if(!more) bindRecipFilter(host, cid, row);
+
+        try{
+          const qs = new URLSearchParams({ activity: String(cid), type: recipMode });
+          if(more && st.next) qs.set('cursor', st.next);
+          const rs = await fetch(`/api/market-history?${qs}`, { headers: await apiHeaders() });
+          const d = await rs.json().catch(() => ({}));
+          if(!rs.ok) throw new Error(d.error || ('HTTP ' + rs.status));
+          if(d.available === false){ st.unavailable = d.reason || 'Per-send activity is not available for this campaign.'; st.done = true; }
+          else {
+            st.contacts = more ? st.contacts.concat(d.contacts || []) : (d.contacts || []);
+            st.events = d.events != null ? d.events : st.events;
+            st.next = d.next_cursor || null;
+            st.done = !d.next_cursor;
+          }
+          ACT_CACHE.set(key, st);
+          paint();
+        }catch(e){
+          host.innerHTML = recipFilterBar()
+            + `<div class="text-sm text-error p-2">${esc(String((e && e.message) || e))}</div>`;
+          bindRecipFilter(host, cid, row);
+        }
+      }
+
+      const RECIP_OPEN = new Set();
+
+      // WHO AN SMS BLAST ACTUALLY REACHED (AI-1101).
+      //
+      // Unlike the CakeMail roster below, this is not "the list as it stands today" — it is the
+      // recipients recorded at send time in blast_recipients. (095 also read telnyx_messages;
+      // across all 11 historic SMS blasts it recovered zero rows, because that table is the
+      // two-way inbox and every blast predates its contents, so 097 removed it.)
+      //
+      // IT WILL BE EMPTY FOR OLD BLASTS, and the empty state has to say WHY. Nothing recorded
+      // SMS recipients before 2026-10-06, so "no recipients" here means "never written down",
+      // not "sent to nobody" — and those two readings differ by the entire credibility of the
+      // number next to it.
+      const SMS_RECIP_CACHE = new Map();
+      async function loadSmsRecipients(row, host){
+        if(!host || !row) return;
+        const key = String(row.id);
+        const paint = (st) => {
+          if(st.error){ host.innerHTML = `<div class="text-sm text-error p-2">${esc(st.error)}</div>`; return; }
+          const list = st.recipients || [];
+          if(!list.length){
+            host.innerHTML = `<div class="text-sm text-base-content/60 p-2 leading-relaxed">
+              No recipients were recorded for this blast.
+              <div class="text-xs text-base-content/50 mt-1">
+                Per-recipient history for SMS only began on 6 October 2026. Before that nothing
+                stored who a blast went to &mdash; the numbers were resolved at send time and
+                discarded &mdash; so this is &ldquo;never written down&rdquo;, not &ldquo;sent to
+                nobody&rdquo;. ${row.recipients != null
+                  ? `The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span> recipients.`
+                  : ''}
+              </div></div>`;
+            return;
+          }
+          // ONE SOURCE SINCE 097, so no provenance column: every row here was written by this
+          // application at send time. The incompleteness line stays, because the roster can still
+          // be shorter than the blast's own count -- a partial send, or a blast that predates the
+          // log entirely.
+          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2 leading-relaxed">
+              <div><span class="font-semibold text-[#133b49]">${list.length.toLocaleString()}</span> recipient${list.length === 1 ? '' : 's'} recorded.</div>
+              ${row.recipients != null && Number(row.recipients) !== list.length
+                ? `<div class="mt-0.5">The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span>, so this roster is incomplete.</div>`
+                : ''}
+              <div class="mt-1">Recorded at send time. &ldquo;Handed off&rdquo; means the carrier accepted the message, not that a handset received it.</div>
+            </div>
+            <div class="border border-base-300 rounded-lg overflow-auto"><table class="w-full text-xs">
+              <thead><tr>
+                <th class="text-left py-1 pr-2">Number</th><th class="text-left py-1 pr-2">Name</th>
+                <th class="text-left py-1 pr-2">Company</th><th class="text-left py-1 pr-2">Outcome</th>
+                <th class="text-left py-1">Sent</th>
+              </tr></thead>
+              <tbody>${list.map(x => `<tr class="border-t border-base-200">
+                <td class="py-1 pr-2 font-mono">${esc(x.address)}</td>
+                <td class="py-1 pr-2">${esc([x.first_name, x.last_name].filter(Boolean).join(' ')) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+                <td class="py-1 pr-2">${esc(x.company) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+                <td class="py-1 pr-2 text-base-content/60">${esc((x.outcome || '').replace(/_/g, ' '))}</td>
+                <td class="py-1 text-base-content/50 whitespace-nowrap">${esc(fmtDate(x.sent_at))}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>`;
+        };
+
+        if(SMS_RECIP_CACHE.has(key)){ paint(SMS_RECIP_CACHE.get(key)); return; }
+        host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Loading recipients&hellip;</div>';
+        try {
+          const qs = new URLSearchParams({ sms_recipients: '1', at: row.sent_at || '' });
+          if(row.state_code) qs.set('state', row.state_code);
+          // The body narrows the Telnyx half, which would otherwise return any outbound message
+          // that merely shares a day with this blast.
+          if(row.message) qs.set('message', row.message);
+          const rr = await fetch(`/api/market-history?${qs}`, { headers: await apiHeaders() });
+          const j = await rr.json().catch(() => ({}));
+          const st = rr.ok ? j : { error: j.error || `HTTP ${rr.status}` };
+          SMS_RECIP_CACHE.set(key, st);
+          paint(st);
+        } catch(e){
+          paint({ error: String((e && e.message) || e) });
+        }
+      }
+
+      async function loadRecipients(cid, host, more, row){
+        if(!cid || !host) return;
+        const st = RECIP_CACHE.get(cid) || { contacts: [], next: null, done: false, note: '' };
+        const paint = () => {
+          if(st.unavailable){
+            host.innerHTML = recipFilterBar() + `<div class="text-sm text-base-content/60 p-2">${esc(st.unavailable)}</div>`;
+            bindRecipFilter(host, cid, row); return;
+          }
+          // SAY IT WITH THIS BLAST'S OWN NUMBERS. The first version explained the caveat in the
+          // abstract ("the list as it stands today, shared by every blast to this market") and
+          // had to be explained in turn. "2,684 on the list today; this blast went to 2,051" is
+          // the same fact and needs no gloss (Vhea, 2026-09-09).
+          const sent = row && row.sent_count != null ? Number(row.sent_count) : null;
+          const shown = st.contacts.length;
+          const total = st.done ? shown : null;                 // only known once fully paged
+          host.innerHTML = recipFilterBar() + `<div class="text-xs text-base-content/50 mb-2">
+                 <div><span class="font-semibold text-[#133b49]">${shown.toLocaleString()}</span> shown${st.done ? '' : ' so far'}${st.list ? ' from the &ldquo;'+esc(st.list)+'&rdquo; list' : ''}.</div>
+                 ${sent != null ? `<div class="mt-0.5">This blast went to <span class="font-semibold text-[#133b49]">${sent.toLocaleString()}</span> addresses on ${esc(fmtDate(row.sent_at))}.</div>` : ''}
+                 <div class="mt-1">Who is on the list <em>now</em> &mdash; CakeMail keeps no record of who a past send reached, and this list is reused by every blast to this market.</div>
+               </div>`
+            // A GRID, NOT A FLEX ROW. Flex let a two-word name wrap onto a second line and push
+            // the whole row out of alignment with its neighbours. Fixed tracks with truncation
+            // keep every row the same height, and the full value stays available on hover.
+            // items-START, not items-baseline. A row carrying a deal line is two lines tall, and
+            // baseline would leave the email and the link aligned to the second line instead of
+            // the first. The name column also widens, since it now holds two things.
+            // AN ACCORDION. The roster is the thing being scanned — a hundred names, who they are
+            // and whether we can reach them — so the row stays one line and the CRM detail goes
+            // underneath a caret. Two-line rows made a long list hard to read past.
+            //
+            // The caret is only drawn when there IS detail, so it doubles as the indicator: an
+            // arrow means we know something about this person, no arrow means we do not.
+            + st.contacts.map((c, i) => rosterRowHtml(c, i, '')).join('')
+            + (st.done ? '' : '<button class="btn btn-xs btn-outline mt-3" data-more>Load more</button>');
+          // A page is 100 contacts from CakeMail plus a mirror lookup for the ones without an
+          bindRosterRow(host);
         };
         if(st.contacts.length && !more){ paint(); return; }
         if(!st.contacts.length) host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Loading recipients…</div>';
