@@ -1,4 +1,4 @@
--- 107: the cheapest lower-bowl seat in each zone, per game (AI-1089).
+-- 107: the cheapest lower-bowl seat in each zone, per game (AI-1098).
 --
 -- WHY A SECOND COLUMN AND NOT MORE CANDIDATES. price_candidates (077) answers "what could this
 -- game cost" — a ranked list the operator picks from, all of it competing to be THE price.
@@ -32,7 +32,7 @@ alter table public.events_master
   add column if not exists zone_prices jsonb;
 
 comment on column public.events_master.zone_prices is
-  'Cheapest LOWER-BOWL seat per zone (AI-1089): {"center court":{all_in,price,section,row,source,url,confidence},...}. '
+  'Cheapest LOWER-BOWL seat per zone (AI-1098): {"center court":{all_in,price,section,row,source,url,confidence},...}. '
   'Zones from the NBA_Arena_Section_Map. NBA only; null for every other league and for games whose '
   'listings carried no section. confidence=Medium means the section was derived by counting around '
   'the bowl, not read off a label — verify before quoting it.';

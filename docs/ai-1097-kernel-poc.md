@@ -1,4 +1,4 @@
-# AI-1088 — Kernel browser POC
+# AI-1097 — Kernel browser POC
 
 **Spike.** Can a hosted browser (Kernel) get us section-level ticket prices from the sites our
 HTTP ladder cannot reach? Measured 2026-10-07/08 against live event pages.
@@ -14,7 +14,7 @@ gets Gametime and TickPick get-ins on 28/28 games over plain HTTP at ~1-3s a pag
 hosted browser beats that.
 
 The real gap is **section-level** data. The premium offer wants to say "center court from $X"
-(AI-1089), and that needs a section per listing. Measured, straight at the event pages:
+(AI-1098), and that needs a section per listing. Measured, straight at the event pages:
 
 | Site | Plain HTTP at the event page | Kernel, no stealth | **Kernel with stealth** | Section-level data? |
 |---|---|---|---|---|

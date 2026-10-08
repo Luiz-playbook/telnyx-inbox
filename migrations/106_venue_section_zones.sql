@@ -1,4 +1,4 @@
--- 106: section -> zone lookup per venue, so a listing's section can be named (AI-1089).
+-- 106: section -> zone lookup per venue, so a listing's section can be named (AI-1098).
 --
 -- EVERY LEAGUE, NOT JUST THE NBA. The NBA map is simply the one that exists today (scraped from
 -- RateYourSeats, Oct 6 2026); MLB, NFL and the rest are coming and must not need a schema change
@@ -50,7 +50,7 @@ create table if not exists public.venue_section_zones (
 );
 
 comment on table public.venue_section_zones is
-  'Section -> zone lookup per venue (AI-1089), loaded by scripts/load-section-zones.js from the '
+  'Section -> zone lookup per venue (AI-1098), loaded by scripts/load-section-zones.js from the '
   'arena section-map sheets. Keyed by league: NBA is loaded today, other sports to follow. '
   'One row per league+team+tier+section; the most premium label wins where the source lists a '
   'section twice. zone vocabulary is per league (NBA: center court / sideline / corner / behind '

@@ -1,4 +1,4 @@
-// AI-1088: the Kernel POC run, and the side-by-side against the ladder we already have.
+// AI-1097: the Kernel POC run, and the side-by-side against the ladder we already have.
 //
 //   node --env-file=.env scripts/kernel-poc.js --map zones.json --games 5
 //   node --env-file=.env scripts/kernel-poc.js --map zones.json --games 5 --sheet

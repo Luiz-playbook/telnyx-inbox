@@ -1,4 +1,4 @@
-// AI-1089: zone-tag every NBA listing and report the cheapest lower-bowl price per zone.
+// AI-1098: zone-tag every NBA listing and report the cheapest lower-bowl price per zone.
 //
 //   node --env-file=.env scripts/nba-zone-prices.js --map zones.json --games 15
 //   node --env-file=.env scripts/nba-zone-prices.js --map zones.json --teams 15 --csv out.csv
@@ -15,7 +15,7 @@
 //
 // SOURCE IS GAMETIME ONLY, TODAY. It is the only marketplace that serves per-seat sections to a
 // plain request. TickPick, SeatGeek and StubHub wall their event pages, and Vivid's needs the
-// Kernel step (AI-1088, lib/kernel-browser.js) — so a second source arrives behind that work,
+// Kernel step (AI-1097, lib/kernel-browser.js) — so a second source arrives behind that work,
 // not this script.
 
 import { readFileSync, writeFileSync } from 'node:fs';

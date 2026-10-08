@@ -1,4 +1,4 @@
-// AI-1088: one recorded Kernel session that visits every marketplace in turn.
+// AI-1097: one recorded Kernel session that visits every marketplace in turn.
 //
 //   node --env-file=.env scripts/kernel-demo-run.js [--game "Los Angeles Lakers"] [--date 2026-10-23]
 //

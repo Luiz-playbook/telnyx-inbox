@@ -1,4 +1,4 @@
-// Loads an arena section-map sheet into public.venue_section_zones (AI-1089).
+// Loads an arena section-map sheet into public.venue_section_zones (AI-1098).
 //
 // NBA today, every league eventually — --league is what makes adding a sport data rather than
 // code. The zone vocabulary is checked per league so a typo in a sheet cannot invent a zone.

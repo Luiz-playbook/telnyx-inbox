@@ -1,4 +1,4 @@
-// AI-1088: (re)publish a Kernel POC run to a Google Sheet tab, from a saved run file.
+// AI-1097: (re)publish a Kernel POC run to a Google Sheet tab, from a saved run file.
 //
 //   node --env-file=.env scripts/kernel-poc-sheet.js --in kernel-poc.json [--tab "Kernel POC"]
 //
