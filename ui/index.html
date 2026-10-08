@@ -156,6 +156,7 @@
     .nt-dot{ position:absolute; top:2px; right:2px; min-width:12px; height:12px; padding:0 3px;
              border-radius:999px; background:#64748b; color:#fff; font-size:8px; font-weight:800;
              line-height:12px; text-align:center; box-shadow:0 0 0 1.5px #fff; }
+    .nt-dot.hidden{ display:none; }
     .nt-panel{ position:fixed; z-index:70; width:min(390px, calc(100vw - 24px)); max-height:70vh;
                display:flex; flex-direction:column; overflow:hidden; background:#fff;
                border:1px solid #e3e8ef; border-radius:11px;
@@ -173,11 +174,44 @@
     .nt-note{ padding:9px 12px; background:#fcfdfe; border-bottom:1px solid #eef2f6;
               font-size:11px; line-height:1.5; color:#5b6b7a; }
     .nt-list{ overflow:auto; }
-    /* A sample row is shown at reduced opacity and is not clickable. It should look like a
-       preview of a notification, never like one. */
-    .nt-item{ display:flex; gap:9px; align-items:flex-start; padding:9px 12px;
-              border-bottom:1px solid #f1f5f9; opacity:.62; cursor:default; }
+    /* THE ROWS ARE NO LONGER GREYED OUT. They were, to stop a sample being mistaken for a live
+       alert — but now that they can be selected, read and deleted, dimming them reads as
+       "disabled" instead, which is a worse lie than the one it was preventing. The sample is
+       still declared four times over: the header badge, the note above the list, the per-row
+       "Example" line and the footer.
+       SELECT/READ/DELETE ARE LOCAL STATE ONLY. They genuinely work in the browser and persist
+       nothing — which is the point of a shell you can argue with. */
+    .nt-item{ display:flex; gap:8px; align-items:flex-start; padding:9px 10px 9px 8px;
+              border-bottom:1px solid #f1f5f9; border-left:2px solid transparent; }
+    .nt-item:hover{ background:#fbfdff; }
     .nt-item:last-child{ border-bottom:0; }
+    /* Unread carries the accent AND the weight. Colour alone would be invisible to anyone who
+       cannot see it, and a bold title alone is easy to miss in a scan. */
+    .nt-item.nt-unread{ border-left-color:#e55608; background:#fffdfb; }
+    .nt-item.nt-unread:hover{ background:#fff9f4; }
+    .nt-item.nt-read .nt-title{ font-weight:600; color:#5e6e82; }
+    .nt-item.nt-read .nt-ico{ opacity:.55; }
+    .nt-item.nt-picked{ background:#f4f8fd; }
+    .nt-chk{ width:auto; margin-top:3px; flex:none; accent-color:#e55608; cursor:pointer; }
+    /* Row actions appear on hover or focus. Always-on they turned a three-line row into a busy
+       one; never-on they are undiscoverable, so focus-within keeps them reachable by keyboard. */
+    .nt-actions{ display:flex; gap:2px; flex:none; opacity:0; transition:opacity .1s; }
+    .nt-item:hover .nt-actions, .nt-item:focus-within .nt-actions{ opacity:1; }
+    .nt-act{ width:21px; height:21px; border:0; background:none; border-radius:5px; cursor:pointer;
+             color:#9aa7b4; display:inline-flex; align-items:center; justify-content:center; }
+    .nt-act:hover{ background:#eef2f6; color:#354052; }
+    .nt-act svg{ width:12px; height:12px; }
+    /* The bulk bar. Hidden until something is ticked, so the panel is quiet by default and the
+       actions only appear once they have something to act on. */
+    .nt-tools{ display:flex; align-items:center; gap:8px; padding:6px 12px;
+               border-bottom:1px solid #eef2f6; background:#fafcfe; font-size:11px; color:#5b6b7a; }
+    .nt-tools .nt-count{ font-weight:700; color:#133b49; }
+    .nt-tools .grow{ flex:1; }
+    .nt-tbtn{ border:1px solid #dfe6ee; background:#fff; border-radius:6px; padding:2px 7px;
+              font-size:10px; font-weight:700; color:#5b6b7a; cursor:pointer; white-space:nowrap; }
+    .nt-tbtn:hover{ background:#f4f7fb; color:#133b49; }
+    .nt-tbtn.nt-danger:hover{ background:#fff5f4; color:#a8321e; border-color:#f0c9c4; }
+    .nt-empty{ padding:22px 12px; text-align:center; font-size:11px; color:#9aa7b4; }
     .nt-ico{ width:20px; height:20px; border-radius:6px; flex:none; display:flex;
              align-items:center; justify-content:center; font-size:11px; margin-top:1px; }
     .nt-ico svg{ width:12px; height:12px; }
@@ -864,64 +898,33 @@
         <button id="nt-close" class="btn btn-ghost btn-xs" type="button" aria-label="Close">&times;</button>
       </header>
       <div class="nt-note">
-        <b>Nothing below is real.</b> These are worked examples of the alerts being built, shown
-        so the shape can be argued with before the feed behind them exists. No live run, send or
-        queue is being read yet.
+        <b>Nothing below is real.</b> These are worked examples of the alerts being built. Selecting,
+        reading and deleting all work, but only in this browser tab &mdash; nothing is saved and no
+        live run, send or queue is being read yet.
       </div>
-      <div class="nt-list" id="nt-list">
 
-        <!-- ONE SAMPLE PER CATEGORY, which is the point of the shell: these four are the kinds
-             of thing worth interrupting someone about, and seeing them together is how we find
-             out whether that is true. Ordered worst-first, which is the order the real feed
-             should use — a failed send above a routine one, never newest-first. -->
-        <div class="nt-item">
-          <span class="nt-ico nt-fail" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 8v5"/><path d="M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg>
-          </span>
-          <div class="nt-body">
-            <div class="nt-title">A blast failed to send</div>
-            <div class="nt-sub">Missouri / ICP &mdash; the send was accepted for 0 of 475 recipients. Nothing went out.</div>
-            <div class="nt-when">Example &middot; would link to the blast in Queue</div>
-          </div>
-        </div>
-
-        <div class="nt-item">
-          <span class="nt-ico nt-todo" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
-          </span>
-          <div class="nt-body">
-            <div class="nt-title">6 blasts are waiting on you</div>
-            <div class="nt-sub">Their send time has passed and they are still unconfirmed, so they are not going anywhere until someone approves them.</div>
-            <div class="nt-when">Example &middot; would link to Queue, filtered to pending</div>
-          </div>
-        </div>
-
-        <div class="nt-item">
-          <span class="nt-ico nt-warn" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 16.5v.01"/><path d="M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
-          </span>
-          <div class="nt-body">
-            <div class="nt-title">Blast history has not synced in 3 days</div>
-            <div class="nt-sub">Every open and click figure in Reports is at least that stale, and a market may look quiet when it is not.</div>
-            <div class="nt-when">Example &middot; would link to Market History</div>
-          </div>
-        </div>
-
-        <div class="nt-item">
-          <span class="nt-ico nt-sent" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-          </span>
-          <div class="nt-body">
-            <div class="nt-title">Ohio / ICP has been sent</div>
-            <div class="nt-sub">1,284 recipients by email. Opens and clicks appear once the next sync runs.</div>
-            <div class="nt-when">Example &middot; would link to the blast's report</div>
-          </div>
-        </div>
-
+      <!-- THE BULK BAR IS ALWAYS PRESENT, not revealed on first tick. A toolbar that appears
+           changes the height of everything under it and makes the first checkbox feel like it
+           did something it did not. The select-all box and the read/delete actions live here;
+           the actions simply say what they will act on. -->
+      <div class="nt-tools">
+        <input type="checkbox" id="nt-all" class="nt-chk" style="margin-top:0" aria-label="Select all notifications">
+        <span id="nt-sel" class="nt-count">None selected</span>
+        <span class="grow"></span>
+        <button class="nt-tbtn" type="button" data-bulk="read">Mark read</button>
+        <button class="nt-tbtn" type="button" data-bulk="unread">Mark unread</button>
+        <button class="nt-tbtn nt-danger" type="button" data-bulk="delete">Delete</button>
       </div>
+
+      <!-- Rendered from the SAMPLE array in the module below, so the interactions are real even
+           though the data is not. -->
+      <div class="nt-list" id="nt-list"></div>
+
       <div class="nt-foot">
         <span>In-app only &mdash; no email, Slack or browser alerts.</span>
-        <span class="nt-soon">Not live</span>
+        <!-- Deleting every sample would leave a permanently empty shell with no way back, which
+             is a bad demo and an easy thing to mistake for a broken panel. -->
+        <button class="nt-tbtn" type="button" id="nt-restore">Restore samples</button>
       </div>
     </div>
 
@@ -12837,24 +12840,176 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // FAILS BY STAYING HIDDEN, like the Telnyx strip above it. These sit on a tab that works
     // without them; `rep-empty` already explains an entirely blank Reports tab.
 
+
     // ===== Notifications — SHELL ONLY =====
     //
-    // Opens, closes and positions. There is NO feed behind it yet and deliberately no fetch: a
-    // placeholder that quietly polls an endpoint which does not exist is how a "coming soon"
-    // feature ends up with a console full of 404s and a reviewer unsure whether it is live.
+    // Opens, closes, positions, and runs select / read / unread / delete over a local array.
+    // There is NO feed behind it and deliberately no fetch: a placeholder that quietly polls an
+    // endpoint which does not exist is how a "coming soon" feature ends up with a console full
+    // of 404s and a reviewer unsure whether it is live.
     //
-    // WHEN THE FEED LANDS, the work is: replace the sample rows in #nt-list with rendered ones,
-    // drop the .nt-note and the two "coming soon" badges, give .nt-item back its full opacity
-    // and a click target, and set the count from the data. Nothing about the panel's shape or
-    // placement needs to change, which is the point of building it first.
+    // THE INTERACTIONS ARE REAL, THE DATA IS NOT. Everything below mutates SAMPLE in memory and
+    // persists nothing — not even to localStorage, because a shell that remembers your deletions
+    // across a reload starts to feel like a feature that works, which is the one impression it
+    // must not give. Reload brings the samples back, and so does the footer button.
     //
-    // IN-APP ONLY. No Notification API, no service worker, no permission prompt — the people who
+    // WHEN THE FEED LANDS the work is: fill `items` from the endpoint instead of SAMPLE, make
+    // the four mutations write through to it, drop the .nt-note, the two "coming soon" badges
+    // and Restore samples, and give each row its click target. The render below and every
+    // selection rule it implements stay exactly as they are — which is the point of building the
+    // shape first.
+    //
+    // IN-APP ONLY. No Notification API, no service worker, no permission prompt: the people who
     // need this already have the tab open, and asking for browser permission on load is the
     // fastest way to get a feature dismissed before it has said anything useful.
     (function notificationsShell(){
       const bell = document.getElementById('nt-bell');
       const panel = document.getElementById('nt-panel');
       if(!bell || !panel) return;
+      const $ = id => document.getElementById(id);
+      const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+      // ONE SAMPLE PER CATEGORY. These four are the kinds of thing worth interrupting somebody
+      // about, and seeing them together is how we find out whether that is true. `rank` orders
+      // them worst-first, which is how the real feed should sort: a failed send belongs above a
+      // routine one, never newest-first.
+      const SAMPLE = [
+        { id: 's1', rank: 0, kind: 'fail', read: false,
+          title: 'A blast failed to send',
+          sub: 'Missouri / ICP — the send was accepted for 0 of 475 recipients. Nothing went out.',
+          to: 'would open the blast in Queue' },
+        { id: 's2', rank: 1, kind: 'todo', read: false,
+          title: '6 blasts are waiting on you',
+          sub: 'Their send time has passed and they are still unconfirmed, so they are not going anywhere until someone approves them.',
+          to: 'would open Queue, filtered to pending' },
+        { id: 's3', rank: 2, kind: 'warn', read: false,
+          title: 'Blast history has not synced in 3 days',
+          sub: 'Every open and click figure in Reports is at least that stale, and a market may look quiet when it is not.',
+          to: 'would open Market History' },
+        { id: 's4', rank: 3, kind: 'sent', read: true,
+          title: 'Ohio / ICP has been sent',
+          sub: '1,284 recipients by email. Opens and clicks appear once the next sync runs.',
+          to: 'would open the blast’s report' },
+      ];
+      const ICON = {
+        fail: '<path d="M12 8v5"/><path d="M12 16.5v.01"/><circle cx="12" cy="12" r="9"/>',
+        todo: '<path d="M4 7h16M4 12h16M4 17h10"/>',
+        warn: '<path d="M12 9v4"/><path d="M12 16.5v.01"/><path d="M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/>',
+        sent: '<path d="M20 6 9 17l-5-5"/>',
+      };
+
+      let items = [];
+      const picked = new Set();
+      const reset = () => { items = SAMPLE.map(x => ({ ...x })); picked.clear(); };
+      reset();
+
+      const unread = () => items.filter(x => !x.read).length;
+
+      function render(){
+        // THE BELL COUNTS UNREAD, NOT TOTAL — a read notification is one you have dealt with,
+        // and leaving it in the count is how a badge becomes background noise. Hidden at zero
+        // rather than showing "0", which is a number nobody needs to read.
+        const n = unread();
+        const dot = $('nt-count');
+        if(dot){ dot.textContent = n > 99 ? '99+' : String(n); dot.classList.toggle('hidden', n === 0); }
+        bell.title = items.length
+          ? `Notifications — ${n} unread (coming soon)`
+          : 'Notifications — coming soon';
+
+        const list = $('nt-list');
+        if(!list) return;
+        list.innerHTML = items.length ? items.slice().sort((a, b) => a.rank - b.rank).map(it => `
+          <div class="nt-item ${it.read ? 'nt-read' : 'nt-unread'}${picked.has(it.id) ? ' nt-picked' : ''}" data-id="${esc(it.id)}">
+            <input type="checkbox" class="nt-chk" data-pick="${esc(it.id)}" ${picked.has(it.id) ? 'checked' : ''}
+                   aria-label="Select: ${esc(it.title)}">
+            <span class="nt-ico nt-${esc(it.kind)}" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"
+                   stroke-linecap="round" stroke-linejoin="round">${ICON[it.kind] || ''}</svg>
+            </span>
+            <div class="nt-body">
+              <div class="nt-title">${esc(it.title)}</div>
+              <div class="nt-sub">${esc(it.sub)}</div>
+              <div class="nt-when">Example &middot; ${esc(it.to)}</div>
+            </div>
+            <div class="nt-actions">
+              <button class="nt-act" type="button" data-toggle="${esc(it.id)}"
+                      title="${it.read ? 'Mark as unread' : 'Mark as read'}"
+                      aria-label="${it.read ? 'Mark as unread' : 'Mark as read'}">
+                ${it.read
+                  ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8"/></svg>'
+                  : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" fill="currentColor" stroke="none"/></svg>'}
+              </button>
+              <button class="nt-act" type="button" data-del="${esc(it.id)}" title="Delete" aria-label="Delete">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg>
+              </button>
+            </div>
+          </div>`).join('')
+          : '<div class="nt-empty">Nothing here. Use <b>Restore samples</b> below to bring the examples back.</div>';
+
+        // THE SELECT-ALL BOX HAS THREE STATES, and the third is the one that matters: with some
+        // rows ticked, an empty box reads as "nothing selected here" and invites a click that
+        // clears the lot. Indeterminate says "some", and a click then selects all.
+        const all = $('nt-all');
+        if(all){
+          all.checked = items.length > 0 && picked.size === items.length;
+          all.indeterminate = picked.size > 0 && picked.size < items.length;
+          all.disabled = items.length === 0;
+        }
+        const sel = $('nt-sel');
+        if(sel) sel.textContent = picked.size
+          ? `${picked.size} selected`
+          : (items.length ? `${items.length} shown · ${n} unread` : 'Nothing here');
+        // The bulk buttons act on the SELECTION, or on everything when nothing is ticked —
+        // so they are never dead, and the label says which by way of the title.
+        panel.querySelectorAll('[data-bulk]').forEach(b => {
+          b.disabled = items.length === 0;
+          b.title = picked.size ? `Applies to the ${picked.size} selected` : 'Applies to all of them';
+        });
+      }
+
+      const targets = () => picked.size ? items.filter(x => picked.has(x.id)) : items;
+
+      panel.addEventListener('click', e => {
+        const t = e.target;
+        const tog = t.closest('[data-toggle]');
+        if(tog){ const it = items.find(x => x.id === tog.dataset.toggle); if(it) it.read = !it.read; render(); return; }
+        const del = t.closest('[data-del]');
+        if(del){ const id = del.dataset.del; items = items.filter(x => x.id !== id); picked.delete(id); render(); return; }
+        const bulk = t.closest('[data-bulk]');
+        if(bulk){
+          const act = bulk.dataset.bulk, hit = targets();
+          if(act === 'delete'){
+            const ids = new Set(hit.map(x => x.id));
+            items = items.filter(x => !ids.has(x.id));
+            picked.clear();
+          } else {
+            hit.forEach(x => { x.read = act === 'read'; });
+          }
+          render();
+          return;
+        }
+      });
+
+      // Checkboxes on `change`, not `click` — a click handler also fires for keyboard activation
+      // in some browsers and double-toggles the state.
+      panel.addEventListener('change', e => {
+        const pick = e.target.closest('[data-pick]');
+        if(pick){
+          const id = pick.dataset.pick;
+          pick.checked ? picked.add(id) : picked.delete(id);
+          render();
+          return;
+        }
+        if(e.target.id === 'nt-all'){
+          // From indeterminate, a click means "select all" — never "clear", which would throw
+          // away the selection the person just started making.
+          if(picked.size === items.length) picked.clear();
+          else items.forEach(x => picked.add(x.id));
+          render();
+        }
+      });
+
+      $('nt-restore')?.addEventListener('click', () => { reset(); render(); });
 
       // Positioned from the bell's rect, right-aligned under it, and clamped so a narrow window
       // cannot push it off either edge.
@@ -12867,18 +13022,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       }
 
       const isOpen = () => !panel.classList.contains('hidden');
-      function open(){
-        panel.classList.remove('hidden');
-        place();
-        bell.setAttribute('aria-expanded', 'true');
-      }
-      function close(){
-        panel.classList.add('hidden');
-        bell.setAttribute('aria-expanded', 'false');
-      }
+      function open(){ panel.classList.remove('hidden'); place(); bell.setAttribute('aria-expanded', 'true'); }
+      function close(){ panel.classList.add('hidden'); bell.setAttribute('aria-expanded', 'false'); }
 
       bell.addEventListener('click', e => { e.stopPropagation(); isOpen() ? close() : open(); });
-      document.getElementById('nt-close')?.addEventListener('click', close);
+      $('nt-close')?.addEventListener('click', close);
 
       // Click-away and Escape, the same two exits the Admin menu has. A dropdown that only closes
       // on its own trigger reads as broken the first time you click past it.
@@ -12890,6 +13038,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // stranded where the bell used to be.
       window.addEventListener('resize', () => { if(isOpen()) place(); });
       window.addEventListener('scroll', () => { if(isOpen()) place(); }, true);
+
+      render();
     })();
 
     (function platformReportsModule(){
