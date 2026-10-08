@@ -40,13 +40,56 @@ function decorate(res) {
 // Anything under lib/ touched after boot is already cached by Node and cannot be reloaded
 // in place — editing a handler is fine, editing a lib it imports is not.
 const STARTED_AT = Date.now();
-const LIB = path.join(path.dirname(API), 'lib');
-function changedLibFiles() {
-  if (!fs.existsSync(LIB)) return [];
-  return fs.readdirSync(LIB)
-    .filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
-    .filter(f => fs.statSync(path.join(LIB, f)).mtimeMs > STARTED_AT)
-    .map(f => `lib/${f}`);
+const ROOT = path.dirname(API);
+const LIB = path.join(ROOT, 'lib');
+
+// PER HANDLER, NOT PER SERVER. This check used to refuse a request when ANY file under lib/ had
+// changed, which made it wildly over-broad: touching lib/scrape-price.js blocked /api/cakemail-sync,
+// which does not import it and never did. In practice that meant a price-pipeline edit took the
+// whole local app down with "restart the dev server" on endpoints that were perfectly fine, and
+// the error named seven files none of which the failing endpoint uses.
+//
+// So the import graph is walked instead, from the handler outward, and only the libs it actually
+// reaches can stale it. Static imports only — nothing in api/ or lib/ uses import(), so a regex
+// over the source is exact here rather than an approximation. If a dynamic import is ever added,
+// this under-reports and the symptom is the old "does not provide an export named X"; the fix is
+// to list it here, not to widen the check back out.
+const importsOf = (file) => {
+  let src;
+  try { src = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  const out = [];
+  // `import … from './x.js'` and bare `import './x.js'`, single or double quoted.
+  const re = /\bimport\s*(?:[\s\S]*?\sfrom\s*)?['"](\.[^'"]+)['"]/g;
+  for (let m; (m = re.exec(src));) out.push(path.resolve(path.dirname(file), m[1]));
+  return out;
+};
+
+// Memoised: the graph only changes when a file changes, and a changed file is exactly the case
+// this reports rather than needs to re-walk. Cheap enough either way — four files deep at most.
+const GRAPH = new Map();
+function libsReachedBy(entry) {
+  if (GRAPH.has(entry)) return GRAPH.get(entry);
+  const seen = new Set(), libs = new Set(), queue = [entry];
+  while (queue.length) {
+    const f = queue.shift();
+    if (seen.has(f)) continue;
+    seen.add(f);
+    if (f.startsWith(LIB + path.sep)) libs.add(f);
+    for (const dep of importsOf(f)) queue.push(dep);
+  }
+  GRAPH.set(entry, libs);
+  return libs;
+}
+
+function changedLibFiles(entry) {
+  const libs = libsReachedBy(entry);
+  const stale = [];
+  for (const f of libs) {
+    let st;
+    try { st = fs.statSync(f); } catch { continue; }
+    if (st.mtimeMs > STARTED_AT) stale.push(path.relative(ROOT, f).replace(/\\/g, '/'));
+  }
+  return stale.sort();
 }
 
 const server = http.createServer(async (req, res) => {
@@ -69,11 +112,13 @@ const server = http.createServer(async (req, res) => {
     // edit stays invisible until this process restarts. The symptom is a baffling
     // "does not provide an export named X" from a file that plainly exports it. A specifier
     // inside a module can't be rewritten from out here, so refuse rather than run stale code.
-    const staleLib = changedLibFiles();
+    const staleLib = changedLibFiles(file);
     if (staleLib.length) {
-      console.error(`\n  ${staleLib.join(', ')} changed after this server started — Node still has the old copy.`);
+      console.error(`\n  /api/${name} imports ${staleLib.join(', ')}, which changed after this server started — Node still has the old copy.`);
       console.error('  Restart the dev server (Ctrl-C, then run it again).\n');
-      res.status(503).json({ error: `dev server is running stale code: ${staleLib.join(', ')} changed after start. Restart the dev server.` });
+      // Names the endpoint as well as the files, because the old message listed everything under
+      // lib/ and left the reader to work out which of seven files the failing call even used.
+      res.status(503).json({ error: `dev server is running stale code: /api/${name} imports ${staleLib.join(', ')} — changed after start. Restart the dev server.` });
       console.log(`${req.method} ${pathname} -> ${res.statusCode}`);
       return;
     }
