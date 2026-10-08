@@ -1,0 +1,90 @@
+state_code,state_name,market_city,org,level,venue,venue_type,confidence,notes
+AL,Alabama,Tuscaloosa,University of Alabama,d1,Bryant-Denny Stadium,football,High,
+AL,Alabama,Tuscaloosa,University of Alabama,d1,Coleman Coliseum,basketball,High,
+AL,Alabama,Tuscaloosa,University of Alabama,d1,Sewell-Thomas Stadium,baseball,High,
+AL,Alabama,Auburn,Auburn University,d1,Jordan-Hare Stadium,football,High,
+AL,Alabama,Auburn,Auburn University,d1,Neville Arena,basketball,High,renamed from Auburn Arena in 2022
+AL,Alabama,Auburn,Auburn University,d1,Plainsman Park,baseball,High,
+AL,Alabama,Birmingham,UAB,d1,Protective Stadium,football,High,opened 2021; shared city venue
+AL,Alabama,Birmingham,UAB,d1,Bartow Arena,basketball,High,
+AL,Alabama,Mobile,South Alabama,d1,Hancock Whitney Stadium,football,High,
+AL,Alabama,Mobile,South Alabama,d1,Mitchell Center,basketball,High,
+AL,Alabama,Troy,Troy University,d1,Veterans Memorial Stadium,football,Medium,
+AL,Alabama,Troy,Troy University,d1,Trojan Arena,basketball,Medium,
+AL,Alabama,Montgomery,Alabama State University,d1,ASU Stadium,football,Medium,HBCU / SWAC
+AL,Alabama,Huntsville,Alabama A&M University,d1,Louis Crews Stadium,football,Medium,HBCU / SWAC
+AL,Alabama,Jackson,Jacksonville State University,d1,Burgess-Snow Field,football,Medium,
+AK,Alaska,Anchorage,University of Alaska Anchorage,d1,Alaska Airlines Center,basketball,Medium,D2 overall; D1 hockey. No D1 football in the state
+AK,Alaska,Fairbanks,University of Alaska Fairbanks,d1,Carlson Center,basketball,Medium,D2 overall; D1 hockey
+AR,Arkansas,Fayetteville,University of Arkansas,d1,Donald W. Reynolds Razorback Stadium,football,High,
+AR,Arkansas,Fayetteville,University of Arkansas,d1,Bud Walton Arena,basketball,High,
+AR,Arkansas,Fayetteville,University of Arkansas,d1,Baum-Walker Stadium,baseball,High,
+AR,Arkansas,Jonesboro,Arkansas State University,d1,Centennial Bank Stadium,football,Medium,
+AR,Arkansas,Jonesboro,Arkansas State University,d1,First National Bank Arena,basketball,Medium,
+AR,Arkansas,Conway,University of Central Arkansas,d1,Estes Stadium,football,Medium,
+AR,Arkansas,Little Rock,University of Arkansas at Little Rock,d1,Jack Stephens Center,basketball,Medium,no football programme
+CT,Connecticut,Storrs,University of Connecticut,d1,Pratt & Whitney Stadium at Rentschler Field,football,High,stadium is in East Hartford
+CT,Connecticut,Storrs,University of Connecticut,d1,Harry A. Gampel Pavilion,basketball,High,
+CT,Connecticut,Hartford,University of Connecticut,d1,XL Center,basketball,High,secondary basketball venue
+CT,Connecticut,New Haven,Yale University,d1,Yale Bowl,football,High,Ivy League
+CT,Connecticut,New Haven,Yale University,d1,John J. Lee Amphitheater,basketball,Medium,
+CT,Connecticut,Fairfield,Fairfield University,d1,Leo D. Mahoney Arena,basketball,Medium,no football programme
+CT,Connecticut,Hamden,Quinnipiac University,d1,M&T Bank Arena,basketball,Medium,no football programme
+CT,Connecticut,Hartford,Hartford Yard Goats,minor,Dunkin' Park,baseball,High,Double-A affiliate
+DE,Delaware,Newark,University of Delaware,d1,Delaware Stadium,football,High,
+DE,Delaware,Newark,University of Delaware,d1,Bob Carpenter Center,basketball,High,
+DE,Delaware,Dover,Delaware State University,d1,Alumni Stadium,football,Medium,HBCU / MEAC
+DE,Delaware,Wilmington,Wilmington Blue Rocks,minor,Frawley Stadium,baseball,High,High-A affiliate
+HI,Hawaii,Honolulu,University of Hawaii,d1,Clarence T.C. Ching Athletics Complex,football,Medium,interim home since Aloha Stadium closed
+HI,Hawaii,Honolulu,University of Hawaii,d1,Stan Sheriff Center,basketball,High,strong volleyball programme
+HI,Hawaii,Honolulu,University of Hawaii,d1,Les Murakami Stadium,baseball,Medium,
+ID,Idaho,Boise,Boise State University,d1,Albertsons Stadium,football,High,the blue turf
+ID,Idaho,Boise,Boise State University,d1,ExtraMile Arena,basketball,High,
+ID,Idaho,Moscow,University of Idaho,d1,Kibbie Dome,football,High,
+ID,Idaho,Pocatello,Idaho State University,d1,Holt Arena,football,Medium,indoor; also hosts basketball
+ME,Maine,Orono,University of Maine,d1,Alfond Stadium,football,Medium,
+ME,Maine,Orono,University of Maine,d1,Memorial Gymnasium,basketball,Medium,
+ME,Maine,Portland,Portland Sea Dogs,minor,Hadlock Field,baseball,High,Double-A affiliate
+MS,Mississippi,Oxford,University of Mississippi,d1,Vaught-Hemingway Stadium,football,High,
+MS,Mississippi,Oxford,University of Mississippi,d1,The Pavilion at Ole Miss,basketball,High,
+MS,Mississippi,Oxford,University of Mississippi,d1,Swayze Field,baseball,High,
+MS,Mississippi,Starkville,Mississippi State University,d1,Davis Wade Stadium,football,High,
+MS,Mississippi,Starkville,Mississippi State University,d1,Humphrey Coliseum,basketball,High,
+MS,Mississippi,Starkville,Mississippi State University,d1,Dudy Noble Field,baseball,High,
+MS,Mississippi,Hattiesburg,University of Southern Mississippi,d1,M.M. Roberts Stadium,football,Medium,
+MS,Mississippi,Jackson,Jackson State University,d1,Mississippi Veterans Memorial Stadium,football,Medium,HBCU / SWAC
+MT,Montana,Missoula,University of Montana,d1,Washington-Grizzly Stadium,football,High,
+MT,Montana,Missoula,University of Montana,d1,Dahlberg Arena,basketball,Medium,
+MT,Montana,Bozeman,Montana State University,d1,Bobcat Stadium,football,High,
+MT,Montana,Bozeman,Montana State University,d1,Worthington Arena,basketball,Medium,
+NH,New Hampshire,Durham,University of New Hampshire,d1,Wildcat Stadium,football,Medium,
+NH,New Hampshire,Durham,University of New Hampshire,d1,Lundholm Gymnasium,basketball,Medium,
+NH,New Hampshire,Hanover,Dartmouth College,d1,Memorial Field,football,High,Ivy League
+NH,New Hampshire,Hanover,Dartmouth College,d1,Leede Arena,basketball,Medium,
+NM,New Mexico,Albuquerque,University of New Mexico,d1,University Stadium,football,Medium,
+NM,New Mexico,Albuquerque,University of New Mexico,d1,The Pit,basketball,High,
+NM,New Mexico,Las Cruces,New Mexico State University,d1,Aggie Memorial Stadium,football,Medium,
+NM,New Mexico,Las Cruces,New Mexico State University,d1,Pan American Center,basketball,Medium,
+NM,New Mexico,Albuquerque,Albuquerque Isotopes,minor,Rio Grande Credit Union Field at Isotopes Park,baseball,High,Triple-A affiliate
+ND,North Dakota,Fargo,North Dakota State University,d1,Fargodome,football,High,FCS powerhouse; indoor
+ND,North Dakota,Fargo,North Dakota State University,d1,Scheels Center,basketball,Medium,
+ND,North Dakota,Grand Forks,University of North Dakota,d1,Alerus Center,football,High,indoor
+ND,North Dakota,Grand Forks,University of North Dakota,d1,Betty Engelstad Sioux Center,basketball,Medium,
+RI,Rhode Island,Kingston,University of Rhode Island,d1,Meade Stadium,football,Medium,
+RI,Rhode Island,Kingston,University of Rhode Island,d1,Ryan Center,basketball,High,
+RI,Rhode Island,Providence,Brown University,d1,Brown Stadium,football,High,Ivy League
+RI,Rhode Island,Providence,Providence College,d1,Amica Mutual Pavilion,basketball,High,no football programme
+RI,Rhode Island,Smithfield,Bryant University,d1,Beirne Stadium,football,Medium,
+SD,South Dakota,Brookings,South Dakota State University,d1,Dana J. Dykhouse Stadium,football,High,
+SD,South Dakota,Brookings,South Dakota State University,d1,Frost Arena,basketball,Medium,
+SD,South Dakota,Vermillion,University of South Dakota,d1,DakotaDome,football,High,indoor
+SD,South Dakota,Sioux Falls,Sioux Falls Canaries,minor,Sioux Falls Stadium,baseball,Medium,independent American Association
+VT,Vermont,Burlington,University of Vermont,d1,Patrick Gymnasium,basketball,High,no football programme in the state
+VT,Vermont,Burlington,Vermont Lake Monsters,minor,Centennial Field,baseball,Medium,collegiate summer league since 2021
+WV,West Virginia,Morgantown,West Virginia University,d1,Milan Puskar Stadium,football,High,
+WV,West Virginia,Morgantown,West Virginia University,d1,WVU Coliseum,basketball,High,
+WV,West Virginia,Morgantown,West Virginia University,d1,Kendrick Family Ballpark,baseball,Medium,
+WV,West Virginia,Huntington,Marshall University,d1,Joan C. Edwards Stadium,football,High,
+WV,West Virginia,Huntington,Marshall University,d1,Cam Henderson Center,basketball,Medium,
+WY,Wyoming,Laramie,University of Wyoming,d1,War Memorial Stadium,football,High,
+WY,Wyoming,Laramie,University of Wyoming,d1,Arena-Auditorium,basketball,High,
