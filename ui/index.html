@@ -433,8 +433,12 @@
     .price-pop .pp-mapwrap .pp-map-body{ padding:8px; }
     /* The viewport clips; the image inside is what moves. Section numbers on these charts are
        tiny, so pan and zoom is the difference between a reference and a decoration. */
+    /* No fixed height. These charts are wide, so a tall well left a band of dead white under a
+       correctly-fitted image and read as broken. The height is set from the image's own aspect
+       ratio once it loads (see sizeToImage), capped by max-height. */
     .price-pop .pp-map-view{ position:relative; overflow:hidden; border-radius:5px;
-                             border:1px solid #efe2cd; background:#fff; height:min(52vh, 420px);
+                             border:1px solid #efe2cd; background:#fff;
+                             height:200px; max-height:min(52vh, 420px);
                              cursor:grab; touch-action:none; }
     .price-pop .pp-map-view.is-panning{ cursor:grabbing; }
     .price-pop .pp-map-view img{ position:absolute; top:0; left:0; transform-origin:0 0;
@@ -7127,7 +7131,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         let userAdjusted = false;
 
         const apply = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`; };
+
+        // Give the box the image's shape. Fitting a 3:1 chart inside a 1:1 well is arithmetically
+        // correct and looks wrong — the picture is right and most of the panel is empty. Height
+        // follows the width the panel already has, clamped so a tall chart cannot run off screen.
+        // Only written when it actually changes, or the ResizeObserver below feeds itself.
+        const sizeToImage = () => {
+          const w = view.clientWidth;
+          if (!w || !img.naturalWidth) return;
+          const cap = Math.min(window.innerHeight * 0.52, 420);
+          const want = Math.round(Math.min(w * (img.naturalHeight / img.naturalWidth), cap));
+          if (Math.abs(view.clientHeight - want) > 1) view.style.height = want + 'px';
+        };
+
         const reset = () => {
+          sizeToImage();
           const f = fitScale();
           if (!f) return false;                       // still unmeasurable; a later pass will do it
           fit = f; scale = f;
