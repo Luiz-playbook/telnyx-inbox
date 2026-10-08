@@ -2060,6 +2060,217 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               </div>
             </details>
 
+            <!-- CakeMail, ACROSS EVERY ACCOUNT. The blast panel's Reports tab answers "how did
+                 this campaign do"; this answers "how is the email programme doing", which is a
+                 different question and was not asked anywhere.
+
+                 Two accounts are in play and they are not interchangeable — Cole's holds the
+                 history, production is where sends moved on 2026-07-31 — so the account split is
+                 the spine of this report rather than a footnote. A single combined figure mixes
+                 a 13,599-recipient production blast with a 2-recipient test send.
+
+                 NO CAKEMAIL CALL. Same data as the per-campaign report: blast_templates columns
+                 that api/cakemail-sync.js already stores, read through /api/market-history. So it
+                 covers every synced campaign including the seeded ones, and it cannot break when
+                 a token loses a scope. -->
+            <details id="cm-strip" class="collapse collapse-arrow border border-base-300 bg-base-100 hidden">
+              <summary class="collapse-title">
+                <span class="font-semibold text-sm">CakeMail email &mdash; all accounts</span>
+              </summary>
+              <div class="collapse-content">
+                <div class="flex flex-col gap-3 pb-1">
+
+                  <div class="flex items-baseline justify-between flex-wrap gap-2 -mt-1">
+                    <div class="min-w-0">
+                      <div class="text-sm font-semibold">Every CakeMail campaign we have, by account</div>
+                      <div class="text-xs text-base-content/50" id="cm-prov"></div>
+                    </div>
+                    <label class="flex items-center gap-2 shrink-0">
+                      <span class="text-[11px] uppercase tracking-wide text-base-content/50">Period</span>
+                      <select id="cm-period" class="select select-bordered select-xs w-40"
+                              title="Filters on the send date. Campaigns with no date recorded are only included under All time.">
+                        <option value="0" selected>All time</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                        <option value="365">Last 365 days</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <!-- THE ROLL-UP IS VOLUME-WEIGHTED, and the note below says so, because the
+                       per-campaign report's "of the last 10 campaigns" average is NOT. The two
+                       will disagree — 60% there against 51% here on the production account — and
+                       a reader who does not know why will trust whichever they saw last. -->
+                  <div class="flex flex-wrap gap-5" id="cm-tiles"></div>
+
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">1 &middot; By account</div>
+                      <div class="text-sm font-semibold">Which account sent it, and how it did</div>
+                      <div class="text-[11px] text-base-content/60">
+                        Rates are volume-weighted across the account's campaigns &mdash; one blast of
+                        13,599 counts 6,800 times a test send of two.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Account</th>
+                          <th class="text-right">Campaigns</th>
+                          <th class="text-right">Sent</th>
+                          <th class="text-right" title="Emails sent minus bounces.">Delivered</th>
+                          <th class="text-right" title="Delivered as a share of emails sent.">Deliv.&nbsp;%</th>
+                          <th class="text-right" title="People who opened, not pixel loads.">Opens</th>
+                          <th class="text-right" title="Unique opens over active addresses — CakeMail's own denominator.">Open&nbsp;%</th>
+                          <th class="text-right" title="People who clicked a link.">Clicks</th>
+                          <th class="text-right" title="Unique clicks over active addresses.">Click&nbsp;%</th>
+                          <th class="text-right" title="Bounces as a share of emails sent.">Bounce&nbsp;%</th>
+                          <th class="text-right" title="Unsubscribes over active addresses.">Unsub&nbsp;%</th>
+                          <th class="text-right" title="Spam complaints. A count, not a rate — the number is what matters.">Spam</th>
+                          <th>First send</th><th>Last send</th>
+                        </tr></thead>
+                        <tbody id="cm-accounts"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2" id="cm-acct-note"></p>
+                  </div>
+
+                  <!-- WHY A BOUNCE REPORT GETS ITS OWN PANEL. This is the figure that gets an
+                       account suspended, and the hard/soft split CakeMail shows is hard vs
+                       everything-else — which reads as "half were full inboxes" when most were
+                       dead domains. The subtypes are what tell you whether to clean the list. -->
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">2 &middot; The bounces</div>
+                      <div class="text-sm font-semibold">What failed, and in which way</div>
+                      <div class="text-[11px] text-base-content/60">
+                        Hard bounces are dead addresses and are what a reputation is judged on. The rest
+                        are grouped as soft by CakeMail, so the real subtypes are listed separately.
+                      </div>
+                    </div>
+                    <div class="px-3 py-2" id="cm-bounces"></div>
+                  </div>
+
+                  <!-- THE GAPS, NAMED. Every number above is only as good as the sync behind it,
+                       and the three ways it goes wrong are invisible otherwise: a campaign whose
+                       report never came back, a list no market resolves, and a campaign with no
+                       list name at all (which cannot be bridged — there is nothing to bridge on). -->
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">3 &middot; The gaps</div>
+                      <div class="text-sm font-semibold">What this report cannot see</div>
+                    </div>
+                    <div class="px-3 py-2" id="cm-gaps"></div>
+                  </div>
+
+                  <p class="text-[11px] text-base-content/50" id="cm-note"></p>
+                </div>
+              </div>
+            </details>
+
+            <!-- SENDBLASTER — the bulk-sending side, i.e. everything that is NOT a CakeMail
+                 campaign: SMS through Telnyx and Salesmsg, the imported Textable history, and
+                 email pushed through the Gmail webhook.
+
+                 GROUPED BY PLATFORM FIRST, because the platform is what decides what we can
+                 know. A Telnyx blast and a Salesmsg broadcast are both "SMS sent" and neither
+                 carries open or click tracking, so a report that led with engagement would be a
+                 grid of dashes. Volume, reach and recency are the real measurements here.
+
+                 "Recipients" is HANDED TO THE CARRIER, never confirmed delivered — the same
+                 distinction api/queue-tick.js draws when it refuses to write sent_count. -->
+            <details id="sb-strip" class="collapse collapse-arrow border border-base-300 bg-base-100 hidden">
+              <summary class="collapse-title">
+                <span class="font-semibold text-sm">SendBlaster &mdash; SMS and bulk sending</span>
+              </summary>
+              <div class="collapse-content">
+                <div class="flex flex-col gap-3 pb-1">
+
+                  <div class="flex items-baseline justify-between flex-wrap gap-2 -mt-1">
+                    <div class="min-w-0">
+                      <div class="text-sm font-semibold">Everything we blasted that was not a CakeMail campaign</div>
+                      <div class="text-xs text-base-content/50" id="sb-prov"></div>
+                    </div>
+                    <label class="flex items-center gap-2 shrink-0">
+                      <span class="text-[11px] uppercase tracking-wide text-base-content/50">Period</span>
+                      <select id="sb-period" class="select select-bordered select-xs w-40"
+                              title="Filters on the send date. Blasts with no date recorded are only included under All time.">
+                        <option value="0" selected>All time</option>
+                        <option value="30">Last 30 days</option>
+                        <option value="90">Last 90 days</option>
+                        <option value="365">Last 365 days</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div class="flex flex-wrap gap-5" id="sb-tiles"></div>
+
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">1 &middot; By platform</div>
+                      <div class="text-sm font-semibold">Who carried it &mdash; and what that platform can tell us</div>
+                      <div class="text-[11px] text-base-content/60">
+                        The tracking column is not a setting we can change. None of these channels
+                        reports opens or clicks, which is why this report counts reach rather than
+                        engagement.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Platform</th><th>Channel</th>
+                          <th class="text-right">Blasts</th>
+                          <th class="text-right" title="Addresses or numbers handed to the carrier, summed across blasts. The same person reached twice counts twice.">Recipients</th>
+                          <th class="text-right" title="Recipients divided by the blasts that recorded a count.">Avg per blast</th>
+                          <th class="text-right" title="Blasts whose recipient count was never recorded. Their reach is missing from the total.">No count</th>
+                          <th>First</th><th>Last</th><th>Tracking</th>
+                        </tr></thead>
+                        <tbody id="sb-platforms"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2" id="sb-plat-note"></p>
+                  </div>
+
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">2 &middot; The shape of it</div>
+                      <div class="text-sm font-semibold">Month by month <span class="font-normal text-base-content/50">&middot; newest first</span></div>
+                      <div class="text-[11px] text-base-content/60">
+                        Bars are scaled to the busiest month, so this reads as a shape rather than
+                        against any cap &mdash; the T&#8209;Mobile allowance above is the only ceiling
+                        in play and it is a daily one.
+                      </div>
+                    </div>
+                    <div class="px-3 py-2" id="sb-months"></div>
+                  </div>
+
+                  <div class="border border-base-300 rounded-md overflow-hidden">
+                    <div class="px-3 py-2 border-b border-base-300">
+                      <div class="text-[11px] uppercase tracking-wide text-base-content/50">3 &middot; Where it went</div>
+                      <div class="text-sm font-semibold">Markets, by reach</div>
+                      <div class="text-[11px] text-base-content/60">
+                        A blast with no market recorded is listed as unattributed rather than dropped:
+                        it still cost a send, and it is the gap the bridge rows exist to close.
+                      </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                      <table class="table table-xs">
+                        <thead><tr>
+                          <th>Market</th><th class="text-right">Blasts</th>
+                          <th class="text-right">Recipients</th><th class="text-right">Share</th>
+                          <th>Last blast</th>
+                        </tr></thead>
+                        <tbody id="sb-markets"></tbody>
+                      </table>
+                    </div>
+                    <p class="text-[11px] text-base-content/50 px-3 pb-2" id="sb-mkt-note"></p>
+                  </div>
+
+                  <p class="text-[11px] text-base-content/50" id="sb-note"></p>
+                </div>
+              </div>
+            </details>
+
             <!-- Shown only when nothing rendered, so an empty Reports tab explains itself
                  rather than looking broken. -->
             <div id="rep-empty" class="text-sm text-base-content/50 hidden">
@@ -4765,6 +4976,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'queue' && window.__loadQueue) window.__loadQueue();
       if(tab === 'history' && window.__loadBlastHistory) window.__loadBlastHistory();
       if(tab === 'reports' && window.__loadTelnyxUsage) window.__loadTelnyxUsage();
+      // Two loaders for one tab, deliberately independent: the Telnyx strip and the platform
+      // reports read different endpoints, and the volume report failing must not take the
+      // CakeMail and SendBlaster reports down with it (or the reverse). Each hides only itself.
+      if(tab === 'reports' && window.__loadPlatformReports) window.__loadPlatformReports();
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
@@ -12393,6 +12608,416 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           + `The cap counts T‑Mobile-bound messages only — it is a carrier limit, not a reach figure, `
           + `so it will not match the totals below. ${j.excludes || ''}`;
       }
+    })();
+
+
+    // ===== Platform reports — the two programme-level accordions on the Reports tab =====
+    //
+    // CakeMail across every account, and SendBlaster (everything that is not a CakeMail
+    // campaign). Both answer "how is this channel doing", which is a different question from
+    // the per-campaign report in the blast panel and was not asked anywhere before.
+    //
+    // ONE FETCH FOR BOTH, and it is the same /api/market-history the Market History tab reads.
+    // Every figure either report needs is already on those rows — the CakeMail ones carry the
+    // full `report` block, the rest carry source, channel, market and recipients — so this adds
+    // no endpoint, no CakeMail call and no new table. It also means both reports cover exactly
+    // what Market History covers, which is the only way they can be reconciled by hand.
+    //
+    // FAILS BY STAYING HIDDEN, like the Telnyx strip above it. These sit on a tab that works
+    // without them; `rep-empty` already explains an entirely blank Reports tab.
+    (function platformReportsModule(){
+      const cm = document.getElementById('cm-strip'), sb = document.getElementById('sb-strip');
+      if(!cm && !sb) return;
+      const $ = id => document.getElementById(id);
+      const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+      const nf = n => n == null ? '—' : (Number(n)||0).toLocaleString();
+      const dt = d => d ? etDate(d, { year:'numeric', month:'short', day:'numeric' }) : '—';
+      // A rate is only a number when its denominator is. Returning null rather than 0 is the
+      // whole point: "0.00%" and "we cannot tell" are different answers and the tables show
+      // them differently.
+      const rate = (num, den) => {
+        const n = Number(num), d = Number(den);
+        return Number.isFinite(n) && Number.isFinite(d) && d > 0 ? (n / d) * 100 : null;
+      };
+      const pc = (v, dp = 2) => v == null ? '—' : v.toFixed(dp) + '%';
+      // NULL IS NOT ZERO, and Number(null) is 0 — which is finite, so the obvious
+      // Number.isFinite(Number(x)) test reads an unrecorded recipient count as a blast that
+      // reached nobody. That is the one distinction the "No count" column exists to draw, so
+      // every recipient figure goes through here.
+      // "1 campaign carry no figures" makes the reader doubt the number next to it. One pair of
+      // helpers rather than a ternary per phrase, because there are six of them and the seventh
+      // would be written wrong too. Both read off the same count, so they cannot disagree.
+      const sfx = (n, one = '', many = 's') => Number(n) === 1 ? one : many;
+      const verb = (n, one, many) => Number(n) === 1 ? one : many;
+      const numOf = v => {
+        if(v == null || v === '') return null;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      };
+
+      let ROWS = null, loaded = false;
+      // Freshness and the two bridge gaps, off the same response. Declared here because both
+      // reports read it.
+      let META = { synced_at: null, unbridged: 0, noListName: 0 };
+
+      // One tile, same shape in both reports. `sub` is where the caveat goes, because every
+      // headline figure here has one and a tile without it overstates what it knows.
+      const tile = (label, value, sub) => `<div class="min-w-[7.5rem]">
+          <div class="text-[11px] uppercase tracking-wide text-base-content/50">${esc(label)}</div>
+          <div class="text-2xl font-bold leading-tight tabular-nums">${value}</div>
+          <div class="text-xs text-base-content/60">${sub || '&nbsp;'}</div>
+        </div>`;
+
+      // PERIOD FILTERS ON sent_at, and a row with no date is kept ONLY under All time. Dropping
+      // it from every period would make the dated periods silently disagree with the all-time
+      // total; keeping it in all of them would put a blast of unknown age in "last 30 days".
+      // Neither is right, so the undated rows are counted once, where the label is honest, and
+      // the panel says how many there were.
+      function inPeriod(r, days){
+        if(!days) return true;
+        if(!r.sent_at) return false;
+        const t = Date.parse(r.sent_at);
+        return Number.isFinite(t) && t >= Date.now() - days * 86400000;
+      }
+
+      // ---- CakeMail, by account ---------------------------------------------------------------
+      //
+      // THE ROLL-UP IS VOLUME-WEIGHTED: every figure is summed and then divided once, so a
+      // 13,599-recipient blast carries 6,800 times the weight of a 2-recipient test. The
+      // per-campaign report's "of the last 10 campaigns" baseline is the unweighted mean of each
+      // campaign's own rate, which is CakeMail's own definition and is NOT the same number. Both
+      // are correct for what they answer; the note under the table says which is which, because
+      // a reader who meets 60% on one screen and 51% on the other will otherwise assume one of
+      // them is broken.
+      //
+      // Denominators follow CakeMail: open, click, unsubscribe and spam are against ACTIVE
+      // addresses; delivery and bounce are against emails SENT. active_emails is null on older
+      // rows, so it falls back to sent-minus-bounces — which is what active_emails means — and
+      // the fallback is counted and disclosed rather than hidden.
+      const ZERO = () => ({
+        campaigns: 0, sent: 0, active: 0, activeFallback: 0, opens: 0, clicks: 0,
+        unsubs: 0, spams: 0, bounces: 0, hard: 0, soft: 0,
+        subtypes: { 'DNS failure': 0, 'mailbox full': 0, blocked: 0, transient: 0,
+                    'address changed': 0, 'challenge/response': 0 },
+        noReport: 0, first: null, last: null,
+      });
+      const add = (acc, k, v) => { if(v != null && Number.isFinite(Number(v))) acc[k] += Number(v); };
+
+      function cmAggregate(rows){
+        const byAcct = new Map();
+        for(const r of rows){
+          const key = (r.account && r.account.id) || '—';
+          const label = (r.account && r.account.label) || 'Account not recorded';
+          if(!byAcct.has(key)) byAcct.set(key, { key, label, ...ZERO() });
+          const a = byAcct.get(key);
+          a.campaigns++;
+          const rep = r.report;
+          if(!rep || !rep.available){ a.noReport++; }
+          else {
+            add(a, 'sent', rep.sent); add(a, 'opens', rep.opens_unique);
+            add(a, 'clicks', rep.clicks_unique); add(a, 'unsubs', rep.unsubscribes);
+            add(a, 'spams', rep.spams); add(a, 'bounces', rep.bounces);
+            add(a, 'hard', rep.bounces_hard);
+            // The honest soft figure, not CakeMail's hard-vs-everything-else split.
+            add(a, 'soft', rep.bounces_soft);
+            add(a.subtypes, 'DNS failure', rep.bounces_dns_failure);
+            add(a.subtypes, 'mailbox full', rep.bounces_full_mailbox);
+            add(a.subtypes, 'blocked', rep.bounces_mail_blocked);
+            add(a.subtypes, 'transient', rep.bounces_transient);
+            add(a.subtypes, 'address changed', rep.bounces_address_changed);
+            add(a.subtypes, 'challenge/response', rep.bounces_challenge_response);
+            if(rep.active != null && Number.isFinite(Number(rep.active))) a.active += Number(rep.active);
+            else if(rep.sent != null){
+              a.active += Math.max(0, Number(rep.sent) - (Number(rep.bounces) || 0));
+              a.activeFallback++;
+            }
+          }
+          const t = r.sent_at ? Date.parse(r.sent_at) : NaN;
+          if(Number.isFinite(t)){
+            if(a.first == null || t < a.first) a.first = t;
+            if(a.last == null || t > a.last) a.last = t;
+          }
+        }
+        // Biggest sender first. Campaign count would put a 140-row history import above the
+        // account that actually reaches people.
+        return [...byAcct.values()].sort((x, y) => y.sent - x.sent);
+      }
+
+      function renderCakemail(){
+        if(!cm) return;
+        const days = Number($('cm-period')?.value || 0);
+        const all = ROWS.filter(r => r.source === 'cakemail');
+        const rows = all.filter(r => inPeriod(r, days));
+        const accts = cmAggregate(rows);
+        const tot = accts.reduce((t, a) => {
+          for(const k of ['campaigns','sent','active','activeFallback','opens','clicks','unsubs','spams','bounces','hard','soft','noReport']) t[k] += a[k];
+          for(const k in t.subtypes) t.subtypes[k] += a.subtypes[k];
+          if(a.first != null && (t.first == null || a.first < t.first)) t.first = a.first;
+          if(a.last  != null && (t.last  == null || a.last  > t.last))  t.last  = a.last;
+          return t;
+        }, ZERO());
+
+        const delivered = tot.sent - tot.bounces;
+        $('cm-tiles').innerHTML = [
+          tile('Campaigns', nf(tot.campaigns), `${accts.length} account${accts.length === 1 ? '' : 's'}`),
+          tile('Emails sent', nf(tot.sent), 'summed across campaigns'),
+          tile('Delivered', nf(delivered), pc(rate(delivered, tot.sent)) + ' of sent'),
+          tile('Opened', nf(tot.opens), pc(rate(tot.opens, tot.active)) + ' of active'),
+          tile('Clicked', nf(tot.clicks), pc(rate(tot.clicks, tot.active)) + ' of active'),
+          tile('Bounced', nf(tot.bounces), pc(rate(tot.bounces, tot.sent)) + ' of sent'),
+          tile('Unsubscribed', nf(tot.unsubs), pc(rate(tot.unsubs, tot.active)) + ' of active'),
+        ].join('');
+
+        const line = (a, isTotal) => {
+          const del = a.sent - a.bounces;
+          return `<tr class="${isTotal ? 'font-semibold border-t-2 border-base-300' : ''}">
+            <td class="whitespace-nowrap">${esc(a.label)}</td>
+            <td class="text-right tabular-nums">${nf(a.campaigns)}</td>
+            <td class="text-right tabular-nums">${nf(a.sent)}</td>
+            <td class="text-right tabular-nums">${nf(del)}</td>
+            <td class="text-right tabular-nums">${pc(rate(del, a.sent))}</td>
+            <td class="text-right tabular-nums">${nf(a.opens)}</td>
+            <td class="text-right tabular-nums">${pc(rate(a.opens, a.active))}</td>
+            <td class="text-right tabular-nums">${nf(a.clicks)}</td>
+            <td class="text-right tabular-nums">${pc(rate(a.clicks, a.active))}</td>
+            <td class="text-right tabular-nums">${pc(rate(a.bounces, a.sent))}</td>
+            <td class="text-right tabular-nums">${pc(rate(a.unsubs, a.active))}</td>
+            <td class="text-right tabular-nums">${nf(a.spams)}</td>
+            <td class="whitespace-nowrap text-base-content/60">${a.first ? dt(new Date(a.first).toISOString()) : '—'}</td>
+            <td class="whitespace-nowrap text-base-content/60">${a.last ? dt(new Date(a.last).toISOString()) : '—'}</td>
+          </tr>`;
+        };
+        $('cm-accounts').innerHTML = accts.length
+          ? accts.map(a => line(a, false)).join('') + line({ ...tot, label: 'All accounts' }, true)
+          : `<tr><td colspan="14" class="text-center text-base-content/50 py-4">No CakeMail campaigns in this period.</td></tr>`;
+
+        $('cm-acct-note').textContent =
+          'Volume-weighted: each column is summed across the account’s campaigns and divided once. '
+          + 'The “of the last 10 campaigns” average on an individual blast’s Reports tab is the '
+          + 'unweighted mean of each campaign’s own rate — CakeMail’s own definition — so the two '
+          + 'figures will differ, and the gap is widest where small test sends are frequent.'
+          + (tot.activeFallback
+              ? ` Active addresses were not recorded on ${tot.activeFallback} campaign${tot.activeFallback === 1 ? '' : 's'}; sent minus bounces was used for those, which is what the column means.`
+              : '');
+
+        // Hard vs other, the way CakeMail presents it, with the real subtypes underneath — the
+        // split is what gets an account suspended and "soft" hides dead domains inside it.
+        const other = Math.max(0, tot.bounces - tot.hard);
+        const subs = Object.entries(tot.subtypes).filter(([, v]) => v > 0);
+        $('cm-bounces').innerHTML = tot.bounces
+          ? `<div class="flex flex-wrap gap-6 text-sm">
+               <div><span class="font-semibold">${nf(tot.bounces)}</span> <span class="text-base-content/50">total</span></div>
+               <div><span class="font-semibold">${nf(tot.hard)}</span>
+                    <span class="text-base-content/45">(${pc(rate(tot.hard, tot.bounces), 0)})</span>
+                    <span class="text-base-content/50">hard &mdash; dead addresses</span></div>
+               <div><span class="font-semibold">${nf(other)}</span>
+                    <span class="text-base-content/45">(${pc(rate(other, tot.bounces), 0)})</span>
+                    <span class="text-base-content/50">everything else</span></div>
+               <div><span class="font-semibold">${pc(rate(tot.bounces, tot.sent))}</span>
+                    <span class="text-base-content/50">of emails sent</span></div>
+             </div>
+             <div class="text-[11px] text-base-content/55 mt-2">
+               ${subs.length
+                 ? `Of the ${nf(other)} non-hard bounces, the recorded subtypes are `
+                   + subs.map(([k, v]) => `${nf(v)} ${esc(k)}`).join(', ')
+                   + `${tot.soft ? `, with ${nf(tot.soft)} recorded as genuinely soft` : ''}. `
+                   + 'A non-hard bounce made mostly of DNS failures is a dead-domain problem, not a full inbox — clean the list rather than waiting for a retry.'
+                 : 'No subtype breakdown was recorded for these bounces, so hard versus everything-else is as far as this can go.'}
+             </div>`
+          : '<div class="text-sm text-base-content/50">No bounces recorded in this period.</div>';
+
+        // The three ways the numbers above can be wrong, each named with its fix.
+        const gaps = [];
+        if(tot.noReport) gaps.push(`<li><span class="font-semibold">${nf(tot.noReport)}</span> campaign${sfx(tot.noReport)} ${verb(tot.noReport, 'carries', 'carry')} no report figures at all, so ${verb(tot.noReport, 'it counts', 'they count')} toward Campaigns and ${verb(tot.noReport, 'contributes', 'contribute')} nothing to any rate. Usually a send whose report never came back &mdash; the Market History sync names the failures.</li>`);
+        if(META.unbridged) gaps.push(`<li><span class="font-semibold">${nf(META.unbridged)}</span> campaign${sfx(META.unbridged)} ${verb(META.unbridged, 'sits', 'sit')} on a list no market resolves, so ${verb(META.unbridged, 'it is', 'they are')} invisible to the decider&rsquo;s market scoring. Fixed by adding a <code>market_bridge_list</code> row.</li>`);
+        if(META.noListName) gaps.push(`<li><span class="font-semibold">${nf(META.noListName)}</span> campaign${sfx(META.noListName)} ${verb(META.noListName, 'records', 'record')} no list name, so there is nothing to bridge <em>on</em>. ${verb(META.noListName, 'This cannot', 'These cannot')} be fixed by adding bridge rows.</li>`);
+        if(days) gaps.push(`<li><span class="font-semibold">${nf(all.length - rows.length)}</span> campaign${sfx(all.length - rows.length)} ${verb(all.length - rows.length, 'falls', 'fall')} outside this period or have no send date recorded. Switch to All time to include them.</li>`);
+        $('cm-gaps').innerHTML = gaps.length
+          ? `<ul class="text-xs text-base-content/70 list-disc pl-4 space-y-1">${gaps.join('')}</ul>`
+          : '<div class="text-sm text-base-content/50">Nothing missing: every campaign in this period has report figures and resolves to a market.</div>';
+
+        $('cm-prov').textContent = META.synced_at
+          ? `From the CakeMail sync, which last wrote ${dt(META.synced_at)}. No live CakeMail call.`
+          : 'The CakeMail sync has never recorded a write, so these figures may be incomplete.';
+        $('cm-note').textContent =
+          'Rates use CakeMail’s own denominators: opens, clicks, unsubscribes and spam against active '
+          + 'addresses, delivery and bounces against emails sent. Recipients reached is not a count of '
+          + 'people — the same address on two blasts is two sends.';
+        cm.classList.remove('hidden');
+      }
+
+      // ---- SendBlaster — everything that is not a CakeMail campaign ---------------------------
+      //
+      // WHY VOLUME AND NOT ENGAGEMENT. None of these platforms reports an open or a click: SMS
+      // carries no tracking at all, and the Gmail webhook pushes a message without a pixel. So
+      // the measurable facts are how many blasts, how many recipients, which market and when —
+      // and the Tracking column states the limitation rather than leaving a row of dashes to be
+      // read as zero engagement.
+      const PLATFORM = {
+        telnyx:   { label: 'Telnyx (bulk SMS)',       track: 'None — SMS has no open or click tracking' },
+        salesmsg: { label: 'Salesmsg (broadcasts)',   track: 'None — broadcasts report no opens or clicks' },
+        gmail:    { label: 'Gmail webhook (email)',   track: 'None — sent without a tracking pixel' },
+        log:      { label: 'Textable (imported log)', track: 'None — the import recorded sends, not engagement' },
+      };
+      const platLabel = s => (PLATFORM[s] || { label: s || 'unknown' }).label;
+      const platTrack = s => (PLATFORM[s] || { track: 'Not known for this source' }).track;
+
+      function renderSendblaster(){
+        if(!sb) return;
+        const days = Number($('sb-period')?.value || 0);
+        const all = ROWS.filter(r => r.source !== 'cakemail');
+        const rows = all.filter(r => inPeriod(r, days));
+
+        // Keyed on platform AND channel: the app can push email through the Gmail webhook and
+        // SMS through Telnyx on the same queue row, and merging them would report an email reach
+        // as SMS volume.
+        const byPlat = new Map();
+        let recips = 0, noCount = 0, smsBlasts = 0, emailBlasts = 0, smsRecips = 0, emailRecips = 0;
+        for(const r of rows){
+          const key = `${r.source || 'unknown'}|${r.channel || '—'}`;
+          if(!byPlat.has(key)) byPlat.set(key, { source: r.source, channel: r.channel, blasts: 0, recips: 0, counted: 0, noCount: 0, first: null, last: null });
+          const p = byPlat.get(key);
+          p.blasts++;
+          const n = numOf(r.recipients);
+          if(n != null){ p.recips += n; p.counted++; recips += n; }
+          else { p.noCount++; noCount++; }
+          if(r.channel === 'SMS'){ smsBlasts++; if(n != null) smsRecips += n; }
+          else { emailBlasts++; if(n != null) emailRecips += n; }
+          const t = r.sent_at ? Date.parse(r.sent_at) : NaN;
+          if(Number.isFinite(t)){
+            if(p.first == null || t < p.first) p.first = t;
+            if(p.last == null || t > p.last) p.last = t;
+          }
+        }
+        const plats = [...byPlat.values()].sort((a, b) => b.recips - a.recips);
+
+        $('sb-tiles').innerHTML = [
+          tile('Blasts', nf(rows.length), `${plats.length} platform/channel pair${plats.length === 1 ? '' : 's'}`),
+          tile('Recipients', nf(recips), 'handed to the carrier'),
+          tile('SMS', nf(smsBlasts), `${nf(smsRecips)} recipients`),
+          tile('Email', nf(emailBlasts), `${nf(emailRecips)} recipients`),
+          tile('Unrecorded reach', nf(noCount), noCount ? `blast${sfx(noCount)} with no recipient count` : 'every blast has a count'),
+        ].join('');
+
+        $('sb-platforms').innerHTML = plats.length
+          ? plats.map(p => `<tr>
+              <td class="whitespace-nowrap">${esc(platLabel(p.source))}</td>
+              <td>${esc(p.channel || '—')}</td>
+              <td class="text-right tabular-nums">${nf(p.blasts)}</td>
+              <td class="text-right tabular-nums">${nf(p.recips)}</td>
+              <td class="text-right tabular-nums">${p.counted ? nf(Math.round(p.recips / p.counted)) : '—'}</td>
+              <td class="text-right tabular-nums ${p.noCount ? 'text-warning' : 'text-base-content/40'}">${nf(p.noCount)}</td>
+              <td class="whitespace-nowrap text-base-content/60">${p.first ? dt(new Date(p.first).toISOString()) : '—'}</td>
+              <td class="whitespace-nowrap text-base-content/60">${p.last ? dt(new Date(p.last).toISOString()) : '—'}</td>
+              <td class="text-[11px] text-base-content/55">${esc(platTrack(p.source))}</td>
+            </tr>`).join('')
+          : `<tr><td colspan="9" class="text-center text-base-content/50 py-4">No non-CakeMail blasts in this period.</td></tr>`;
+
+        $('sb-plat-note').textContent =
+          'Recipients is what was handed to the carrier, not what a handset received — api/queue-tick.js '
+          + 'deliberately records no delivery count, because the carrier accepting a message is not the '
+          + 'same as it arriving. Averages divide by the blasts that recorded a count, so a platform with '
+          + 'unrecorded blasts has a reliable average over an understated total.';
+
+        // Month by month, newest first. Bars are scaled to the busiest month, not to a cap:
+        // the only ceiling in play is T-Mobile's DAILY one, which the strip above reports, and
+        // drawing monthly volume against a daily allowance would be meaningless.
+        const byMonth = new Map();
+        for(const r of rows){
+          if(!r.sent_at) continue;
+          const d = new Date(r.sent_at);
+          if(Number.isNaN(d.getTime())) continue;
+          const k = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          if(!byMonth.has(k)) byMonth.set(k, { k, blasts: 0, recips: 0 });
+          const m = byMonth.get(k);
+          m.blasts++;
+          const n = numOf(r.recipients);
+          if(n != null) m.recips += n;
+        }
+        const months = [...byMonth.values()].sort((a, b) => a.k < b.k ? 1 : -1).slice(0, 18);
+        const peak = months.reduce((m, x) => Math.max(m, x.recips), 0);
+        const undated = rows.filter(r => !r.sent_at).length;
+        $('sb-months').innerHTML = months.length
+          ? months.map(m => {
+              const [y, mo] = m.k.split('-');
+              const w = peak > 0 ? Math.max(1, Math.round((m.recips / peak) * 100)) : 0;
+              return `<div class="flex items-center gap-2 py-0.5">
+                  <span class="text-[11px] text-base-content/60 w-16 shrink-0 tabular-nums">${esc(mo)}/${esc(y.slice(2))}</span>
+                  <span class="text-[11px] text-base-content/50 w-20 shrink-0 tabular-nums">${nf(m.blasts)} blast${m.blasts === 1 ? '' : 's'}</span>
+                  <span class="grow h-2.5 bg-base-200 rounded-sm overflow-hidden min-w-[4rem]">
+                    <span class="block h-full bg-info" style="width:${w}%"></span>
+                  </span>
+                  <span class="text-[11px] w-20 shrink-0 text-right tabular-nums">${nf(m.recips)}</span>
+                </div>`;
+            }).join('')
+            + (undated ? `<div class="text-[11px] text-base-content/50 mt-2">${nf(undated)} blast${sfx(undated)} ${verb(undated, 'carries', 'carry')} no send date and ${verb(undated, 'appears', 'appear')} in no month.</div>` : '')
+          : '<div class="text-sm text-base-content/50">No dated blasts in this period.</div>';
+
+        // Markets by reach. Unattributed is a row, not an omission: those sends happened and
+        // cost the same, and they are precisely what the bridge rows exist to resolve.
+        const byMkt = new Map();
+        for(const r of rows){
+          const k = r.market || r.state_code || '—';
+          if(!byMkt.has(k)) byMkt.set(k, { k, blasts: 0, recips: 0, last: null });
+          const m = byMkt.get(k);
+          m.blasts++;
+          const n = numOf(r.recipients);
+          if(n != null) m.recips += n;
+          const t = r.sent_at ? Date.parse(r.sent_at) : NaN;
+          if(Number.isFinite(t) && (m.last == null || t > m.last)) m.last = t;
+        }
+        const mkts = [...byMkt.values()].sort((a, b) => b.recips - a.recips);
+        const TOP = 12;
+        const shown = mkts.slice(0, TOP), rest = mkts.slice(TOP);
+        const restAgg = rest.reduce((t, m) => ({ blasts: t.blasts + m.blasts, recips: t.recips + m.recips,
+                                                 last: m.last != null && (t.last == null || m.last > t.last) ? m.last : t.last }),
+                                    { blasts: 0, recips: 0, last: null });
+        const mktRow = (label, m, muted) => `<tr class="${muted ? 'text-base-content/60' : ''}">
+            <td class="whitespace-nowrap">${esc(label)}</td>
+            <td class="text-right tabular-nums">${nf(m.blasts)}</td>
+            <td class="text-right tabular-nums">${nf(m.recips)}</td>
+            <td class="text-right tabular-nums">${pc(rate(m.recips, recips), 1)}</td>
+            <td class="whitespace-nowrap text-base-content/60">${m.last ? dt(new Date(m.last).toISOString()) : '—'}</td>
+          </tr>`;
+        $('sb-markets').innerHTML = mkts.length
+          ? shown.map(m => mktRow(m.k === '—' ? 'Unattributed — no market recorded' : m.k, m, m.k === '—')).join('')
+            + (rest.length ? mktRow(`${rest.length} further market${rest.length === 1 ? '' : 's'}`, restAgg, true) : '')
+          : `<tr><td colspan="5" class="text-center text-base-content/50 py-4">No blasts to attribute in this period.</td></tr>`;
+        $('sb-mkt-note').textContent = mkts.length > TOP
+          ? `Top ${TOP} markets by reach; the rest are rolled into one row rather than truncated away.`
+          : 'Every market with a blast in this period is listed.';
+
+        $('sb-prov').textContent = 'Merged from the blast log, the Salesmsg broadcast sync and this app’s own sends. CakeMail campaigns are excluded — they have their own report above.';
+        $('sb-note').textContent =
+          'There are no open or click figures here because none of these platforms produces any. '
+          + 'That is a limitation of SMS and of the Gmail webhook, not a gap in the sync, and it is '
+          + 'why the only email channel with a real report is CakeMail.';
+        sb.classList.remove('hidden');
+      }
+
+      // Called from showTab. Does the fetch once per session: these are months of history and a
+      // single day's blasts will not change the shape of them.
+      window.__loadPlatformReports = async function(force){
+        if(loaded && !force) return;
+        try{
+          const r = await fetch('/api/market-history', { headers: await apiHeaders() });
+          const d = await r.json().catch(() => ({}));
+          if(!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+          ROWS = Array.isArray(d.rows) ? d.rows : [];
+          META = { synced_at: d.synced_at || null,
+                   unbridged: Number(d.unbridged || 0), noListName: Number(d.no_list_name || 0) };
+          loaded = true;
+          renderCakemail();
+          renderSendblaster();
+          document.getElementById('rep-empty')?.classList.add('hidden');
+        }catch{
+          // Hidden, not errored. rep-empty covers a Reports tab with nothing on it at all.
+        }
+      };
+
+      // Re-render only, never re-fetch: the period is a filter over rows already in hand.
+      $('cm-period')?.addEventListener('change', () => { if(ROWS) renderCakemail(); });
+      $('sb-period')?.addEventListener('change', () => { if(ROWS) renderSendblaster(); });
     })();
 
     (function blastHistoryModule(){
