@@ -283,6 +283,13 @@
                             display:flex; flex-direction:column; overflow:hidden;
                             background:#fff; border:1px solid #efe2cd; border-radius:9px;
                             box-shadow:0 10px 34px rgba(19,59,73,.18); }
+    /* AND THE RULE THAT LETS IT BE HIDDEN AGAIN. Tailwind's `.hidden` is one class, so the
+       `display:flex` above — two classes — outranks it and the panel never goes away. Closed,
+       with its markup emptied, it still painted its 1px border and shadow: a stray tan line
+       across the popover between the zones and the price history (Vhea, 2026-10-08).
+       Same fix and same reason as .q-menu.hidden and .price-pop.hidden above; any rule here
+       that sets `display` needs its matching `.hidden` companion. */
+    .price-pop .pp-mapwrap.hidden{ display:none; }
     .price-pop .pp-mapwrap header{ display:flex; align-items:center; justify-content:space-between;
                             gap:8px; padding:7px 10px; border-bottom:1px solid #f3e9d8;
                             background:linear-gradient(180deg,#fffdf9,#fffefc); }
