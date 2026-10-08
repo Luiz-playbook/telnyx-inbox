@@ -330,6 +330,9 @@ export default async function handler(req, res) {
       };
       await Promise.all(Array.from({ length: Math.min(SCRAPE_CONCURRENCY, games.length) }, scrapeWorker));
       scrapeStat.pages = ctx.stats.pages; scrapeStat.via = ctx.stats.byVia; scrapeStat.firecrawl = ctx.firecrawlCalls;
+      // Kernel sessions are billed separately from Firecrawl credits, so they are counted
+      // separately too — a run's cost is not readable from one number any more.
+      if (ctx.kernelCalls) scrapeStat.kernel = ctx.kernelCalls;
       modelGames = missed;
     }
 
