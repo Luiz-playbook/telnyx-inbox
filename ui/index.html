@@ -130,6 +130,60 @@
        capsule — beside the genuinely pill-shaped status badge it read as two competing rounded
        things. 5px keeps the button legible as a button and lets the badge be the only pill. */
     .btn.btn-xs[data-qmenu]{ border-radius:5px; }
+
+    /* ===== Notifications (AI-TBD) — SHELL ONLY, nothing is wired to real data yet =====
+       Built ahead of the feed so the shape can be argued with on screen rather than in a doc
+       (Vhea, 2026-10-08). Every row below is a worked example, clearly labelled as one; the
+       panel says so at the top so nobody mistakes a sample for a live alert.
+       When the feed lands, the only change here is where the rows come from. */
+    .nt-wrap{ position:relative; }
+    .nt-bell{ position:relative; display:inline-flex; align-items:center; justify-content:center;
+              width:30px; height:30px; border-radius:7px; border:0; background:none; cursor:pointer;
+              color:rgba(255,255,255,.72); }
+    .nt-bell:hover{ background:rgba(255,255,255,.1); color:#fff; }
+    .nt-bell svg{ width:16px; height:16px; }
+    /* THE COUNT IS DELIBERATELY NOT A RED DOT while this is a shell. A red badge is a promise
+       that something needs attention, and inventing one over sample data would train people to
+       ignore the real thing the week it ships. Muted until the feed is live. */
+    .nt-dot{ position:absolute; top:3px; right:3px; min-width:15px; height:15px; padding:0 4px;
+             border-radius:999px; background:#64748b; color:#fff; font-size:9px; font-weight:800;
+             line-height:15px; text-align:center; }
+    .nt-panel{ position:fixed; z-index:70; width:min(390px, calc(100vw - 24px)); max-height:70vh;
+               display:flex; flex-direction:column; overflow:hidden; background:#fff;
+               border:1px solid #e3e8ef; border-radius:11px;
+               box-shadow:0 14px 40px rgba(19,59,73,.22); }
+    /* Tailwind's `.hidden` is one class, so a two-class rule here would outrank it and the panel
+       would never close — the same trap that left a stray line across the price popover. */
+    .nt-panel.hidden{ display:none; }
+    .nt-panel header{ display:flex; align-items:center; justify-content:space-between; gap:8px;
+                      padding:9px 12px; border-bottom:1px solid #eef2f6; }
+    .nt-panel h4{ margin:0; font-size:12px; font-weight:800; letter-spacing:.03em;
+                  text-transform:uppercase; color:#133b49; }
+    .nt-soon{ display:inline-block; padding:1px 7px; border-radius:999px; background:#fff3e8;
+              border:1px solid #f3cfae; color:#b4560b; font-size:9px; font-weight:800;
+              letter-spacing:.05em; text-transform:uppercase; }
+    .nt-note{ padding:9px 12px; background:#fcfdfe; border-bottom:1px solid #eef2f6;
+              font-size:11px; line-height:1.5; color:#5b6b7a; }
+    .nt-list{ overflow:auto; }
+    /* A sample row is shown at reduced opacity and is not clickable. It should look like a
+       preview of a notification, never like one. */
+    .nt-item{ display:flex; gap:9px; align-items:flex-start; padding:9px 12px;
+              border-bottom:1px solid #f1f5f9; opacity:.62; cursor:default; }
+    .nt-item:last-child{ border-bottom:0; }
+    .nt-ico{ width:20px; height:20px; border-radius:6px; flex:none; display:flex;
+             align-items:center; justify-content:center; font-size:11px; margin-top:1px; }
+    .nt-ico svg{ width:12px; height:12px; }
+    .nt-sent{ background:#eaf7ef; color:#15803d; }
+    .nt-todo{ background:#fff3e8; color:#b4560b; }
+    .nt-warn{ background:#fef3c7; color:#a16207; }
+    .nt-fail{ background:#fff5f4; color:#a8321e; }
+    .nt-body{ min-width:0; flex:1; }
+    .nt-title{ font-size:12px; font-weight:700; color:#133b49; line-height:1.35; }
+    .nt-sub{ font-size:11px; color:#7b8794; line-height:1.45; margin-top:1px; }
+    .nt-when{ font-size:10px; color:#9aa7b4; white-space:nowrap; margin-top:2px; }
+    .nt-foot{ padding:8px 12px; border-top:1px solid #eef2f6; font-size:11px; color:#7b8794;
+              display:flex; align-items:center; justify-content:space-between; gap:8px; }
+
     .q-menu{ border-radius:8px; }
     .q-menu .btn{ border-radius:5px; }
     /* A PICKED ROW. Same warm tint as the bulk bar above the table, on purpose: "what is
@@ -757,6 +811,27 @@
             </div>
           </details>
         </nav>
+        <!-- NOTIFICATIONS — SHELL ONLY (Vhea, 2026-10-08). Nothing here reads live data; every
+             row in the panel is a labelled example. Built now so the shape is arguable on screen
+             before the feed behind it exists, and marked "coming soon" in three places so it
+             cannot be mistaken for working: the panel badge, the note under the header, and the
+             footer. The rows are greyed and inert for the same reason.
+
+             IN-APP ONLY, by decision. No Slack, no email, no browser push — the people who need
+             this are already in this tab all day, and every out-of-app channel is an account to
+             set up and a place for an alert to go unread. -->
+        <div class="nt-wrap">
+          <button id="nt-bell" class="nt-bell" type="button" aria-haspopup="true" aria-expanded="false"
+                  title="Notifications — coming soon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
+              <path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+            </svg>
+            <span class="nt-dot" id="nt-count" aria-hidden="true">4</span>
+            <span class="sr-only">Notifications</span>
+          </button>
+        </div>
         <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
              so a logged-out visitor never sees an empty account chip on the way to /login. -->
         <div id="acct" class="hidden items-center gap-2 text-xs">
@@ -765,6 +840,75 @@
         </div>
       </div>
     </header>
+
+    <!-- The notifications panel. position:fixed and placed from the bell's rect on open, so the
+         header's own stacking context cannot clip it. Lives outside <header> for that reason. -->
+    <div id="nt-panel" class="nt-panel hidden" role="dialog" aria-label="Notifications">
+      <header>
+        <h4>Notifications <span class="nt-soon">Coming soon</span></h4>
+        <button id="nt-close" class="btn btn-ghost btn-xs" type="button" aria-label="Close">&times;</button>
+      </header>
+      <div class="nt-note">
+        <b>Nothing below is real.</b> These are worked examples of the alerts being built, shown
+        so the shape can be argued with before the feed behind them exists. No live run, send or
+        queue is being read yet.
+      </div>
+      <div class="nt-list" id="nt-list">
+
+        <!-- ONE SAMPLE PER CATEGORY, which is the point of the shell: these four are the kinds
+             of thing worth interrupting someone about, and seeing them together is how we find
+             out whether that is true. Ordered worst-first, which is the order the real feed
+             should use — a failed send above a routine one, never newest-first. -->
+        <div class="nt-item">
+          <span class="nt-ico nt-fail" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 8v5"/><path d="M12 16.5v.01"/><circle cx="12" cy="12" r="9"/></svg>
+          </span>
+          <div class="nt-body">
+            <div class="nt-title">A blast failed to send</div>
+            <div class="nt-sub">Missouri / ICP &mdash; the send was accepted for 0 of 475 recipients. Nothing went out.</div>
+            <div class="nt-when">Example &middot; would link to the blast in Queue</div>
+          </div>
+        </div>
+
+        <div class="nt-item">
+          <span class="nt-ico nt-todo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+          </span>
+          <div class="nt-body">
+            <div class="nt-title">6 blasts are waiting on you</div>
+            <div class="nt-sub">Their send time has passed and they are still unconfirmed, so they are not going anywhere until someone approves them.</div>
+            <div class="nt-when">Example &middot; would link to Queue, filtered to pending</div>
+          </div>
+        </div>
+
+        <div class="nt-item">
+          <span class="nt-ico nt-warn" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 16.5v.01"/><path d="M10.3 3.9 2.6 17a2 2 0 0 0 1.7 3h15.4a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+          </span>
+          <div class="nt-body">
+            <div class="nt-title">Blast history has not synced in 3 days</div>
+            <div class="nt-sub">Every open and click figure in Reports is at least that stale, and a market may look quiet when it is not.</div>
+            <div class="nt-when">Example &middot; would link to Market History</div>
+          </div>
+        </div>
+
+        <div class="nt-item">
+          <span class="nt-ico nt-sent" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          </span>
+          <div class="nt-body">
+            <div class="nt-title">Ohio / ICP has been sent</div>
+            <div class="nt-sub">1,284 recipients by email. Opens and clicks appear once the next sync runs.</div>
+            <div class="nt-when">Example &middot; would link to the blast's report</div>
+          </div>
+        </div>
+
+      </div>
+      <div class="nt-foot">
+        <span>In-app only &mdash; no email, Slack or browser alerts.</span>
+        <span class="nt-soon">Not live</span>
+      </div>
+    </div>
 
     <!-- TEST MODE banner — shown only while send_allowlist is non-empty (real markets blocked) -->
     <div id="test-mode-banner" class="hidden shrink-0 bg-[#e55608] text-white px-5 py-2 text-sm flex items-center gap-2">
@@ -12677,6 +12821,62 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     //
     // FAILS BY STAYING HIDDEN, like the Telnyx strip above it. These sit on a tab that works
     // without them; `rep-empty` already explains an entirely blank Reports tab.
+
+    // ===== Notifications — SHELL ONLY =====
+    //
+    // Opens, closes and positions. There is NO feed behind it yet and deliberately no fetch: a
+    // placeholder that quietly polls an endpoint which does not exist is how a "coming soon"
+    // feature ends up with a console full of 404s and a reviewer unsure whether it is live.
+    //
+    // WHEN THE FEED LANDS, the work is: replace the sample rows in #nt-list with rendered ones,
+    // drop the .nt-note and the two "coming soon" badges, give .nt-item back its full opacity
+    // and a click target, and set the count from the data. Nothing about the panel's shape or
+    // placement needs to change, which is the point of building it first.
+    //
+    // IN-APP ONLY. No Notification API, no service worker, no permission prompt — the people who
+    // need this already have the tab open, and asking for browser permission on load is the
+    // fastest way to get a feature dismissed before it has said anything useful.
+    (function notificationsShell(){
+      const bell = document.getElementById('nt-bell');
+      const panel = document.getElementById('nt-panel');
+      if(!bell || !panel) return;
+
+      // Positioned from the bell's rect, right-aligned under it, and clamped so a narrow window
+      // cannot push it off either edge.
+      function place(){
+        const r = bell.getBoundingClientRect();
+        const w = panel.offsetWidth || 390, gap = 8;
+        const x = Math.max(gap, Math.min(r.right - w, window.innerWidth - w - gap));
+        panel.style.left = x + 'px';
+        panel.style.top = Math.min(r.bottom + 6, window.innerHeight - 80) + 'px';
+      }
+
+      const isOpen = () => !panel.classList.contains('hidden');
+      function open(){
+        panel.classList.remove('hidden');
+        place();
+        bell.setAttribute('aria-expanded', 'true');
+      }
+      function close(){
+        panel.classList.add('hidden');
+        bell.setAttribute('aria-expanded', 'false');
+      }
+
+      bell.addEventListener('click', e => { e.stopPropagation(); isOpen() ? close() : open(); });
+      document.getElementById('nt-close')?.addEventListener('click', close);
+
+      // Click-away and Escape, the same two exits the Admin menu has. A dropdown that only closes
+      // on its own trigger reads as broken the first time you click past it.
+      document.addEventListener('click', e => {
+        if(isOpen() && !panel.contains(e.target) && !bell.contains(e.target)) close();
+      });
+      document.addEventListener('keydown', e => { if(e.key === 'Escape' && isOpen()) close(); });
+      // Re-place rather than re-open: the panel is fixed, so a resize or scroll leaves it
+      // stranded where the bell used to be.
+      window.addEventListener('resize', () => { if(isOpen()) place(); });
+      window.addEventListener('scroll', () => { if(isOpen()) place(); }, true);
+    })();
+
     (function platformReportsModule(){
       const cm = document.getElementById('cm-strip'), sb = document.getElementById('sb-strip');
       if(!cm && !sb) return;
