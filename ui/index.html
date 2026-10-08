@@ -393,7 +393,22 @@
                             text-transform:uppercase; color:#9a7b45; }
     .price-pop .pp-mapwrap .pp-map-x{ background:none; border:0; cursor:pointer; width:auto;
                             font-size:15px; line-height:1; color:#9a7b45; padding:0 2px; }
-    .price-pop .pp-mapwrap .pp-map-body{ overflow:auto; padding:8px; }
+    .price-pop .pp-mapwrap .pp-map-body{ padding:8px; }
+    /* The viewport clips; the image inside is what moves. Section numbers on these charts are
+       tiny, so pan and zoom is the difference between a reference and a decoration. */
+    .price-pop .pp-map-view{ position:relative; overflow:hidden; border-radius:5px;
+                             border:1px solid #efe2cd; background:#fff; height:min(52vh, 420px);
+                             cursor:grab; touch-action:none; }
+    .price-pop .pp-map-view.is-panning{ cursor:grabbing; }
+    .price-pop .pp-map-view img{ position:absolute; top:0; left:0; transform-origin:0 0;
+                                 max-width:none; width:auto; border:0; border-radius:0;
+                                 user-select:none; -webkit-user-drag:none; will-change:transform; }
+    .price-pop .pp-map-tools{ display:flex; align-items:center; gap:4px; }
+    .price-pop .pp-map-tools button{ background:#fff; border:1px solid #efe2cd; border-radius:5px;
+                                     width:22px; height:20px; line-height:1; cursor:pointer;
+                                     font-size:12px; color:#9a7b45; padding:0; }
+    .price-pop .pp-map-tools button:hover{ background:#fffaf1; }
+    .price-pop .pp-map-tools .pp-map-reset{ width:auto; padding:0 6px; font-size:10px; font-weight:700; }
     /* 30 files at ~240KB, so the <img> only exists while the panel is open. */
     .price-pop .pp-mapwrap img{ width:100%; height:auto; display:block; border-radius:5px;
                             border:1px solid #efe2cd; background:#fff; }
@@ -6210,16 +6225,106 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         wrap.innerHTML = `<header>
             <h4>${esc2(arena)}</h4>
-            <button type="button" class="pp-map-x" data-ppmapclose="1" aria-label="Close the seat map">&times;</button>
+            <div class="pp-map-tools">
+              <button type="button" data-ppmapzoom="-1" aria-label="Zoom out">&minus;</button>
+              <button type="button" class="pp-map-reset" data-ppmapzoom="0">Fit</button>
+              <button type="button" data-ppmapzoom="1" aria-label="Zoom in">+</button>
+              <button type="button" class="pp-map-x" data-ppmapclose="1" aria-label="Close the seat map">&times;</button>
+            </div>
           </header>
           <div class="pp-map-body">
-            <img src="assets/venue/${venueDir}/${encodeURIComponent(arena)}.png" alt="${esc2(arena)} seating chart"
-                 onerror="this.onerror=null;this.src='assets/venue/${venueDir}/${encodeURIComponent(arena)}.jpg';
-                          this.onerror=function(){this.replaceWith(Object.assign(document.createElement('div'),{className:'pp-map-hint',textContent:'No seat map saved for this arena.'}));};">
+            <div class="pp-map-view"><img alt="${esc2(arena)} seating chart" draggable="false"></div>
           </div>
-          <div class="pp-map-hint">Reference only &mdash; check the section numbers above against the chart.</div>`;
+          <div class="pp-map-hint">Scroll to zoom, drag to move, Fit to reset. Reference only &mdash; check the sections above against the chart.</div>`;
         wrap.classList.remove('hidden');
+
+        // Extension varies across the saved charts, so .png is tried and .jpg is the fallback.
+        const img = wrap.querySelector('.pp-map-view img');
+        const base = `assets/venue/${venueDir}/${encodeURIComponent(arena)}`;
+        img.onerror = () => {
+          img.onerror = () => {
+            const v = wrap.querySelector('.pp-map-view');
+            if(v) v.innerHTML = '<div class="pp-map-hint">No seat map saved for this arena.</div>';
+          };
+          img.src = base + '.jpg';
+        };
+        img.onload = () => attachMapPanZoom(wrap);
+        img.src = base + '.png';
+
         placeSeatMap();
+      }
+
+      // Pan and zoom. Written against pointer events so a trackpad, a mouse and a touch screen
+      // all behave, and with no library: it is one transform and three listeners.
+      //
+      // The zoom anchors on the CURSOR rather than the corner. Zooming to the top-left and then
+      // hunting for the section you were looking at is what makes a zoomable image annoying.
+      function attachMapPanZoom(wrap){
+        const view = wrap.querySelector('.pp-map-view');
+        const img = view && view.querySelector('img');
+        if(!view || !img || view.dataset.panzoom) return;
+        view.dataset.panzoom = '1';
+
+        // "Fit" is the scale that shows the whole chart. Zooming out past it shows nothing extra.
+        const fitScale = () => Math.min(view.clientWidth / img.naturalWidth,
+                                        view.clientHeight / img.naturalHeight) || 1;
+        let fit = fitScale(), scale = fit, x = 0, y = 0;
+
+        const apply = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`; };
+        const reset = () => {
+          fit = fitScale(); scale = fit;
+          x = (view.clientWidth - img.naturalWidth * scale) / 2;
+          y = (view.clientHeight - img.naturalHeight * scale) / 2;
+          apply();
+        };
+
+        // Zoom about a point in viewport coordinates, keeping what is under it under it.
+        const zoomTo = (next, px, py) => {
+          const clamped = Math.max(fit * 0.9, Math.min(next, fit * 12));
+          const k = clamped / scale;
+          x = px - (px - x) * k;
+          y = py - (py - y) * k;
+          scale = clamped;
+          apply();
+        };
+
+        view.addEventListener('wheel', e => {
+          e.preventDefault();
+          const r = view.getBoundingClientRect();
+          zoomTo(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX - r.left, e.clientY - r.top);
+        }, { passive: false });
+
+        let dragging = false, lastX = 0, lastY = 0, pid = null;
+        view.addEventListener('pointerdown', e => {
+          dragging = true; pid = e.pointerId; lastX = e.clientX; lastY = e.clientY;
+          view.classList.add('is-panning');
+          try { view.setPointerCapture(pid); } catch { /* not capturable */ }
+        });
+        view.addEventListener('pointermove', e => {
+          if(!dragging) return;
+          x += e.clientX - lastX; y += e.clientY - lastY;
+          lastX = e.clientX; lastY = e.clientY;
+          apply();
+        });
+        const stop = () => {
+          if(!dragging) return;
+          dragging = false; view.classList.remove('is-panning');
+          try { view.releasePointerCapture(pid); } catch { /* already released */ }
+        };
+        view.addEventListener('pointerup', stop);
+        view.addEventListener('pointercancel', stop);
+        view.addEventListener('dblclick', reset);
+
+        wrap.addEventListener('click', e => {
+          const b = e.target.closest('[data-ppmapzoom]');
+          if(!b) return;
+          const dir = Number(b.dataset.ppmapzoom);
+          if(dir === 0) return reset();
+          const r = view.getBoundingClientRect();
+          zoomTo(scale * (dir > 0 ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2);
+        });
+
+        reset();
       }
 
       // Sit beside the popover, flipping to whichever side has room. The popover is fixed, so

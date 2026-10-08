@@ -49,3 +49,4 @@ xdocs/
 
 # generated price-pipeline outputs — regenerate with scripts/nba-zone-prices.js
 spot-check-*.csv
+zone-map-gaps.csv
