@@ -1,4 +1,11 @@
--- 108: approved venue list and per-market knowledge base for the Youth Events strategy (AI-1086).
+-- 108: approved venue list and per-market season calendar for the Youth Events strategy (AI-1086).
+--
+-- NAMED FOR THE STRATEGY, NOT JUST "venues", AND THAT MATTERS HERE. events_master already has a
+-- `venue` column and it means the OPPOSITE of this one: there, a venue is where a professional
+-- game we SELL TICKETS TO is played (Barclays Center). Here, a venue is somewhere we would HOST
+-- a youth event. A bare public.youth_event_venues sitting beside that is a table someone joins to the wrong
+-- thing on a Friday afternoon. venue_section_zones is a third, different sense again — the
+-- seating map of a ticketed arena.
 --
 -- Blocks AI-1076, the seasonal cron that creates Youth Events offers for greenfield markets.
 -- Both tables exist to be READ BY THAT CRON, which is why the sports a venue supports are stored
@@ -19,7 +26,7 @@
 -- rule, and the whole point is that "there's no point of inviting a football program to play at
 -- a basketball venue".
 
-create table if not exists public.venues (
+create table if not exists public.youth_event_venues (
   id            bigint generated always as identity primary key,
   state_code    text not null,
   state_name    text not null,
@@ -40,17 +47,19 @@ create table if not exists public.venues (
   unique (org, venue)
 );
 
-comment on table public.venues is
-  'Approved venue list for the Youth Events strategy (AI-1086). Greenfield states only for now. '
+comment on table public.youth_event_venues is
+  'Venues we could HOST a youth event at (AI-1086) — not to be confused with events_master.venue, which is where a ticketed pro game is played. Greenfield states only for now. '
   'sports is derived from venue_type by scripts/load-greenfield-venues.js using Josh''s rule '
   '(basketball->basketball,volleyball; football->football,soccer,lacrosse,field hockey; '
   'baseball->baseball,softball). UNVERIFIED: venue names are a research starting point.';
 
-create index if not exists venues_market on public.venues (state_code, market_city);
-create index if not exists venues_sports on public.venues using gin (sports);
+create index if not exists youth_event_venues_market on public.youth_event_venues (state_code, market_city);
+create index if not exists youth_event_venues_sports on public.youth_event_venues using gin (sports);
 
 -- ---------------------------------------------------------------------------------------------
--- Market knowledge base: when to send, per state.
+-- Market season calendar: when to send, per state. Deliberately NOT strategy-scoped —
+-- school dates and season starts are facts about a market, useful to any strategy that
+-- wants to time a send, so this one is named for the market rather than Youth Events.
 --
 -- Josh's reason for this existing at all: "certain states start a month or two later and ideally
 -- you could time it properly by state... so you don't just send them all out the same day once a
@@ -64,7 +73,7 @@ create index if not exists venues_sports on public.venues using gin (sports);
 -- from when someone fills it in.
 -- ---------------------------------------------------------------------------------------------
 
-create table if not exists public.market_knowledge (
+create table if not exists public.market_season_calendar (
   state_code          text primary key,
   state_name          text not null,
   market_city         text not null,          -- biggest city in the market
@@ -82,19 +91,19 @@ create table if not exists public.market_knowledge (
   loaded_at           timestamptz not null default now()
 );
 
-comment on table public.market_knowledge is
-  'Per-greenfield-state send timing for the Youth Events cron (AI-1086). Date columns are NULL '
+comment on table public.market_season_calendar is
+  'Per-market school and sports-season dates, used to time sends (AI-1086). Date columns are NULL '
   'until someone verifies them against the named district and athletics body — they change '
   'yearly and sends are scheduled against them, so a guess is worse than a blank. '
   'Seasons per Josh: fall Aug-Nov, winter Dec-Feb, spring Mar-May, summer Jun-Jul.';
 
-alter table public.venues enable row level security;
-alter table public.market_knowledge enable row level security;
+alter table public.youth_event_venues enable row level security;
+alter table public.market_season_calendar enable row level security;
 
-drop policy if exists venues_read on public.venues;
-create policy venues_read on public.venues for select using (true);
-drop policy if exists market_knowledge_read on public.market_knowledge;
-create policy market_knowledge_read on public.market_knowledge for select using (true);
+drop policy if exists youth_event_venues_read on public.youth_event_venues;
+create policy youth_event_venues_read on public.youth_event_venues for select using (true);
+drop policy if exists market_season_calendar_read on public.market_season_calendar;
+create policy market_season_calendar_read on public.market_season_calendar for select using (true);
 
-grant select on public.venues, public.market_knowledge to anon, authenticated;
-grant all    on public.venues, public.market_knowledge to service_role;
+grant select on public.youth_event_venues, public.market_season_calendar to anon, authenticated;
+grant all    on public.youth_event_venues, public.market_season_calendar to service_role;

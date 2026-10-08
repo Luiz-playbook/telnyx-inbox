@@ -6266,16 +6266,29 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         view.dataset.panzoom = '1';
 
         // "Fit" is the scale that shows the whole chart. Zooming out past it shows nothing extra.
-        const fitScale = () => Math.min(view.clientWidth / img.naturalWidth,
-                                        view.clientHeight / img.naturalHeight) || 1;
-        let fit = fitScale(), scale = fit, x = 0, y = 0;
+        //
+        // MEASURED LATE, ON PURPOSE. This runs from img.onload, and a cached image fires that
+        // before the panel has its final size — so clientWidth/clientHeight came back far too
+        // small and Fit rendered the chart as a thumbnail in the corner. Everything below defers
+        // or repeats the measurement until the box has actually been laid out.
+        const fitScale = () => {
+          const w = view.clientWidth, h = view.clientHeight;
+          if (!w || !h || !img.naturalWidth || !img.naturalHeight) return 0;   // not laid out yet
+          return Math.min(w / img.naturalWidth, h / img.naturalHeight);
+        };
+        let fit = 1, scale = 1, x = 0, y = 0;
+        // Once someone zooms or drags, their view is theirs — a late re-fit must not yank it back.
+        let userAdjusted = false;
 
         const apply = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`; };
         const reset = () => {
-          fit = fitScale(); scale = fit;
+          const f = fitScale();
+          if (!f) return false;                       // still unmeasurable; a later pass will do it
+          fit = f; scale = f;
           x = (view.clientWidth - img.naturalWidth * scale) / 2;
           y = (view.clientHeight - img.naturalHeight * scale) / 2;
           apply();
+          return true;
         };
 
         // Zoom about a point in viewport coordinates, keeping what is under it under it.
@@ -6290,13 +6303,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
         view.addEventListener('wheel', e => {
           e.preventDefault();
+          userAdjusted = true;
           const r = view.getBoundingClientRect();
           zoomTo(scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX - r.left, e.clientY - r.top);
         }, { passive: false });
 
         let dragging = false, lastX = 0, lastY = 0, pid = null;
         view.addEventListener('pointerdown', e => {
-          dragging = true; pid = e.pointerId; lastX = e.clientX; lastY = e.clientY;
+          dragging = true; userAdjusted = true; pid = e.pointerId; lastX = e.clientX; lastY = e.clientY;
           view.classList.add('is-panning');
           try { view.setPointerCapture(pid); } catch { /* not capturable */ }
         });
@@ -6313,18 +6327,32 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         };
         view.addEventListener('pointerup', stop);
         view.addEventListener('pointercancel', stop);
-        view.addEventListener('dblclick', reset);
+        view.addEventListener('dblclick', () => { userAdjusted = false; reset(); });
 
         wrap.addEventListener('click', e => {
           const b = e.target.closest('[data-ppmapzoom]');
           if(!b) return;
           const dir = Number(b.dataset.ppmapzoom);
-          if(dir === 0) return reset();
+          if(dir === 0) { userAdjusted = false; reset(); return; }
+          userAdjusted = true;
           const r = view.getBoundingClientRect();
           zoomTo(scale * (dir > 0 ? 1.4 : 1 / 1.4), r.width / 2, r.height / 2);
         });
 
+        // Fit as soon as the box has a size, and keep re-fitting while it changes — the panel is
+        // positioned after this runs, and its height is a vh value that moves with the window.
+        // ResizeObserver is the only thing that reliably catches both.
         reset();
+        requestAnimationFrame(() => { if(!userAdjusted) reset(); });
+        if (typeof ResizeObserver !== 'undefined') {
+          const ro = new ResizeObserver(() => { if(!userAdjusted) reset(); });
+          ro.observe(view);
+          // Stop watching when the panel goes away, or it outlives the element it measures.
+          const mo = new MutationObserver(() => {
+            if(!view.isConnected){ ro.disconnect(); mo.disconnect(); }
+          });
+          mo.observe(wrap, { childList: true, subtree: true });
+        }
       }
 
       // Sit beside the popover, flipping to whichever side has room. The popover is fixed, so

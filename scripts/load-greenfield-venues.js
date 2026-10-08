@@ -120,6 +120,6 @@ async function replace(table, rows, conflict) {
   console.log(`wrote ${rows.length} -> ${table}`);
 }
 
-await replace('venues', venues);
-await replace('market_knowledge', knowledge);
+await replace('youth_event_venues', venues);
+await replace('market_season_calendar', knowledge);
 console.log('done.');
