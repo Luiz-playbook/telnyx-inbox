@@ -137,10 +137,14 @@
        panel says so at the top so nobody mistakes a sample for a live alert.
        When the feed lands, the only change here is where the rows come from. */
     .nt-wrap{ position:relative; }
+    /* ON THE TAB ROW, WHICH IS WHITE (theme.css: .pb-tabs background:#fff) — not on the dark
+       top bar. The first version was coloured for the top bar, so on white the bell vanished and
+       left its count badge floating on its own (Vhea, 2026-10-08). It now takes the same grey
+       and hover as a tab link beside it, so it reads as part of the row. */
     .nt-bell{ position:relative; display:inline-flex; align-items:center; justify-content:center;
               width:30px; height:30px; border-radius:7px; border:0; background:none; cursor:pointer;
-              color:rgba(255,255,255,.72); }
-    .nt-bell:hover{ background:rgba(255,255,255,.1); color:#fff; }
+              color:#5e6e82; }
+    .nt-bell:hover{ background:#f4f7fb; color:#354052; }
     .nt-bell svg{ width:16px; height:16px; }
     /* THE COUNT IS DELIBERATELY NOT A RED DOT while this is a shell. A red badge is a promise
        that something needs attention, and inventing one over sample data would train people to
@@ -811,6 +815,12 @@
             </div>
           </details>
         </nav>
+        <!-- EVERYTHING ON THE RIGHT, IN ONE GROUP. The row is `justify-between`, which spaces
+             its children evenly — so a third child does not go to the right, it goes to the
+             MIDDLE. Adding the bell beside #acct put it in the dead centre of the tab bar
+             (Vhea, 2026-10-08). Grouping the two keeps the row at two children: tabs, then this.
+             Anything else added to the right belongs in here, not beside it. -->
+        <div class="flex items-center gap-1.5">
         <!-- NOTIFICATIONS — SHELL ONLY (Vhea, 2026-10-08). Nothing here reads live data; every
              row in the panel is a labelled example. Built now so the shape is arguable on screen
              before the feed behind it exists, and marked "coming soon" in three places so it
@@ -820,23 +830,24 @@
              IN-APP ONLY, by decision. No Slack, no email, no browser push — the people who need
              this are already in this tab all day, and every out-of-app channel is an account to
              set up and a place for an alert to go unread. -->
-        <div class="nt-wrap">
-          <button id="nt-bell" class="nt-bell" type="button" aria-haspopup="true" aria-expanded="false"
-                  title="Notifications — coming soon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
-              <path d="M13.7 21a2 2 0 0 1-3.4 0"/>
-            </svg>
-            <span class="nt-dot" id="nt-count" aria-hidden="true">4</span>
-            <span class="sr-only">Notifications</span>
-          </button>
-        </div>
-        <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
-             so a logged-out visitor never sees an empty account chip on the way to /login. -->
-        <div id="acct" class="hidden items-center gap-2 text-xs">
-          <span id="acct-email" class="text-base-content/60"></span>
-          <button id="sign-out" class="btn btn-ghost btn-xs">Sign out</button>
+          <div class="nt-wrap">
+            <button id="nt-bell" class="nt-bell" type="button" aria-haspopup="true" aria-expanded="false"
+                    title="Notifications — coming soon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/>
+                <path d="M13.7 21a2 2 0 0 1-3.4 0"/>
+              </svg>
+              <span class="nt-dot" id="nt-count" aria-hidden="true">4</span>
+              <span class="sr-only">Notifications</span>
+            </button>
+          </div>
+          <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
+               so a logged-out visitor never sees an empty account chip on the way to /login. -->
+          <div id="acct" class="hidden items-center gap-2 text-xs">
+            <span id="acct-email" class="text-base-content/60"></span>
+            <button id="sign-out" class="btn btn-ghost btn-xs">Sign out</button>
+          </div>
         </div>
       </div>
     </header>
