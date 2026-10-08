@@ -572,6 +572,9 @@
           <!-- Replies stays a main tab: history is what we said, replies is what came back, and
                replying is daily work. The reporting and setup pages it used to sit beside are
                now behind Admin (AI-1074), which is why it reads as a main tab on its own. -->
+          <!-- Inbox (AI-1102): Cole's demo-booking emails, pulled nightly from his Gmail. A main
+               tab because it is read every morning, which is the test Replies passed. -->
+          <a href="#" data-tab="inbox"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12l3-8h12l3 8v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 12h5l2 3h4l2-3h5"/></svg>Inbox</a>
           <a href="#" data-tab="replies"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10a6 6 0 0 1 6 6v5"/></svg>Replies</a>
           <!-- ADMIN (AI-1074). Everything you configure or consult rather than work through
                every day: templates, Cole's rules, ticket prices, market history, reports and the
@@ -1306,6 +1309,65 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                blank panel. Email has no ingestion wired at all; SMS only ever receives replies to
                +16158050766, because the eight 2-way numbers post to Charles's HubSpot endpoint
                instead. Verified against the live Telnyx account, 2026-09-17. -->
+          <!-- ===== INBOX (AI-1102) ===== -->
+          <!-- Cole's Gmail, as the n8n sync left it in public.inbox_emails: every message of the
+               last two days, tagged is_demo_booking by a classifier. The default view is the
+               bookings; "Show everything" is one click away because a wrongly-classified mail
+               should be findable, not gone. Read-only here - the mailbox is the source of truth. -->
+          <div data-view id="view-inbox" class="hidden space-y-3">
+            <div class="flex items-start gap-3 flex-wrap">
+              <div class="flex gap-3">
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Demo bookings</div>
+                  <div id="ib-demo" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">All synced</div>
+                  <div id="ib-total" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[9rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Last sync</div>
+                  <div id="ib-synced" class="text-base font-bold text-[#133b49] mt-1">&mdash;</div>
+                </div>
+              </div>
+              <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 flex-1 min-w-[20rem] text-xs text-base-content/60 leading-relaxed">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50 mb-1.5">Where this comes from</div>
+                Cole's Gmail, read once a day at 06:00 by the n8n workflow <span class="font-mono">[Inbox] [Sync] Cole Gmail</span>.
+                Subject, sender and the first line are kept; the email itself stays in Gmail.
+                Tag an email in Gmail and it shows up here under that label after the next sync.
+              </div>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <input id="ib-search" type="search" placeholder="Search subject, sender or snippet&hellip;"
+                     class="input input-bordered input-sm w-80" aria-label="Search the inbox">
+              <!-- Options are built from the labels actually on the rows, so it never offers a
+                   label with nothing behind it. -->
+              <select id="ib-label" class="select select-bordered select-sm" aria-label="Filter by Gmail label">
+                <option value="">Any label</option>
+              </select>
+              <label class="label cursor-pointer gap-2 text-sm"><input id="ib-all" type="checkbox" class="checkbox checkbox-xs"> <span>Show everything, not just demo bookings</span></label>
+              <span id="ib-count" class="text-xs text-base-content/60"></span>
+              <button id="ib-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-380px)]">
+                <table class="q-table w-full">
+                  <thead>
+                    <tr><th>Received</th><th>From</th><th>Subject</th><th>Labels</th><th>Tagged</th></tr>
+                  </thead>
+                  <tbody id="ib-rows"><tr><td colspan="5" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr></tbody>
+                </table>
+              </div>
+              <div class="flex items-center gap-2 px-4 py-2.5 border-t border-base-300 text-xs">
+                <button id="ib-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
+                <span id="ib-page" class="text-base-content/60"></span>
+                <button id="ib-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
+              </div>
+            </div>
+          </div>
+
           <div data-view id="view-replies" class="hidden space-y-3">
             <div class="flex items-center gap-3 flex-wrap">
               <div role="tablist" class="tabs tabs-boxed bg-base-200/60">
@@ -3579,8 +3641,121 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       window.__loadForwarding = () => { if(once) return; once = true; load(); };
     })();
 
+    // ===== INBOX (AI-1102) =====
+    //
+    // Reads public.inbox_emails with the anon key (select policy, migration 094). Nothing here
+    // writes: the sync owns the rows and Gmail owns the mail. Paged server-side like the DNC
+    // tab, because a year of a busy mailbox is thousands of rows.
+    (() => {
+      if(!document.getElementById('ib-rows')) return;
+      const el = id => document.getElementById(id);
+      const SOURCE = 'gmail:cole';
+      const PAGE = 50;
+      let page = 0, term = '', label = '', showAll = false, lastCount = 0;
+
+      const when = iso => {
+        if(!iso) return '';
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      };
+      const ago = iso => {
+        if(!iso) return 'never';
+        const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+        return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m/60) + ' h ago' : Math.round(m/1440) + ' d ago';
+      };
+
+      async function loadStats(){
+        if(!sb) return;
+        const [demo, all, last] = await Promise.all([
+          sb.from('inbox_emails').select('id', { count: 'exact', head: true }).eq('source', SOURCE).eq('is_demo_booking', true),
+          sb.from('inbox_emails').select('id', { count: 'exact', head: true }).eq('source', SOURCE),
+          sb.from('inbox_emails').select('synced_at').eq('source', SOURCE).order('synced_at', { ascending: false }).limit(1),
+        ]);
+        if(el('ib-demo'))  el('ib-demo').textContent  = (demo.count ?? 0).toLocaleString();
+        if(el('ib-total')) el('ib-total').textContent = (all.count ?? 0).toLocaleString();
+        const s = last.data && last.data[0] && last.data[0].synced_at;
+        if(el('ib-synced')){ el('ib-synced').textContent = ago(s); el('ib-synced').title = s || 'The sync has not run yet'; }
+      }
+
+      // The label dropdown is built from what is on the rows - the last 500 synced - so it
+      // can never offer a label nothing carries. Gmail system labels (INBOX, UNREAD, …) are
+      // noise here and are dropped; a user's own labels are what "tag it to include it" means.
+      const SYSTEM = new Set(['INBOX','SENT','UNREAD','IMPORTANT','STARRED','CATEGORY_PERSONAL','CATEGORY_SOCIAL','CATEGORY_PROMOTIONS','CATEGORY_UPDATES','CATEGORY_FORUMS','DRAFT','SPAM','TRASH','CHAT']);
+      async function loadLabels(){
+        if(!sb) return;
+        const r = await sb.from('inbox_emails').select('labels').eq('source', SOURCE).order('received_at', { ascending: false }).limit(500);
+        const seen = new Set();
+        (r.data || []).forEach(x => (x.labels || []).forEach(l => { if(l && !SYSTEM.has(l)) seen.add(l); }));
+        const sel = el('ib-label'); if(!sel) return;
+        const keep = label;
+        sel.innerHTML = '<option value="">Any label</option>' + [...seen].sort().map(l => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join('');
+        sel.value = seen.has(keep) ? keep : '';
+        if(sel.value !== keep) label = sel.value;
+      }
+
+      async function load(){
+        const tb = el('ib-rows'); if(!tb) return;
+        if(!sb){ tb.innerHTML = '<tr><td colspan="5" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        let q = sb.from('inbox_emails')
+          .select('id,gmail_message_id,gmail_thread_id,from_email,from_name,subject,snippet,labels,received_at,is_demo_booking,classifier_reason,read_at', { count: 'exact' })
+          .eq('source', SOURCE);
+        if(!showAll) q = q.eq('is_demo_booking', true);
+        if(label) q = q.contains('labels', [label]);
+        if(term.trim()){
+          const t = term.trim().replace(/[%,()]/g, ' ');
+          q = q.or('subject.ilike.%' + t + '%,from_email.ilike.%' + t + '%,from_name.ilike.%' + t + '%,snippet.ilike.%' + t + '%');
+        }
+        const r = await q.order('received_at', { ascending: false, nullsFirst: false }).range(page * PAGE, page * PAGE + PAGE - 1);
+        if(r.error){ tb.innerHTML = '<tr><td colspan="5" class="text-center text-error py-8">' + esc(r.error.message) + '</td></tr>'; return; }
+        const rows = r.data || [];
+        lastCount = r.count || 0;
+        if(el('ib-count')) el('ib-count').textContent = lastCount ? lastCount.toLocaleString() + (showAll ? ' emails' : ' demo bookings') : '';
+        if(el('ib-page')) el('ib-page').textContent = lastCount ? ('page ' + (page + 1) + ' of ' + Math.max(1, Math.ceil(lastCount / PAGE))) : '';
+        if(el('ib-prev')) el('ib-prev').disabled = page === 0;
+        if(el('ib-next')) el('ib-next').disabled = (page + 1) * PAGE >= lastCount;
+        if(!rows.length){
+          // The most specific true reason, because "nothing here" with a filter on reads as
+          // "the sync is broken", which is a much bigger claim.
+          const why = term.trim() || label ? 'Nothing matches that filter.'
+                    : showAll ? 'Nothing has been synced yet. The sync runs daily at 06:00; its first run fills this.'
+                    : 'No demo-booking emails in what has been synced. Tick "Show everything" to see the rest.';
+          tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">' + why + '</td></tr>';
+          return;
+        }
+        tb.innerHTML = rows.map(r => {
+          const labels = (r.labels || []).filter(l => !SYSTEM.has(l));
+          const from = r.from_name && r.from_name !== r.from_email
+            ? '<div class="font-semibold text-[#133b49]">' + esc(r.from_name) + '</div><div class="text-xs text-base-content/50">' + esc(r.from_email || '') + '</div>'
+            : '<div class="font-semibold text-[#133b49]">' + esc(r.from_email || '') + '</div>';
+          // A link into the very message in Gmail: the tab shows the first line, Gmail has the rest.
+          const open = r.gmail_message_id ? ' <a class="text-xs text-[#1d4fd7] hover:underline" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + esc(r.gmail_message_id) + '">open in Gmail</a>' : '';
+          return '<tr>'
+            + '<td class="whitespace-nowrap text-xs text-base-content/60">' + esc(when(r.received_at)) + '</td>'
+            + '<td>' + from + '</td>'
+            + '<td><div class="font-semibold text-[#133b49]">' + esc(r.subject || '(no subject)') + open + '</div><div class="text-xs text-base-content/60 max-w-[52ch] truncate" title="' + esc(r.snippet || '') + '">' + esc(r.snippet || '') + '</div></td>'
+            + '<td>' + (labels.length ? labels.map(l => '<span class="badge badge-sm badge-ghost mr-1">' + esc(l) + '</span>').join('') : '<span class="text-base-content/30">&mdash;</span>') + '</td>'
+            + '<td>' + (r.is_demo_booking
+                ? '<span class="badge badge-sm bg-[#eaf5ee] text-[#067523] border-[#cfe9d8]" title="' + esc(r.classifier_reason || '') + '">demo booking</span>'
+                : '<span class="badge badge-sm badge-ghost" title="' + esc(r.classifier_reason || '') + '">other</span>') + '</td>'
+            + '</tr>';
+        }).join('');
+      }
+
+      let t = null;
+      el('ib-search') && el('ib-search').addEventListener('input', e => { term = e.target.value; clearTimeout(t); t = setTimeout(() => { page = 0; load(); }, 300); });
+      el('ib-label')  && el('ib-label').addEventListener('change', e => { label = e.target.value; page = 0; load(); });
+      el('ib-all')    && el('ib-all').addEventListener('change', e => { showAll = !!e.target.checked; page = 0; load(); });
+      el('ib-prev')   && el('ib-prev').addEventListener('click', () => { if(page > 0){ page--; load(); } });
+      el('ib-next')   && el('ib-next').addEventListener('click', () => { page++; load(); });
+      el('ib-reload') && el('ib-reload').addEventListener('click', () => { loadStats(); loadLabels(); load(); });
+
+      // Loaded on first view, like the other data tabs.
+      let once = false;
+      window.__loadInbox = () => { if(once) return; once = true; loadStats(); loadLabels().then(load); };
+    })();
+
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', forwarding:'view-forwarding' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', forwarding:'view-forwarding', inbox:'view-inbox' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -3594,6 +3769,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
       if(tab === 'forwarding' && window.__loadForwarding) window.__loadForwarding();
+      if(tab === 'inbox' && window.__loadInbox) window.__loadInbox();
       // AI-1074. A tab inside Admin lights the Admin trigger instead: the row must still say
       // where you are when the page you are on is not one of the three visible tabs.
       const aw = document.getElementById('admin-menu');
