@@ -34,6 +34,7 @@
 
 import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, OR_COST_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
 import { scrapeGamePrice, scrapeToPriceRow, newScrapeContext, errorCandidate } from '../lib/scrape-price.js';
+import { loadZoneIndex } from '../lib/nba-zones.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };
@@ -306,6 +307,9 @@ export default async function handler(req, res) {
     const scrapeStat = { tried: 0, priced: 0, not_reached: 0, gametime: 0, tickpick: 0, pages: 0, via: {}, firecrawl: 0 };
     let modelGames = games;
     if (scrapeOn && games.length) {
+      // The NBA section map, once per run. Best effort: a database without migration 106 has no
+      // such table, and zones are an extra column on a price, never a reason not to write one.
+      await loadZoneIndex(supaUrl, supaKey).catch(() => null);
       const ctx = newScrapeContext();
       const scrapeDeadline = started + SCRAPE_BUDGET_MS;
       const missed = [];
