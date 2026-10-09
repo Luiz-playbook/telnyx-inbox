@@ -162,11 +162,15 @@
        and a left-anchored menu would hang off the page. */
     .acct-wrap{ position:relative; }
     .acct-trigger::-webkit-details-marker{ display:none; }
+    /* ON THE TAB ROW, WHICH IS WHITE (theme.css: .pb-tabs background:#fff) — not on the dark top
+       bar. This was first coloured #e8f1f4 with white-alpha hovers, i.e. for the top bar, so the
+       name rendered near-white on white and simply was not there. Exactly what the notification
+       bell below went through. It now takes the same ink and hover as a tab link beside it. */
     .acct-trigger{ list-style:none; display:inline-flex; align-items:center; gap:7px; cursor:pointer;
       user-select:none; padding:4px 8px 4px 4px; border-radius:999px; border:1px solid transparent;
-      color:#e8f1f4; font-weight:600; font-size:12px; }
-    .acct-trigger:hover{ background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.2); }
-    details[open] > .acct-trigger{ background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.26); }
+      color:#5e6e82; font-weight:700; font-size:12.5px; }
+    .acct-trigger:hover{ background:#f4f7fb; border-color:#e3eaf2; color:#354052; }
+    details[open] > .acct-trigger{ background:#edf2f9; border-color:#d8e2ef; color:#133b49; }
     /* Initials rather than a photo: Google's avatar URL expires and a broken image in the header
        is worse than no image at all. */
     .acct-avatar{ width:24px; height:24px; border-radius:999px; background:#e55608; color:#fff;
@@ -188,8 +192,12 @@
     /* NOT opacity. opacity:.55 faded the label, the icon and the Soon pill together until the
        row could not be read at all - which is the wrong way to say "not yet", because the row
        exists precisely to be read. A muted ink colour says unavailable and stays legible. */
-    .acct-menu button:disabled{ cursor:default; color:#8da2ad; }
-    .acct-menu button:disabled svg{ opacity:.7; }
+    /* Readable, not greyed into nothing. #8da2ad on white is about 2.5:1 and still failed the
+       "I cannot see it" test, so the row takes the ordinary muted ink and lets the SOON pill and
+       the cursor carry the meaning instead of the contrast. */
+    .acct-menu button:disabled{ cursor:default; color:#5e6e82; }
+    .acct-menu button:disabled:hover{ background:none; color:#5e6e82; }
+    .acct-menu button:disabled svg{ opacity:.75; }
     /* The theme row ships visible and disabled on purpose. index.html carries ~840 hardcoded
        colours and theme.css defines a light token set only, so flipping data-theme today would
        restyle DaisyUI's components and leave the topbar, tabs, chips and panels light. Showing
@@ -218,11 +226,9 @@
        make it unreadable, so the paragraphs alone keep a line length (~78 characters) and
        everything structural spans. */
     #view-release-notes .rn-wrap{ max-width:none; width:100%; }
-    #view-release-notes .rn-standfirst,
-    #view-release-notes .rn-areanote,
-    #view-release-notes .rn-items p,
-    #view-release-notes .rn-panel li,
-    #view-release-notes .rn-foot p{ max-width:78ch; }
+    /* No measure cap. A 78ch cap was tried and the page still read as narrow: the cards spanned
+       but every paragraph inside them sat in a column on the left with the rest of the window
+       empty beside it. Asked for the whole page, so the whole page it is. */
     #view-release-notes .rn-eyebrow{ font-family:ui-monospace,Consolas,monospace; font-size:11px;
       letter-spacing:.14em; text-transform:uppercase; color:#c2500a; margin:0 0 9px; }
     #view-release-notes h1{ font-weight:800; font-size:clamp(25px,4.2vw,34px); line-height:1.1;
@@ -2033,17 +2039,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 </ul>
               </div>
               <div class="rn-panel">
-                <h3>Built, waiting to be switched on</h3>
+                <h3>Switched on, and what to watch</h3>
                 <ul>
-                  <li><b>Per-site price routing is off</b> in every environment &mdash; <code>PRICE_SOURCE_ROUTING</code> is unset,
-                    so sections are asked of Gametime alone instead of all four sites. Turning it on costs a small amount per
-                    game, so it stays a deliberate switch rather than a default. It is also what caps the next item.</li>
-                  <li><b>Zone prices cover 24 games across 13 arenas, and that is a source limit, not a coverage one.</b>
-                    Checked against the database on 9 Oct: 117 NBA games carry a get-in price and 24 carry zones, and
-                    <b>all 93 zone entries came from Gametime</b> &mdash; the only site asked while routing is off. So this is
-                    not waiting for more games to be priced, as previously stated here; it is waiting for the switch above.
-                    Worth knowing too: zones are rewritten on every refresh and cleared when a run finds none, by design, so
-                    the figure is a high-water mark that can move down as well as up.</li>
+                  <li><b>Per-site price routing is now ON.</b> <code>PRICE_SOURCE_ROUTING</code> was set in Vercel on 9 Oct.
+                    Sections are now asked of four sites instead of one &mdash; Gametime&rsquo;s API, SeatGeek through Apify,
+                    Vivid and StubHub through a hosted browser &mdash; and the cross-source check can finally fire, because it
+                    needs a second site&rsquo;s cheapest seat to compare against and until now there wasn&rsquo;t one. It costs
+                    roughly <b>3&cent; per NBA game per refresh</b> on the published Apify and Kernel rates, NBA only, so the
+                    first few days are worth watching on both coverage and spend. Unsetting the variable reverts it.</li>
+                  <li><b>Zone coverage was 24 games across 13 arenas, and that number predates the switch.</b> Measured on
+                    9 Oct with routing still off: 117 NBA games carried a get-in price, 24 carried zones, and <b>all 93 zone
+                    entries came from Gametime</b> &mdash; the only site being asked. So it was never waiting for more games to
+                    be priced, as this panel used to say; it was waiting for the switch above, which has now happened. Expect
+                    the figure to move at the next refresh. Two caveats on reading it: zones are rewritten on every refresh and
+                    cleared when a run finds none, by design, so it is a high-water mark that can go down as well as up &mdash;
+                    and a game where two sites disagree by more than 5x is given no zone price at all, which is the guard
+                    working, not a gap.</li>
                   <li><b>The Vivid Seats discrepancy is resolved, and it was not a discrepancy.</b> This panel used to say Vivid
                     reported roughly ten times the expected price on one game. It did not: TickPick independently priced the
                     same fixture &mdash; Knicks v 76ers at Madison Square Garden &mdash; at <b>$1,059</b> all-in against Vivid&rsquo;s
