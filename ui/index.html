@@ -7228,10 +7228,13 @@ This removes its school and season dates. Venues in this market are not touched.
         }
       }
 
+      // ET, like every other clock in this app - the row and the reader drawer must agree. In the
+      // browser's own zone a Nov 30 2pm ET snooze read "Dec 1 3:00 AM" in Manila while the drawer
+      // said Nov 30, and the two looked like different emails (2026-10-09).
       const when = iso => {
         if(!iso) return '';
         const d = new Date(iso);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
       };
       const ago = iso => {
         if(!iso) return 'never';
