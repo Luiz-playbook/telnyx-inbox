@@ -5842,11 +5842,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // The icon jumps to this market's row in the Markets catalog. Added because two
             // columns side by side answer "are these the same thing?" but not "so what does this
             // market say?" — and the dates that time the send live only on that row.
-            { h: 'Market', v: r => (r.market_city
-                ? esc(r.market_city) + (r.in_market_city ? ''
-                    : ' <span class="text-base-content/30" title="This venue is not in the market city. Sends for this state are timed off the market city&rsquo;s school calendar.">(venue is elsewhere)</span>')
-                  + ` <button class="cat-jump" data-gomarket="${esc(r.state_code)}" title="Open ${esc(r.market_city)} in Markets — its school and season dates">&#8599;</button>`
-                : '<span class="cat-warn" title="No market row for this state, so nothing times a send here yet.">no market row</span>') },
+              // WHAT THIS COLUMN IS FOR. Not the geography — the City column beside it already
+              // shows that. What is NOT visible anywhere else is that a send for this venue is
+              // timed off the MARKET city's school calendar, whichever city the venue is in.
+              //
+              // An earlier version appended "(venue is elsewhere)" to every out-of-market row.
+              // That was 68 of 89 rows carrying a parenthetical which restated what the two
+              // columns already showed, and it described the geography rather than the
+              // consequence. The tooltip names both cities and says which one the dates come
+              // from; the filter beside the search still splits in-market from elsewhere for
+              // anyone who wants to count them.
+              { h: 'Market', v: r => (r.market_city
+                  ? `<span title="${esc(r.in_market_city
+                      ? `School and season dates for sends here come from ${r.market_city}, which is also where this venue is.`
+                      : `School and season dates for sends here come from ${r.market_city}, the market city — not from ${r.venue_city}, where this venue is.`)}">${esc(r.market_city)}</span>`
+                    + ` <button class="cat-jump" data-gomarket="${esc(r.state_code)}" title="Open ${esc(r.market_city)} in Markets — its school and season dates">&#8599;</button>`
+                  : '<span class="cat-warn" title="No market row for this state, so nothing times a send here yet.">no market row</span>') },
             { h: 'Level', v: r => esc(String(r.level || '').toUpperCase()) },
             // Medium = the venue name has not been checked against a primary source. Shown, not
             // hidden, for the same reason the zone map flags its derived sections.
