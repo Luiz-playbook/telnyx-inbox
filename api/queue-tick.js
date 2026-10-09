@@ -590,8 +590,23 @@ export default async function handler(req, res) {
                 replyTo,
                 // `name` is CakeMail's internal campaign label, not anything a recipient
                 // sees — the row title is the right thing there, subject is not.
+                //
+                // THE TRAILING STATE CODE IS LOAD-BEARING, not decoration. sendCampaign uses
+                // this same string as the LIST name, and v_list_market resolves a list to a
+                // market by reading a trailing two-letter state code when no exact bridge row
+                // exists (migration 109). So '… — AZ' is what makes an app send land in
+                // Market History without anyone hand-writing a bridge row for it. Keep the
+                // code last, and keep it two letters.
+                //
+                // When state_code is null there is no market to encode and the blast will read
+                // as unmapped — correct, since nothing knows which market it was for.
                 name: `${r.title} — ${r.state_code || 'blast'}`,
-                tags: ['telnyx-inbox', r.state_code || 'blast'].filter(Boolean),
+                // 'market:XX' is the machine-readable copy of the same fact, for anything that
+                // would rather not parse a label. Nothing consumes it yet: using it would mean
+                // storing campaign tags on blast_templates and teaching the resolver a fourth
+                // branch. Written now so the data exists when that is worth doing.
+                tags: ['telnyx-inbox', r.state_code || 'blast',
+                       ...(r.state_code ? [`market:${r.state_code}`] : [])].filter(Boolean),
               });
               sent.push(`CakeMail ${out.recipients} (campaign ${out.campaignId})`);
               // The campaign id is the one provider reference that makes a logged recipient

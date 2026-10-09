@@ -22,7 +22,7 @@
 // Auth: lib/auth.js — Bearer CRON_SECRET or a signed-in user's Supabase token. It used to be
 // REPLY_SECRET, which ui/config.js publishes to every visitor.
 //
-// Prompts are documented in docs/AI_DRAFT_AGENT.md — edit them there and here together.
+// Prompts are documented in docs/documentation/AI_DRAFT_AGENT.md — edit them there and here together.
 //
 // Raw fetch rather than an SDK: this repo has no package.json and no dependencies
 // (api/lookup.js calls Telnyx the same way). Adding one npm dep for one call isn't

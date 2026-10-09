@@ -33,7 +33,8 @@
 //      CRAWL4AI_API_TOKEN, FIRECRAWL_AUTHORIZATION_KEY, FIRECRAWL_HEADER_NAME.
 
 import { PRICE_MODEL, PRICE_IN_COST, PRICE_OUT_COST, GROUNDING_PER_REQ, OR_COST_PER_REQ, priceRoute, callPrices } from '../lib/price.js';
-import { scrapeGamePrice, scrapeToPriceRow, newScrapeContext, errorCandidate } from '../lib/scrape-price.js';
+import { scrapeGamePrice, scrapeToPriceRow, newScrapeContext, finishScrapeContext, errorCandidate } from '../lib/scrape-price.js';
+import { loadZoneIndex } from '../lib/section-zones.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 300 };
@@ -306,6 +307,9 @@ export default async function handler(req, res) {
     const scrapeStat = { tried: 0, priced: 0, not_reached: 0, gametime: 0, tickpick: 0, pages: 0, via: {}, firecrawl: 0 };
     let modelGames = games;
     if (scrapeOn && games.length) {
+      // The NBA section map, once per run. Best effort: a database without migration 112 has no
+      // such table, and zones are an extra column on a price, never a reason not to write one.
+      await loadZoneIndex(supaUrl, supaKey).catch(() => null);
       const ctx = newScrapeContext();
       const scrapeDeadline = started + SCRAPE_BUDGET_MS;
       const missed = [];
@@ -329,7 +333,15 @@ export default async function handler(req, res) {
         }
       };
       await Promise.all(Array.from({ length: Math.min(SCRAPE_CONCURRENCY, games.length) }, scrapeWorker));
+      // Shut the shared Kernel browser. In a finally-shaped position on purpose: the workers
+      // above already swallow their own errors, so reaching here means the scrape phase is over
+      // whether it went well or not, and a session left open bills until Kernel reaps it.
+      const kernelCost = await finishScrapeContext(ctx);
+      if (kernelCost) scrapeStat.kernel_cost_usd = kernelCost.usd;
       scrapeStat.pages = ctx.stats.pages; scrapeStat.via = ctx.stats.byVia; scrapeStat.firecrawl = ctx.firecrawlCalls;
+      // Kernel sessions are billed separately from Firecrawl credits, so they are counted
+      // separately too — a run's cost is not readable from one number any more.
+      if (ctx.kernelCalls) scrapeStat.kernel = ctx.kernelCalls;
       modelGames = missed;
     }
 

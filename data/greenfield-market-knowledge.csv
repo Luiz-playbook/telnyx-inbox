@@ -1,0 +1,19 @@
+state_code,state_name,market_city,school_district,athletics_body,school_first_day,school_last_day,fall_sports_start,winter_sports_start,spring_sports_start,summer_sports_start,source_url,notes
+AL,Alabama,Huntsville,Huntsville City Schools,Alabama High School Athletic Association (AHSAA),,,,,,,,Huntsville overtook Birmingham as the largest city in the 2020 census
+AK,Alaska,Anchorage,Anchorage School District,Alaska School Activities Association (ASAA),,,,,,,,
+AR,Arkansas,Little Rock,Little Rock School District,Arkansas Activities Association (AAA),,,,,,,,
+CT,Connecticut,Bridgeport,Bridgeport Public Schools,Connecticut Interscholastic Athletic Conference (CIAC),,,,,,,,Bridgeport is the largest city; Hartford is the capital
+DE,Delaware,Wilmington,Red Clay Consolidated School District,Delaware Interscholastic Athletic Association (DIAA),,,,,,,,Wilmington is split across several districts — confirm which one to use
+HI,Hawaii,Honolulu,Hawaii State Department of Education,Hawaii High School Athletic Association (HHSAA),,,,,,,,Hawaii is a single statewide district
+ID,Idaho,Boise,Boise School District,Idaho High School Activities Association (IHSAA),,,,,,,,
+ME,Maine,Portland,Portland Public Schools,Maine Principals' Association (MPA),,,,,,,,
+MS,Mississippi,Jackson,Jackson Public School District,Mississippi High School Activities Association (MHSAA),,,,,,,,
+MT,Montana,Billings,Billings Public Schools,Montana High School Association (MHSA),,,,,,,,
+NH,New Hampshire,Manchester,Manchester School District,New Hampshire Interscholastic Athletic Association (NHIAA),,,,,,,,
+NM,New Mexico,Albuquerque,Albuquerque Public Schools,New Mexico Activities Association (NMAA),,,,,,,,
+ND,North Dakota,Fargo,Fargo Public Schools,North Dakota High School Activities Association (NDHSAA),,,,,,,,
+RI,Rhode Island,Providence,Providence Public School District,Rhode Island Interscholastic League (RIIL),,,,,,,,
+SD,South Dakota,Sioux Falls,Sioux Falls School District,South Dakota High School Activities Association (SDHSAA),,,,,,,,
+VT,Vermont,Burlington,Burlington School District,Vermont Principals' Association (VPA),,,,,,,,
+WV,West Virginia,Charleston,Kanawha County Schools,West Virginia Secondary School Activities Commission (WVSSAC),,,,,,,,
+WY,Wyoming,Cheyenne,Laramie County School District 1,Wyoming High School Activities Association (WHSAA),,,,,,,,

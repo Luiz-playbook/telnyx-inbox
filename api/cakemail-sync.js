@@ -207,6 +207,11 @@ export default async function handler(req, res) {
     // repeated calls drain them in turn.
     const rows = [];
     const perAccount = [];
+    // Report calls that FAILED, as opposed to campaigns that genuinely have no stats yet. A
+    // failure used to be written as a row of nulls with a fetched_at, which both looked like a
+    // zero-engagement blast and permanently excluded the campaign from the incremental sync.
+    // Collected here and returned, so a broken token is visible in the response.
+    const reportErrors = [];
     let scannedTotal = 0, remainingTotal = 0, ranOutOfTime = false;
     const WAVE = 6;
 
@@ -238,7 +243,7 @@ export default async function handler(req, res) {
       // Three calls per campaign (detail, report, rendered body), in small waves — a 300-campaign
       // account must not open 900 sockets at once. Any of the three failing yields null and the
       // upsert's coalesce keeps whatever was already stored.
-      let took = 0;
+      let took = 0, reportFailed = 0;
       for (let i = 0; i < batch.length; i += WAVE) {
         // Drain rather than start: whatever has been fetched is still worth writing, and the
         // caller is told what was not reached so it can simply call again.
@@ -250,14 +255,28 @@ export default async function handler(req, res) {
         const slice = batch.slice(i, i + WAVE);
         const got = await Promise.all(slice.map(async c => {
           const id = String(c.id);
+          let reportErr = null;
           const [detail, rep, body] = await Promise.all([
             campaignDetail(id, { accountId, key }),
-            campaignReport(id, { accountId, key }),
+            campaignReport(id, { accountId, key, onError: e => { reportErr = e; } }),
             campaignBody(id, { accountId, key }),
           ]);
+          // A failed report is NOT written. Writing it would store nulls and stamp fetched_at,
+          // so the incremental pass would never look at this campaign again and the blast
+          // would read as a real send with zero engagement. Left unwritten, the next run
+          // retries it — and the error below says why it is being retried.
+          if (reportErr) {
+            return { __reportError: {
+              account_id: String(accountId),
+              campaign_id: id,
+              status: reportErr.status ?? null,
+              msg: String((reportErr && reportErr.message) || reportErr),
+            } };
+          }
           return mapCampaign(c, detail, rep, body, accountId);
         }));
-        const kept = got.filter(x => x.campaign_id);
+        for (const g of got) if (g.__reportError) { reportErrors.push(g.__reportError); reportFailed++; }
+        const kept = got.filter(x => !x.__reportError && x.campaign_id);
         rows.push(...kept);
         took += kept.length;
       }
@@ -269,6 +288,9 @@ export default async function handler(req, res) {
         scanned: campaigns.length,
         partial_scan: campaigns.complete === false || undefined,
         fetched: took,
+        // Campaigns whose /reports call failed. Non-zero here means this account's PAT cannot
+        // read its own reports — nothing was written for them, so they retry next run.
+        report_failed: reportFailed || undefined,
         outstanding: Math.max(0, todo.length - took),
       });
     }
@@ -278,6 +300,8 @@ export default async function handler(req, res) {
         ok: true, dry: true, accounts: perAccount,
         scanned_in_cakemail: scannedTotal, already_stored: fetchedAt.size,
         would_write: rows.length, remaining: remainingTotal,
+        report_errors: reportErrors.length ? reportErrors.slice(0, 10) : undefined,
+        report_errors_total: reportErrors.length || undefined,
         sample: rows.slice(0, 3),
       });
       return;
@@ -312,6 +336,10 @@ export default async function handler(req, res) {
       updated: result?.updated ?? 0,
       remaining: remainingTotal,
       timed_out: ranOutOfTime || undefined,
+      // The reason a sync can look healthy while storing nothing useful. Capped at 10 — a bad
+      // token fails every campaign on the account and the first few say the same thing.
+      report_errors: reportErrors.length ? reportErrors.slice(0, 10) : undefined,
+      report_errors_total: reportErrors.length || undefined,
       unmapped_lists: unmapped,
     });
   } catch (e) {

@@ -26,7 +26,7 @@
 --
 -- WHY THE COPY DOES NOT NEED REDRAFTING. campaign_queue.email_copy / sms_copy are stored text,
 -- so a price baked into them would go stale on an edit. It never is: the Cole templates carry
--- no price token (migration 043) and docs/AI_DRAFT_AGENT.md line 102 forbids the tailor from
+-- no price token (migration 043) and docs/documentation/AI_DRAFT_AGENT.md line 102 forbids the tailor from
 -- adding prices that were not already in the copy it was handed. Verified against all 5 drafted
 -- rows — no dollar amount, no "get-in", no "as low as". The price reaches a recipient only
 -- through the operator reading it off the row, so an edit is complete the moment it lands here.

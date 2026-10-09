@@ -81,6 +81,105 @@ function missingKeyError(accountId) {
   return `no CakeMail key for ${name} — set ${cakemailKeyEnvName(accountId)} on this deployment`;
 }
 
+// Resolve HubSpot identity, company and deal for a page of contacts, in two batched calls.
+//
+// SHARED BY ?recipients= AND ?activity=. The roster and the per-send activity list render the
+// same row — name, status, HubSpot link, deal — so they must enrich identically. Keeping two
+// copies of this guaranteed they would drift, and the drift would show as the same person
+// having a deal on one tab and not the other.
+//
+// Mutates `contacts` in place and never throws: enrichment is an addition to a roster that is
+// already useful, so a missing migration or a slow database leaves every row exactly as it was
+// rather than losing the whole tab.
+async function enrichContacts(contacts, url, h) {
+      // FILL THE GAPS FROM THE MIRROR. A contact found once through the lookup is cached in
+      // hubspot.hubspot_contacts — but the roster is rebuilt from CakeMail every time, and
+      // CakeMail still has no recordid for them. Without this, reopening the panel offered "Find
+      // in HubSpot" for somebody we had already found, forever.
+      //
+      // One batched call for the whole page rather than one per contact. Failure is not fatal:
+      // the button reappears, which is the old behaviour, not a broken screen.
+      const missing = contacts.filter(c => !c.hubspot_id && c.email).map(c => c.email);
+      if (missing.length) {
+        try {
+          const idsR = await fetch(`${url}/rest/v1/rpc/hubspot_ids_for_emails`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_emails: missing }),
+          });
+          if (idsR.ok) {
+            const pairs = await idsR.json().catch(() => []);
+            const byEmail = new Map((Array.isArray(pairs) ? pairs : []).map(p => [String(p.email || '').toLowerCase(), p.hs_object_id]));
+            for (const c of contacts) {
+              if (c.hubspot_id || !c.email) continue;
+              const id = byEmail.get(c.email.toLowerCase());
+              // `from_mirror` so the UI can tell a CakeMail-supplied id from one we resolved.
+              if (id != null) { c.hubspot_id = String(id); c.from_mirror = true; }
+            }
+          }
+        } catch { /* leave them unresolved; the Find button still works */ }
+      }
+
+      // THE DEAL, FOR THE WHOLE PAGE, IN ONE CALL. The deal is the thing worth seeing on a
+      // recipient — "is this person attached to a live account, and which" — so it is resolved
+      // for everyone we can name, not only for the rows somebody thinks to click. A page is 100
+      // contacts; asking per person would be 100 round trips to paint one screen.
+      //
+      // Deliberately not fatal. A missing migration, an empty mirror or a slow database leaves
+      // every row exactly as it was — the roster is still useful without deal data, and losing
+      // the whole tab because an enrichment failed would be the wrong trade.
+      const withEmail = contacts.filter(c => c.email).map(c => c.email);
+      if (withEmail.length) {
+        try {
+          const dr = await fetch(`${url}/rest/v1/rpc/hubspot_deals_for_emails`, {
+            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+            body: JSON.stringify({ p_emails: withEmail }),
+          });
+          if (dr.ok) {
+            const rows2 = await dr.json().catch(() => []);
+            const byEmail = new Map((Array.isArray(rows2) ? rows2 : [])
+              .map(r => [String(r.email || '').toLowerCase(), r]));
+            for (const c of contacts) {
+              const d = c.email && byEmail.get(c.email.toLowerCase());
+              if (!d) continue;
+              // WHETHER THE MIRROR KNOWS THEM AT ALL, which is not the same as whether the row has
+              // a HubSpot link. Half of these contacts carry a recordid from CakeMail, so they link
+              // out fine while being entirely absent from hubspot.hubspot_contacts — and for
+              // those no company or deal can be resolved at all. The panel has to be able to say
+              // "we do not know this person" rather than "this person has no deal".
+              c.in_mirror = true;
+              // The id comes back here too, so a contact the mirror knows gets its link even if
+              // the pass above was skipped because CakeMail had already supplied one.
+              if (!c.hubspot_id && d.hs_object_id != null) { c.hubspot_id = String(d.hs_object_id); c.from_mirror = true; }
+              // Company is REFERENCE, deal is the answer — both are sent, and the UI ranks them.
+              c.company_name = d.company_name || null;
+              c.company_id = d.company_id != null ? String(d.company_id) : null;
+              c.company_count = d.company_count || 0;
+              if (d.deal_id != null) {
+                c.deal = {
+                  id: String(d.deal_id),
+                  name: d.deal_name || null,
+                  stage: d.deal_stage || null,
+                  // The readable form, plus HubSpot's own won/lost flags — see migration 067.
+                  // The UI must never infer either of those from the text.
+                  stage_label: d.deal_stage_label || null,
+                  is_won: !!d.deal_is_won,
+                  is_lost: !!d.deal_is_lost,
+                  pipeline: d.deal_pipeline || null,
+                  pipeline_label: d.deal_pipeline_label || null,
+                  amount: d.deal_amount == null ? null : Number(d.deal_amount),
+                  closedate: d.deal_closedate || null,
+                  modified: d.deal_modified || null,
+                  // "their deal" and "a deal at their company" are different claims and the row
+                  // must not present them identically.
+                  via: d.deal_via || null,
+                };
+              }
+            }
+          }
+        } catch { /* deal data is an enrichment; the roster stands without it */ }
+      }
+}
+
 export default async function handler(req, res) {
   if (!await gate(req, res)) return;
 
@@ -269,92 +368,7 @@ export default async function handler(req, res) {
         bounces: c.bounces_count == null ? null : Number(c.bounces_count),
       }));
 
-      // FILL THE GAPS FROM THE MIRROR. A contact found once through the lookup is cached in
-      // hubspot.hubspot_contacts — but the roster is rebuilt from CakeMail every time, and
-      // CakeMail still has no recordid for them. Without this, reopening the panel offered "Find
-      // in HubSpot" for somebody we had already found, forever.
-      //
-      // One batched call for the whole page rather than one per contact. Failure is not fatal:
-      // the button reappears, which is the old behaviour, not a broken screen.
-      const missing = contacts.filter(c => !c.hubspot_id && c.email).map(c => c.email);
-      if (missing.length) {
-        try {
-          const idsR = await fetch(`${url}/rest/v1/rpc/hubspot_ids_for_emails`, {
-            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
-            body: JSON.stringify({ p_emails: missing }),
-          });
-          if (idsR.ok) {
-            const pairs = await idsR.json().catch(() => []);
-            const byEmail = new Map((Array.isArray(pairs) ? pairs : []).map(p => [String(p.email || '').toLowerCase(), p.hs_object_id]));
-            for (const c of contacts) {
-              if (c.hubspot_id || !c.email) continue;
-              const id = byEmail.get(c.email.toLowerCase());
-              // `from_mirror` so the UI can tell a CakeMail-supplied id from one we resolved.
-              if (id != null) { c.hubspot_id = String(id); c.from_mirror = true; }
-            }
-          }
-        } catch { /* leave them unresolved; the Find button still works */ }
-      }
-
-      // THE DEAL, FOR THE WHOLE PAGE, IN ONE CALL. The deal is the thing worth seeing on a
-      // recipient — "is this person attached to a live account, and which" — so it is resolved
-      // for everyone we can name, not only for the rows somebody thinks to click. A page is 100
-      // contacts; asking per person would be 100 round trips to paint one screen.
-      //
-      // Deliberately not fatal. A missing migration, an empty mirror or a slow database leaves
-      // every row exactly as it was — the roster is still useful without deal data, and losing
-      // the whole tab because an enrichment failed would be the wrong trade.
-      const withEmail = contacts.filter(c => c.email).map(c => c.email);
-      if (withEmail.length) {
-        try {
-          const dr = await fetch(`${url}/rest/v1/rpc/hubspot_deals_for_emails`, {
-            method: 'POST', headers: { ...h, 'content-type': 'application/json' },
-            body: JSON.stringify({ p_emails: withEmail }),
-          });
-          if (dr.ok) {
-            const rows2 = await dr.json().catch(() => []);
-            const byEmail = new Map((Array.isArray(rows2) ? rows2 : [])
-              .map(r => [String(r.email || '').toLowerCase(), r]));
-            for (const c of contacts) {
-              const d = c.email && byEmail.get(c.email.toLowerCase());
-              if (!d) continue;
-              // WHETHER THE MIRROR KNOWS THEM AT ALL, which is not the same as whether the row has
-              // a HubSpot link. Half of these contacts carry a recordid from CakeMail, so they link
-              // out fine while being entirely absent from hubspot.hubspot_contacts — and for
-              // those no company or deal can be resolved at all. The panel has to be able to say
-              // "we do not know this person" rather than "this person has no deal".
-              c.in_mirror = true;
-              // The id comes back here too, so a contact the mirror knows gets its link even if
-              // the pass above was skipped because CakeMail had already supplied one.
-              if (!c.hubspot_id && d.hs_object_id != null) { c.hubspot_id = String(d.hs_object_id); c.from_mirror = true; }
-              // Company is REFERENCE, deal is the answer — both are sent, and the UI ranks them.
-              c.company_name = d.company_name || null;
-              c.company_id = d.company_id != null ? String(d.company_id) : null;
-              c.company_count = d.company_count || 0;
-              if (d.deal_id != null) {
-                c.deal = {
-                  id: String(d.deal_id),
-                  name: d.deal_name || null,
-                  stage: d.deal_stage || null,
-                  // The readable form, plus HubSpot's own won/lost flags — see migration 067.
-                  // The UI must never infer either of those from the text.
-                  stage_label: d.deal_stage_label || null,
-                  is_won: !!d.deal_is_won,
-                  is_lost: !!d.deal_is_lost,
-                  pipeline: d.deal_pipeline || null,
-                  pipeline_label: d.deal_pipeline_label || null,
-                  amount: d.deal_amount == null ? null : Number(d.deal_amount),
-                  closedate: d.deal_closedate || null,
-                  modified: d.deal_modified || null,
-                  // "their deal" and "a deal at their company" are different claims and the row
-                  // must not present them identically.
-                  via: d.deal_via || null,
-                };
-              }
-            }
-          }
-        } catch { /* deal data is an enrichment; the roster stands without it */ }
-      }
+      await enrichContacts(contacts, url, h);
 
       res.status(200).json({
         ok: true, available: true,
@@ -363,6 +377,112 @@ export default async function handler(req, res) {
         next_cursor: (j && j.pagination && j.pagination.cursor && j.pagination.cursor.next) || null,
       });
     } catch (e) { res.status(502).json({ error: String((e && e.message) || e) }); }
+    return;
+  }
+
+  // ?activity=<campaign_id>&type=<type> — WHO THIS SEND ACTUALLY REACHED, and what they did.
+  //
+  // This is a different question from ?recipients=, and a better one. ?recipients= reads
+  // /lists/{id}/contacts, which is the list as it stands TODAY — shared by every blast to that
+  // market, so it cannot say who a past send went to. The panel said as much in so many words
+  // ("CakeMail keeps no record of who a past send reached"). That was wrong: /logs/campaigns
+  // records one row per address per event, and it is how CakeMail's own "Sent to / Opened /
+  // Clicked / Unsubscribed / Flagged as spam / Bounced" tabs are built.
+  //
+  // TYPE NAMES ARE VERIFIED AGAINST THE LIVE API, not inferred from the CakeMail UI labels:
+  //
+  //   sent  open  clickthru  unsubscribe  spam  bounce        valid
+  //   delivered  click                                        REJECTED by the API
+  //
+  // `clickthru`, not `click` — the row even carries a clickthru_url. And `bounce` is an
+  // aggregate: filtering on it returns every bounce with its own subtype in the row's `type`
+  // (bounce_hb, bounce_sb, …), so the nine subtypes never need nine requests.
+  //
+  // NEEDS logs:read ON THAT ACCOUNT'S TOKEN. Cole's PAT has campaigns+reports but not logs or
+  // suppressions, so his campaigns answer 403 here while production works — the 403 is passed
+  // through with the scope named rather than being flattened into an empty roster, because
+  // "nobody opened this" and "we are not allowed to ask" must not look the same.
+  const wantActivity = String(req.query?.activity || '').trim();
+  if (wantActivity) {
+    if (!/^[0-9]+$/.test(wantActivity)) { res.status(400).json({ error: 'activity must be a campaign id' }); return; }
+    const TYPES = new Set(['sent', 'open', 'clickthru', 'unsubscribe', 'spam', 'bounce']);
+    const type = String(req.query?.type || 'sent').trim();
+    if (!TYPES.has(type)) { res.status(400).json({ error: `type must be one of ${[...TYPES].join(', ')}` }); return; }
+
+    const rows = await fetch(`${url}/rest/v1/blast_templates?select=account_id,list_name,scheduled_for&campaign_id=eq.${wantActivity}&limit=1`, { headers: h })
+      .then(r => r.ok ? r.json() : []).catch(() => []);
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row) { res.status(404).json({ error: `campaign ${wantActivity} is not in blast history` }); return; }
+    const accountId = String(row.account_id || '');
+    if (!cakemailKey(accountId)) { res.status(502).json({ error: missingKeyError(accountId) }); return; }
+
+    try {
+      const cur = String(req.query?.cursor || '').trim();
+      const q = new URLSearchParams({ per_page: '100', with_count: 'true', filter: `type==${type}` });
+      if (cur) q.set('cursor', cur);
+      const j = await cakemailGet(`/logs/campaigns/${wantActivity}?${q}`, { accountId });
+      const data = (j && j.data) || [];
+
+      // ONE ROW PER PERSON, not per event. 437 `open` events on a 545-address campaign is 250
+      // people reading more than once; a roster that listed the same address five times would
+      // be unreadable and would misstate the audience. occurrences is summed so the repeat is
+      // still visible, and the first and last timestamps are kept because "opened once on the
+      // day" and "opened six times over a week" are different signals.
+      const byEmail = new Map();
+      for (const e of data) {
+        const email = String(e.email || '').trim().toLowerCase();
+        if (!email) continue;
+        const prev = byEmail.get(email);
+        const ts = Number(e.timestamp) || null;
+        if (!prev) {
+          byEmail.set(email, {
+            email,
+            // The row's own type, which for a bounce is the SUBTYPE — bounce_hb, not bounce.
+            activity_type: e.type || type,
+            occurrences: Number(e.occurrences) || 1,
+            first_at: ts, last_at: ts,
+            clickthru_url: e.clickthru_url || null,
+            user_agent: e.user_agent || null,
+          });
+        } else {
+          prev.occurrences += Number(e.occurrences) || 1;
+          if (ts != null) {
+            if (prev.first_at == null || ts < prev.first_at) prev.first_at = ts;
+            if (prev.last_at == null || ts > prev.last_at) prev.last_at = ts;
+          }
+          if (!prev.clickthru_url && e.clickthru_url) prev.clickthru_url = e.clickthru_url;
+        }
+      }
+      const contacts = [...byEmail.values()].map(c => ({
+        ...c,
+        first: null, last: null, hubspot_id: null, status: null,
+        first_at: c.first_at ? new Date(c.first_at * 1000).toISOString() : null,
+        last_at: c.last_at ? new Date(c.last_at * 1000).toISOString() : null,
+      }));
+
+      // Same enrichment the roster gets, so the two tabs cannot disagree about a person.
+      await enrichContacts(contacts, url, h);
+
+      res.status(200).json({
+        ok: true, available: true, type,
+        list_name: row.list_name || null,
+        // Events, not people — the difference is the point, so both are reported.
+        events: (j && j.pagination && j.pagination.count != null) ? Number(j.pagination.count) : null,
+        people: contacts.length,
+        contacts,
+        next_cursor: (j && j.pagination && j.pagination.cursor && j.pagination.cursor.next) || null,
+      });
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      // 403 here is a scope problem, and saying so is the whole difference between a fixable
+      // report and a tab that looks empty. See the note above.
+      const scope = e && e.status === 403;
+      res.status(scope ? 200 : 502).json(scope
+        ? { ok: true, available: false, type,
+            reason: `This account's CakeMail token cannot read campaign logs (${msg}). `
+                  + `Add the logs:read scope to the token for account ${accountId} to see per-send activity.` }
+        : { error: msg });
+    }
     return;
   }
 
@@ -507,9 +627,19 @@ export default async function handler(req, res) {
       // it belonged in the tab named Market History from the start. Kept fresh by
       // api/cakemail-sync.js.
       getOrFallback(
-        'blast_templates?select=campaign_id,account_id,name,list_name,scheduled_for,sent_emails,active_emails,opens,unique_opens,clicks,unique_clicks,bounces,unsubscribes,spams,open_rate,click_rate,clickthru_rate,bounce_rate,email_template,subject,sender&order=scheduled_for.desc&limit=1000',
+        // The bounce breakdown and the remaining rates are here for the panel's Reports tab,
+        // which reproduces CakeMail's own per-campaign report. They were already synced by
+        // api/cakemail-sync.js and simply never read.
+        'blast_templates?select=campaign_id,account_id,name,list_name,scheduled_for,sent_emails,active_emails,opens,unique_opens,unopens,implied_opens,forwards,clicks,unique_clicks,bounces,bounces_hard,bounces_soft,bounces_dns_failure,bounces_full_mailbox,bounces_mail_blocked,bounces_transient,bounces_address_changed,bounces_challenge_response,unsubscribes,spams,open_rate,click_rate,clickthru_rate,bounce_rate,unsubscribe_rate,spam_rate,unopen_rate,sent_rate,email_template,subject,sender&order=scheduled_for.desc&limit=1000',
         'blast_templates?select=campaign_id,name,list_name,scheduled_for,sent_emails,open_rate,clickthru_rate,email_template&order=scheduled_for.desc&limit=1000'),
-      get('market_bridge_list?select=list_name,market_key&limit=1000'),
+      // v_list_market, NOT market_bridge_list. The view is what v_blast_scored joins on, and it
+      // resolves a list name three ways: an exact bridge row, a trailing state code
+      // ('… · ICP — AZ' -> AZ -> phoenix), or a state name in the text ('Wisconsin' ->
+      // milwaukee) — the last two only for states holding exactly one market. Reading the raw
+      // bridge here would make this tab disagree with the decider it is meant to explain:
+      // a blast would read "not bridged to a market" while v_market_performance was scoring it.
+      // See migration 109.
+      get('v_list_market?select=list_name,market_key&limit=5000'),
       // When the CakeMail sync last actually wrote. AI-970 asks the tab to state its own
       // freshness, and until now nothing did — the history could be three months stale and the
       // page looked identical to the day it was current.
@@ -528,11 +658,65 @@ export default async function handler(req, res) {
       get('campaign_queue?select=id,title,state_code,state_name,segment,sms,email,sms_copy,email_copy,email_subject,phone_count,email_count,sms_from,email_from,sent_at,event_id&status=eq.sent&order=sent_at.desc&limit=1000'),
     ]);
 
-    // list_name -> market_key, the same mapping v_blast_scored joins on. A list with no bridge
-    // row shows with market null rather than being dropped: an unmapped list is a gap to fix,
-    // not a campaign that did not happen.
+    // list_name -> market_key, the same mapping v_blast_scored joins on. A list the resolver
+    // cannot place shows with market null rather than being dropped: an unmapped list is a gap
+    // to fix, not a campaign that did not happen.
     const marketOf = new Map(bridge.map(b => [b.list_name, b.market_key]));
     const acctLabel = accountLabels();
+
+    // ---- "of the last 10 campaigns" ------------------------------------------------------
+    //
+    // CakeMail's per-campaign report puts an average beside every rate ("Open rate of the last
+    // 10 campaigns — 60.49% avg."). Reproduced here rather than linked to, so the panel's
+    // Reports tab reads the same as the CakeMail screen it mirrors.
+    //
+    // THE DEFINITION IS NOT A GUESS. It was derived from a real CakeMail report (campaign
+    // 15501805, account 1761047) and every published average reproduces exactly:
+    //
+    //   open       (51.76 + 50.71 + 100 + 0 + 100) / 5 = 60.49%
+    //   unsub      (1.27 + 1.28 + 0 + 0 + 0)       / 5 =  0.51%
+    //   delivery   (90.45 + 90.46 + 100 + 100+100) / 5 = 96.18%
+    //   bounce     (9.55 + 9.54 + 0 + 0 + 0)       / 5 =  3.82%
+    //
+    // So: the UNWEIGHTED mean of each campaign's own rate, over the ten most recent campaigns
+    // ON THE SAME ACCOUNT, INCLUDING the campaign being viewed, and over however many exist
+    // when there are fewer than ten. Not weighted by volume — a 2-recipient test send counts
+    // as much as a 13,599-recipient blast, which is why those 100% test opens drag the average
+    // to 60%. That is what CakeMail shows, so it is what this shows.
+    //
+    // Delivery rate is the one figure CakeMail does not store: it is (sent - bounces) / sent,
+    // which matches the 90.45% on the report above (314 sent, 30 bounced, 284 delivered).
+    const deliveryRate = c => {
+      const sent = Number(c.sent_emails);
+      if (!Number.isFinite(sent) || sent <= 0) return null;
+      const b = Number(c.bounces) || 0;
+      return ((sent - b) / sent) * 100;
+    };
+    const RATE_KEYS = ['open_rate', 'click_rate', 'clickthru_rate', 'bounce_rate',
+                       'unsubscribe_rate', 'spam_rate'];
+    // Campaigns per account, newest first. The outer query already orders by scheduled_for
+    // desc, so pushing in order preserves it.
+    const byAccount = new Map();
+    for (const c of campaigns) {
+      const k = String(c.account_id || '');
+      if (!byAccount.has(k)) byAccount.set(k, []);
+      byAccount.get(k).push(c);
+    }
+    // campaign_id -> { open_rate: n, ..., delivery_rate: n, n: howManyCampaignsAveraged }
+    const baselineOf = new Map();
+    for (const [, list] of byAccount) {
+      for (let i = 0; i < list.length; i++) {
+        // "Last 10 including this one" = this campaign and the nine sent before it.
+        const window = list.slice(i, i + 10);
+        const avg = pick => {
+          const vals = window.map(pick).filter(v => Number.isFinite(v));
+          return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+        };
+        const out = { n: window.length, delivery_rate: avg(deliveryRate) };
+        for (const key of RATE_KEYS) out[key] = avg(c => Number(c[key]));
+        baselineOf.set(String(list[i].campaign_id), out);
+      }
+    }
 
     // One shape for both, so the table does not care where a row came from. `source` is the
     // platform, and it is shown — a Textable blast and a CakeMail one are not interchangeable
@@ -689,6 +873,48 @@ export default async function handler(req, res) {
             bounces: num(c.bounces), unsubscribes: num(c.unsubscribes), spams: num(c.spams),
             delivered: num(c.active_emails),
           },
+
+          // THE PANEL'S REPORTS TAB — CakeMail's per-campaign report, rebuilt from data this
+          // app already holds. No CakeMail call: every figure below is a blast_templates
+          // column, so the tab works for all 311 campaigns including the 140 seeded ones, and
+          // keeps working when a token loses a scope.
+          //
+          // Rates are passed through as CakeMail defines them (open_rate against
+          // active_emails, clickthru_rate as clicks-over-opens) — see the engagement note
+          // above for why they are never recomputed here.
+          //
+          // delivery_rate and the hard/soft split are the two things CakeMail derives rather
+          // than stores. The split is hard vs EVERYTHING ELSE, which is how the CakeMail screen
+          // presents it: a 30-bounce campaign with 15 hard reads "50% hard, 50% soft" even
+          // though 14 of the other 15 were DNS failures, not classic soft bounces.
+          report: {
+            available: c.sent_emails != null || c.bounces != null || c.open_rate != null,
+            sent: num(c.sent_emails),
+            active: num(c.active_emails),
+            opens_unique: num(c.unique_opens), opens_total: num(c.opens),
+            clicks_unique: num(c.unique_clicks), clicks_total: num(c.clicks),
+            unsubscribes: num(c.unsubscribes), spams: num(c.spams),
+            bounces: num(c.bounces),
+            bounces_hard: num(c.bounces_hard),
+            // Named `_other` rather than `_soft` because that is what it is. The genuine
+            // bounces_soft column is carried separately for anyone who wants the real figure.
+            bounces_other: (() => {
+              const b = Number(c.bounces), hard = Number(c.bounces_hard);
+              return Number.isFinite(b) && Number.isFinite(hard) ? Math.max(0, b - hard) : null;
+            })(),
+            bounces_soft: num(c.bounces_soft),
+            bounces_dns_failure: num(c.bounces_dns_failure),
+            bounces_full_mailbox: num(c.bounces_full_mailbox),
+            bounces_mail_blocked: num(c.bounces_mail_blocked),
+            bounces_transient: num(c.bounces_transient),
+            bounces_address_changed: num(c.bounces_address_changed),
+            bounces_challenge_response: num(c.bounces_challenge_response),
+            open_rate: num(c.open_rate), click_rate: num(c.click_rate),
+            clickthru_rate: num(c.clickthru_rate), bounce_rate: num(c.bounce_rate),
+            unsubscribe_rate: num(c.unsubscribe_rate), spam_rate: num(c.spam_rate),
+            delivery_rate: deliveryRate(c),
+            baseline: baselineOf.get(String(c.campaign_id)) || null,
+          },
         };
       }),
     ];
@@ -714,6 +940,10 @@ export default async function handler(req, res) {
       // The first is fixed by adding market_bridge_list rows; the second cannot be, because
       // there is nothing to bridge ON. Reporting them as one number invites someone to add 76
       // bridge rows and wonder why the count barely moves.
+      //
+      // `unbridged` counts what the RESOLVER could not place (migration 109), not what lacks an
+      // exact bridge row — a list auto-resolved from its state code or state name is mapped and
+      // must not be reported as a gap, or this number would nag about lists that need nothing.
       //
       // Both still cost the decider the same way: v_blast_scored inner-joins the bridge, so
       // either kind contributes nothing to v_market_performance and the market reads no_history.

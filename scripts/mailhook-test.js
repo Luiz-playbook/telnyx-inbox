@@ -61,7 +61,7 @@ async function mh(path, { method = 'GET', body } = {}) {
 
 // A shared domain is enough for testing. A CUSTOM domain is what production replies need, and
 // that is a DNS change on a dedicated subdomain — never the apex, which would take company mail
-// down with it. See docs/mailhook.md.
+// down with it. See docs/documentation/mailhook.md.
 // Mailhook speaks JSON:API — { data: { id, type, attributes: {…} } }, or an array of those.
 // The fields worth having are under `attributes`, so reading them off the object gives undefined.
 // See the same helper in lib/mailhook.js, which is the shared reason this is not duplicated logic

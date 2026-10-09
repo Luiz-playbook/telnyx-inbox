@@ -24,7 +24,7 @@ tables are `telnyx_`-prefixed and additive — nothing else in that project was 
 
 > **Beyond the inbox:** this repo also holds the Ticket Blaster events + pricing pipeline
 > (master schedule per league, market resolution, Gemini price refresh). See
-> [`docs/events-pipeline.md`](docs/events-pipeline.md) for sources, cadence, and open items.
+> [`docs/documentation/events-pipeline.md`](docs/documentation/events-pipeline.md) for sources, cadence, and open items.
 
 ## Status: what's done vs. what the operator must do
 

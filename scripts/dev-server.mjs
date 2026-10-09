@@ -2,6 +2,20 @@
 // /api/<name> to the matching api/<name>.js default export, adapting the
 // request/response to the Vercel handler shape (req.method/body/query/headers,
 // res.status().json()). Run:  node scripts/dev-server.mjs  [port]
+//
+// THERE ARE TWO OF THESE AND IT IS A TRAP. scripts/dev-server.js does the same job; README.md
+// documents THAT one (`node --env-file=.env scripts/dev-server.js`) while this one is what gets
+// run in practice, because it loads .env itself and takes the port as a positional argument.
+// They have already drifted: this file regenerates ui/config.js on boot and cache-busts handlers
+// on mtime, the other does neither and prints an llm-route banner this one lacks.
+//
+// The cost is not theoretical. A fix to the stale-lib check below was written into dev-server.js
+// alone, which looked right — the two files emit the SAME error string, so grepping for it finds
+// only the one you happen to land on — and the error went on appearing because the file being
+// executed had never been touched (Vhea, 2026-10-08).
+//
+// Until one is deleted, any change to the request path here must be made in both. Better: pick
+// this one, point README.md at it, and delete the other.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -61,13 +75,58 @@ async function readBody(req) {
 // Anything under lib/ that was touched after this process booted is already cached by Node
 // and cannot be reloaded in place.
 const STARTED_AT = Date.now();
-function changedLibFiles() {
-  const dir = path.join(root, 'lib');
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir)
-    .filter(f => f.endsWith('.js') || f.endsWith('.mjs'))
-    .filter(f => fs.statSync(path.join(dir, f)).mtimeMs > STARTED_AT)
-    .map(f => `lib/${f}`);
+const LIB = path.join(root, 'lib');
+
+// PER HANDLER, NOT PER SERVER. This used to refuse a request when ANY file under lib/ had
+// changed, which is wildly over-broad: touching lib/scrape-price.js blocked /api/cakemail-sync,
+// which does not import it and never did. A price-pipeline edit therefore took the whole local
+// app down with "restart the dev server" on endpoints that were perfectly fine, and the error
+// named seven files none of which the failing endpoint uses.
+//
+// So the import graph is walked from the handler outward, and only the libs it actually reaches
+// can stale it. Static imports only — nothing in api/ or lib/ uses import(), so a regex over the
+// source is exact here rather than an approximation. If a dynamic import is ever added this
+// under-reports, the symptom is the old "does not provide an export named X", and the fix is to
+// list it here rather than widen the check back out.
+//
+// KEEP IN STEP WITH scripts/dev-server.js, which carries the same logic. Two dev servers is one
+// too many (see the note at the top of this file) but while both exist they must agree, or a
+// restart appears to fix nothing.
+const importsOf = (file) => {
+  let src;
+  try { src = fs.readFileSync(file, 'utf8'); } catch { return []; }
+  const out = [];
+  // `import … from './x.js'` and bare `import './x.js'`, single or double quoted.
+  const re = /\bimport\s*(?:[\s\S]*?\sfrom\s*)?['"](\.[^'"]+)['"]/g;
+  for (let m; (m = re.exec(src));) out.push(path.resolve(path.dirname(file), m[1]));
+  return out;
+};
+
+// Memoised: the graph only changes when a file changes, and a changed file is exactly what this
+// reports rather than needs to re-walk. Four files deep at most either way.
+const GRAPH = new Map();
+function libsReachedBy(entry) {
+  if (GRAPH.has(entry)) return GRAPH.get(entry);
+  const seen = new Set(), libs = new Set(), queue = [entry];
+  while (queue.length) {
+    const f = queue.shift();
+    if (seen.has(f)) continue;
+    seen.add(f);
+    if (f.startsWith(LIB + path.sep)) libs.add(f);
+    for (const dep of importsOf(f)) queue.push(dep);
+  }
+  GRAPH.set(entry, libs);
+  return libs;
+}
+
+function changedLibFiles(entry) {
+  const stale = [];
+  for (const f of libsReachedBy(entry)) {
+    let st;
+    try { st = fs.statSync(f); } catch { continue; }
+    if (st.mtimeMs > STARTED_AT) stale.push(path.relative(root, f).replace(/\\/g, '/'));
+  }
+  return stale.sort();
 }
 
 const server = http.createServer(async (req, res) => {
@@ -84,13 +143,15 @@ const server = http.createServer(async (req, res) => {
     // lib edit is invisible until the process restarts, and the symptom is a baffling
     // "does not provide an export named X" from code that plainly exports it. A specifier
     // inside a module can't be rewritten from here, so say so instead of serving stale code.
-    const staleLib = changedLibFiles();
+    const staleLib = changedLibFiles(file);
     if (staleLib.length) {
-      console.error(`\n  lib/ changed since this dev server started: ${staleLib.join(', ')}`);
+      console.error(`\n  /api/${name} imports ${staleLib.join(', ')}, changed since this dev server started.`);
       console.error('  Node has the old copy cached — restart the dev server (Ctrl-C, then run it again).\n');
       res.statusCode = 503;
+      // Names the endpoint as well as the files: the old message listed everything under lib/
+      // and left the reader to work out which of seven files the failing call even used.
       return res.end(JSON.stringify({
-        error: `dev server is running stale code: ${staleLib.join(', ')} changed after start. Restart the dev server.`,
+        error: `dev server is running stale code: /api/${name} imports ${staleLib.join(', ')} — changed after start. Restart the dev server.`,
       }));
     }
     try {

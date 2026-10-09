@@ -244,7 +244,7 @@ applies automatically.
 - **Send one queued blast — only on an explicit user request.** `POST /api/queue-tick`
   with `{ "id": "<row>" }` (manual **Send now**), header `x-send-secret: SEND_SECRET`
   when out of test mode. Fires exactly that row, never a sweep. See §7 of
-  `docs/OPENCLAW_QUEUE_RULES.md` for the rules (resolve to one row, relay
+  `docs/knowledge-base/OPENCLAW_QUEUE_RULES.md` for the rules (resolve to one row, relay
   `cooldown_overridden`/past-game, honour the allowlist).
 - Every edit is logged via `log_run_edit`.
 
@@ -264,7 +264,7 @@ asks the agent to send a specific row now.
 ### Queueing decision (the decider)
 
 Choosing *which* markets/events get queued is a distinct procedure — spec in
-`docs/OPENCLAW_QUEUE_RULES.md`, operationalized in the VPS `campaign-queueing`
+`docs/knowledge-base/OPENCLAW_QUEUE_RULES.md`, operationalized in the VPS `campaign-queueing`
 skill: a SQL safety floor (`rpc_event_recommendations`, `decision='send'` only) →
 additive top-up (never rewrite) → a per-day grid (`per_day` × `through`, one market
 per window, ≤14-day window, ≤40 picks, self-healing `through` = today+3 default) →

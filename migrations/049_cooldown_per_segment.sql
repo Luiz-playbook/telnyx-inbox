@@ -20,7 +20,7 @@
 --                                   Reads market_blast_log, keyed on market_code ('CA').
 --                                   Written by log_market_blast(p_code, p_name, p_channel, ...).
 --
--- docs/OPENCLAW_QUEUE_RULES.md already says "nothing writes both". Segmenting only one of them
+-- docs/knowledge-base/OPENCLAW_QUEUE_RULES.md already says "nothing writes both". Segmenting only one of them
 -- would leave the other cooling whole markets, which is the behaviour being removed.
 -- ---------------------------------------------------------------------------------------
 --

@@ -13,7 +13,7 @@
 //                     trigger, the +q guard, the endpoint, attribution and the Replies tab.
 // WHAT IT DOES NOT:   api/queue-tick.js choosing rows and resolving audiences. That is covered
 //                     separately by calling the tick with the allowlist armed, which resolves
-//                     zero recipients and sends nothing -- see docs/email-replies.md.
+//                     zero recipients and sends nothing -- see docs/documentation/email-replies.md.
 //
 // Usage:
 //   node scripts/reply-flow-test.js --to you@example.com --queue-id <campaign_queue uuid>
