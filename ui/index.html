@@ -288,6 +288,24 @@
     #view-release-notes .rn-dev[open] > summary .rn-caret{ transform:rotate(180deg); }
     #view-release-notes .rn-devbody{ padding:4px 18px 20px; }
 
+    /* DEVELOPERS SIDE BY SIDE. One column per person, in source order, so Vhea reads on the
+       left and Luiz on the right. align-items:start is what makes it work once they are opened:
+       grid would otherwise stretch both columns to the taller one, and a closed section would
+       grow a long empty box beside an open one.
+       A third developer wraps to a second row on its own - nothing here assumes two.
+       Stacks below 1100px, where two columns of this density leave no room for the prose. */
+    #view-release-notes .rn-devs{ display:grid; grid-template-columns:1fr 1fr; gap:20px;
+      align-items:start; margin-top:26px; }
+    /* The stacked layout spaced these itself; inside the grid the gap does that job and the
+       margin would only push the first row down. */
+    #view-release-notes .rn-devs > .rn-dev{ margin-top:0; }
+    /* Narrower columns cannot carry the role line next to the name, so it drops under it. */
+    #view-release-notes .rn-devs .rn-dev > summary{ flex-wrap:wrap; }
+    #view-release-notes .rn-devs .rn-role{ flex-basis:100%; order:3; }
+    @media (max-width: 1100px){
+      #view-release-notes .rn-devs{ grid-template-columns:1fr; }
+    }
+
     #view-release-notes h2{ font-weight:700; font-size:12.5px; letter-spacing:.1em;
       text-transform:uppercase; color:#c2500a; margin:26px 0 0; padding-bottom:7px;
       border-bottom:1px solid #edf2f9; display:flex; align-items:baseline; gap:10px; }
@@ -1895,180 +1913,182 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                    more than a couple of developers that stops being true: what the page opens on
                    is then a wall, and the summary rows are a contents page you choose from. The
                    tally on each row is what makes a closed section still informative. -->
-              <details class="rn-dev">
-                <summary>
-                  <span class="rn-who">Vhea</span>
-                  <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
-                  <span class="rn-tally">6 areas &middot; 23 entries</span>
-                  <span class="rn-caret" aria-hidden="true">&#9662;</span>
-                </summary>
-                <div class="rn-devbody">
+              <div class="rn-devs">
+                <details class="rn-dev">
+                  <summary>
+                    <span class="rn-who">Vhea</span>
+                    <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
+                    <span class="rn-tally">6 areas &middot; 23 entries</span>
+                    <span class="rn-caret" aria-hidden="true">&#9662;</span>
+                  </summary>
+                  <div class="rn-devbody">
 
-                  <h2>Ticket prices &amp; premium seats <span class="rn-count">AI-1097, AI-1098</span></h2>
-                  <p class="rn-areanote">The offers could only ever say &ldquo;tickets from $X&rdquo;. They can now say which seats,
-                    because we read the section each price belongs to.</p>
-                  <ul class="rn-items">
-                    <li><h3>Premium seats by zone</h3>
-                      <p>Every NBA listing is tagged <b>center court, sideline, corner or behind basket</b>, and we store the
-                        cheapest lower-bowl price in each. An offer can quote &ldquo;center court from $240&rdquo; instead of a
-                        single get-in price. This matters because the cheapest seat in an arena is almost always behind the
-                        basket &mdash; so one price understates what a good seat costs.</p></li>
-                    <li><h3>The arena seat map, alongside the price</h3>
-                      <p>Each arena&rsquo;s seating chart opens beside the listing, with pan and zoom, so an operator can see
-                        where a section actually is before quoting it. Maps are for checking internally and are never attached
-                        to an offer email.</p></li>
-                    <li><h3>A section map covering all 30 NBA arenas</h3>
-                      <p><b>903 section-to-zone mappings</b> loaded from the arena map sheet. A section we can&rsquo;t place is
-                        flagged as unmapped rather than guessed &mdash; a guessed zone would put a customer in the wrong seat at
-                        the wrong price.</p></li>
-                    <li><h3>Standing room kept out of every price</h3>
-                      <p>Some sites sell standing room inline, labelled in a way that reads like an ordinary lower-bowl section.
-                        It is now excluded everywhere, so a standing ticket can never be quoted as a seat.</p></li>
-                    <li><h3>Each ticket site read by the method that actually reaches it <span class="rn-tag hold">off until switched on</span></h3>
-                      <p>We tested every site against every tool we have. No single tool wins: Gametime has an open price feed,
-                        SeatGeek needs a third-party scraper, Vivid Seats needs a real browser, and TickPick can&rsquo;t be
-                        reached for sections at all. Each site is now routed to whichever method works for it, with fall-backs
-                        when one fails.</p></li>
-                    <li><h3>Prices cross-checked between sites</h3>
-                      <p>With more than one source per game, we can spot when two sites disagree wildly. If they do, the game gets
-                        <b>no</b> premium price rather than a plausible-looking wrong one. A missing premium line is recoverable;
-                        quoting a seat that doesn&rsquo;t exist at a price we can&rsquo;t honour is not.</p></li>
-                    <li><h3>AI can never price a seat</h3>
-                      <p>An AI search can still find a get-in price when every scraper fails. It is blocked from producing a
-                        <b>section-level</b> price, in three independent places. &ldquo;Center court from $240&rdquo; is a specific
-                        claim about a specific seat, and a model that&rsquo;s right 95% of the time invents the other 5% in a form
-                        nobody can tell from the truth.</p></li>
-                  </ul>
+                    <h2>Ticket prices &amp; premium seats <span class="rn-count">AI-1097, AI-1098</span></h2>
+                    <p class="rn-areanote">The offers could only ever say &ldquo;tickets from $X&rdquo;. They can now say which seats,
+                      because we read the section each price belongs to.</p>
+                    <ul class="rn-items">
+                      <li><h3>Premium seats by zone</h3>
+                        <p>Every NBA listing is tagged <b>center court, sideline, corner or behind basket</b>, and we store the
+                          cheapest lower-bowl price in each. An offer can quote &ldquo;center court from $240&rdquo; instead of a
+                          single get-in price. This matters because the cheapest seat in an arena is almost always behind the
+                          basket &mdash; so one price understates what a good seat costs.</p></li>
+                      <li><h3>The arena seat map, alongside the price</h3>
+                        <p>Each arena&rsquo;s seating chart opens beside the listing, with pan and zoom, so an operator can see
+                          where a section actually is before quoting it. Maps are for checking internally and are never attached
+                          to an offer email.</p></li>
+                      <li><h3>A section map covering all 30 NBA arenas</h3>
+                        <p><b>903 section-to-zone mappings</b> loaded from the arena map sheet. A section we can&rsquo;t place is
+                          flagged as unmapped rather than guessed &mdash; a guessed zone would put a customer in the wrong seat at
+                          the wrong price.</p></li>
+                      <li><h3>Standing room kept out of every price</h3>
+                        <p>Some sites sell standing room inline, labelled in a way that reads like an ordinary lower-bowl section.
+                          It is now excluded everywhere, so a standing ticket can never be quoted as a seat.</p></li>
+                      <li><h3>Each ticket site read by the method that actually reaches it <span class="rn-tag hold">off until switched on</span></h3>
+                        <p>We tested every site against every tool we have. No single tool wins: Gametime has an open price feed,
+                          SeatGeek needs a third-party scraper, Vivid Seats needs a real browser, and TickPick can&rsquo;t be
+                          reached for sections at all. Each site is now routed to whichever method works for it, with fall-backs
+                          when one fails.</p></li>
+                      <li><h3>Prices cross-checked between sites</h3>
+                        <p>With more than one source per game, we can spot when two sites disagree wildly. If they do, the game gets
+                          <b>no</b> premium price rather than a plausible-looking wrong one. A missing premium line is recoverable;
+                          quoting a seat that doesn&rsquo;t exist at a price we can&rsquo;t honour is not.</p></li>
+                      <li><h3>AI can never price a seat</h3>
+                        <p>An AI search can still find a get-in price when every scraper fails. It is blocked from producing a
+                          <b>section-level</b> price, in three independent places. &ldquo;Center court from $240&rdquo; is a specific
+                          claim about a specific seat, and a model that&rsquo;s right 95% of the time invents the other 5% in a form
+                          nobody can tell from the truth.</p></li>
+                    </ul>
 
-                  <div class="rn-panel">
-                    <h3>What each site gives us now</h3>
-                    <div class="overflow-x-auto">
-                      <table class="table table-sm">
-                        <thead><tr><th>Site</th><th>Method</th><th>Listings per game</th><th>Section-level?</th></tr></thead>
-                        <tbody>
-                          <tr><td><b>Gametime</b></td><td>its own price feed</td><td>~220</td><td>Yes</td></tr>
-                          <tr><td><b>SeatGeek</b></td><td>third-party scraper</td><td>~5,500</td><td>Yes</td></tr>
-                          <tr><td><b>Vivid Seats</b></td><td>hosted browser</td><td>~1,000</td><td>Yes</td></tr>
-                          <tr><td><b>StubHub</b></td><td>hosted browser</td><td>~10</td><td>Yes, but too few to rely on</td></tr>
-                          <tr><td><b>TickPick</b></td><td>existing scraper</td><td>get-in only</td><td>No &mdash; unreachable</td></tr>
-                        </tbody>
-                      </table>
+                    <div class="rn-panel">
+                      <h3>What each site gives us now</h3>
+                      <div class="overflow-x-auto">
+                        <table class="table table-sm">
+                          <thead><tr><th>Site</th><th>Method</th><th>Listings per game</th><th>Section-level?</th></tr></thead>
+                          <tbody>
+                            <tr><td><b>Gametime</b></td><td>its own price feed</td><td>~220</td><td>Yes</td></tr>
+                            <tr><td><b>SeatGeek</b></td><td>third-party scraper</td><td>~5,500</td><td>Yes</td></tr>
+                            <tr><td><b>Vivid Seats</b></td><td>hosted browser</td><td>~1,000</td><td>Yes</td></tr>
+                            <tr><td><b>StubHub</b></td><td>hosted browser</td><td>~10</td><td>Yes, but too few to rely on</td></tr>
+                            <tr><td><b>TickPick</b></td><td>existing scraper</td><td>get-in only</td><td>No &mdash; unreachable</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
+
+                    <h2>Catalog &mdash; the master lists behind the offers <span class="rn-count">AI-1086</span></h2>
+                    <p class="rn-areanote">A new area under Admin holding the three lists every offer is built from. Previously these
+                      lived only in spreadsheets and in the database.</p>
+                    <ul class="rn-items">
+                      <li><h3>Games</h3>
+                        <p>All <b>4,632</b> ticketed games we could blast about, searchable and filterable by league, state and
+                          market, with the current get-in price. Read-only, because it comes from the league schedule feeds and
+                          refreshes weekly.</p></li>
+                      <li><h3>Venues &mdash; where we could host a youth event</h3>
+                        <p><b>89 venues</b> across the 18 greenfield states, each tagged with the sports it can actually host, so a
+                          football programme is never invited to a basketball venue. Now fully editable: add, edit and delete, and
+                          your corrections survive the next data load.</p></li>
+                      <li><h3>Markets &mdash; when to send</h3>
+                        <p>One row per greenfield state, holding the school-year dates and the four season start dates that a
+                          seasonal send should be timed against, plus the school district and athletics association each date
+                          should be confirmed with. Fully editable, and rows show as <b>unverified</b> until someone confirms
+                          them.</p></li>
+                      <li><h3>Venues and markets now line up</h3>
+                        <p>A naming problem meant the two lists looked connected but weren&rsquo;t: 37 of 50 venue cities matched no
+                          market. Alabama&rsquo;s market is Huntsville, but its venues are in Tuscaloosa and Auburn &mdash; so the
+                          obvious join silently dropped Bryant-Denny and Jordan-Hare. The two lists are now joined correctly, and
+                          each venue shows both its own city and the market whose calendar times its sends, with a link through to
+                          that market.</p></li>
+                      <li><h3>Per-league venue lists for seat-map collection</h3>
+                        <p>Venue lists exported per league so arena seat maps can be gathered and uploaded, with a lookup that still
+                          finds the right map when a venue gets renamed or sponsored.</p></li>
+                    </ul>
+
+                    <h2>Reports</h2>
+                    <ul class="rn-items">
+                      <li><h3>CakeMail&rsquo;s per-campaign report, rebuilt in-app</h3>
+                        <p>Opens, clicks, bounces and unsubscribes per campaign, including the campaigns that predate the CakeMail
+                          integration, each shown against the average of the last ten sends on the same account. Built from data we
+                          already store, so it keeps working when a CakeMail token loses a permission.</p></li>
+                      <li><h3>Programme-level accordions, across every account</h3>
+                        <p>Two roll-ups: <b>Cakemail Blasts</b> covering every CakeMail campaign by account, and <b>Send Blasts</b>
+                          covering every blast we&rsquo;ve sent on any platform, SMS and email together.</p></li>
+                      <li><h3>Reach, stated honestly</h3>
+                        <p>Reports say &ldquo;recipients handed to the carrier&rdquo;, never &ldquo;delivered&rdquo;, because that is
+                          what we can actually verify. Where a channel can&rsquo;t answer a metric, the report says which channel was
+                          used and what it can and cannot measure, instead of showing a dash.</p></li>
+                    </ul>
+
+                    <h2>Market History &amp; blasts</h2>
+                    <ul class="rn-items">
+                      <li><h3>Every blast, from every platform, in one list</h3>
+                        <p>The tab used to show only what the Salesmsg sync had pulled, which meant the imported Textable history was
+                          invisible in the tab named after it. It now covers every platform.</p></li>
+                      <li><h3>Who a send actually reached</h3>
+                        <p>Blast history shows the recipients a send went to at the time, rather than who is on that list today
+                          &mdash; so a historical blast doesn&rsquo;t silently change as the list grows.</p></li>
+                      <li><h3>Market matching that agrees with the decider</h3>
+                        <p>A blast could read &ldquo;not matched to a market&rdquo; in this tab while the AI decider was scoring it
+                          against that very market. Both now resolve markets the same way.</p></li>
+                      <li><h3>App sends land in Market History</h3>
+                        <p>A send made from the app now carries its market through, so it appears in Market History without anyone
+                          recording it by hand.</p></li>
+                    </ul>
+
+                    <h2>Contacts</h2>
+                    <ul class="rn-items">
+                      <li><h3>Open a recipient from an offer</h3>
+                        <p>From a market&rsquo;s recipient list you can jump straight to that person&rsquo;s record in Contacts, and
+                          from Contacts to their record in HubSpot.</p></li>
+                      <li><h3>Sort the directory by name</h3>
+                        <p>Sorting now happens across the whole directory rather than within the page you&rsquo;re looking at &mdash;
+                          on a quarter of a million contacts those are very different answers.</p></li>
+                      <li><h3>Import, edit and delete uploaded contacts</h3>
+                        <p>Contacts uploaded by hand can be corrected or removed in-app, without touching HubSpot or the wider
+                          contact directory.</p></li>
+                    </ul>
+
+                    <h2>Notifications <span class="rn-count">preview</span></h2>
+                    <ul class="rn-items">
+                      <li><h3>Notification shell, marked coming soon <span class="rn-tag hold">front end only</span></h3>
+                        <p>The bell, the unread count, and read / unread / delete / select-all all work on screen. Nothing yet
+                          generates a notification &mdash; the screen is in place so the shape can be agreed before anything starts
+                          producing them.</p></li>
+                    </ul>
+
                   </div>
+                </details>
 
-                  <h2>Catalog &mdash; the master lists behind the offers <span class="rn-count">AI-1086</span></h2>
-                  <p class="rn-areanote">A new area under Admin holding the three lists every offer is built from. Previously these
-                    lived only in spreadsheets and in the database.</p>
-                  <ul class="rn-items">
-                    <li><h3>Games</h3>
-                      <p>All <b>4,632</b> ticketed games we could blast about, searchable and filterable by league, state and
-                        market, with the current get-in price. Read-only, because it comes from the league schedule feeds and
-                        refreshes weekly.</p></li>
-                    <li><h3>Venues &mdash; where we could host a youth event</h3>
-                      <p><b>89 venues</b> across the 18 greenfield states, each tagged with the sports it can actually host, so a
-                        football programme is never invited to a basketball venue. Now fully editable: add, edit and delete, and
-                        your corrections survive the next data load.</p></li>
-                    <li><h3>Markets &mdash; when to send</h3>
-                      <p>One row per greenfield state, holding the school-year dates and the four season start dates that a
-                        seasonal send should be timed against, plus the school district and athletics association each date
-                        should be confirmed with. Fully editable, and rows show as <b>unverified</b> until someone confirms
-                        them.</p></li>
-                    <li><h3>Venues and markets now line up</h3>
-                      <p>A naming problem meant the two lists looked connected but weren&rsquo;t: 37 of 50 venue cities matched no
-                        market. Alabama&rsquo;s market is Huntsville, but its venues are in Tuscaloosa and Auburn &mdash; so the
-                        obvious join silently dropped Bryant-Denny and Jordan-Hare. The two lists are now joined correctly, and
-                        each venue shows both its own city and the market whose calendar times its sends, with a link through to
-                        that market.</p></li>
-                    <li><h3>Per-league venue lists for seat-map collection</h3>
-                      <p>Venue lists exported per league so arena seat maps can be gathered and uploaded, with a lookup that still
-                        finds the right map when a venue gets renamed or sponsored.</p></li>
-                  </ul>
-
-                  <h2>Reports</h2>
-                  <ul class="rn-items">
-                    <li><h3>CakeMail&rsquo;s per-campaign report, rebuilt in-app</h3>
-                      <p>Opens, clicks, bounces and unsubscribes per campaign, including the campaigns that predate the CakeMail
-                        integration, each shown against the average of the last ten sends on the same account. Built from data we
-                        already store, so it keeps working when a CakeMail token loses a permission.</p></li>
-                    <li><h3>Programme-level accordions, across every account</h3>
-                      <p>Two roll-ups: <b>Cakemail Blasts</b> covering every CakeMail campaign by account, and <b>Send Blasts</b>
-                        covering every blast we&rsquo;ve sent on any platform, SMS and email together.</p></li>
-                    <li><h3>Reach, stated honestly</h3>
-                      <p>Reports say &ldquo;recipients handed to the carrier&rdquo;, never &ldquo;delivered&rdquo;, because that is
-                        what we can actually verify. Where a channel can&rsquo;t answer a metric, the report says which channel was
-                        used and what it can and cannot measure, instead of showing a dash.</p></li>
-                  </ul>
-
-                  <h2>Market History &amp; blasts</h2>
-                  <ul class="rn-items">
-                    <li><h3>Every blast, from every platform, in one list</h3>
-                      <p>The tab used to show only what the Salesmsg sync had pulled, which meant the imported Textable history was
-                        invisible in the tab named after it. It now covers every platform.</p></li>
-                    <li><h3>Who a send actually reached</h3>
-                      <p>Blast history shows the recipients a send went to at the time, rather than who is on that list today
-                        &mdash; so a historical blast doesn&rsquo;t silently change as the list grows.</p></li>
-                    <li><h3>Market matching that agrees with the decider</h3>
-                      <p>A blast could read &ldquo;not matched to a market&rdquo; in this tab while the AI decider was scoring it
-                        against that very market. Both now resolve markets the same way.</p></li>
-                    <li><h3>App sends land in Market History</h3>
-                      <p>A send made from the app now carries its market through, so it appears in Market History without anyone
-                        recording it by hand.</p></li>
-                  </ul>
-
-                  <h2>Contacts</h2>
-                  <ul class="rn-items">
-                    <li><h3>Open a recipient from an offer</h3>
-                      <p>From a market&rsquo;s recipient list you can jump straight to that person&rsquo;s record in Contacts, and
-                        from Contacts to their record in HubSpot.</p></li>
-                    <li><h3>Sort the directory by name</h3>
-                      <p>Sorting now happens across the whole directory rather than within the page you&rsquo;re looking at &mdash;
-                        on a quarter of a million contacts those are very different answers.</p></li>
-                    <li><h3>Import, edit and delete uploaded contacts</h3>
-                      <p>Contacts uploaded by hand can be corrected or removed in-app, without touching HubSpot or the wider
-                        contact directory.</p></li>
-                  </ul>
-
-                  <h2>Notifications <span class="rn-count">preview</span></h2>
-                  <ul class="rn-items">
-                    <li><h3>Notification shell, marked coming soon <span class="rn-tag hold">front end only</span></h3>
-                      <p>The bell, the unread count, and read / unread / delete / select-all all work on screen. Nothing yet
-                        generates a notification &mdash; the screen is in place so the shape can be agreed before anything starts
-                        producing them.</p></li>
-                  </ul>
-
-                </div>
-              </details>
-
-              <details class="rn-dev">
-                <summary>
-                  <span class="rn-who">Luiz</span>
-                  <span class="rn-role">setup &amp; messaging</span>
-                  <span class="rn-tally">6 entries</span>
-                  <span class="rn-caret" aria-hidden="true">&#9662;</span>
-                </summary>
-                <div class="rn-devbody">
-                  <h2>Setup &amp; messaging</h2>
-                  <p class="rn-areanote">Shipping in the same build, listed here so the release is complete.</p>
-                  <ul class="rn-items">
-                    <li><h3>Inbox for Cole&rsquo;s demo bookings</h3>
-                      <p>Cole&rsquo;s Gmail is pulled in daily and filtered to demo bookings, readable in a tab of its own.</p></li>
-                    <li><h3>Strategy &mdash; offers have a kind</h3>
-                      <p>An offer now records what kind of offer it is, and the Queue can be filtered by it, with Offer and Type
-                        columns. Strategy is a filter rather than a separate tab, so adding another strategy doesn&rsquo;t mean
-                        adding another screen.</p></li>
-                    <li><h3>Telnyx blasts through the bulk sender</h3>
-                      <p>Blasts are staged for approval rather than armed to send, and a market only cools down once something was
-                        actually delivered.</p></li>
-                    <li><h3>Call forwarding</h3>
-                      <p>A screen for setting where a call to one of our sender numbers goes, pointed at Cole.</p></li>
-                    <li><h3>Grouped text threads, and a read-only Claude connector</h3>
-                      <p>Group MMS threads that have an agent in them, and a read-only connector that lets a Claude project see the
-                        queue, the offers and the send history. No send capability by design.</p></li>
-                    <li><h3>An Admin menu for the setup screens</h3>
-                      <p>The configuration tabs are grouped under Admin, separating what you set up from what you action daily.</p></li>
-                  </ul>
-                </div>
-              </details>
+                <details class="rn-dev">
+                  <summary>
+                    <span class="rn-who">Luiz</span>
+                    <span class="rn-role">setup &amp; messaging</span>
+                    <span class="rn-tally">6 entries</span>
+                    <span class="rn-caret" aria-hidden="true">&#9662;</span>
+                  </summary>
+                  <div class="rn-devbody">
+                    <h2>Setup &amp; messaging</h2>
+                    <p class="rn-areanote">Shipping in the same build, listed here so the release is complete.</p>
+                    <ul class="rn-items">
+                      <li><h3>Inbox for Cole&rsquo;s demo bookings</h3>
+                        <p>Cole&rsquo;s Gmail is pulled in daily and filtered to demo bookings, readable in a tab of its own.</p></li>
+                      <li><h3>Strategy &mdash; offers have a kind</h3>
+                        <p>An offer now records what kind of offer it is, and the Queue can be filtered by it, with Offer and Type
+                          columns. Strategy is a filter rather than a separate tab, so adding another strategy doesn&rsquo;t mean
+                          adding another screen.</p></li>
+                      <li><h3>Telnyx blasts through the bulk sender</h3>
+                        <p>Blasts are staged for approval rather than armed to send, and a market only cools down once something was
+                          actually delivered.</p></li>
+                      <li><h3>Call forwarding</h3>
+                        <p>A screen for setting where a call to one of our sender numbers goes, pointed at Cole.</p></li>
+                      <li><h3>Grouped text threads, and a read-only Claude connector</h3>
+                        <p>Group MMS threads that have an agent in them, and a read-only connector that lets a Claude project see the
+                          queue, the offers and the send history. No send capability by design.</p></li>
+                      <li><h3>An Admin menu for the setup screens</h3>
+                        <p>The configuration tabs are grouped under Admin, separating what you set up from what you action daily.</p></li>
+                    </ul>
+                  </div>
+                </details>
+              </div>
 
               <!-- Outside the per-developer accordions on purpose: these are things the build is
                    waiting on, not work someone shipped, and filing them under a name would read
