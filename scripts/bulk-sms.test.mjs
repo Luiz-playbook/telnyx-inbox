@@ -119,3 +119,62 @@ test('the market cools once the campaign is approved and sending, never at a dra
   assert.equal(m.startsCooldown({ status: 'cancelled', sent: 0 }), false, 'discarded before approval');
   assert.equal(m.startsCooldown({ status: 'cancelled', sent: 5 }), true, 'stopped mid-send still reached people');
 });
+
+// ▲ 2026-10-09 (AI-965 review): a draft awaiting approval holds its market|segment.
+const NOW = Date.parse('2026-10-09T12:00:00Z');
+const draft = (over = {}) => ({
+  id: 'd1', state_code: 'ma', segment: null, sent_at: '2026-10-08T12:00:00Z',
+  bulk_census: { cooldown: 'deferred' }, ...over,
+});
+
+test('a deferred draft handed off in the last 14 days holds its market, upper-cased', () => {
+  assert.deepEqual(m.draftHolds([draft()], { now: NOW }), [{ id: 'd1', code: 'MA', segment: null }]);
+});
+
+test('only deferred drafts hold — logged or at_send are market_cooldowns\' job', () => {
+  for (const cooldown of ['logged', 'at_send', undefined]) {
+    assert.deepEqual(m.draftHolds([draft({ bulk_census: { cooldown } })], { now: NOW }), [], String(cooldown));
+  }
+  assert.deepEqual(m.draftHolds([draft({ bulk_census: null })], { now: NOW }), []);
+});
+
+test('a draft discarded before anyone was texted holds nothing; one stopped mid-send still does', () => {
+  const dead = draft({ bulk_census: { cooldown: 'deferred', pipeline: { status: 'cancelled', sent: 0 } } });
+  const noSent = draft({ bulk_census: { cooldown: 'deferred', pipeline: { status: 'cancelled' } } });
+  const stopped = draft({ bulk_census: { cooldown: 'deferred', pipeline: { status: 'cancelled', sent: 4 } } });
+  const waiting = draft({ bulk_census: { cooldown: 'deferred', pipeline: { status: 'draft', sent: 0 } } });
+  assert.deepEqual(m.draftHolds([dead, noSent], { now: NOW }), []);
+  assert.equal(m.draftHolds([stopped], { now: NOW }).length, 1);
+  assert.equal(m.draftHolds([waiting], { now: NOW }).length, 1);
+});
+
+test('a draft handed off more than 14 days ago, or never, holds nothing', () => {
+  assert.deepEqual(m.draftHolds([draft({ sent_at: '2026-09-24T11:00:00Z' })], { now: NOW }), []);
+  assert.deepEqual(m.draftHolds([draft({ sent_at: null })], { now: NOW }), []);
+  assert.equal(m.draftHolds([draft({ sent_at: '2026-09-25T13:00:00Z' })], { now: NOW }).length, 1);
+});
+
+test('a draft with no market holds nothing, and junk input is an empty list', () => {
+  assert.deepEqual(m.draftHolds([draft({ state_code: '' })], { now: NOW }), []);
+  assert.deepEqual(m.draftHolds(null, { now: NOW }), []);
+  assert.deepEqual(m.draftHolds({ error: 'x' }, { now: NOW }), []);
+});
+
+test('heldByDraft: same market, overlapping segment, another row — migration 049\'s rule', () => {
+  const whole = { id: 'd1', code: 'MA', segment: null };
+  const icp = { id: 'd2', code: 'MA', segment: 'ICP' };
+  // A whole-market draft holds every segment, and a whole-market row is held by any segment.
+  assert.equal(m.heldByDraft([whole], { id: 'r', state_code: 'ma', segment: 'SCP' }), whole);
+  assert.equal(m.heldByDraft([icp], { id: 'r', state_code: 'MA', segment: null }), icp);
+  assert.equal(m.heldByDraft([icp], { id: 'r', state_code: 'MA', segment: 'ICP' }), icp);
+  // Ontario ICP sent leaves Ontario SCP open.
+  assert.equal(m.heldByDraft([icp], { id: 'r', state_code: 'MA', segment: 'SCP' }), null);
+  assert.equal(m.heldByDraft([whole], { id: 'r', state_code: 'NY', segment: null }), null);
+});
+
+test('heldByDraft: a row is never held by its own draft, and a row with no market is never held', () => {
+  const whole = { id: 'r', code: 'MA', segment: null };
+  assert.equal(m.heldByDraft([whole], { id: 'r', state_code: 'MA', segment: null }), null);
+  assert.equal(m.heldByDraft([{ ...whole, id: 'd' }], { id: 'r', state_code: '', segment: null }), null);
+  assert.equal(m.heldByDraft([], { id: 'r', state_code: 'MA' }), null);
+});
