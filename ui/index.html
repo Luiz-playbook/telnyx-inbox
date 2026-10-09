@@ -1150,10 +1150,19 @@
                   Switch to dark mode <span class="acct-soon">Soon</span>
                 </button>
                 <div class="acct-sep" role="separator"></div>
-                <a href="#" data-tab="release-notes" id="acct-release" role="menuitem">
+                <!-- A BUTTON, NOT AN ANCHOR, AND NOT data-tab. This menu lives inside .pb-tabs,
+                     so an <a> here was picked up by that row's own styling — theme.css gives
+                     .pb-tabs a 13px of vertical padding, a 26px right margin and a transparent
+                     2px bottom border — and, worse, showTab's `.pb-tabs [data-tab]` sweep marked
+                     it .active whenever this view was open, which is `color:#e55608;
+                     border-bottom-color:#e55608`. That is where the orange line through the row
+                     came from: the menu item was being rendered as the current tab.
+                     A <button> matches its three siblings, is reached by the click handler below
+                     on its id, and cannot be caught by either rule. -->
+                <button type="button" id="acct-release" role="menuitem">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12l4 4v12H4z"/><path d="M16 4v4h4"/><path d="M8 13h8M8 17h5"/></svg>
                   Release notes
-                </a>
+                </button>
                 <div class="acct-sep" role="separator"></div>
                 <button type="button" id="sign-out" class="acct-danger" role="menuitem">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
@@ -2036,30 +2045,6 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     arenas, and Brooklyn and Philadelphia alone account for 39 of the 54.</li>
                   <li><b>A decision on club and suite sections</b> &mdash; 63 of them. They&rsquo;re premium inventory, but
                     &ldquo;center court vs sideline&rdquo; doesn&rsquo;t describe a suite, so they may want their own label.</li>
-                </ul>
-              </div>
-              <div class="rn-panel">
-                <h3>Switched on, and what to watch</h3>
-                <ul>
-                  <li><b>Per-site price routing is now ON.</b> <code>PRICE_SOURCE_ROUTING</code> was set in Vercel on 9 Oct.
-                    Sections are now asked of four sites instead of one &mdash; Gametime&rsquo;s API, SeatGeek through Apify,
-                    Vivid and StubHub through a hosted browser &mdash; and the cross-source check can finally fire, because it
-                    needs a second site&rsquo;s cheapest seat to compare against and until now there wasn&rsquo;t one. It costs
-                    roughly <b>3&cent; per NBA game per refresh</b> on the published Apify and Kernel rates, NBA only, so the
-                    first few days are worth watching on both coverage and spend. Unsetting the variable reverts it.</li>
-                  <li><b>Zone coverage was 24 games across 13 arenas, and that number predates the switch.</b> Measured on
-                    9 Oct with routing still off: 117 NBA games carried a get-in price, 24 carried zones, and <b>all 93 zone
-                    entries came from Gametime</b> &mdash; the only site being asked. So it was never waiting for more games to
-                    be priced, as this panel used to say; it was waiting for the switch above, which has now happened. Expect
-                    the figure to move at the next refresh. Two caveats on reading it: zones are rewritten on every refresh and
-                    cleared when a run finds none, by design, so it is a high-water mark that can go down as well as up &mdash;
-                    and a game where two sites disagree by more than 5x is given no zone price at all, which is the guard
-                    working, not a gap.</li>
-                  <li><b>The Vivid Seats discrepancy is resolved, and it was not a discrepancy.</b> This panel used to say Vivid
-                    reported roughly ten times the expected price on one game. It did not: TickPick independently priced the
-                    same fixture &mdash; Knicks v 76ers at Madison Square Garden &mdash; at <b>$1,059</b> all-in against Vivid&rsquo;s
-                    $1,158, within 9%. The original &ldquo;10x&rdquo; compared that number to a league-typical $30 get-in rather
-                    than to this fixture. Nothing needs reconciling; the cross-check guard stays on its own merits.</li>
                 </ul>
               </div>
 
@@ -4164,8 +4149,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         document.addEventListener('keydown', e => { if(e.key === 'Escape' && am.open) am.open = false; });
         // Release notes is a view like any other, but its link lives in this menu rather than in
         // .pb-tabs, so the tab row's delegated handler never sees it.
-        document.getElementById('acct-release')?.addEventListener('click', e => {
-          e.preventDefault();
+        document.getElementById('acct-release')?.addEventListener('click', () => {
           am.open = false;
           location.hash = 'release-notes';
           showTab('release-notes');
