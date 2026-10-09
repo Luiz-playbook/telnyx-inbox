@@ -7088,18 +7088,40 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <div class="pp-map-hint">Scroll to zoom, drag to move, Fit to reset. Reference only &mdash; check the sections above against the chart.</div>`;
         wrap.classList.remove('hidden');
 
-        // Extension varies across the saved charts, so .png is tried and .jpg is the fallback.
+        // THE VENUE STRING AND THE FILENAME DO NOT ALWAYS AGREE, and when they disagree the
+        // panel just says "no seat map" — a silent miss that looks like missing data rather
+        // than a lookup problem. Two real cases in the NBA set alone: events_master stores
+        // "crypto.com Arena" with a lower-case c against a chart named "Crypto.com Arena", and
+        // "Toyota Center (Houston)" against a chart named "Toyota Center".
+        //
+        // So the lookup tries a short list of spellings rather than one, each as .png then
+        // .jpg. Misses are cheap — a 404 on a static file, only when the panel is opened — and
+        // this stops every future naming drift becoming a bug report.
         const img = wrap.querySelector('.pp-map-view img');
-        const base = `assets/venue/${venueDir}/${encodeURIComponent(arena)}`;
-        img.onerror = () => {
-          img.onerror = () => {
+        const bare = arena.replace(/\s*\([^)]*\)\s*$/, '').trim();          // drop a "(City)" suffix
+        // Two different capitalisations, because they fix different mistakes. Sentence case
+        // turns "crypto.com Arena" into "Crypto.com Arena" — title case would give
+        // "Crypto.Com Arena" and still miss. Title case fixes a venue stored all-lower.
+        // This matters on the deployed site and not locally: Windows matches filenames
+        // case-insensitively, so a broken case only shows up once it is on Vercel.
+        const sentence = bare.charAt(0).toUpperCase() + bare.slice(1);
+        const title = bare.replace(/[0-9A-Za-z]+/g, w => w.charAt(0).toUpperCase() + w.slice(1));
+        const names = [...new Set([arena, bare, sentence, title])];
+        const candidates = names.flatMap(n => ['.png', '.jpg'].map(
+          ext => `assets/venue/${venueDir}/${encodeURIComponent(n)}${ext}`));
+
+        let at = 0;
+        const tryNext = () => {
+          if (at >= candidates.length) {
             const v = wrap.querySelector('.pp-map-view');
-            if(v) v.innerHTML = '<div class="pp-map-hint">No seat map saved for this arena.</div>';
-          };
-          img.src = base + '.jpg';
+            if (v) v.innerHTML = `<div class="pp-map-hint">No seat map saved for ${esc(arena)}.</div>`;
+            return;
+          }
+          img.src = candidates[at++];
         };
+        img.onerror = tryNext;
         img.onload = () => attachMapPanZoom(wrap);
-        img.src = base + '.png';
+        tryNext();
 
         placeSeatMap();
       }
