@@ -17,6 +17,9 @@ import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { hubspotToken } from '../lib/hubspot.js';
+// Shared with api/cakemail-templates.js — see the note in lib/defang.js for why there is
+// exactly one copy of this.
+import { defangHtml } from '../lib/defang.js';
 
 export const config = { maxDuration: 30 };
 
@@ -26,32 +29,6 @@ const num = v => (v == null || v === '' ? null : Number(v));
 // lib/cakemail.js does, so moving a sub-account is a deployment change and not a code change.
 // An unknown id falls back to the raw number rather than being hidden: an unlabelled account is
 // something to notice, not something to swallow.
-// Make a sent email safe to LOOK at.
-//
-// sandbox="" on the iframe stops scripts, forms and top-level navigation — but it does NOT stop
-// a click navigating the iframe itself. Every blast ends in a one-click Unsubscribe, and that
-// URL unsubscribes on GET: previewing a blast in the panel could quietly opt a real contact out
-// of a real list (Vhea, 2026-09-08). Every tracked link in the body has the same shape, so a
-// stray click could also register a click against the campaign and move the numbers this tab
-// reports.
-//
-// Defanged HERE rather than in the browser, so a live href never reaches the page at all. The
-// address is kept in data-href so it is still inspectable, and the anchors keep their styling —
-// the point of the preview is to see what was sent, underlines included.
-function defangHtml(html) {
-  const inert =
-    '<style>a{pointer-events:none!important;cursor:default!important}' +
-    'form{pointer-events:none!important}</style>';
-  const body = String(html)
-    // href on anchors -> data-href. Handles quoted and bare values.
-    .replace(/(<a\b[^>]*?)\shref\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '$1 data-href=$2')
-    // and the same for a form that would post somewhere
-    .replace(/(<form\b[^>]*?)\saction\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '$1 data-action=$2')
-    // <base> would re-point every relative URL; nothing in a preview needs one
-    .replace(/<base\b[^>]*>/gi, '');
-  return inert + body;
-}
-
 function accountLabels() {
   // Seeded with the live ids so an account can still be NAMED on a deploy that is missing its
   // environment — which is the deploy most likely to be raising an error about it. Built only

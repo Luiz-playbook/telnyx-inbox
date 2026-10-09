@@ -30,28 +30,12 @@
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { openaiTarget } from '../lib/llm.js';
+// [GAME]/[DATE]/[SPORT] moved to lib/tokens.js so api/cakemail-templates.js fills an
+// attached CakeMail design exactly as this drafter fills a stored template. LEFTOVER below is
+// deliberately NOT shared: its job is to reject whatever that fill did not resolve.
+import { fillTokens, gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
-
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
-// event_date is a PLAIN date and already local to the venue (see the note in
-// docs/documentation/events-pipeline.md). Parsing it through Date() would shift it a day for half of
-// every UTC day, so it is formatted from its own digits and never becomes a Date.
-function prettyDate(ymd) {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
-  if (!m) return '';
-  return `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}`;
-}
-
-// "<opponent> at <team>" — team is the HOME side, so the visitor is named first. Same
-// convention as blastTitle() in ui/index.html; a row that has neither falls back to its
-// stored title with the [TEST] marker stripped, because that marker is queue bookkeeping
-// and must not appear in outreach.
-function gameLabel(r) {
-  if (r.team) return r.opponent ? `${r.opponent} at ${r.team}` : r.team;
-  return String(r.title || '').replace(/^\s*\[TEST\]\s*/i, '').trim();
-}
 
 // Which pitch this game deserves. Cole wrote separate copy for a season opener, a playoff
 // game and a club-seat offer, so a generic body on any of them is a worse blast.
@@ -67,13 +51,6 @@ function pickVariant(r, isFollowup) {
   if (/\b(season opener|home opener|opening (day|night))\b/.test(hay)) return 'season-opener';
   if (/\b(club seat|all-inclusive|suite)\b/.test(hay)) return 'club-seats';
   return 'initial';
-}
-
-function fillTokens(body, r) {
-  return String(body || '')
-    .replace(/\[GAME\]/g, gameLabel(r))
-    .replace(/\[DATE\]/g, prettyDate(r.event_date))
-    .replace(/\[SPORT\]/g, r.sport || 'sports');
 }
 
 const LEFTOVER = /\[[A-Z][A-Z_ ]{1,20}\]/;

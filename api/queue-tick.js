@@ -554,7 +554,21 @@ export default async function handler(req, res) {
         }
       }
       if (r.email && emails.length) {
-        const html = nl2br(r.email_copy || '');
+        // A CakeMail DESIGN wins over the plain-text body when one is attached (migration 120).
+        //
+        // email_html is already finished HTML — rendered from a CakeMail template by
+        // api/cakemail-templates.js with [GAME]/[DATE]/[SPORT] filled at the moment it was
+        // attached — so it is sent VERBATIM. Running it through nl2br would escape every tag
+        // and deliver the markup as visible text, which is exactly the thing that made pasting
+        // a design into email_copy impossible before 120.
+        //
+        // email_copy is NOT cleared when a design is attached and is still what the Queue shows
+        // and what the row reads as. It stops being what goes out, which is why the Queue puts
+        // a badge above the body box saying so — a body that reads one way and sends another,
+        // unlabelled, is the worst outcome available here.
+        const design = String(r.email_html || '').trim();
+        const html = design || nl2br(r.email_copy || '');
+        if (design) notes.push(`design: ${r.cakemail_template_name || `CakeMail template ${r.cakemail_template_id || '?'}`}`);
         // The row's title is queue bookkeeping — "[TEST] angels — Anaheim" — and it used to
         // be sent as the subject line, so that string reached the recipient's inbox.
         // api/queue-draft.js now fills email_subject from the template ("Early access

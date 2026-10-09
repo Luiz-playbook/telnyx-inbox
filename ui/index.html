@@ -12830,6 +12830,14 @@ This removes its school and season dates. Venues in this market are not touched.
       // so the fallback is applied on read and written back in refresh().
       const validEmailFrom = v => EMAIL_SENDERS.some(s => s.v === v);
       const emailFromOf = r => (validEmailFrom(r.email_from) ? r.email_from : DEFAULT_EMAIL_FROM);
+      // 'cakemail:<account_id>:<sender_id>' -> { accountId, senderId }; anything else -> null.
+      // The browser twin of parseCakemailFrom in lib/cakemail.js — keep both in sync. Used here
+      // only to decide whether a row can be offered a CakeMail design: a template belongs to one
+      // sub-account, so a mail-merge row has no library to browse.
+      const parseCakemailFrom = v => {
+        const m = /^cakemail:([^:]+):(.+)$/.exec(String(v || ''));
+        return m ? { accountId: m[1], senderId: m[2] } : null;
+      };
       // Resolved against the live Salesmsg list, not stored: DEFAULT_SMS_TEAM_ID names an
       // inbox, and only the list knows which number that inbox currently sends from. A value
       // not in the dropdown would select nothing, so an absent team falls through to Telnyx.
@@ -13194,10 +13202,33 @@ This removes its school and season dates. Venues in this market are not touched.
           // and Save/Undo only mean something once it (or a hand edit) has. Options are filled
           // when it opens - from the row's own strategy only - so a Suites row is never offered
           // the ticket pitch and a Ticket Blasts row never sees the suite one.
+          // THE DESIGN BADGE. When a CakeMail template is attached the body box below it is no
+          // longer what recipients get, and an editor that silently stops being the thing that
+          // sends is the worst outcome this feature can have. So the badge is not decoration: it
+          // is the only place the row admits which of its two bodies is live, and it carries the
+          // detach that puts the text back in charge.
+          //
+          // On a SENT row it stays, without the detach — it is then the record of what went out.
+          const designBadge = (row, isSent) => !row.email_html ? '' : `
+            <div class="shrink-0 flex items-center gap-2 px-3.5 py-2 border-b border-base-300 bg-[#fdeee4] text-xs">
+              <span class="font-bold text-[#e55608] uppercase tracking-wide">Design</span>
+              <span class="font-semibold text-[#133b49] truncate" title="${esc(row.cakemail_template_name || '')}">${esc(row.cakemail_template_name || ('CakeMail template ' + (row.cakemail_template_id || '?')))}</span>
+              <span class="text-base-content/55">${isSent ? 'is what went out — the text below is the record, not the message.' : 'is what sends. The text below is kept as the record, and is not what recipients see.'}</span>
+              ${isSent ? '' : `<button class="btn btn-ghost btn-xs ml-auto shrink-0" data-cmdetach="${esc(row.id)}" title="Go back to sending the plain-text body below">Detach</button>`}
+            </div>`;
           const panelFoot = (which, id) => sent ? '' : `<div class="shrink-0 flex items-center gap-2 px-3 py-2 border-t border-base-300 bg-base-200/30">
                <select class="select select-bordered select-xs max-w-[15rem]" data-tpl${which}="${esc(id)}" aria-label="Use a template for the ${which === "email" ? "email" : "SMS"}" title="Replace the ${which === "email" ? "email" : "SMS"} with one of this strategy's templates">
                  <option value="">Use template&hellip;</option>
                </select>
+               ${/* CAKEMAIL DESIGNS, EMAIL ONLY, AND ONLY ON A ROW THAT SENDS THROUGH CAKEMAIL.
+                     A template lives inside one sub-account and can only be rendered by that
+                     account's token, so the button would be a guaranteed 401 on a mail-merge
+                     row — offering it there would be offering a dead end. Next to "Use
+                     template…" because they answer the same question from two libraries:
+                     Cole's words, or a design built in CakeMail. */''}
+               ${which === 'email' && parseCakemailFrom(emailFromOf(r))
+                 ? `<button class="btn btn-xs btn-outline border-base-300" data-cmpick="${esc(id)}" title="Browse the designed templates in this sender's CakeMail account">Choose CakeMail Template</button>`
+                 : ''}
                <button class="btn btn-xs btn-primary hidden" data-save${which}="${esc(id)}">Save ${which === "email" ? "email" : "SMS"}</button>
                <button class="btn btn-xs btn-ghost text-base-content/50 hidden" data-undo${which}="${esc(id)}" title="Put the ${which === "email" ? "subject and body" : "message"} back to what is stored. Nothing has been saved yet.">Undo changes</button>
                <span class="text-xs text-base-content/50" data-copystatus${which}="${esc(id)}"></span>
@@ -13212,6 +13243,7 @@ This removes its school and season dates. Venues in this market are not touched.
                 <span class="inline-block w-14 shrink-0 text-base-content/40">Subject</span>
                 <span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span>
               </div>
+              ${designBadge(r, sent)}
               <div class="mail-body copy-pane flex-1 min-h-20 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
             ${panelFoot('email', r.id)}
@@ -13751,6 +13783,197 @@ This removes its school and season dates. Venues in this market are not touched.
             sel.addEventListener('change', () => applyTpl(sel, which));
           });
         });
+
+        // ── Choose CakeMail Template ──────────────────────────────────────────────────────
+        // The sibling of "Use template…", from the other library. That one puts WORDS in the
+        // box; this one attaches a DESIGN, which is a different thing and is why it is a button
+        // opening a picker rather than a third option in the same dropdown — a design has to be
+        // looked at before it is chosen, and a <select> cannot show you one.
+        //
+        // NOTHING IS DECIDED IN THE BROWSER. The page asks /api/cakemail-templates for the list
+        // and for a DEFANGED preview, and posts an id back to attach. The template's real HTML —
+        // live tracked links, live one-click unsubscribe — is fetched, token-filled and written
+        // to the row entirely on the server, so it never exists in this document. See the note
+        // at the top of api/cakemail-templates.js.
+        //
+        // Cached per account for the life of the page: the library is small and static, and
+        // re-fetching it every time the dialog opens makes picking between two designs feel like
+        // a network operation.
+        const CM_LIB = {};
+        async function cmTemplates(accountId){
+          if(CM_LIB[accountId]) return CM_LIB[accountId];
+          const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(accountId), { headers: await apiHeaders() });
+          const j = await r.json().catch(() => ({}));
+          if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+          CM_LIB[accountId] = j.templates || [];
+          return CM_LIB[accountId];
+        }
+
+        function cmPickerDialog({ templates, accountLabel, current }){
+          return new Promise(resolve => {
+            const ov = document.createElement('div');
+            ov.className = 'pb-modal-overlay';
+            // A template that has never been opened in CakeMail's editor has no thumbnail. It
+            // gets a name-only tile rather than a broken image: "no preview yet" is information,
+            // and a missing design is exactly the one you want to notice before attaching it.
+            const tile = t => `
+              <button type="button" data-pick="${esc(t.id)}" class="text-left border border-base-300 rounded-lg overflow-hidden bg-white hover:border-[#e55608] focus:border-[#e55608] focus:outline-none transition${String(t.id) === String(current||'') ? ' border-[#e55608] ring-1 ring-[#e55608]' : ''}">
+                <div class="h-[110px] bg-base-200 flex items-center justify-center overflow-hidden">
+                  ${t.thumbnail_url
+                    ? `<img src="${esc(t.thumbnail_url)}" alt="" loading="lazy" class="w-full h-full object-cover object-top">`
+                    : `<span class="text-[11px] text-base-content/40">No preview yet</span>`}
+                </div>
+                <div class="px-2 py-1.5">
+                  <div class="text-xs font-semibold text-[#133b49] truncate" title="${esc(t.name)}">${esc(t.name)}</div>
+                  <div class="text-[10px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || '&nbsp;'}</div>
+                </div>
+              </button>`;
+            ov.innerHTML =
+              `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Choose a CakeMail template" style="max-width:54rem">
+                 <div class="font-extrabold text-lg text-[#133b49]">Choose a CakeMail template</div>
+                 <div class="text-sm text-base-content/70 mb-3">Designs built in <b>${esc(accountLabel)}</b>. The one you pick becomes what this blast actually sends &mdash; the text in the body box stays as the record.</div>
+                 ${templates.length
+                   ? `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mb-3 max-h-[16rem] overflow-y-auto p-0.5" data-grid></div>
+                      <div class="border border-base-300 rounded-lg overflow-hidden bg-base-200/30 mb-3">
+                        <div class="px-3 py-1.5 border-b border-base-300 text-xs text-base-content/55" data-prevlabel>Pick a template to preview it.</div>
+                        <iframe sandbox="" class="w-full h-[17rem] bg-white" title="Template preview" data-prevframe></iframe>
+                      </div>`
+                   : `<div class="border border-dashed border-base-300 rounded-lg p-5 text-sm text-base-content/55 mb-3">
+                        This CakeMail account has no saved templates yet. Build one in CakeMail and it will show up here.
+                      </div>`}
+                 <div class="text-xs text-error mb-2 hidden" data-err></div>
+                 <div class="flex items-center gap-2">
+                   <span class="text-xs text-base-content/45" data-note></span>
+                   <div class="ml-auto flex gap-2">
+                     <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
+                     <button class="btn btn-sm btn-primary" data-ok disabled>Use this design</button>
+                   </div>
+                 </div>
+               </div>`;
+            document.body.appendChild(ov);
+            const grid = ov.querySelector('[data-grid]');
+            if(grid) grid.innerHTML = templates.map(tile).join('');
+            const okBtn = ov.querySelector('[data-ok]');
+            const errEl = ov.querySelector('[data-err]');
+            const noteEl = ov.querySelector('[data-note]');
+            const frame = ov.querySelector('[data-prevframe]');
+            const prevLabel = ov.querySelector('[data-prevlabel]');
+            let chosen = null, previewSeq = 0;
+
+            const close = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+            const onKey = e => { if(e.key === 'Escape') close(null); };
+            document.addEventListener('keydown', onKey);
+            ov.addEventListener('mousedown', e => { if(e.target === ov) close(null); });
+            ov.querySelector('[data-cancel]').addEventListener('click', () => close(null));
+            okBtn.addEventListener('click', () => { if(chosen) close(chosen); });
+
+            ov.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', async () => {
+              ov.querySelectorAll('[data-pick]').forEach(x => x.classList.remove('border-[#e55608]','ring-1','ring-[#e55608]'));
+              b.classList.add('border-[#e55608]','ring-1','ring-[#e55608]');
+              chosen = templates.find(t => String(t.id) === b.dataset.pick) || null;
+              okBtn.disabled = !chosen;
+              if(!chosen) return;
+              // SEQUENCED, because clicking through four tiles starts four fetches and they can
+              // land out of order — the preview would settle on whichever was slowest, not on
+              // the one that is selected.
+              const seq = ++previewSeq;
+              prevLabel.textContent = 'Loading ' + chosen.name + '…';
+              errEl.classList.add('hidden');
+              try{
+                const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(accountId)
+                                      + '&id=' + encodeURIComponent(chosen.id), { headers: await apiHeaders() });
+                const j = await r.json().catch(() => ({}));
+                if(seq !== previewSeq) return;
+                if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                // srcdoc with sandbox="" — no scripts, no navigation, and every href has already
+                // been moved to data-href on the server.
+                frame.srcdoc = j.html || '';
+                prevLabel.textContent = chosen.name;
+              }catch(e){
+                if(seq !== previewSeq) return;
+                prevLabel.textContent = chosen.name;
+                errEl.textContent = 'Could not load the preview: ' + ((e && e.message) || e) + '. You can still attach it.';
+                errEl.classList.remove('hidden');
+              }
+            }));
+            if(noteEl && templates.length) noteEl.textContent = templates.length + ' template' + (templates.length === 1 ? '' : 's');
+          });
+        }
+
+        let accountId = null;   // set per click, read by the dialog's preview fetches
+        tb.querySelectorAll('[data-cmpick]').forEach(btn => btn.addEventListener('click', async () => {
+          const id = btn.dataset.cmpick;
+          const { row } = copyState(id);
+          const cm = parseCakemailFrom(emailFromOf(row));
+          if(!cm) return;
+          accountId = cm.accountId;
+          const label = (EMAIL_SENDERS.find(s => s.v === emailFromOf(row)) || {}).label || ('account ' + cm.accountId);
+          const old = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Loading…';
+          let templates;
+          try{ templates = await cmTemplates(cm.accountId); }
+          catch(e){
+            btn.disabled = false; btn.textContent = old;
+            toast({ type:'err', title:'Could not read the CakeMail template library',
+                    lines:[ String((e && e.message) || e) ] });
+            return;
+          }
+          btn.disabled = false; btn.textContent = old;
+          const picked = await cmPickerDialog({ templates, accountLabel: label, current: row.cakemail_template_id });
+          if(!picked) return;
+          await cmAttach(id, picked.id, btn);
+        }));
+
+        tb.querySelectorAll('[data-cmdetach]').forEach(btn => btn.addEventListener('click', () => cmAttach(btn.dataset.cmdetach, null, btn)));
+
+        // ONE PATH FOR ATTACH AND DETACH, because they are the same write — see the note on
+        // queue_set_email_html in migration 120. The row in QUEUE is updated from the answer and
+        // the table re-rendered, so the badge appears and disappears without a round trip to
+        // reload the whole queue.
+        async function cmAttach(id, templateId, btn){
+          const old = btn ? btn.textContent : '';
+          if(btn){ btn.disabled = true; btn.textContent = templateId ? 'Attaching…' : 'Detaching…'; }
+          try{
+            const r = await fetch('/api/cakemail-templates', {
+              method: 'POST',
+              headers: await apiHeaders(),   // already carries content-type: application/json
+              body: JSON.stringify(templateId ? { queue_id: id, template_id: templateId } : { queue_id: id, detach: true }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+            const row = QUEUE.find(x => x.id === id);
+            if(row){
+              // email_html itself is NOT held in the browser — the badge only needs to know that
+              // there IS one, and the real HTML has no business in this document. A truthy
+              // marker keeps designBadge() honest without carrying the payload.
+              row.email_html = j.attached ? '1' : null;
+              row.cakemail_template_id = j.attached ? j.template_id : null;
+              row.cakemail_template_name = j.attached ? j.name : null;
+            }
+            render();
+            if(j.attached){
+              // `empties` is NOT a leftover-token scan — CakeMail's own [UNSUBSCRIBE] and friends
+              // are supposed to be there. It names the tokens the design uses that came out
+              // BLANK for this row, which is the case that quietly ships "on  —" to a market.
+              const gaps = j.empties || [];
+              toast({ type: gaps.length ? 'warn' : 'ok',
+                      title: `"${j.name}" is now what this blast sends`,
+                      lines: [
+                        'The text in the body box is kept as the record and is not what recipients see.',
+                        ...(gaps.length
+                          ? [`${gaps.join(' and ')} came out blank on this row, so the design has a gap where it expected one. Fill the game or date on the blast, then attach it again.`]
+                          : []),
+                      ] });
+            } else {
+              toast({ type:'ok', title:'Design detached', lines:['This blast sends the plain-text body again.'] });
+            }
+          }catch(e){
+            toast({ type:'err', title: templateId ? 'Could not attach that design' : 'Could not detach the design',
+                    lines:[ String((e && e.message) || e) ] });
+          }finally{
+            if(btn){ btn.disabled = false; btn.textContent = old; }
+          }
+        }
 
         tb.querySelectorAll('[data-saveemail]').forEach(b =>
           b.addEventListener('click', () => saveCopy(b, b.dataset.saveemail, 'email')));
