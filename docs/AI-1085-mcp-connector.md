@@ -27,8 +27,9 @@ cannot send, cannot change a row, and never returns a recipient's email or phone
 
 ## Auth
 
-Shared secret `MCP_SECRET` (Vercel env), accepted as `Authorization: Bearer` or as `?key=` on
-the URL. Fails closed when unset.
+Shared secret `MCP_SECRET` (Vercel env), accepted as `Authorization: Bearer`, as `?key=`, or as
+the last path segment `/api/mcp/<secret>` (a `vercel.json` rewrite). Fails closed when unset.
+claude.ai drops the query string before its first call, so the path form is the one to give it.
 
 Why a URL key: claude.ai's *custom connector* dialog takes a URL and, optionally, OAuth client
 credentials — it cannot set a header. The alternatives are a full OAuth 2.1 server (dynamic
@@ -39,7 +40,7 @@ to the repo or `ui/config.js`.
 ## Connecting
 
 **claude.ai project** (Cole's path): Settings → Connectors → *Add custom connector* →
-URL `https://telnyx-inbox.vercel.app/api/mcp?key=<MCP_SECRET>` → add. Then enable it in the
+URL `https://telnyx-inbox.vercel.app/api/mcp/<MCP_SECRET>` → add (no OAuth client id). Then enable it in the
 project and paste Cole's daily instructions as the project's system prompt.
 
 **Claude Code / API**: `claude mcp add --transport http sendblaster https://telnyx-inbox.vercel.app/api/mcp --header "Authorization: Bearer <MCP_SECRET>"`.

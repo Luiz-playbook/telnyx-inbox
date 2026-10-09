@@ -13,11 +13,16 @@
 //
 // AUTH. A shared secret, MCP_SECRET, accepted two ways:
 //   Authorization: Bearer <secret>     — Claude Code, the API, curl.
-//   ?key=<secret> on the URL           — claude.ai "custom connector", which can set no header
+//   /api/mcp/<secret> in the PATH      — claude.ai "custom connector", which can set no header
 //                                        and otherwise needs a full OAuth server. The key in the
 //                                        URL is the trade for a POC that connects in a minute;
 //                                        the write-up (docs/AI-1085-mcp-connector.md) says what
-//                                        replacing it costs.
+//                                        replacing it costs. vercel.json rewrites the path form
+//                                        to ?key=, which is also accepted directly.
+//                                        ▲ 2026-10-09: it was ?key= only, and claude.ai dropped
+//                                        the query string before its first call, got a 401, and
+//                                        went looking for an OAuth server that does not exist
+//                                        ("Couldn't register with the sign-in service").
 // FAILS CLOSED: no MCP_SECRET set, nothing answers. Rotating it is one env change.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (lib/supabase.js), MCP_SECRET.

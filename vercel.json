@@ -2,6 +2,9 @@
   "buildCommand": "node scripts/gen-config.js",
   "outputDirectory": "ui",
   "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/mcp/:key", "destination": "/api/mcp?key=:key" }
+  ],
   "crons": [
     { "path": "/api/price-refresh", "schedule": "0 */12 * * *" },
     { "path": "/api/schedule-refresh?league=mlb", "schedule": "0 8 * * 1" },
