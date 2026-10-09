@@ -1,15 +1,22 @@
 # AI-1097 — Kernel browser POC
 
 **Spike.** Can a hosted browser (Kernel) get us section-level ticket prices from the sites our
-HTTP ladder cannot reach? Measured 2026-10-07/08 against live event pages.
+HTTP ladder cannot reach? Measured 2026-10-07/09 against live event pages, on the free tier and
+then again on Hobbyist with proxies and persistent profiles.
 
-Code: [lib/kernel-browser.js](../lib/kernel-browser.js) ·
-[lib/vivid-listings.js](../lib/vivid-listings.js) ·
-harness [scripts/kernel-poc.js](../scripts/kernel-poc.js)
+**Answer: one site, Vivid Seats.** The paid plan was bought to test whether a residential IP would
+unblock the other three. It did not unblock any of them, and it broke two configurations that
+already worked. Details in [the IP-reputation section](#the-ip-reputation-theory-was-testable-on-the-paid-plan-and-it-was-wrong).
+
+Code: [lib/kernel-browser.js](../../lib/kernel-browser.js) ·
+[lib/vivid-listings.js](../../lib/vivid-listings.js) ·
+harness [scripts/kernel-poc.js](../../scripts/kernel-poc.js) ·
+paid-plan runs [scripts/kernel-wall-matrix.js](../../scripts/kernel-wall-matrix.js) ·
+[scripts/kernel-datadome-probe.js](../../scripts/kernel-datadome-probe.js)
 
 ## The question this actually answers
 
-Not "should we replace the scraper" — that was never in doubt. [lib/scrape-price.js](../lib/scrape-price.js)
+Not "should we replace the scraper" — that was never in doubt. [lib/scrape-price.js](../../lib/scrape-price.js)
 gets Gametime and TickPick get-ins on 28/28 games over plain HTTP at ~1-3s a page and ~$0. No
 hosted browser beats that.
 
@@ -34,6 +41,21 @@ now returns a `granted` object for exactly this reason.
 Turning it on changed an outcome: **TickPick's event page went from permanently stalled to
 loading in ~13s.** Per Kernel's docs stealth also attaches an ISP proxy and an automatic CAPTCHA
 solver by default. Stealth works on the free tier and is worth having on by default.
+
+**It survived in a second place until 2026-10-09.** `openKernelSession` was fixed when this was
+found, but `kernelPage` — the function behind `viaKernel`, the step that would join the
+production ladder — still sent `stealth_mode`. So the one code path destined for production was
+the one still running non-stealth. Both now send `stealth`.
+
+Found alongside it, same function: `kernelPage` referenced `profileId` without declaring it, so
+it would have thrown `ReferenceError` on **every** call the moment `PRICE_SCRAPE_KERNEL=on` was
+set. Nothing caught it because the step is off by default and every measured run in this POC went
+through `openKernelSession` instead. Fixed and smoke-tested end to end (200, real HTML back
+through `viaKernel`).
+
+The lesson both times: a flag the API accepts and ignores, and a dead code path nothing exercises,
+fail the same silent way. The `granted` readback covers the first; only actually calling the
+thing covers the second.
 
 ### TickPick: the page is not the wall, the listings call is
 
@@ -70,23 +92,66 @@ The event pages hold the seats, and they are walled.
 Cloudflare interstitials are both 200. Wall detection is explicit in `detectWall()`, by body
 marker, not status code.
 
-### Three of the four walls are an IP-reputation problem, not a browser problem
+### The IP-reputation theory was testable on the paid plan, and it was wrong
 
-TickPick, SeatGeek and StubHub all fail the same way on Kernel's datacenter egress. TickPick even
-reports *"Verification successful"* and then stalls. Kernel sells residential proxies, which is
-almost certainly the fix — but:
+TickPick, SeatGeek and StubHub all failed the same way on Kernel's datacenter egress. TickPick
+even reported *"Verification successful"* and then stalled. The reading was that DataDome scores
+IP reputation before it looks at the browser, so a residential IP would be the fix. On the free
+tier that was untestable:
 
 ```
 POST /browsers  {"proxy":{"id":"..."}}
 -> 403 {"code":"insufficient_plan","message":"Proxies require a paid plan"}
 ```
 
-**This still blocks SeatGeek and StubHub, but no longer TickPick.** A US residential proxy was
-created fine (`pb-tickets-us`, id `sxrfyulouvfy2v41191ow63q`, IP 24.127.114.113) — attaching it to
-a session is what needs the upgrade. Setting `KERNEL_PROXY_ID` retests both with no code change.
+The Hobbyist plan ($30/mo) includes proxies, so the grid got run. **The theory did not hold.**
 
-DataDome is the one wall stealth did not move. Both sites sat at 403 for 79s with stealth on, so a
-different egress IP is the remaining variable worth paying to test.
+`scripts/kernel-wall-matrix.js` — headless/headful x proxy/no-proxy, residential egress, stealth
+on throughout, Vivid as the control because it already worked without a proxy:
+
+| Configuration | SeatGeek | StubHub | TickPick | Vivid (control) |
+|---|---|---|---|---|
+| headless | DataDome | DataDome | DataDome | nav timed out (harness, not a block) |
+| headless + proxy | DataDome | DataDome | DataDome | shell, **API 404** |
+| headful | DataDome | **72 rows** | DataDome | **1,020 listings** |
+| headful + proxy | DataDome | shell | shell, **API 403** | shell, **API 404** |
+
+**The residential proxy did not unblock a single site, and it broke the two that worked** —
+Vivid went 1,020 listings to zero, StubHub 72 rows to zero. Vivid is the control, so that is the
+configuration failing, not the site.
+
+The mechanism on Vivid is worth naming, because it is not a wall: its listings API answers **404**
+on both proxy rows. The proxy's egress lands in a different locale and the productionId is not
+found there — the same localisation trap that already returns CAD prices if the currency is not
+pinned. A proxy does not just change reputation, it changes which catalogue you are querying.
+
+Then the two levers AI-1097 named that had never been tried — proxy *type* and persistent
+profiles (`scripts/kernel-datadome-probe.js`, headful throughout, profile runs warmed in a first
+session and scored on the second):
+
+| Egress | SeatGeek | TickPick | StubHub |
+|---|---|---|---|
+| mobile | DataDome | DataDome | shell |
+| ISP | DataDome | Cloudflare | **73 rows** |
+| mobile + warmed profile | DataDome | shell, 0 rows | **73 rows** |
+
+Two things worth keeping from that:
+
+- **ISP egress is the one proxy type that does not break StubHub.** Residential and mobile both
+  take it to zero; ISP leaves it where no-proxy headful had it. If a proxy is ever needed for
+  another reason, ISP is the one to use.
+- **A warmed profile recovers StubHub on an egress that otherwise breaks it** — mobile alone is
+  shell, mobile plus profile is 73 rows. That is the profile doing real work on a reputation
+  system. It still does nothing for SeatGeek.
+
+**SeatGeek is now DataDome in all seven configurations tested** — headless, headful, residential,
+mobile, ISP, warmed profile, every combination of stealth. It is not an IP problem and it is not a
+browser-mode problem. Apify gets 5,548 listings from it for less than a cent, so this stops being
+worth chasing.
+
+A caveat on those row counts: the probe counts DOM nodes matching `Section ... Row ...`, not
+parsed listings. 72 and 73 are the same page. StubHub's real ceiling is still the **8 distinct
+listings** two independent methods agree on, below.
 
 ### Headful vs headless changes what you can reach
 
@@ -125,13 +190,22 @@ card's rendered TEXT, which is user-facing and far more stable. And the same lis
 three times at different DOM depths (24 matches for 8 listings), so it dedupes on section+row,
 keeping the longest text because that is the copy that still has the price on it.
 
-### Replays need headful
+### Replays need headful, and all nine from the paid-plan run download
 
 `POST /browsers/{id}/replays` on a headless session answers *"headless browsers don't support
 replays at this time"*. Recording therefore forces `headless: false`, which `openKernelSession`
 does automatically when `replay: true`. The dashboard's "live view not available in headless mode"
-is a separate thing — that is real-time viewing, not recording. A replay survives session
-deletion and downloads as an mp4.
+is a separate thing — that is real-time viewing, not recording.
+
+Recording is **opt-in and the session must be stopped, not just deleted** — stopping the replay is
+what persists the video. Once persisted it outlives the session: a deleted session's replay still
+downloads fine, which is why `scripts/kernel-replay.js` takes ids rather than listing live
+sessions.
+
+Every replay from the paid-plan probe was downloaded and checked, not just recorded — nine files,
+44 KB to 475 KB, each with a real MP4 `ftyp` box. The commands are in the sheet tab. Hobbyist
+retains them **7 days**, up from the free tier's 1, which is the difference between "share with
+Marx" and "share with Marx today".
 
 ## What Kernel does buy us today
 
@@ -175,8 +249,12 @@ single-source run could give.
 
 ## Cost shape
 
-Kernel is a hosted browser billed on session wall-clock: ~9-12s a page against plain HTTP's
-~1.2-2.7s. It is never the cheap step.
+Kernel is a hosted browser billed on session wall-clock — $0.0000166667 per GB-second — at ~9-12s
+a page against plain HTTP's ~1.2-2.7s. It is never the cheap step.
+
+The paid plan makes it measurable rather than estimated. The two test runs above cost
+**$0.0561** (4 sessions, the wall matrix) and **$0.0661** (9 scored sessions plus 3 warm-ups, the
+probe) — $0.12 to answer the whole question, against Hobbyist's $10/month of included credits.
 
 Two consequences, both already in the code:
 
@@ -187,9 +265,10 @@ Two consequences, both already in the code:
 - One session is reused across the whole run (`openKernelSession`), so 5 games over 2 sites is
   ~1.6 page loads per game in **one** browser, not a browser per page.
 
-A cost-per-100-games figure cannot honestly be quoted from the free tier — it reports no
-per-session price. What is measured is page count and wall-clock; multiply by the paid plan's
-per-browser-minute rate.
+Headful is not free: Kernel gives a headful session **8GB against a headless one's 1GB** and bills
+per GB-second, so headful costs 8x per second — $0.003/game instead of $0.0004. Irrelevant in
+absolute terms, but it is the reason not to leave headful on by default. Vivid needs it, so Vivid
+pays it.
 
 One caution on the timing ratio: Kernel looks *faster* than the ladder whenever the ladder had to
 escalate to Firecrawl (on MSG: 9.7s vs 20.6s), and slower whenever plain HTTP answered on its
@@ -198,23 +277,28 @@ talks itself into the wrong recommendation.
 
 ## Recommendation to Marx
 
-**Use it for the sites that block us — not a switch, not a drop.** Specifically:
+**Use it for one site. The paid plan answered the open question and the answer was no.**
 
 1. **Keep the HTTP ladder exactly as it is.** It is faster, free, and 28/28 on the data it covers.
-2. **Adopt Kernel for Vivid Seats only, for now.** It is the only way to reach a second
-   section-level source, and a second source is what makes the zone map trustworthy rather than
-   self-reported.
-3. **Decide on the paid plan.** It is the whole question for TickPick, SeatGeek and StubHub — all
-   three fail on IP reputation, not on browser fingerprint. Without it this POC's ceiling is two
-   sites; with it, plausibly five. That is a billing decision, not an engineering one.
-4. **Do not use Kernel for Gametime in production.** It works and agrees exactly, which is useful
+2. **Adopt Kernel for Vivid Seats only.** It is the only way to reach a second section-level
+   source, and a second source is what makes the zone map trustworthy rather than self-reported.
+   Headful, **no proxy** — the proxy breaks it.
+3. **The $30/mo Hobbyist plan does not pay for itself on unblocking.** That was the case for
+   upgrading and it did not survive the test: residential, mobile and ISP egress all leave
+   SeatGeek, StubHub and TickPick exactly where they were, and residential actively breaks Vivid
+   and StubHub. What the plan does buy is operational — 7-day replay retention, 10 concurrent
+   browsers (the matrix ran 4 at once), and $10/month of credits that comfortably covers Vivid.
+   Worth keeping for that, not for the walls.
+4. **Use Apify for SeatGeek.** 5,548 seat-level listings at ~$0.008/event from the site Kernel
+   cannot touch in any configuration. This is the bigger win and it is not a Kernel win.
+5. **Do not use Kernel for Gametime in production.** It works and agrees exactly, which is useful
    as a correctness check, but it is strictly slower than the step we already have.
 
 ### Not yet done
 
-- Residential-proxy retest of TickPick / SeatGeek / StubHub — blocked on the paid plan.
-- SeatGeek's quantity modal (defaults to 2 tickets) is untested; it never got past DataDome, so
-  the interaction question is still open behind the proxy one.
-- Saved browser profiles are unused. Worth trying once proxies work: a profile that has already
-  cleared a challenge should skip it next run.
-- Session replay is wired (`replay: true`) but not captured for the shared run.
+- SeatGeek's quantity modal (defaults to 2 tickets) is still untested — nothing ever got past
+  DataDome, and now that Apify is the route for SeatGeek the question is moot there.
+- StubHub's full inventory. Two independent methods agree on 8 listings; getting more would need
+  seat-map interaction, which nothing has tried.
+- Wiring the two winners into the production refresh (Apify for SeatGeek, Kernel for Vivid) is a
+  decision, not a discovery — neither is on the live ladder yet.
