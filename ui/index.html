@@ -229,6 +229,36 @@
     /* No measure cap. A 78ch cap was tried and the page still read as narrow: the cards spanned
        but every paragraph inside them sat in a column on the left with the rest of the window
        empty beside it. Asked for the whole page, so the whole page it is. */
+    /* ===== MONTH RAIL =====
+       Release notes are per month, so the page is an archive with a contents rail rather than
+       one long document. The rail is built FROM the month sections at runtime (see the IIFE
+       below), which means adding a month is adding one <section data-month data-label> and
+       nothing else - no second list to keep in step with the first.
+       Sticky on desktop so it stays reachable down a long month; a plain scrolling row above the
+       content on narrow screens, where a 150px column would eat a third of the width. */
+    #view-release-notes .rn-shell{ display:flex; gap:28px; align-items:flex-start; }
+    #view-release-notes .rn-months{ flex:0 0 164px; position:sticky; top:8px; display:flex;
+      flex-direction:column; gap:2px; border-right:1px solid #e3eaf2; padding-right:14px; }
+    #view-release-notes .rn-months b{ font-family:ui-monospace,Consolas,monospace; font-size:10px;
+      letter-spacing:.12em; text-transform:uppercase; color:#8da2ad; font-weight:600;
+      padding:10px 8px 4px; }
+    #view-release-notes .rn-month-btn{ text-align:left; padding:7px 10px; border:0; background:none;
+      border-radius:7px; cursor:pointer; font-weight:700; font-size:13px; color:#5e6e82;
+      display:flex; align-items:baseline; gap:8px; }
+    #view-release-notes .rn-month-btn:hover{ background:#f4f7fb; color:#354052; }
+    #view-release-notes .rn-month-btn.on{ background:#fdeee4; color:#c2500a; }
+    #view-release-notes .rn-month-btn .n{ margin-left:auto; font-family:ui-monospace,Consolas,monospace;
+      font-size:10.5px; color:#8da2ad; font-weight:500; }
+    #view-release-notes .rn-month-btn.on .n{ color:#c2500a; }
+    #view-release-notes .rn-main{ flex:1; min-width:0; }
+    #view-release-notes .rn-month[hidden]{ display:none; }
+    @media (max-width: 900px){
+      #view-release-notes .rn-shell{ display:block; }
+      #view-release-notes .rn-months{ position:static; flex-direction:row; flex-wrap:wrap;
+        border-right:0; border-bottom:1px solid #e3eaf2; padding:0 0 10px; margin-bottom:16px; }
+      #view-release-notes .rn-months b{ width:100%; padding:0 0 4px; }
+    }
+
     #view-release-notes .rn-eyebrow{ font-family:ui-monospace,Consolas,monospace; font-size:11px;
       letter-spacing:.14em; text-transform:uppercase; color:#c2500a; margin:0 0 9px; }
     #view-release-notes h1{ font-weight:800; font-size:clamp(25px,4.2vw,34px); line-height:1.1;
@@ -1836,8 +1866,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                editing screen for prose that arrives with the deploy anyway. -->
           <div data-view id="view-release-notes" class="hidden">
             <div class="rn-wrap">
+              <p class="rn-eyebrow">SendBlaster &middot; release notes</p>
+              <div class="rn-shell">
+                <!-- Filled by the IIFE below from the sections beside it. Empty in the markup on
+                     purpose: two hand-maintained lists would drift the first time a month was
+                     added to one and not the other. -->
+                <nav class="rn-months" id="rn-months" aria-label="Release months"></nav>
+                <div class="rn-main">
+
+              <!-- ADDING A MONTH: copy this section, change data-month and data-label, write the
+                   entries. The rail picks it up on its own. Newest first - the rail keeps source
+                   order, and the first section is the one that opens. -->
+              <section class="rn-month" data-month="2026-10" data-label="October 2026">
               <header class="rn-head">
-                <p class="rn-eyebrow">SendBlaster &middot; release notes</p>
                 <h1>What shipped since the last QA build</h1>
                 <p class="rn-standfirst">Three tickets&rsquo; worth of work, plus the setup and messaging changes that landed
                   alongside them. Grouped by who built it, then by where you&rsquo;ll find it in the app.</p>
@@ -1849,10 +1890,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 </ul>
               </header>
 
-              <!-- Open by default. A release page that starts fully collapsed hides the thing it
-                   exists to show; the accordion is here to let you put one person's work away,
-                   not to make you open it in the first place. -->
-              <details class="rn-dev" open>
+              <!-- CLOSED by default. The first version opened both, on the reasoning that a
+                   release page which starts collapsed hides the thing it exists to show. With
+                   more than a couple of developers that stops being true: what the page opens on
+                   is then a wall, and the summary rows are a contents page you choose from. The
+                   tally on each row is what makes a closed section still informative. -->
+              <details class="rn-dev">
                 <summary>
                   <span class="rn-who">Vhea</span>
                   <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
@@ -1996,7 +2039,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 </div>
               </details>
 
-              <details class="rn-dev" open>
+              <details class="rn-dev">
                 <summary>
                   <span class="rn-who">Luiz</span>
                   <span class="rn-role">setup &amp; messaging</span>
@@ -2053,6 +2096,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   setup and messaging was built by Luiz.</p>
                 <p>Live in QA, staging and production as of 9 October 2026.</p>
               </footer>
+              </section>
+
+                </div>
+              </div>
             </div>
           </div>
 
@@ -7408,6 +7455,56 @@ This removes its school and season dates. Venues in this market are not touched.
       showTab(VIEW[tab] ? tab : 'compose');
       if(tab === 'prices' && target && window.__focusPrice) window.__focusPrice(target);
     }
+    // RELEASE NOTES - the month rail.
+    //
+    // Built from the month sections rather than written out beside them, so adding a month is
+    // adding one <section> and the rail follows. Runs once at load: the sections are static
+    // markup and the view being hidden does not stop the DOM existing.
+    //
+    // The year heading is derived from the label's last word rather than stored separately -
+    // "October 2026" is already the fact, and a second data-year could disagree with it.
+    (() => {
+      const rail = document.getElementById('rn-months');
+      const months = [...document.querySelectorAll('#view-release-notes .rn-month')];
+      if(!rail || !months.length) return;
+      let year = null;
+      const buttons = [];
+      months.forEach((sec, i) => {
+        const label = sec.dataset.label || sec.dataset.month || '';
+        const y = label.split(' ').pop();
+        if(y !== year){
+          year = y;
+          const h = document.createElement('b');
+          h.textContent = y;
+          rail.appendChild(h);
+        }
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'rn-month-btn';
+        const name = document.createElement('span');
+        name.textContent = label.replace(' ' + y, '');
+        // The entry count, so a month still says how much is in it before you open it - the
+        // same job the per-developer tally does one level down.
+        const n = document.createElement('span');
+        n.className = 'n';
+        const count = sec.querySelectorAll('.rn-items > li').length;
+        n.textContent = count ? String(count) : '';
+        b.append(name, n);
+        b.addEventListener('click', () => {
+          months.forEach((m, j) => { m.hidden = j !== i; });
+          buttons.forEach(x => x.classList.toggle('on', x === b));
+          // Lands at the top of the month you picked, not part way down the one before it.
+          sec.scrollIntoView({ block: 'nearest' });
+        });
+        rail.appendChild(b);
+        buttons.push(b);
+        // Source order decides: the first section is the open one, so the newest month goes
+        // first in the markup.
+        sec.hidden = i !== 0;
+        if(i === 0) b.classList.add('on');
+      });
+    })();
+
     window.addEventListener('hashchange', routeHash);
     // DEFERRED BY A TICK, AND IT IS LOAD-BEARING. showTab calls window.__loadQueue,
     // __loadBlastHistory, __loadPrices and __loadTelnyxUsage — and every one of those is
