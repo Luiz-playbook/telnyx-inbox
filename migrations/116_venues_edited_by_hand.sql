@@ -32,8 +32,22 @@ create index if not exists youth_event_venues_edited
 -- The view gains the flag and the id, so the Venues tab can edit what it is displaying
 -- ---------------------------------------------------------------------------------------------
 --
--- Recreated in full rather than altered: a view's column list cannot be extended in place, and
--- spelling it out here keeps 115's definition and this one from drifting apart in two files.
+-- CREATE OR REPLACE VIEW CAN ONLY APPEND A COLUMN, NEVER INSERT ONE.
+--
+-- Postgres matches the new select list against the old one BY POSITION, so a column added in the
+-- middle is read as renaming everything after it. The first version of this migration put
+-- edited_by_hand next to the other youth_event_venues columns, which looked tidy and failed:
+--
+--   ERROR: 42P16: cannot change name of view column "school_district" to "edited_by_hand"
+--   HINT:  Use ALTER VIEW ... RENAME COLUMN ...
+--
+-- The hint is a red herring here — nothing is being renamed, a column is being added. So the
+-- first 22 columns below are byte-for-byte 115's list in 115's order, and edited_by_hand is
+-- appended at the end. Column order in a view nothing selects by position is cosmetic; being
+-- able to run the migration is not.
+--
+-- Recreated in full rather than altered because a view has no ALTER ... ADD COLUMN, and spelling
+-- it out keeps 115's definition and this one from drifting apart across two files.
 create or replace view public.youth_event_venues_with_market as
 select
   v.id,
@@ -49,7 +63,6 @@ select
   v.sports,
   v.confidence,
   v.notes,
-  v.edited_by_hand,
   c.school_district,
   c.athletics_body,
   c.school_first_day,
@@ -58,7 +71,9 @@ select
   c.winter_sports_start,
   c.spring_sports_start,
   c.summer_sports_start,
-  c.verified_at as market_verified_at
+  c.verified_at as market_verified_at,
+  -- APPENDED, for the reason above. Everything before this line is 115's list in 115's order.
+  v.edited_by_hand
 from public.youth_event_venues v
 -- A plain left join on state_code, and nothing more — see 115 on why a venue's market is its
 -- state's market, and why joining on a city name matches 13 of 50.
