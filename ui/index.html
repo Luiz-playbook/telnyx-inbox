@@ -3681,11 +3681,14 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // can never offer a label nothing carries. Gmail system labels (INBOX, UNREAD, …) are
       // noise here and are dropped; a user's own labels are what "tag it to include it" means.
       const SYSTEM = new Set(['INBOX','SENT','UNREAD','IMPORTANT','STARRED','CATEGORY_PERSONAL','CATEGORY_SOCIAL','CATEGORY_PROMOTIONS','CATEGORY_UPDATES','CATEGORY_FORUMS','DRAFT','SPAM','TRASH','CHAT']);
+      // Gmail's star colours (YELLOW_STAR, RED_BANG, ...) and any CATEGORY_* are system too. The
+      // first real sync surfaced YELLOW_STAR, which the list above did not name.
+      const isSystemLabel = l => SYSTEM.has(l) || /_STAR$|_BANG$|^CATEGORY_/.test(l);
       async function loadLabels(){
         if(!sb) return;
         const r = await sb.from('inbox_emails').select('labels').eq('source', SOURCE).order('received_at', { ascending: false }).limit(500);
         const seen = new Set();
-        (r.data || []).forEach(x => (x.labels || []).forEach(l => { if(l && !SYSTEM.has(l)) seen.add(l); }));
+        (r.data || []).forEach(x => (x.labels || []).forEach(l => { if(l && !isSystemLabel(l)) seen.add(l); }));
         const sel = el('ib-label'); if(!sel) return;
         const keep = label;
         sel.innerHTML = '<option value="">Any label</option>' + [...seen].sort().map(l => '<option value="' + esc(l) + '">' + esc(l) + '</option>').join('');
@@ -3723,7 +3726,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return;
         }
         tb.innerHTML = rows.map(r => {
-          const labels = (r.labels || []).filter(l => !SYSTEM.has(l));
+          const labels = (r.labels || []).filter(l => !isSystemLabel(l));
           const from = r.from_name && r.from_name !== r.from_email
             ? '<div class="font-semibold text-[#133b49]">' + esc(r.from_name) + '</div><div class="text-xs text-base-content/50">' + esc(r.from_email || '') + '</div>'
             : '<div class="font-semibold text-[#133b49]">' + esc(r.from_email || '') + '</div>';

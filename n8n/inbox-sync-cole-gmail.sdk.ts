@@ -167,7 +167,10 @@ const upsertRow = node({
   version: 4.5,
   config: {
     name: 'Upsert into inbox_emails',
-    onError: 'continueRegularOutput',
+    // stopWorkflow, deliberately. The first cut used continueRegularOutput and a 401 on every
+    // row still produced a green run with nothing written. A sync that fails must fail where
+    // someone looks.
+    onError: 'stopWorkflow',
     parameters: {
       method: 'POST',
       url: 'https://snfmggrnyjayuuxafats.supabase.co/rest/v1/inbox_emails?on_conflict=source,gmail_message_id',
@@ -182,7 +185,11 @@ const upsertRow = node({
       jsonBody: expr('{{ JSON.stringify({ source: $json.source, gmail_message_id: $json.gmail_message_id, gmail_thread_id: $json.gmail_thread_id, from_email: $json.from_email, from_name: $json.from_name, to_email: $json.to_email, subject: $json.subject, snippet: $json.snippet, labels: $json.labels, received_at: $json.received_at, is_demo_booking: $json.is_demo_booking, classifier_reason: $json.classifier_reason, classified_at: $json.classified_at, synced_at: $now.toISO() }) }}'),
       options: { batching: { batch: { batchSize: 20, batchInterval: 500 } } }
     },
-    credentials: { supabaseApi: { id: 'B45ZZ2nGKOeatNYB', name: 'Supabase | John' } },
+    // Supabase n8n, NOT Supabase | John. The latter holds a key this project rejects (401 Invalid
+    // API key) - found on the first real run, when every row failed and the run still reported
+    // success. It is also the credential the Telnyx bulk-send workflow records with, which is
+    // the likely reason telnyx_messages has been empty since July.
+    credentials: { supabaseApi: { id: 'bdqDEVMlOhKFRx1e', name: 'Supabase n8n' } },
     position: [1540, 300]
   },
   output: [{}]
