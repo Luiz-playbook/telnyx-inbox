@@ -12014,6 +12014,34 @@ This removes its school and season dates. Venues in this market are not touched.
       // rather than an option that cannot send.
       let SALESMSG_SENDERS = [];
       let QUEUE = [], NUMBERS = [], TEMPLATES = [], REGIONS = [], COOLDOWNS = {}, expanded = new Set();
+
+      // EVERY TEMPLATE, for the per-row "Use template" picker (John, 2026-10-10). TEMPLATES above
+      // is the Ticketblast non-placeholder subset the Follow-up dialog wants; this is the whole
+      // table, strategy and body included, so a row can be offered exactly its own strategy's
+      // copy. Placeholders are INCLUDED and labelled: hiding them made the Event Waitlist rows
+      // look like they had no templates at all, when the truth is "there are eight, none
+      // approved yet". Loaded once, on the first picker that opens.
+      let TPL_LIB = null;
+      async function loadTplLib(){
+        if(TPL_LIB) return TPL_LIB;
+        const t = await sb.from('message_templates')
+          .select('slug,name,play,variant,channel,strategy,subject,body,is_placeholder,sort_order')
+          .order('sort_order', { ascending: true });
+        TPL_LIB = t.error ? [] : (t.data || []);
+        return TPL_LIB;
+      }
+      // The same three tokens api/queue-draft fills, so what the picker shows is what the drafter
+      // would have written. Anything else ([First Name], [waitlist_link]...) is left in place on
+      // purpose: it is visible in the editor, and the operator sees exactly what is unresolved.
+      function fillRowTokens(body, r){
+        const game = r.team ? (r.opponent ? `${r.opponent} at ${r.team}` : r.team) : String(r.title || '').replace(/\s+—.*$/, '');
+        const d = r.event_date ? new Date(r.event_date + 'T00:00:00') : null;
+        const date = d ? d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '';
+        return String(body || '')
+          .replace(/\[GAME\]/g, game)
+          .replace(/\[DATE\]/g, date)
+          .replace(/\[SPORT\]/g, r.sport || 'sports');
+      }
       // WHAT IS TICKED, BY ID — not by index, so it survives a re-render, a sort and a page
       // turn. It is pruned to the FILTERED set on every render (see below): the filters define
       // the working set, the pager is only a window onto it, so selecting on page 1 and acting
@@ -13162,7 +13190,14 @@ This removes its school and season dates. Venues in this market are not touched.
           // now what" — and it appears on exactly the same condition: while the editor differs
           // from what is stored. Once saved, neither is offered, because there is nothing to save
           // and nothing to undo.
+          // USE TEMPLATE sits first in the footer: it is the thing that puts words in the box,
+          // and Save/Undo only mean something once it (or a hand edit) has. Options are filled
+          // when it opens - from the row's own strategy only - so a Suites row is never offered
+          // the ticket pitch and a Ticket Blasts row never sees the suite one.
           const panelFoot = (which, id) => sent ? '' : `<div class="shrink-0 flex items-center gap-2 px-3 py-2 border-t border-base-300 bg-base-200/30">
+               <select class="select select-bordered select-xs max-w-[15rem]" data-tpl${which}="${esc(id)}" aria-label="Use a template for the ${which === "email" ? "email" : "SMS"}" title="Replace the ${which === "email" ? "email" : "SMS"} with one of this strategy's templates">
+                 <option value="">Use template&hellip;</option>
+               </select>
                <button class="btn btn-xs btn-primary hidden" data-save${which}="${esc(id)}">Save ${which === "email" ? "email" : "SMS"}</button>
                <button class="btn btn-xs btn-ghost text-base-content/50 hidden" data-undo${which}="${esc(id)}" title="Put the ${which === "email" ? "subject and body" : "message"} back to what is stored. Nothing has been saved yet.">Undo changes</button>
                <span class="text-xs text-base-content/50" data-copystatus${which}="${esc(id)}"></span>
@@ -13667,6 +13702,55 @@ This removes its school and season dates. Venues in this market are not touched.
           // Re-reads the editors against the row we just updated, so the button hides itself.
           paintSave(id);
         }
+
+        // ── Use template ──────────────────────────────────────────────────────────────────
+        // Populated on focus rather than at render: the library is one fetch, and most rows are
+        // never opened. The strategy label in the first option says which pool is being shown,
+        // so "why isn't the ticket wording here" answers itself on a Suites row.
+        async function fillTplSelect(sel, which){
+          const id = sel.dataset['tpl' + which];
+          const { row } = copyState(id);
+          const strat = row.strategy || 'ticket_blasts';
+          const lib = await loadTplLib();
+          const opts = lib.filter(t => (t.strategy || 'ticket_blasts') === strat && t.channel === which);
+          const label = (STRATEGIES.byCode[strat] || {}).label || strat;
+          sel.innerHTML = `<option value="">Use template&hellip; (${esc(label)})</option>`
+            + (opts.length
+                ? opts.map(t => `<option value="${esc(t.slug)}"${t.is_placeholder ? ' disabled' : ''}>${esc(t.name || t.slug)}${t.is_placeholder ? ' — placeholder, not approved' : ''}</option>`).join('')
+                : `<option value="" disabled>No ${esc(label)} ${which} templates yet</option>`);
+          sel.dataset.filled = '1';
+        }
+        function applyTpl(sel, which){
+          const id = sel.dataset['tpl' + which];
+          const slug = sel.value;
+          if(!slug) return;
+          const t = (TPL_LIB || []).find(x => x.slug === slug);
+          const { row, em, sm, sub: subEl } = copyState(id);
+          if(!t){ sel.value = ''; return; }
+          const body = fillRowTokens(t.body, row);
+          if(which === 'email'){
+            if(em) em.innerHTML = nl2br(body);
+            if(subEl && t.subject) subEl.textContent = fillRowTokens(t.subject, row);
+          } else {
+            if(sm) sm.textContent = body;
+            const c = tb.querySelector(`[data-smscount="${id}"]`);
+            if(c){ const i = smsInfo(body); c.textContent = smsCountLabel(i); c.className = smsCountClass(i); }
+          }
+          // Back to the prompt: the box shows the template's words now, and the select saying
+          // its name would claim a link that does not exist once the operator edits a word.
+          sel.value = '';
+          paintSave(id);
+          const st = tb.querySelector(`[data-copystatus${which}="${id}"]`);
+          if(st) st.textContent = `Loaded "${t.name || t.slug}" — not saved yet`;
+        }
+        ['email', 'sms'].forEach(which => {
+          tb.querySelectorAll(`[data-tpl${which}]`).forEach(sel => {
+            const fill = () => { if(!sel.dataset.filled) fillTplSelect(sel, which); };
+            sel.addEventListener('focus', fill);
+            sel.addEventListener('mousedown', fill);
+            sel.addEventListener('change', () => applyTpl(sel, which));
+          });
+        });
 
         tb.querySelectorAll('[data-saveemail]').forEach(b =>
           b.addEventListener('click', () => saveCopy(b, b.dataset.saveemail, 'email')));
