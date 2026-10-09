@@ -1,4 +1,4 @@
--- 091: return strategy from get_campaign_queue(), so the Queue can be filtered by it (AI-1075).
+-- 103: return strategy from get_campaign_queue(), so the Queue can be filtered by it (AI-1075).
 --
 -- WHY A MIGRATION AT ALL. 090 put a strategy column on campaign_queue, but the browser cannot
 -- see it: campaign_queue has no RLS policy, deliberately, and the Queue tab reads it only through

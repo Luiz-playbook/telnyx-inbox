@@ -1,4 +1,4 @@
--- 092 ROLLBACK: remove the two bulk-sender columns from campaign_queue.
+-- 104 ROLLBACK: remove the two bulk-sender columns from campaign_queue.
 --
 -- SAFE: 092 only added two nullable columns and one partial index. No existing value was
 -- changed, so undoing it is dropping what it made. Dropping a column takes its index and its

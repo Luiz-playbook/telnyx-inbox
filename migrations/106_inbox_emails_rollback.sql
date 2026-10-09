@@ -1,4 +1,4 @@
--- 094 ROLLBACK: remove the imported-mailbox table.
+-- 106 ROLLBACK: remove the imported-mailbox table.
 --
 -- SAFE in that 094 added one table and nothing else. Its policies, grants and indexes go
 -- with it.
