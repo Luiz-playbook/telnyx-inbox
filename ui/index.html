@@ -10283,10 +10283,15 @@ This removes its school and season dates. Venues in this market are not touched.
           //
           // Reported rather than thrown: the rows ARE queued, and a row on the default sender is
           // recoverable in the Queue. Losing the rows entirely is not.
+          // STRATEGY RIDES THE SAME PATCH. queue_enqueue_test does not take it either, and the
+          // column defaults to ticket_blasts, so only a non-default choice needs writing - but
+          // it is written BEFORE the draft call below, which is what reads it.
           let senderFailed = 0;
-          if(queued.length && (ans.emailFrom || ans.smsFrom)){
+          const stratPatch = ans.strategy && ans.strategy !== 'ticket_blasts' ? ans.strategy : null;
+          if(queued.length && (ans.emailFrom || ans.smsFrom || stratPatch)){
             for(const row of queued){
               const patch = {};
+              if(stratPatch)    patch.strategy   = stratPatch;
               if(ans.emailFrom) patch.email_from = ans.emailFrom;
               if(ans.smsFrom)   patch.sms_from   = ans.smsFrom;
               const up = await sb.from('campaign_queue').update(patch).eq('id', row.id);
@@ -10460,6 +10465,18 @@ This removes its school and season dates. Venues in this market are not touched.
 
                       Both channels stay the default: a blast that reaches one audience when the
                       operator assumed two is a silent halving of the send. -->
+                 <!-- STRATEGY FIRST, because it decides the copy. The drafter reads this off the row
+                      and offers only that play's templates - a Suites row never gets ticket
+                      wording, and a Ticket Blasts row never gets the suite pitch. Default is Ticket
+                      Blasts, which is what every row before this picker existed was. -->
+                 <div class="pbw-row">
+                   <span class="pbw-label">Strategy</span>
+                   <select aria-label="Strategy" data-strategy class="select select-bordered select-sm w-44">
+                     ${(STRATEGIES.list.length ? STRATEGIES.list : [{ code: 'ticket_blasts', label: 'Ticket Blasts' }])
+                        .map(x => `<option value="${esc(x.code)}"${x.code === 'ticket_blasts' ? ' selected' : ''}>${esc(x.label)}</option>`).join('')}
+                   </select>
+                   <span class="text-xs text-base-content/50 ml-auto" data-stratnote></span>
+                 </div>
                  <div class="pbw-row">
                    <span class="pbw-label">Send by</span>
                    <select aria-label="Send by channel" data-chan class="select select-bordered select-sm w-40">
@@ -10537,6 +10554,15 @@ This removes its school and season dates. Venues in this market are not touched.
             + (smsSalesmsg.length ? `<optgroup label="Salesmsg — replies stay in Salesmsg">`
                 + smsSalesmsg.map(x => `<option value="${esc(x.value)}">${esc(x.phone + ' · ' + x.team_name)}</option>`).join('') + `</optgroup>` : '');
 
+          const stratSel  = ov.querySelector('[data-strategy]');
+          const stratNote = ov.querySelector('[data-stratnote]');
+          // Says what the choice does, in the dialog, so nobody has to know the drafter's rules.
+          const paintStrat = () => {
+            const x = STRATEGIES.byCode[stratSel.value];
+            stratNote.textContent = x ? `Copy drafted from the ${x.label} templates` : '';
+          };
+          stratSel.addEventListener('change', paintStrat); paintStrat();
+
           const chanSel  = ov.querySelector('[data-chan]');
           const chanNote = ov.querySelector('[data-channote]');
           const emailRow = ov.querySelector('[data-emailrow]');
@@ -10613,6 +10639,7 @@ This removes its school and season dates. Venues in this market are not touched.
             // here would make a bulk Add to Queue capable of blasting twenty markets on one
             // click. The label says "as soon as possible" for that reason.
             const answers = {
+              strategy: stratSel.value || 'ticket_blasts',
               channel: chanSel.value,
               emailFrom: chanSel.value === 'sms' ? null : efSel.value,
               smsFrom:   chanSel.value === 'email' ? null : sfSel.value,
@@ -12611,7 +12638,11 @@ This removes its school and season dates. Venues in this market are not touched.
           const LABELS = { followup: 'Follow-up — acknowledges the first message',
                            playoffs: 'Playoffs', 'season-opener': 'Season opener',
                            'club-seats': 'Club seats' };
-          const variants = [...new Set(TEMPLATES.map(t => t.variant).filter(v => v && v !== 'initial'))]
+          // TEMPLATES is the Ticketblast library. A row on another strategy has no variants to
+          // offer here (its play is one email + one SMS), so the only honest option is to copy
+          // the original - the drafter would refuse a Ticketblast variant on it anyway.
+          const rowStrategy = r.strategy || 'ticket_blasts';
+          const variants = (rowStrategy !== 'ticket_blasts' ? [] : [...new Set(TEMPLATES.map(t => t.variant).filter(v => v && v !== 'initial'))])
             // followup first: it is the right answer unless there is a reason otherwise.
             .sort((a, b) => (b === 'followup' ? 1 : 0) - (a === 'followup' ? 1 : 0));
           const chansFor = v => TEMPLATES.filter(t => t.variant === v).map(t => t.channel).sort().join(' + ');
