@@ -238,6 +238,8 @@ export default async function handler(req, res) {
   //
   // Bounded on purpose: rows handed off in the last 7 days (a draft can wait days for approval), one GET for all of them, and
   // never fatal — a reconcile that cannot reach the pipeline must not stop a blast going out.
+  // A draft approved more than 7 days after staging is not seen here, so its market is not
+  // cooled by this path.
   // The pipeline's counts land under bulk_census.pipeline, beside the staging census, so the
   // two are never confused: `eligible` is what the gate let through, `sent` is what left.
   async function reconcileBulk() {
@@ -261,12 +263,15 @@ export default async function handler(req, res) {
         // ▲ 2026-10-09 (AI-965). The 14-day cooldown starts when a person has approved the
         // campaign and it is sending (lib/bulk-sms.js startsCooldown) — once, recorded on the
         // census so a later tick does not log it again.
-        const coolNow = row.bulk_census && row.bulk_census.cooldown === 'deferred' && startsCooldown(c);
+        let coolNow = row.bulk_census && row.bulk_census.cooldown === 'deferred' && startsCooldown(c);
         if (coolNow && row.state_code) {
-          await rpc('log_market_blast', {
+          const lr = await rpc('log_market_blast', {
             p_code: row.state_code, p_name: row.state_name || null,
             p_channel: 'SMS', p_queue_id: row.id, p_segment: row.segment || null,
           });
+          // rpc is a bare fetch: a failed log must not be recorded as logged. Leave it
+          // 'deferred' so the next tick tries again.
+          if (!lr.ok) coolNow = false;
         }
         // Only write when something moved. A PATCH per row per tick for an unchanged campaign
         // is write noise on a table the Queue reads every page load. A cooldown write always moves.
@@ -427,8 +432,10 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
-      // AI-965: true when an SMS-only row went to the bulk sender as a draft; see the cooldown below.
-      let deferCooldown = false;
+      // AI-965: bulkStaged = a draft now sits in the bulk sender awaiting approval (nothing sent);
+      // emailDelivered = an email channel really delivered. Together they decide who cools the
+      // market: see the cooldown below.
+      let bulkStaged = false, emailDelivered = false, stagedCensus = null;
       // NOT `failed`. A note is something worth seeing that is not a send failure — and `failed`
       // is load-bearing: anything in it flips the row to status 'partial' (migration 058) and
       // shows up in Market History as a half-broken blast. A missing Mailhook return address
@@ -489,12 +496,16 @@ export default async function handler(req, res) {
           // Crash-safe in the same order as before: stage (409 on a retried key) -> record the id.
           // campaignKeyFor is inside the try: a malformed row id becomes a failed channel,
           // not a crashed tick.
-          let key = String(r.id);
           try {
-            key = campaignKeyFor(r);
+            const key = campaignKeyFor(r);
             const name = r.title || [r.opponent, r.team].filter(Boolean).join(' at ') || key;
             // Nobody was eligible last time. Re-staging costs ~60–120 HubSpot searches and will
             // answer the same, so the cron leaves it; Send now retries on purpose.
+            //
+            // INERT TODAY: get_campaign_queue (migrations 103/104; 104 deliberately does not
+            // extend it) does not return bulk_census, so r.bulk_census is undefined here and this
+            // never fires. Until it does, a nobody-eligible row is re-staged each hourly tick —
+            // safe, because a 422 creates nothing on the other side.
             if (!onlyId && r.bulk_census && r.bulk_census.nobody_eligible) {
               throw new Error('nobody eligible at the last staging — use Send now to try again');
             }
@@ -515,16 +526,23 @@ export default async function handler(req, res) {
               campaignId = existing.id;
               staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.pending };
             }
-            // The market cools when a person approves, not now (reconcileBulk). Unless email
-            // goes out on this row too: an email send cools the market by itself, as before.
-            deferCooldown = !emails.length;
-            await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
+            // The market cools when something is actually delivered. An SMS draft cools it when
+            // reconcileBulk sees it approved and sending; a delivered email on this row cools it
+            // at send time instead (and flips this to 'at_send' below). So always 'deferred' here.
+            //
+            // The PATCH is checked: fetch does not throw on an HTTP error, and a row without
+            // bulk_campaign_id is invisible to reconcile, so its market would never cool. Throwing
+            // fails the channel, leaves the row unmarked, and the next tick re-adopts via 409.
+            const rec = await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
               body: JSON.stringify({
                 bulk_campaign_id: String(campaignId),
-                bulk_census: { ...(staged.raw || {}), cooldown: deferCooldown ? 'deferred' : 'at_send' },
+                bulk_census: { ...(staged.raw || {}), cooldown: 'deferred' },
               }),
             });
+            if (!rec.ok) throw new Error(`could not record the bulk campaign on this row (HTTP ${rec.status}) — will retry`);
+            bulkStaged = true;
+            stagedCensus = { ...(staged.raw || {}), cooldown: 'deferred' };
             sent.push(`SMS staged for ${staged.eligible != null ? staged.eligible : '?'} of ${phones.length} — awaiting approval in the Operator App`
               + ` (${staged.fromInbox || r.sms_from || 'route'})`);
             if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length}: ${Object.entries(staged.byReason || {}).map(([k, v]) => `${k} ${v}`).join(', ')}`);
@@ -617,6 +635,7 @@ export default async function handler(req, res) {
                 tags: ['telnyx-inbox', r.state_code || 'blast'].filter(Boolean),
               });
               sent.push(`CakeMail ${out.recipients} (campaign ${out.campaignId})`);
+              emailDelivered = true;
               // The campaign id is the one provider reference that makes a logged recipient
               // checkable against the provider's own record later.
               logRecipients(emails, 'email', 'cakemail', {
@@ -630,6 +649,7 @@ export default async function handler(req, res) {
           const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject, html }));
           const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
           (rr.ok ? sent : failed).push(rr.ok ? `Email ${messages.length}` : `Email failed (HTTP ${rr.status})`);
+          if (rr.ok) emailDelivered = true;
           if (rr.ok) logRecipients(emails, 'email', 'gmail', { sender: r.email_from || null });
         } else {
           failed.push('No email route: the row has no CakeMail sender and EMAIL_SEND_WEBHOOK_URL is unset');
@@ -666,8 +686,10 @@ export default async function handler(req, res) {
       }
       // Write to the notebook so this market goes on cooldown. Per Josh: an email send
       // counts for both channels, so one row (market + day) cools email AND SMS.
-      // ▲ 2026-10-09 (AI-965): not for an SMS-only bulk-sender row. That is a draft until a
-      // person approves it, and reconcileBulk cools the market when it sees it sending.
+      // ▲ 2026-10-09 (AI-965): the market cools when something was actually delivered. A bulk
+      // SMS draft delivered nothing yet, so unless an email really went out on this row, the
+      // cooldown waits for reconcileBulk to see the campaign approved and sending.
+      const deferCooldown = bulkStaged && !emailDelivered;
       if (r.state_code && (phones.length || emails.length) && !deferCooldown) {
         await rpc('log_market_blast', {
           p_code: r.state_code, p_name: r.state_name || null,
@@ -675,6 +697,16 @@ export default async function handler(req, res) {
           // Null for a whole-market row, which cools every segment (migration 049).
           p_segment: r.segment || null,
         });
+        // Cooled here, so tell reconcile not to log it again. Best effort: a failure only risks
+        // a second (harmless) log when the campaign is approved.
+        if (bulkStaged) {
+          try {
+            await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
+              method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
+              body: JSON.stringify({ bulk_census: { ...(stagedCensus || {}), cooldown: 'at_send' } }),
+            });
+          } catch (_) { /* see above */ }
+        }
       }
       // AI-1101: our own record of who this blast reached, written here for exactly the reasons
       // the HubSpot block below is written here — the messages are already gone and the row is
