@@ -216,14 +216,27 @@ export default async function handler(req, res) {
     // Templates. Only non-placeholder rows are usable — a placeholder body is an
     // instruction to go paste the real copy, not outreach.
     const tRes = await fetch(
-      `${supaUrl}/rest/v1/message_templates?select=slug,play,variant,channel,subject,body,is_placeholder&is_placeholder=eq.false`,
+      `${supaUrl}/rest/v1/message_templates?select=slug,play,variant,channel,subject,body,is_placeholder,strategy,sort_order&is_placeholder=eq.false&order=sort_order.asc`,
       { headers: sh });
     const templates = await tRes.json();
     if (!tRes.ok || !Array.isArray(templates)) { res.status(502).json({ error: 'template fetch failed', detail: templates }); return; }
 
-    const pick = (variant, channel) =>
-      templates.find(t => t.play === 'Ticketblast' && t.variant === variant && t.channel === channel) ||
-      templates.find(t => t.play === 'Ticketblast' && t.variant === 'initial' && t.channel === channel) || null;
+    // THE ROW'S STRATEGY CHOOSES THE LIBRARY (2026-10-09). This used to match play='Ticketblast'
+    // only, so a Suites row got the ticket pitch and the Suite templates could never be
+    // selected by anything. Now:
+    //   ticket_blasts  - Cole's Ticketblast rows, by variant, falling back to 'initial'.
+    //   anything else  - that strategy's rows by channel, first by sort_order. Those plays have
+    //                    one email and one SMS, so a variant means nothing there and is ignored.
+    // A strategy with no non-placeholder template (Event Waitlist today - every row is still
+    // flagged placeholder, see migration 118) gets NO template and the row is reported, not
+    // drafted with someone else's copy.
+    const pick = (strategy, variant, channel) => {
+      if (strategy === 'ticket_blasts') {
+        return templates.find(t => t.play === 'Ticketblast' && t.variant === variant && t.channel === channel) ||
+               templates.find(t => t.play === 'Ticketblast' && t.variant === 'initial' && t.channel === channel) || null;
+      }
+      return templates.find(t => t.strategy === strategy && t.channel === channel) || null;
+    };
 
     // Targets: the named rows, or every live row that has no copy yet.
     const live = queue.filter(r => r.status !== 'sent' && r.status !== 'sending');
@@ -246,13 +259,19 @@ export default async function handler(req, res) {
         skipped.push({ id: r.id, title: r.title, reason: 'already has copy — pass overwrite:true to replace' });
         continue;
       }
+      const strategy = String(r.strategy || 'ticket_blasts');
       const variant = forcedVariant || pickVariant(r, blasted.has(String(r.state_code || '').toUpperCase()));
-      const tEmail = pick(variant, 'email'), tSms = pick(variant, 'sms');
+      const tEmail = pick(strategy, variant, 'email'), tSms = pick(strategy, variant, 'sms');
       // Hand-written copy stands on its own — a missing template row is only fatal when the
       // template is what we were going to send.
       const cEmail = (custom && typeof custom.email === 'string' && custom.email.trim()) ? custom.email : null;
       const cSms   = (custom && typeof custom.sms   === 'string' && custom.sms.trim())   ? custom.sms   : null;
-      if (!tEmail && !tSms && !cEmail && !cSms) { errors.push({ id: r.id, title: r.title, error: `no template for variant ${variant}` }); continue; }
+      if (!tEmail && !tSms && !cEmail && !cSms) {
+        errors.push({ id: r.id, title: r.title, error: strategy === 'ticket_blasts'
+          ? `no template for variant ${variant}`
+          : `no sendable ${strategy} template — its rows in Templates are still placeholders` });
+        continue;
+      }
 
       // Stage 1 — the deterministic fill. This is what gets written unless stage 2 beats it.
       // Custom copy substitutes for the template body per channel, then goes through exactly
