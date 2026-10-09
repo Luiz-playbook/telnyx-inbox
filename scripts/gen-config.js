@@ -26,6 +26,14 @@ const cfg = {
     || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-sync-numbers',
   // Only Google accounts on this domain may sign in.
   ALLOWED_EMAIL_DOMAIN: process.env.ALLOWED_EMAIL_DOMAIN || 'callplaybook.com',
+  // Who sees the Release Notes tab, comma-separated. Signing in is still domain-gated above;
+  // this is a narrower list on top of it, so the changelog is not shown to the whole company.
+  // UNSET IS THE NORMAL CASE and yields [], which index.html treats as "use the built-in list"
+  // rather than "nobody" - see the length check there. Not a secret: everything in this object
+  // is written into ui/config.js and served to every visitor, and the notes themselves ship in
+  // the page regardless. It decides what the UI offers, not what the page contains.
+  RELEASE_NOTES_EMAILS: (process.env.RELEASE_NOTES_EMAILS || '')
+    .split(',').map(s => s.trim()).filter(Boolean),
   // The pricing sheet the AI-940 sync writes (n8n "Marketing Blaster Pricing Sheet Sync").
   // Linked from the Ticket Prices tab so the mirror is reachable from the thing it mirrors —
   // it is otherwise invisible from inside the app. Not a secret: it is a Google document id,

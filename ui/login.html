@@ -62,6 +62,23 @@
       const { error } = await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin + '/login', queryParams:{ hd: DOMAIN, prompt:'select_account' } } });
       if (error) { const m=el('msg'); m.classList.remove('hidden'); m.innerHTML='<span>'+error.message+'</span>'; el('glabel').textContent='Continue with Google'; }
     });
+
+    // SWITCH ACCOUNT. The app's account menu signs out and sends you here with ?switch=1, meaning
+    // "I asked to change account, not to look at a login page". So open the Google chooser
+    // without making someone press a button they have already effectively pressed.
+    //
+    // Three things keep this from looping. It is skipped on the return leg, where the SDK is
+    // already exchanging a code. redirectTo is built as origin + '/login' with no query, so
+    // Google sends the user back WITHOUT ?switch=1 and this never fires twice on one sign-in.
+    // And the sign-out happened before the redirect, so there is no session for the check above
+    // to find and bounce to '/'.
+    //
+    // It must sit AFTER the click listener is registered: this whole script runs top to bottom,
+    // and a .click() dispatched earlier would find nothing listening and do nothing at all.
+    if (params.get('switch') && !returning) {
+      el('foot').innerHTML = '<span class="loading loading-spinner loading-xs align-middle"></span> Choose an account…';
+      el('google').click();
+    }
   </script>
 </body>
 </html>

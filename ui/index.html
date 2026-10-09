@@ -153,6 +153,131 @@
        things. 5px keeps the button legible as a button and lets the badge be the only pill. */
     .btn.btn-xs[data-qmenu]{ border-radius:5px; }
 
+    /* ===== ACCOUNT MENU =====
+       The header used to be an email string beside a bare "Sign out" button. It is now one
+       trigger that opens a menu, for the same reason the Admin tabs became one trigger: the
+       header is the wrong place to spend width on things used once a day.
+       A <details>, like the Admin menu and the strategy filter, so Esc and Tab work without
+       being written. Right-aligned (left:auto; right:0) because it sits at the end of the bar
+       and a left-anchored menu would hang off the page. */
+    .acct-wrap{ position:relative; }
+    .acct-trigger::-webkit-details-marker{ display:none; }
+    .acct-trigger{ list-style:none; display:inline-flex; align-items:center; gap:7px; cursor:pointer;
+      user-select:none; padding:4px 8px 4px 4px; border-radius:999px; border:1px solid transparent;
+      color:#e8f1f4; font-weight:600; font-size:12px; }
+    .acct-trigger:hover{ background:rgba(255,255,255,.1); border-color:rgba(255,255,255,.2); }
+    details[open] > .acct-trigger{ background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.26); }
+    /* Initials rather than a photo: Google's avatar URL expires and a broken image in the header
+       is worse than no image at all. */
+    .acct-avatar{ width:24px; height:24px; border-radius:999px; background:#e55608; color:#fff;
+      display:inline-flex; align-items:center; justify-content:center; font-weight:800; font-size:11px;
+      letter-spacing:.02em; flex:0 0 24px; }
+    .acct-caret{ font-size:10px; opacity:.75; }
+    .acct-menu{ position:absolute; top:100%; left:auto; right:0; z-index:80; min-width:248px; padding:6px;
+      margin-top:8px; background:#fff; border:1px solid #d8e2ef; border-radius:12px;
+      box-shadow:0 12px 28px rgba(19,59,73,.18); }
+    .acct-id{ padding:9px 10px 10px; border-bottom:1px solid #edf2f9; margin-bottom:5px; }
+    .acct-id .nm{ font-weight:800; color:#133b49; font-size:13px; line-height:1.2; }
+    .acct-id .em{ color:#5e6e82; font-size:11.5px; margin-top:2px; word-break:break-all; }
+    .acct-menu button, .acct-menu a{ width:100%; display:flex; align-items:center; gap:9px;
+      padding:8px 10px; border-radius:8px; font-size:13px; font-weight:600; color:#354052;
+      background:none; border:0; text-align:left; cursor:pointer; text-decoration:none; }
+    .acct-menu button:hover:not(:disabled), .acct-menu a:hover{ background:#f4f7fb; color:#133b49; }
+    .acct-menu svg{ width:15px; height:15px; flex:0 0 15px; stroke-width:2; }
+    .acct-sep{ height:1px; background:#edf2f9; margin:5px 6px; }
+    /* NOT opacity. opacity:.55 faded the label, the icon and the Soon pill together until the
+       row could not be read at all - which is the wrong way to say "not yet", because the row
+       exists precisely to be read. A muted ink colour says unavailable and stays legible. */
+    .acct-menu button:disabled{ cursor:default; color:#8da2ad; }
+    .acct-menu button:disabled svg{ opacity:.7; }
+    /* The theme row ships visible and disabled on purpose. index.html carries ~840 hardcoded
+       colours and theme.css defines a light token set only, so flipping data-theme today would
+       restyle DaisyUI's components and leave the topbar, tabs, chips and panels light. Showing
+       the row says the plan without shipping a half-dark page; same call as the notification
+       bell above, which is on screen before anything generates a notification. */
+    .acct-soon{ margin-left:auto; font-size:9.5px; font-weight:800; letter-spacing:.06em;
+      text-transform:uppercase; color:#8a6d3b; background:#fdf6e7; border:1px solid #e8d9b0;
+      padding:1px 6px; border-radius:999px; }
+    .acct-danger{ color:#c0392b !important; }
+    .acct-danger:hover{ background:#fdeceb !important; color:#a93226 !important; }
+
+    /* ===== RELEASE NOTES =====
+       Structure follows the shared release-notes page: eyebrow, headline, standfirst, a mono
+       facts row, then bands of entries with a title and a sentence of prose. Two departures
+       from it, both deliberate:
+         1. FONTS ARE THE APP'S. That page loads Archivo, Source Serif and IBM Plex Mono; this is
+            a tab inside an app that already loads Nunito, and three more families for one screen
+            is a lot of weight for a page read once a release. Mono bits use the system stack.
+         2. GROUPED BY WHO BUILT IT, not only by area, and each developer is an accordion. That
+            is the thing this version is for: scanning one person's work without the other's.
+       Colours are the brand's own (#133b49 chrome, #e55608 action), which is where that page
+       took its palette from in the first place. */
+    /* FULL WIDTH, with the prose still measured. The page used to sit in a 52rem column, which
+       left most of a desktop window empty beside it. The wrapper now fills the tab, so the bands,
+       panels and the source table use the whole page - but running body copy to 1,900px would
+       make it unreadable, so the paragraphs alone keep a line length (~78 characters) and
+       everything structural spans. */
+    #view-release-notes .rn-wrap{ max-width:none; width:100%; }
+    #view-release-notes .rn-standfirst,
+    #view-release-notes .rn-areanote,
+    #view-release-notes .rn-items p,
+    #view-release-notes .rn-panel li,
+    #view-release-notes .rn-foot p{ max-width:78ch; }
+    #view-release-notes .rn-eyebrow{ font-family:ui-monospace,Consolas,monospace; font-size:11px;
+      letter-spacing:.14em; text-transform:uppercase; color:#c2500a; margin:0 0 9px; }
+    #view-release-notes h1{ font-weight:800; font-size:clamp(25px,4.2vw,34px); line-height:1.1;
+      letter-spacing:-.02em; margin:0 0 11px; color:#133b49; text-wrap:balance; }
+    #view-release-notes .rn-standfirst{ font-size:15.5px; color:#5e6e82; margin:0; line-height:1.6; }
+    #view-release-notes .rn-facts{ display:flex; flex-wrap:wrap; gap:9px 26px; margin:18px 0 0;
+      padding:0; list-style:none; font-family:ui-monospace,Consolas,monospace; font-size:12px;
+      color:#5e6e82; }
+    #view-release-notes .rn-facts b{ color:#133b49; font-weight:600; font-variant-numeric:tabular-nums; }
+    #view-release-notes .rn-head{ border-bottom:2px solid #133b49; padding-bottom:19px; }
+
+    /* One accordion per developer. Open by default: a release page that starts fully collapsed
+       hides the thing it exists to show. */
+    #view-release-notes .rn-dev{ margin-top:26px; border:1px solid #d8e2ef; border-radius:12px;
+      background:#fff; overflow:hidden; }
+    #view-release-notes .rn-dev > summary{ list-style:none; cursor:pointer; user-select:none;
+      display:flex; align-items:center; gap:11px; padding:14px 16px; background:#f8fafc;
+      border-bottom:1px solid transparent; }
+    #view-release-notes .rn-dev[open] > summary{ border-bottom-color:#edf2f9; }
+    #view-release-notes .rn-dev > summary::-webkit-details-marker{ display:none; }
+    #view-release-notes .rn-dev > summary:hover{ background:#f1f5fa; }
+    #view-release-notes .rn-who{ font-weight:800; font-size:15px; color:#133b49; }
+    #view-release-notes .rn-role{ font-size:12px; color:#5e6e82; font-weight:600; }
+    #view-release-notes .rn-tally{ margin-left:auto; font-family:ui-monospace,Consolas,monospace;
+      font-size:11px; color:#8da2ad; letter-spacing:.04em; }
+    #view-release-notes .rn-dev > summary .rn-caret{ transition:transform .15s; font-size:11px; color:#8da2ad; }
+    #view-release-notes .rn-dev[open] > summary .rn-caret{ transform:rotate(180deg); }
+    #view-release-notes .rn-devbody{ padding:4px 18px 20px; }
+
+    #view-release-notes h2{ font-weight:700; font-size:12.5px; letter-spacing:.1em;
+      text-transform:uppercase; color:#c2500a; margin:26px 0 0; padding-bottom:7px;
+      border-bottom:1px solid #edf2f9; display:flex; align-items:baseline; gap:10px; }
+    #view-release-notes h2 .rn-count{ margin-left:auto; font-family:ui-monospace,Consolas,monospace;
+      font-size:10.5px; color:#8da2ad; letter-spacing:.04em; text-transform:none; font-weight:500; }
+    #view-release-notes .rn-areanote{ color:#5e6e82; font-size:14px; margin:12px 0 0; line-height:1.6; }
+    #view-release-notes .rn-items{ margin:15px 0 0; padding:0; list-style:none; display:flex;
+      flex-direction:column; gap:16px; }
+    #view-release-notes .rn-items h3{ font-weight:700; font-size:15px; margin:0 0 3px; color:#133b49; }
+    #view-release-notes .rn-items p{ margin:0; color:#5e6e82; font-size:14px; line-height:1.62; }
+    #view-release-notes .rn-items p b, #view-release-notes .rn-panel li b{ color:#354052; font-weight:700; }
+    #view-release-notes .rn-panel{ background:#f8fafc; border:1px solid #e3eaf2; border-radius:10px;
+      padding:16px 18px; margin-top:16px; }
+    #view-release-notes .rn-panel.hold{ background:#fdf6e7; border-color:#e8d9b0; }
+    #view-release-notes .rn-panel h3{ font-weight:700; font-size:14px; margin:0 0 7px; color:#133b49; }
+    #view-release-notes .rn-panel ul{ margin:0; padding-left:1.15em; display:flex; flex-direction:column; gap:8px; }
+    #view-release-notes .rn-panel li{ color:#5e6e82; font-size:14px; line-height:1.6; }
+    #view-release-notes .rn-tag{ display:inline-block; font-family:ui-monospace,Consolas,monospace;
+      font-size:9.5px; letter-spacing:.06em; text-transform:uppercase; padding:2px 7px;
+      border-radius:999px; background:#fdeee4; color:#c2500a; border:1px solid #f0c9ab;
+      vertical-align:2px; margin-left:7px; font-weight:600; }
+    #view-release-notes .rn-tag.hold{ background:#fdf6e7; color:#8a6d3b; border-color:#e8d9b0; }
+    #view-release-notes .rn-foot{ margin-top:30px; padding-top:17px; border-top:1px solid #d8e2ef;
+      color:#8da2ad; font-size:13.5px; line-height:1.6; }
+    #view-release-notes .rn-foot p{ margin:0 0 7px; }
+
     /* ===== Notifications (AI-TBD) — SHELL ONLY, nothing is wired to real data yet =====
        Built ahead of the feed so the shape can be argued with on screen rather than in a doc
        (Vhea, 2026-10-08). Every row below is a worked example, clearly labelled as one; the
@@ -986,11 +1111,50 @@
               <span class="sr-only">Notifications</span>
             </button>
           </div>
-          <!-- Who is signed in, and the way out. Hidden until the session check below resolves,
-               so a logged-out visitor never sees an empty account chip on the way to /login. -->
+          <!-- Who is signed in, and what you can do about it. Hidden until the session check
+               below resolves, so a logged-out visitor never sees an empty account chip on the way
+               to /login.
+               SWITCH ACCOUNT IS NOT THE SAME AS LOG OUT, though both end at /login. Logging out
+               leaves you at the door; switching carries ?switch=1, which makes login.html fire
+               the Google chooser itself. That page already asks for prompt=select_account, so the
+               chooser appears rather than silently restoring the session you just left - which is
+               the entire point, and is why this is two items and not one. -->
           <div id="acct" class="hidden items-center gap-2 text-xs">
-            <span id="acct-email" class="text-base-content/60"></span>
-            <button id="sign-out" class="btn btn-ghost btn-xs">Sign out</button>
+            <details class="acct-wrap" id="acct-menu">
+              <summary class="acct-trigger" aria-haspopup="true">
+                <span class="acct-avatar" id="acct-initials" aria-hidden="true"></span>
+                <span id="acct-name"></span>
+                <span class="acct-caret" aria-hidden="true">&#9662;</span>
+                <span class="sr-only">Account menu</span>
+              </summary>
+              <div class="acct-menu" role="menu">
+                <div class="acct-id">
+                  <div class="nm" id="acct-fullname"></div>
+                  <div class="em" id="acct-email"></div>
+                </div>
+                <button type="button" id="acct-switch" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 3h5v5"/><path d="M21 3l-7 7"/><path d="M8 21H3v-5"/><path d="M3 21l7-7"/></svg>
+                  Switch account
+                </button>
+                <!-- Visible and disabled on purpose: see .acct-soon in the stylesheet for why the
+                     theme toggle is not wired yet. -->
+                <button type="button" id="acct-theme" role="menuitem" disabled
+                        title="Dark mode is not ready: the app still carries hardcoded light colours">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/></svg>
+                  Switch to dark mode <span class="acct-soon">Soon</span>
+                </button>
+                <div class="acct-sep" role="separator"></div>
+                <a href="#" data-tab="release-notes" id="acct-release" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12l4 4v12H4z"/><path d="M16 4v4h4"/><path d="M8 13h8M8 17h5"/></svg>
+                  Release notes
+                </a>
+                <div class="acct-sep" role="separator"></div>
+                <button type="button" id="sign-out" class="acct-danger" role="menuitem">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+                  Log out
+                </button>
+              </div>
+            </details>
           </div>
         </div>
       </div>
@@ -1616,7 +1780,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
                 <div class="grid grid-cols-1 md:grid-cols-[minmax(0,290px)_minmax(0,1fr)] gap-4">
                   <!-- rail: search + grouped list -->
-                  <div class="border border-base-300 rounded-lg flex flex-col overflow-hidden">
+                  <!-- NOT overflow-hidden. The strategy filter below is a <details> whose
+                       .strat-menu is position:absolute, and an overflow-hidden ancestor clips an
+                       absolutely positioned descendant no matter its z-index - the third option
+                       (Event Waitlist) was cut off at the rail's edge. The clip was only ever here
+                       to keep the scrolling list inside the rounded corners, so that job moves to
+                       #tpl-list itself (rounded-b-lg) and the rail stops clipping. -->
+                  <div class="border border-base-300 rounded-lg flex flex-col">
                     <div class="p-2 border-b border-base-300 space-y-2">
                       <input id="tpl-search" class="input input-bordered input-sm w-full" placeholder="Search name or body…" autocomplete="off" />
                       <!-- STRATEGY (AI-1075). Above the source buttons because it is the
@@ -1628,14 +1798,265 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                         <button type="button" class="tpl-src" data-src="blast">Historical</button>
                       </div>
                     </div>
-                    <div id="tpl-list" class="p-1 overflow-y-auto max-h-[560px]"></div>
+                    <div id="tpl-list" class="p-1 overflow-y-auto max-h-[560px] rounded-b-lg"></div>
                   </div>
                   <!-- detail: the selected template, full text -->
                   <div id="tpl-detail" class="min-w-0"></div>
                 </div>
 
-                <p class="text-xs text-base-content/50 leading-relaxed">Teammate AI and Event Waitlist are separate plays, each with their own sport picker (Teammate AI: Volleyball, Basketball, Baseball, Hockey — Event Waitlist adds Football). Event Waitlist&rsquo;s real copy still lives in a HubSpot sequence — the text above is an editable placeholder, not authored outreach copy.</p>
+                <p class="text-xs text-base-content/50 leading-relaxed">Teammate AI and Event Waitlist are separate plays, each with their own sport picker (Teammate AI: Volleyball, Basketball, Baseball, Hockey — Event Waitlist adds Football). Event Waitlist now carries its full six-message sequence (Day 0 through the Day 45 re-ask). Every one of those rows is still marked placeholder on purpose: the copy uses per-recipient tokens such as [First Name] and [Org Name] that nothing substitutes yet, so it is approved wording to read and edit, not copy that is ready to send.</p>
               </div>
+            </div>
+          </div>
+
+          <!-- ===== RELEASE NOTES =====
+               Reached from the account menu, not the tab row: it is read once a release, which is
+               the opposite of the test that put Inbox and Replies in the row.
+               GROUPED BY WHO BUILT IT, one accordion per developer. The shared release page is
+               grouped by area alone, which answers "what changed" but not "what did each of us
+               ship" - and that second question is the one being asked when two people are
+               working the same build. Areas stay as bands inside each developer.
+               The copy is written here rather than read from a table: a release note is authored
+               once, by a person, and a table for it would mean a migration, a policy and an
+               editing screen for prose that arrives with the deploy anyway. -->
+          <div data-view id="view-release-notes" class="hidden">
+            <div class="rn-wrap">
+              <header class="rn-head">
+                <p class="rn-eyebrow">SendBlaster &middot; release notes</p>
+                <h1>What shipped since the last QA build</h1>
+                <p class="rn-standfirst">Three tickets&rsquo; worth of work, plus the setup and messaging changes that landed
+                  alongside them. Grouped by who built it, then by where you&rsquo;ll find it in the app.</p>
+                <ul class="rn-facts">
+                  <li><b>77</b> changes</li>
+                  <li><b>3</b> tickets &mdash; AI-1086, AI-1097, AI-1098</li>
+                  <li>in <b>QA</b>, <b>staging</b> and <b>production</b></li>
+                  <li>9 Oct 2026</li>
+                </ul>
+              </header>
+
+              <!-- Open by default. A release page that starts fully collapsed hides the thing it
+                   exists to show; the accordion is here to let you put one person's work away,
+                   not to make you open it in the first place. -->
+              <details class="rn-dev" open>
+                <summary>
+                  <span class="rn-who">Vhea</span>
+                  <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
+                  <span class="rn-tally">6 areas &middot; 23 entries</span>
+                  <span class="rn-caret" aria-hidden="true">&#9662;</span>
+                </summary>
+                <div class="rn-devbody">
+
+                  <h2>Ticket prices &amp; premium seats <span class="rn-count">AI-1097, AI-1098</span></h2>
+                  <p class="rn-areanote">The offers could only ever say &ldquo;tickets from $X&rdquo;. They can now say which seats,
+                    because we read the section each price belongs to.</p>
+                  <ul class="rn-items">
+                    <li><h3>Premium seats by zone</h3>
+                      <p>Every NBA listing is tagged <b>center court, sideline, corner or behind basket</b>, and we store the
+                        cheapest lower-bowl price in each. An offer can quote &ldquo;center court from $240&rdquo; instead of a
+                        single get-in price. This matters because the cheapest seat in an arena is almost always behind the
+                        basket &mdash; so one price understates what a good seat costs.</p></li>
+                    <li><h3>The arena seat map, alongside the price</h3>
+                      <p>Each arena&rsquo;s seating chart opens beside the listing, with pan and zoom, so an operator can see
+                        where a section actually is before quoting it. Maps are for checking internally and are never attached
+                        to an offer email.</p></li>
+                    <li><h3>A section map covering all 30 NBA arenas</h3>
+                      <p><b>903 section-to-zone mappings</b> loaded from the arena map sheet. A section we can&rsquo;t place is
+                        flagged as unmapped rather than guessed &mdash; a guessed zone would put a customer in the wrong seat at
+                        the wrong price.</p></li>
+                    <li><h3>Standing room kept out of every price</h3>
+                      <p>Some sites sell standing room inline, labelled in a way that reads like an ordinary lower-bowl section.
+                        It is now excluded everywhere, so a standing ticket can never be quoted as a seat.</p></li>
+                    <li><h3>Each ticket site read by the method that actually reaches it <span class="rn-tag hold">off until switched on</span></h3>
+                      <p>We tested every site against every tool we have. No single tool wins: Gametime has an open price feed,
+                        SeatGeek needs a third-party scraper, Vivid Seats needs a real browser, and TickPick can&rsquo;t be
+                        reached for sections at all. Each site is now routed to whichever method works for it, with fall-backs
+                        when one fails.</p></li>
+                    <li><h3>Prices cross-checked between sites</h3>
+                      <p>With more than one source per game, we can spot when two sites disagree wildly. If they do, the game gets
+                        <b>no</b> premium price rather than a plausible-looking wrong one. A missing premium line is recoverable;
+                        quoting a seat that doesn&rsquo;t exist at a price we can&rsquo;t honour is not.</p></li>
+                    <li><h3>AI can never price a seat</h3>
+                      <p>An AI search can still find a get-in price when every scraper fails. It is blocked from producing a
+                        <b>section-level</b> price, in three independent places. &ldquo;Center court from $240&rdquo; is a specific
+                        claim about a specific seat, and a model that&rsquo;s right 95% of the time invents the other 5% in a form
+                        nobody can tell from the truth.</p></li>
+                  </ul>
+
+                  <div class="rn-panel">
+                    <h3>What each site gives us now</h3>
+                    <div class="overflow-x-auto">
+                      <table class="table table-sm">
+                        <thead><tr><th>Site</th><th>Method</th><th>Listings per game</th><th>Section-level?</th></tr></thead>
+                        <tbody>
+                          <tr><td><b>Gametime</b></td><td>its own price feed</td><td>~220</td><td>Yes</td></tr>
+                          <tr><td><b>SeatGeek</b></td><td>third-party scraper</td><td>~5,500</td><td>Yes</td></tr>
+                          <tr><td><b>Vivid Seats</b></td><td>hosted browser</td><td>~1,000</td><td>Yes</td></tr>
+                          <tr><td><b>StubHub</b></td><td>hosted browser</td><td>~10</td><td>Yes, but too few to rely on</td></tr>
+                          <tr><td><b>TickPick</b></td><td>existing scraper</td><td>get-in only</td><td>No &mdash; unreachable</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <h2>Catalog &mdash; the master lists behind the offers <span class="rn-count">AI-1086</span></h2>
+                  <p class="rn-areanote">A new area under Admin holding the three lists every offer is built from. Previously these
+                    lived only in spreadsheets and in the database.</p>
+                  <ul class="rn-items">
+                    <li><h3>Games</h3>
+                      <p>All <b>4,632</b> ticketed games we could blast about, searchable and filterable by league, state and
+                        market, with the current get-in price. Read-only, because it comes from the league schedule feeds and
+                        refreshes weekly.</p></li>
+                    <li><h3>Venues &mdash; where we could host a youth event</h3>
+                      <p><b>89 venues</b> across the 18 greenfield states, each tagged with the sports it can actually host, so a
+                        football programme is never invited to a basketball venue. Now fully editable: add, edit and delete, and
+                        your corrections survive the next data load.</p></li>
+                    <li><h3>Markets &mdash; when to send</h3>
+                      <p>One row per greenfield state, holding the school-year dates and the four season start dates that a
+                        seasonal send should be timed against, plus the school district and athletics association each date
+                        should be confirmed with. Fully editable, and rows show as <b>unverified</b> until someone confirms
+                        them.</p></li>
+                    <li><h3>Venues and markets now line up</h3>
+                      <p>A naming problem meant the two lists looked connected but weren&rsquo;t: 37 of 50 venue cities matched no
+                        market. Alabama&rsquo;s market is Huntsville, but its venues are in Tuscaloosa and Auburn &mdash; so the
+                        obvious join silently dropped Bryant-Denny and Jordan-Hare. The two lists are now joined correctly, and
+                        each venue shows both its own city and the market whose calendar times its sends, with a link through to
+                        that market.</p></li>
+                    <li><h3>Per-league venue lists for seat-map collection</h3>
+                      <p>Venue lists exported per league so arena seat maps can be gathered and uploaded, with a lookup that still
+                        finds the right map when a venue gets renamed or sponsored.</p></li>
+                  </ul>
+
+                  <h2>Reports</h2>
+                  <ul class="rn-items">
+                    <li><h3>CakeMail&rsquo;s per-campaign report, rebuilt in-app</h3>
+                      <p>Opens, clicks, bounces and unsubscribes per campaign, including the campaigns that predate the CakeMail
+                        integration, each shown against the average of the last ten sends on the same account. Built from data we
+                        already store, so it keeps working when a CakeMail token loses a permission.</p></li>
+                    <li><h3>Programme-level accordions, across every account</h3>
+                      <p>Two roll-ups: <b>Cakemail Blasts</b> covering every CakeMail campaign by account, and <b>Send Blasts</b>
+                        covering every blast we&rsquo;ve sent on any platform, SMS and email together.</p></li>
+                    <li><h3>Reach, stated honestly</h3>
+                      <p>Reports say &ldquo;recipients handed to the carrier&rdquo;, never &ldquo;delivered&rdquo;, because that is
+                        what we can actually verify. Where a channel can&rsquo;t answer a metric, the report says which channel was
+                        used and what it can and cannot measure, instead of showing a dash.</p></li>
+                  </ul>
+
+                  <h2>Market History &amp; blasts</h2>
+                  <ul class="rn-items">
+                    <li><h3>Every blast, from every platform, in one list</h3>
+                      <p>The tab used to show only what the Salesmsg sync had pulled, which meant the imported Textable history was
+                        invisible in the tab named after it. It now covers every platform.</p></li>
+                    <li><h3>Who a send actually reached</h3>
+                      <p>Blast history shows the recipients a send went to at the time, rather than who is on that list today
+                        &mdash; so a historical blast doesn&rsquo;t silently change as the list grows.</p></li>
+                    <li><h3>Market matching that agrees with the decider</h3>
+                      <p>A blast could read &ldquo;not matched to a market&rdquo; in this tab while the AI decider was scoring it
+                        against that very market. Both now resolve markets the same way.</p></li>
+                    <li><h3>App sends land in Market History</h3>
+                      <p>A send made from the app now carries its market through, so it appears in Market History without anyone
+                        recording it by hand.</p></li>
+                  </ul>
+
+                  <h2>Contacts</h2>
+                  <ul class="rn-items">
+                    <li><h3>Open a recipient from an offer</h3>
+                      <p>From a market&rsquo;s recipient list you can jump straight to that person&rsquo;s record in Contacts, and
+                        from Contacts to their record in HubSpot.</p></li>
+                    <li><h3>Sort the directory by name</h3>
+                      <p>Sorting now happens across the whole directory rather than within the page you&rsquo;re looking at &mdash;
+                        on a quarter of a million contacts those are very different answers.</p></li>
+                    <li><h3>Import, edit and delete uploaded contacts</h3>
+                      <p>Contacts uploaded by hand can be corrected or removed in-app, without touching HubSpot or the wider
+                        contact directory.</p></li>
+                  </ul>
+
+                  <h2>Notifications <span class="rn-count">preview</span></h2>
+                  <ul class="rn-items">
+                    <li><h3>Notification shell, marked coming soon <span class="rn-tag hold">front end only</span></h3>
+                      <p>The bell, the unread count, and read / unread / delete / select-all all work on screen. Nothing yet
+                        generates a notification &mdash; the screen is in place so the shape can be agreed before anything starts
+                        producing them.</p></li>
+                  </ul>
+
+                </div>
+              </details>
+
+              <details class="rn-dev" open>
+                <summary>
+                  <span class="rn-who">Luiz</span>
+                  <span class="rn-role">setup &amp; messaging</span>
+                  <span class="rn-tally">6 entries</span>
+                  <span class="rn-caret" aria-hidden="true">&#9662;</span>
+                </summary>
+                <div class="rn-devbody">
+                  <h2>Setup &amp; messaging</h2>
+                  <p class="rn-areanote">Shipping in the same build, listed here so the release is complete.</p>
+                  <ul class="rn-items">
+                    <li><h3>Inbox for Cole&rsquo;s demo bookings</h3>
+                      <p>Cole&rsquo;s Gmail is pulled in daily and filtered to demo bookings, readable in a tab of its own.</p></li>
+                    <li><h3>Strategy &mdash; offers have a kind</h3>
+                      <p>An offer now records what kind of offer it is, and the Queue can be filtered by it, with Offer and Type
+                        columns. Strategy is a filter rather than a separate tab, so adding another strategy doesn&rsquo;t mean
+                        adding another screen.</p></li>
+                    <li><h3>Telnyx blasts through the bulk sender</h3>
+                      <p>Blasts are staged for approval rather than armed to send, and a market only cools down once something was
+                        actually delivered.</p></li>
+                    <li><h3>Call forwarding</h3>
+                      <p>A screen for setting where a call to one of our sender numbers goes, pointed at Cole.</p></li>
+                    <li><h3>Grouped text threads, and a read-only Claude connector</h3>
+                      <p>Group MMS threads that have an agent in them, and a read-only connector that lets a Claude project see the
+                        queue, the offers and the send history. No send capability by design.</p></li>
+                    <li><h3>An Admin menu for the setup screens</h3>
+                      <p>The configuration tabs are grouped under Admin, separating what you set up from what you action daily.</p></li>
+                  </ul>
+                </div>
+              </details>
+
+              <!-- Outside the per-developer accordions on purpose: these are things the build is
+                   waiting on, not work someone shipped, and filing them under a name would read
+                   as that person's outstanding homework. -->
+              <h2 style="margin-top:34px">Still to do</h2>
+              <div class="rn-panel hold">
+                <h3>Needs a person, not code</h3>
+                <ul>
+                  <li><b>108 empty date fields</b> &mdash; six dates across each of the 18 greenfield markets. This blocks the
+                    seasonal Youth Events send, which can&rsquo;t time anything against a blank. Each row already names the school
+                    district and athletics association to confirm against, so each is a known lookup. The Markets screen is the
+                    tool for it.</li>
+                  <li><b>39 of 89 venue names unverified</b> &mdash; researched but not yet confirmed against the
+                    organisation&rsquo;s own site. The Venues screen is the tool, and edits now survive a data reload.</li>
+                  <li><b>54 premium-relevant sections still unmapped</b> &mdash; lettered lower-bowl variants like 109A or R108.
+                    38 of them already have a likely answer recorded; 16 need someone to look at an arena map. They sit in six
+                    arenas, and Brooklyn and Philadelphia alone account for 39 of the 54.</li>
+                  <li><b>A decision on club and suite sections</b> &mdash; 63 of them. They&rsquo;re premium inventory, but
+                    &ldquo;center court vs sideline&rdquo; doesn&rsquo;t describe a suite, so they may want their own label.</li>
+                </ul>
+              </div>
+              <div class="rn-panel">
+                <h3>Built, waiting to be switched on</h3>
+                <ul>
+                  <li><b>Per-site price routing is off</b> in every environment &mdash; <code>PRICE_SOURCE_ROUTING</code> is unset,
+                    so sections are asked of Gametime alone instead of all four sites. Turning it on costs a small amount per
+                    game, so it stays a deliberate switch rather than a default. It is also what caps the next item.</li>
+                  <li><b>Zone prices cover 24 games across 13 arenas, and that is a source limit, not a coverage one.</b>
+                    Checked against the database on 9 Oct: 117 NBA games carry a get-in price and 24 carry zones, and
+                    <b>all 93 zone entries came from Gametime</b> &mdash; the only site asked while routing is off. So this is
+                    not waiting for more games to be priced, as previously stated here; it is waiting for the switch above.
+                    Worth knowing too: zones are rewritten on every refresh and cleared when a run finds none, by design, so
+                    the figure is a high-water mark that can move down as well as up.</li>
+                  <li><b>The Vivid Seats discrepancy is resolved, and it was not a discrepancy.</b> This panel used to say Vivid
+                    reported roughly ten times the expected price on one game. It did not: TickPick independently priced the
+                    same fixture &mdash; Knicks v 76ers at Madison Square Garden &mdash; at <b>$1,059</b> all-in against Vivid&rsquo;s
+                    $1,158, within 9%. The original &ldquo;10x&rdquo; compared that number to a league-typical $30 get-in rather
+                    than to this fixture. Nothing needs reconciling; the cross-check guard stays on its own merits.</li>
+                </ul>
+              </div>
+
+              <footer class="rn-foot">
+                <p>Ticket prices, premium seats, catalog, reports, market history, contacts and notifications were built by Vhea;
+                  setup and messaging was built by Luiz.</p>
+                <p>Live in QA, staging and production as of 9 October 2026.</p>
+              </footer>
             </div>
           </div>
 
@@ -3634,6 +4055,32 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // Not awaited by the rest of the page: a logged-out visitor may fire a few RPCs before the
     // redirect lands. Harmless once 051 is applied — they come back empty.
     const AUTH_DOMAIN = cfg.ALLOWED_EMAIL_DOMAIN || 'callplaybook.com';
+
+    // WHO SEES RELEASE NOTES. Four named people rather than everyone on the domain.
+    //
+    // ⚠ THIS IS A UI GATE, NOT A SECURITY BOUNDARY, and the difference matters here. The notes
+    // are written into index.html, so the markup ships to every signed-in browser and View
+    // Source shows it whether or not this list says yes. What this buys is that the menu item
+    // and the tab are not there for people it is not for — which is the right amount of effort
+    // for a changelog, and the wrong amount for anything confidential. Nothing secret goes on
+    // that page while it works this way; if that changes, the content has to move behind an
+    // /api/ route that checks the session server-side (lib/auth.js already does exactly that for
+    // every other endpoint) and be fetched rather than inlined.
+    //
+    // Overridable from config.js so the list is not a deploy away from changing.
+    // LENGTH-CHECKED, not just truthy. An unset RELEASE_NOTES_EMAILS makes gen-config.js emit an
+    // EMPTY ARRAY, and [] is truthy in JS - so `cfg.X || [...]` would hand back the empty list
+    // and lock all four of these people out on every deploy that did not set the variable.
+    const RELEASE_NOTES_ALLOW = ((Array.isArray(cfg.RELEASE_NOTES_EMAILS) && cfg.RELEASE_NOTES_EMAILS.length)
+      ? cfg.RELEASE_NOTES_EMAILS
+      : ['vhea@callplaybook.com',
+         'john@callplaybook.com',
+         'mgimutao@callplaybook.com',
+         'josh@callplaybook.com']
+    ).map(e => String(e).trim().toLowerCase());
+    // Default false: showTab consults this, and it is read before the session resolves on a slow
+    // connection. Defaulting true would flash the tab open for someone who is not on the list.
+    let releaseNotesAllowed = false;
     (async () => {
       if(!sb) return;                                  // config.js unfilled — nothing to gate against
       const { data:{ session } } = await sb.auth.getSession();
@@ -3649,13 +4096,70 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       const box = document.getElementById('acct');
       if(box){
-        document.getElementById('acct-email').textContent = email;
+        // Google gives a display name on most accounts but not all of them, so the local part of
+        // the address is the fallback rather than a blank chip. Initials come from whichever of
+        // the two we ended up with, for the same reason the avatar is initials and not the
+        // picture URL: that URL expires and a broken image in the header is worse than none.
+        const meta = (session.user && session.user.user_metadata) || {};
+        const full = (meta.full_name || meta.name || '').trim() || email.split('@')[0];
+        const parts = full.replace(/[._-]+/g, ' ').split(/\s+/).filter(Boolean);
+        const initials = ((parts[0] || email)[0] + (parts.length > 1 ? parts[parts.length - 1][0] : ''))
+          .toUpperCase();
+        const set = (id, text) => { const el = document.getElementById(id); if(el) el.textContent = text; };
+        set('acct-email', email);
+        set('acct-fullname', full);
+        set('acct-initials', initials);
+        // The trigger shows the short name; the menu shows the full name and the address. The bar
+        // is narrow and an address in it pushed the notification bell around on small screens.
+        set('acct-name', parts[0] || full);
         box.classList.remove('hidden'); box.classList.add('flex');
       }
+
+      // REMOVED, not hidden. A display:none menu item is still in the DOM and still reachable by
+      // anything that queries for it; taking it out means the only way to the view is the hash,
+      // which showTab turns away.
+      releaseNotesAllowed = RELEASE_NOTES_ALLOW.includes(email);
+      if(!releaseNotesAllowed){
+        document.getElementById('acct-release')?.remove();
+        // The separator above it would otherwise leave a stray rule between Switch account and
+        // Log out, which reads as something failing to render.
+        document.querySelectorAll('#acct-menu .acct-sep')[0]?.remove();
+        // Someone already sitting on #release-notes when the session resolves gets moved off it.
+        if(document.getElementById('view-release-notes') &&
+           !document.getElementById('view-release-notes').classList.contains('hidden')){
+          showTab('compose');
+        }
+      }
+
       document.getElementById('sign-out')?.addEventListener('click', async () => {
         await sb.auth.signOut();
         location.replace('/login');
       });
+
+      // SWITCH ACCOUNT. Sign out first - without it Google hands back the session we are trying
+      // to leave - then hand /login the ?switch=1 it watches for, so the chooser opens by itself
+      // instead of making someone press "Continue with Google" again.
+      document.getElementById('acct-switch')?.addEventListener('click', async () => {
+        await sb.auth.signOut();
+        location.replace('/login?switch=1');
+      });
+
+      // Same dismissal rules as the Admin menu: a menu that stays open over the page reads as
+      // broken. Registered here rather than at load because the menu does not exist for a
+      // logged-out visitor.
+      const am = document.getElementById('acct-menu');
+      if(am){
+        document.addEventListener('click', e => { if(am.open && !am.contains(e.target)) am.open = false; });
+        document.addEventListener('keydown', e => { if(e.key === 'Escape' && am.open) am.open = false; });
+        // Release notes is a view like any other, but its link lives in this menu rather than in
+        // .pb-tabs, so the tab row's delegated handler never sees it.
+        document.getElementById('acct-release')?.addEventListener('click', e => {
+          e.preventDefault();
+          am.open = false;
+          location.hash = 'release-notes';
+          showTab('release-notes');
+        });
+      }
     })();
 
     // Headers for a call to our own /api/. The session token replaces the old
@@ -6841,8 +7345,17 @@ This removes its school and season dates. Venues in this market are not touched.
       history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc',
       contacts:'view-contacts', forwarding:'view-forwarding', inbox:'view-inbox',
       // All three catalogs render into one view; the tab decides which config it opens with.
-      'catalog-games':'view-catalog', 'catalog-venues':'view-catalog', 'catalog-markets':'view-catalog' };
+      'catalog-games':'view-catalog', 'catalog-venues':'view-catalog', 'catalog-markets':'view-catalog',
+      // Reached from the account menu rather than the tab row, so no .pb-tabs entry lights up
+      // for it - showTab's first line simply finds nothing to mark active, which is correct.
+      'release-notes':'view-release-notes' };
     function showTab(tab){
+      // FIRST, before anything reads `tab`. #release-notes typed, pasted or bookmarked is the
+      // other way in and it does not go through the menu, so the redirect belongs ahead of the
+      // active-tab marking below - run after it, Compose would open with no tab lit.
+      // Anyone not on the list lands on Compose, the same place an unknown hash already lands:
+      // no "denied" screen, because there is nothing here worth telling someone they cannot see.
+      if(tab === 'release-notes' && !releaseNotesAllowed) tab = 'compose';
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
       document.getElementById(VIEW[tab] || 'view-soon').classList.remove('hidden');
