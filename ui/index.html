@@ -5698,16 +5698,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         },
         venues: {
           label: 'Venues',
-          table: 'youth_event_venues',
+          // The VIEW, not the table, so this tab can show the venue's city and the market's
+          // city side by side. Both were called market_city until migration 115, which is
+          // exactly why "are these the same thing?" could not be answered from this screen.
+          table: 'youth_event_venues_with_market',
           serverSide: false,
-          select: 'state_code,state_name,market_city,org,level,venue,venue_type,sports,confidence,notes',
+          select: 'state_code,state_name,venue_city,market_city,in_market_city,org,level,venue,venue_type,sports,confidence,notes',
           order: 'state_code.asc',
-          note: 'Places we could HOST a youth event — not where a ticketed game is played. Greenfield states only so far, and the venue names are a research starting point that has not been verified.',
-          search: ['venue', 'org', 'market_city', 'state_name'],
+          note: 'Places we could HOST a youth event — not where a ticketed game is played. City is where the building is; Market is the one city per state whose school calendar times the send, so most venues sit outside it. Greenfield states only so far, and the venue names are a research starting point that has not been verified.',
+          search: ['venue', 'org', 'venue_city', 'market_city', 'state_name'],
           filters: [
             { key: 'state', label: 'All states', col: 'state_code' },
             { key: 'type', label: 'All venue types', col: 'venue_type' },
             { key: 'level', label: 'All levels', col: 'level' },
+            // The distinction this list exists to make visible: most venues are NOT in the city
+            // their market is named after — 37 of 50 venue cities match no market row at all.
+            { key: 'inmarket', label: 'In or out of market city',
+              derive: r => (r.in_market_city ? 'in the market city' : 'elsewhere in the state') },
           ],
           columns: [
             { h: 'Venue', v: r => esc(r.venue) },
@@ -5716,7 +5723,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // The supported sports are the point of this list: you only invite a programme whose
             // sport the venue can actually host.
             { h: 'Supports', v: r => (r.sports || []).map(x => `<span class="cat-pill">${esc(x)}</span>`).join('') },
-            { h: 'Market', v: r => esc(`${r.market_city}, ${r.state_code}`) },
+            // TWO CITIES, NAMED SEPARATELY. The venue's own city is where the building is; the
+            // market is the one city per state whose school calendar times the send. For
+            // Bryant-Denny those are Tuscaloosa and Huntsville, and reading one as the other is
+            // the mistake a shared column name invited.
+            { h: 'City', v: r => esc(`${r.venue_city}, ${r.state_code}`) },
+            { h: 'Market', v: r => (r.market_city
+                ? esc(r.market_city) + (r.in_market_city ? ''
+                    : ' <span class="text-base-content/30" title="This venue is not in the market city. Sends for this state are timed off the market city&rsquo;s school calendar.">(venue is elsewhere)</span>')
+                : '<span class="cat-warn" title="No market row for this state, so nothing times a send here yet.">no market row</span>') },
             { h: 'Level', v: r => esc(String(r.level || '').toUpperCase()) },
             // Medium = the venue name has not been checked against a primary source. Shown, not
             // hidden, for the same reason the zone map flags its derived sections.

@@ -59,7 +59,10 @@ const venues = parseCsv(readFileSync('data/greenfield-venues.csv', 'utf8')).map(
   const sports = SPORTS_BY_VENUE_TYPE[v.venue_type];
   if (!sports) throw new Error(`unknown venue_type "${v.venue_type}" for ${v.venue}`);
   return {
-    state_code: v.state_code, state_name: v.state_name, market_city: v.market_city,
+    // venue_city, not market_city: this is the city the VENUE is in (Tuscaloosa), which is a
+    // different thing from the market's city (Huntsville for all of Alabama). They shared a
+    // name until migration 115 and the join between the two tables was wrong the whole time.
+    state_code: v.state_code, state_name: v.state_name, venue_city: v.venue_city,
     org: v.org, level: v.level, venue: v.venue, venue_type: v.venue_type,
     sports,
     confidence: v.confidence === 'High' ? 'High' : 'Medium',

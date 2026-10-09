@@ -1,4 +1,4 @@
-state_code,state_name,market_city,org,level,venue,venue_type,confidence,notes
+state_code,state_name,venue_city,org,level,venue,venue_type,confidence,notes
 AL,Alabama,Tuscaloosa,University of Alabama,d1,Bryant-Denny Stadium,football,High,
 AL,Alabama,Tuscaloosa,University of Alabama,d1,Coleman Coliseum,basketball,High,
 AL,Alabama,Tuscaloosa,University of Alabama,d1,Sewell-Thomas Stadium,baseball,High,
