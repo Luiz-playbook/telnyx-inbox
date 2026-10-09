@@ -41,7 +41,7 @@
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
-import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, armCampaign, findCampaignByKey, listCampaigns } from '../lib/bulk-sms.js';
+import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, findCampaignByKey, listCampaigns, campaignKeyFor, startsCooldown } from '../lib/bulk-sms.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
@@ -236,18 +236,21 @@ export default async function handler(req, res) {
   // census (eligible/blocked); it says nothing about what was then DELIVERED. Without this the
   // row reads "staged + armed" forever and sent/failed/skipped live only in the other app.
   //
-  // Bounded on purpose: rows handed off in the last 48 hours, one GET for all of them, and
+  // Bounded on purpose: rows handed off in the last 7 days (a draft can wait days for approval), one GET for all of them, and
   // never fatal — a reconcile that cannot reach the pipeline must not stop a blast going out.
   // The pipeline's counts land under bulk_census.pipeline, beside the staging census, so the
   // two are never confused: `eligible` is what the gate let through, `sent` is what left.
   async function reconcileBulk() {
     if (!bulkSmsConfigured()) return { checked: 0, updated: 0 };
     try {
-      const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-      const q = `${supaUrl}/rest/v1/campaign_queue?select=id,bulk_campaign_id,bulk_census`
+      const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      const q = `${supaUrl}/rest/v1/campaign_queue?select=id,bulk_campaign_id,bulk_census,state_code,state_name,segment`
         + `&bulk_campaign_id=not.is.null&sent_at=gte.${encodeURIComponent(since)}`;
       const rows = await (await fetch(q, { headers: sh })).json();
       if (!Array.isArray(rows) || !rows.length) return { checked: 0, updated: 0 };
+      // The pipeline now returns only SendBlaster's own campaigns, in this environment, latest
+      // 50. That is enough for a 7-day window at today's volume; a row whose campaign has
+      // scrolled off the list is simply skipped (the `continue` below), never failed.
       const byId = new Map((await listCampaigns()).map(c => [String(c.id), c]));
       let updated = 0;
       for (const row of rows) {
@@ -255,12 +258,23 @@ export default async function handler(req, res) {
         if (!c) continue;
         const pipeline = { status: c.status, from_inbox: c.from_inbox, pending: c.pending, sent: c.sent, failed: c.failed, skipped: c.skipped, seen_at: new Date().toISOString() };
         const prev = (row.bulk_census && row.bulk_census.pipeline) || {};
+        // ▲ 2026-10-09 (AI-965). The 14-day cooldown starts when a person has approved the
+        // campaign and it is sending (lib/bulk-sms.js startsCooldown) — once, recorded on the
+        // census so a later tick does not log it again.
+        const coolNow = row.bulk_census && row.bulk_census.cooldown === 'deferred' && startsCooldown(c);
+        if (coolNow && row.state_code) {
+          await rpc('log_market_blast', {
+            p_code: row.state_code, p_name: row.state_name || null,
+            p_channel: 'SMS', p_queue_id: row.id, p_segment: row.segment || null,
+          });
+        }
         // Only write when something moved. A PATCH per row per tick for an unchanged campaign
-        // is write noise on a table the Queue reads every page load.
-        if (['status', 'pending', 'sent', 'failed', 'skipped'].every(k => prev[k] === pipeline[k])) continue;
+        // is write noise on a table the Queue reads every page load. A cooldown write always moves.
+        if (!coolNow && ['status', 'pending', 'sent', 'failed', 'skipped'].every(k => prev[k] === pipeline[k])) continue;
+        const census = { ...(row.bulk_census || {}), pipeline, ...(coolNow ? { cooldown: 'logged' } : {}) };
         await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(row.id)}`, {
           method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
-          body: JSON.stringify({ bulk_census: { ...(row.bulk_census || {}), pipeline } }),
+          body: JSON.stringify({ bulk_census: census }),
         });
         updated++;
       }
@@ -413,6 +427,8 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
+      // AI-965: true when an SMS-only row went to the bulk sender as a draft; see the cooldown below.
+      let deferCooldown = false;
       // NOT `failed`. A note is something worth seeing that is not a send failure — and `failed`
       // is load-bearing: anything in it flips the row to status 'partial' (migration 058) and
       // shows up in Market History as a half-broken blast. A missing Mailhook return address
@@ -467,44 +483,51 @@ export default async function handler(req, res) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
         } else if (bulkSmsConfigured()) {
-          // AI-965, option A. Hand the audience to Charles's bulk sender and let its queue do
-          // the sending: per-recipient rows, one shared opt-out list, quiet hours, duplicate
-          // protection, carrier halts, delivery receipts. None of that is re-implemented here.
-          // See lib/bulk-sms.js for why the campaign key is this row's id and why arming on
-          // the operator's confirm click is the brief's rule being followed, not bent.
+          // AI-965, as built 2026-10-09. Stage a DRAFT in the bulk sender; a person approves it
+          // in the Operator App after reading the census. Nothing here arms. See lib/bulk-sms.js.
           //
-          // Ordered so a crash at any point leaves a row that can be picked up, never a
-          // second send: stage (idempotent on key) -> record the id on OUR row -> arm.
-          const key = String(r.id);
-          const name = r.title || [r.opponent, r.team].filter(Boolean).join(' at ') || key;
+          // Crash-safe in the same order as before: stage (409 on a retried key) -> record the id.
+          // campaignKeyFor is inside the try: a malformed row id becomes a failed channel,
+          // not a crashed tick.
+          let key = String(r.id);
           try {
+            key = campaignKeyFor(r);
+            const name = r.title || [r.opponent, r.team].filter(Boolean).join(' at ') || key;
+            // Nobody was eligible last time. Re-staging costs ~60–120 HubSpot searches and will
+            // answer the same, so the cron leaves it; Send now retries on purpose.
+            if (!onlyId && r.bulk_census && r.bulk_census.nobody_eligible) {
+              throw new Error('nobody eligible at the last staging — use Send now to try again');
+            }
             let staged = await stageCampaign({ key, name, body: r.sms_copy || '', fromNumber: r.sms_from, phones });
+            if (staged.nobodyEligible) {
+              await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
+                method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
+                body: JSON.stringify({ bulk_census: { nobody_eligible: true, ...staged.census } }),
+              });
+              const why = Object.entries(staged.census.byReason || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
+              throw new Error(`0 of ${phones.length} eligible${why ? ` (${why})` : ''} — nothing was staged`);
+            }
             let campaignId = staged.campaignId;
-            let alreadyArmed = false;
             if (staged.duplicate) {
               // A previous tick staged this row and died before recording it. Find what it made.
               const existing = await findCampaignByKey(key);
-              if (!existing || !existing.id) throw new Error('duplicate campaign key, but no campaign found for it');
+              if (!existing || !existing.id) throw new Error('duplicate campaign key, but no campaign of ours has it');
               campaignId = existing.id;
-              alreadyArmed = existing.status && existing.status !== 'draft';
-              staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.eligible, blocked: existing.blocked };
+              staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.pending };
             }
-            // Record the link BEFORE arming, so if arming throws the row still says which
-            // campaign it is, and nobody has to find it by hand in the other app.
+            // The market cools when a person approves, not now (reconcileBulk). Unless email
+            // goes out on this row too: an email send cools the market by itself, as before.
+            deferCooldown = !emails.length;
             await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
-              body: JSON.stringify({ bulk_campaign_id: String(campaignId), bulk_census: staged.raw || null }),
+              body: JSON.stringify({
+                bulk_campaign_id: String(campaignId),
+                bulk_census: { ...(staged.raw || {}), cooldown: deferCooldown ? 'deferred' : 'at_send' },
+              }),
             });
-            // Nobody eligible is not a send. Arming it would text no one and mark the market
-            // cooled for 14 days — the exact failure the sent/failed split exists to prevent.
-            if (!alreadyArmed && Number(staged.eligible) === 0) {
-              const why = Object.entries(staged.byReason || {}).map(([k, v]) => `${k}: ${v}`).join(', ');
-              throw new Error(`0 of ${phones.length} eligible after the gate${why ? ` (${why})` : ''}`);
-            }
-            if (!alreadyArmed) await armCampaign({ campaignId, key });
-            sent.push(`SMS ${staged.eligible != null ? staged.eligible : phones.length} ${alreadyArmed ? 'already armed' : 'staged + armed'} via bulk sender`
+            sent.push(`SMS staged for ${staged.eligible != null ? staged.eligible : '?'} of ${phones.length} — awaiting approval in the Operator App`
               + ` (${staged.fromInbox || r.sms_from || 'route'})`);
-            if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length} (consent, quiet hours, opt-out or route)`);
+            if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length}: ${Object.entries(staged.byReason || {}).map(([k, v]) => `${k} ${v}`).join(', ')}`);
             if (staged.collapsedDuplicates) notes.push(`${staged.collapsedDuplicates} duplicate handsets collapsed`);
             // NO hubspotLog here, on purpose. The bulk sender writes the inbox copy itself
             // (log-sweep), keyed so the blast and the reply share one thread. Logging it again
@@ -643,7 +666,9 @@ export default async function handler(req, res) {
       }
       // Write to the notebook so this market goes on cooldown. Per Josh: an email send
       // counts for both channels, so one row (market + day) cools email AND SMS.
-      if (r.state_code && (phones.length || emails.length)) {
+      // ▲ 2026-10-09 (AI-965): not for an SMS-only bulk-sender row. That is a draft until a
+      // person approves it, and reconcileBulk cools the market when it sees it sending.
+      if (r.state_code && (phones.length || emails.length) && !deferCooldown) {
         await rpc('log_market_blast', {
           p_code: r.state_code, p_name: r.state_name || null,
           p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id,

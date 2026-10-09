@@ -19,6 +19,10 @@ test('the key is the title, folded to ASCII, then # and the first 6 of the row i
   assert.equal(m.campaignKeyFor({ id: '3f9a1c2e', title: 'Fan’s Night · Café 🎟' }), "Fan's Night - Cafe #3f9a1c");
 });
 
+test('a tab or newline in a title is a space, not a deleted character', () => {
+  assert.equal(m.campaignKeyFor({ id: 'abcdef12', title: 'Red\tSox\nat  Yankees' }), 'Red Sox at Yankees #abcdef');
+});
+
 test('the key is at most 80 characters and the same on every retry of a row', () => {
   const row = { id: 'abcdef12-0000', title: 'x'.repeat(200) };
   assert.equal(m.campaignKeyFor(row).length, 80);
