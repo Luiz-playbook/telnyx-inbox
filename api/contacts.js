@@ -393,7 +393,7 @@ async function handleGet(req, res, call, url, key) {
   // Default: one page of the list.
   //
   // p_sort IS OMITTED FOR THE DEFAULT ORDER, NOT SENT AS 'recent'. The sort lives in
-  // contacts_browse (migration 105) because the ORDER BY has to run before the LIMIT — a browser
+  // contacts_browse (migration 111) because the ORDER BY has to run before the LIMIT — a browser
   // sort would order the 50 rows on screen and leave the other 256,422 alone. Sending p_sort on
   // every request would make this route depend on 105 having been applied, and a database that
   // still has the six-argument function answers PGRST202 — the whole tab would read "function not
@@ -402,7 +402,7 @@ async function handleGet(req, res, call, url, key) {
   const PAGE = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
   const page = Math.max(Number(q.page) || 0, 0);
   // VALIDATED HERE AS WELL AS IN THE FUNCTION, so a typo answers the same way whether or not
-  // migration 105 is applied. Without this check, `sort=bogus` is indistinguishable from
+  // migration 111 is applied. Without this check, `sort=bogus` is indistinguishable from
   // `sort=name_asc` on an un-migrated database — both come back as PGRST202 and both quietly
   // fall back — and then starts returning 400 the day the migration lands.
   const SORTS = new Set(['recent', 'name_asc', 'name_desc']);
@@ -476,7 +476,7 @@ async function handleGet(req, res, call, url, key) {
     total_capped: raw > COUNT_CAP,
     page, limit: PAGE,
     // WHICH ORDER THESE ROWS ARE ACTUALLY IN, not which one was asked for. The two differ when
-    // migration 105 is missing, and the header arrow is drawn from this rather than from what the
+    // migration 111 is missing, and the header arrow is drawn from this rather than from what the
     // click set — an arrow pointing at an order the rows are not in is the lie this is for.
     sort: sortApplied || 'recent',
     sort_available: sortAvailable,

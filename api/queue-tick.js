@@ -594,7 +594,7 @@ export default async function handler(req, res) {
                 // THE TRAILING STATE CODE IS LOAD-BEARING, not decoration. sendCampaign uses
                 // this same string as the LIST name, and v_list_market resolves a list to a
                 // market by reading a trailing two-letter state code when no exact bridge row
-                // exists (migration 103). So '… — AZ' is what makes an app send land in
+                // exists (migration 109). So '… — AZ' is what makes an app send land in
                 // Market History without anyone hand-writing a bridge row for it. Keep the
                 // code last, and keep it two letters.
                 //

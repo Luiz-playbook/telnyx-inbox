@@ -73,7 +73,7 @@ const isLetteredSection = raw => {
   return /[A-Z]/.test(t) && /\d/.test(t);
 };
 
-// The section map normally comes from venue_section_zones (migration 106 + load-section-zones).
+// The section map normally comes from venue_section_zones (migration 112 + load-section-zones).
 // --map reads a JSON snapshot instead, which is only needed on a database without the table.
 const index = MAP
   ? buildZoneIndex(JSON.parse(readFileSync(MAP, 'utf8')))

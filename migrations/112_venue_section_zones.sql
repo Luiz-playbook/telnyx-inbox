@@ -1,4 +1,4 @@
--- 106: section -> zone lookup per venue, so a listing's section can be named (AI-1098).
+-- 112: section -> zone lookup per venue, so a listing's section can be named (AI-1098).
 --
 -- EVERY LEAGUE, NOT JUST THE NBA. The NBA map is simply the one that exists today (scraped from
 -- RateYourSeats, Oct 6 2026); MLB, NFL and the rest are coming and must not need a schema change

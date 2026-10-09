@@ -1,6 +1,6 @@
 // Markets: read and EDIT public.market_season_calendar from the Catalog tab (AI-1086).
 //
-// WHY THIS ROUTE EXISTS AT ALL, GIVEN THE TABLE IS READABLE WITH THE ANON KEY. Migration 108
+// WHY THIS ROUTE EXISTS AT ALL, GIVEN THE TABLE IS READABLE WITH THE ANON KEY. Migration 114
 // grants `select` to anon and `all` to service_role only, and that split is deliberate: the
 // date columns are what the seasonal cron (AI-1076) schedules real sends against. A table the
 // browser can write directly is a table any visitor with the published anon key can write, and

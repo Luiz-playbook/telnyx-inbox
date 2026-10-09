@@ -4,7 +4,7 @@
 //   node --env-file=.env scripts/load-greenfield-venues.js
 //
 // Reads data/greenfield-venues.csv and data/greenfield-market-knowledge.csv into the two tables
-// from migration 108, so the AI-1076 seasonal cron has something to read.
+// from migration 114, so the AI-1076 seasonal cron has something to read.
 //
 // THE SPORTS LIST IS APPLIED HERE, NOT STORED IN THE CSV. Josh's rule from the Oct 1 call is one
 // mapping from venue type, and keeping it in code means a venue cannot drift out of step with

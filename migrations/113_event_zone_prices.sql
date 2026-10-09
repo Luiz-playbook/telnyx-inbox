@@ -1,4 +1,4 @@
--- 107: the cheapest lower-bowl seat in each zone, per game (AI-1098).
+-- 113: the cheapest lower-bowl seat in each zone, per game (AI-1098).
 --
 -- WHY A SECOND COLUMN AND NOT MORE CANDIDATES. price_candidates (077) answers "what could this
 -- game cost" — a ranked list the operator picks from, all of it competing to be THE price.

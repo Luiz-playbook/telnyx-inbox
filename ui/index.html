@@ -2150,7 +2150,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                showModal() on a dialog inside a display:none ancestor opens nothing — no error,
                no backdrop, nothing to debug.
 
-               WHY THE SIX DATE FIELDS ARE THE POINT OF THIS FORM. Migration 108 ships them NULL
+               WHY THE SIX DATE FIELDS ARE THE POINT OF THIS FORM. Migration 114 ships them NULL
                deliberately: they change every year, vary by district, and the seasonal cron
                schedules real sends against them, so a plausible guess is worse than a blank.
                This form is how the blanks get filled by someone who looked it up — hence the
@@ -4345,7 +4345,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // recent | name_asc | name_desc. NOT a filter: it survives Clear, because "I was reading
       // this A–Z" is not something you are asking to be rid of when you drop a state filter.
       let sort = 'recent';
-      // Set false by the route when the database has not had migration 105 applied, so the
+      // Set false by the route when the database has not had migration 111 applied, so the
       // header can say the sort is unavailable instead of silently snapping back.
       let sortAvailable = true;
 
@@ -4402,7 +4402,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           if(mine !== seq) return;          // a newer filter is already in flight — that one wins
           total = Number(j.total || 0); capped = !!j.total_capped;
           // THE SERVER SAYS WHAT ORDER THESE ROWS ARE IN, and the arrow follows that, not the
-          // click. Without migration 105 the route answers in the default order and sets
+          // click. Without migration 111 the route answers in the default order and sets
           // sort_available: false; drawing the arrow from the local variable would leave it
           // pointing at A–Z over rows that are still by recency.
           sort = j.sort || 'recent';
@@ -5110,7 +5110,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // the migration points at the one thing that fixes it.
         b.title = sortAvailable
           ? (SORT_TITLE[sort] || '')
-          : 'Name sorting needs migration 105 applied to the database — showing most recently updated';
+          : 'Name sorting needs migration 111 applied to the database — showing most recently updated';
         // aria-sort belongs on the cell, not the button — a screen reader announces it with the
         // column header. 'none' rather than omitting it, so the column still reads as sortable.
         b.closest('th')?.setAttribute('aria-sort',
@@ -5935,7 +5935,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       // ---- the market editor -------------------------------------------------------------
       //
-      // WRITES GO THROUGH /api/markets, NOT STRAIGHT TO POSTGREST. Migration 108 grants the
+      // WRITES GO THROUGH /api/markets, NOT STRAIGHT TO POSTGREST. Migration 114 grants the
       // anon key `select` and nothing else, on purpose: these dates are what the seasonal cron
       // schedules real sends against, and the anon key is published to every visitor in
       // config.js. The route holds the service-role key and authenticates the caller.
@@ -7180,7 +7180,7 @@ This removes its school and season dates. Venues in this market are not touched.
         renderCandidates();
         let list = null;
         try {
-          // zone_prices (AI-1098, migration 107) is asked for on the same read, but it CANNOT be
+          // zone_prices (AI-1098, migration 113) is asked for on the same read, but it CANNOT be
           // asked for unconditionally: PostgREST rejects the whole select with a 400 when a named
           // column does not exist, so on a database that has not run 107 this would take the
           // candidate list down with it — breaking a working feature for the sake of a new one.

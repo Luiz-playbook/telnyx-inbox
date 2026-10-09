@@ -1,4 +1,4 @@
--- 105 — sort the contact list by name, from the server.
+-- 111 — sort the contact list by name, from the server.
 --
 -- WHY NOT IN THE BROWSER. The Contacts table is paginated at 50 rows against a directory of
 -- 256,472. Sorting the rendered page would order those 50 and leave the other 256,422 where they

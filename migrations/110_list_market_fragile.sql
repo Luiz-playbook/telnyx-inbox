@@ -1,7 +1,7 @@
 -- Which blast lists are mapped only by inference, and would silently un-map if their state
 -- gained a second market.
 --
--- WHY THIS EXISTS. v_list_market (migration 103) resolves a list name by exact bridge row
+-- WHY THIS EXISTS. v_list_market (migration 109) resolves a list name by exact bridge row
 -- first, then by a trailing state code, then by a state name in the text. The two fallbacks
 -- fire ONLY for states holding exactly one market, because guessing a city inside a
 -- multi-market state would quietly credit a blast to the wrong place.

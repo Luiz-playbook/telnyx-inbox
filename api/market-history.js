@@ -638,7 +638,7 @@ export default async function handler(req, res) {
       // milwaukee) — the last two only for states holding exactly one market. Reading the raw
       // bridge here would make this tab disagree with the decider it is meant to explain:
       // a blast would read "not bridged to a market" while v_market_performance was scoring it.
-      // See migration 103.
+      // See migration 109.
       get('v_list_market?select=list_name,market_key&limit=5000'),
       // When the CakeMail sync last actually wrote. AI-970 asks the tab to state its own
       // freshness, and until now nothing did — the history could be three months stale and the
@@ -941,7 +941,7 @@ export default async function handler(req, res) {
       // there is nothing to bridge ON. Reporting them as one number invites someone to add 76
       // bridge rows and wonder why the count barely moves.
       //
-      // `unbridged` counts what the RESOLVER could not place (migration 103), not what lacks an
+      // `unbridged` counts what the RESOLVER could not place (migration 109), not what lacks an
       // exact bridge row — a list auto-resolved from its state code or state name is mapped and
       // must not be reported as a gap, or this number would nag about lists that need nothing.
       //

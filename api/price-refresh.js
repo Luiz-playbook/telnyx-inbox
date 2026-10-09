@@ -307,7 +307,7 @@ export default async function handler(req, res) {
     const scrapeStat = { tried: 0, priced: 0, not_reached: 0, gametime: 0, tickpick: 0, pages: 0, via: {}, firecrawl: 0 };
     let modelGames = games;
     if (scrapeOn && games.length) {
-      // The NBA section map, once per run. Best effort: a database without migration 106 has no
+      // The NBA section map, once per run. Best effort: a database without migration 112 has no
       // such table, and zones are an extra column on a price, never a reason not to write one.
       await loadZoneIndex(supaUrl, supaKey).catch(() => null);
       const ctx = newScrapeContext();
