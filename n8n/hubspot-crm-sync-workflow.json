@@ -1,39 +1,32 @@
 {
-  "name": "HubSpot deals + companies to Supabase (AI-971)",
+  "name": "Marketing Blaster - HubSpot deals + companies to Supabase | Vhea",
   "nodes": [
     {
       "parameters": {},
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        0,
-        0
+        768,
+        -80
       ],
-      "id": "a1b2c3d4-0001-4000-8000-000000000001",
+      "id": "0de30021-cb13-4912-913b-3c4735527d7a",
       "name": "When clicking ‘Execute workflow’"
     },
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "hubspot-crm-sync",
-        "authentication": "basicAuth",
         "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        192
+        768,
+        112
       ],
-      "id": "a1b2c3d4-0002-4000-8000-000000000002",
+      "id": "580f51bf-e55d-4600-a2b0-eca5e9d43430",
       "name": "Webhook: Sync now",
-      "webhookId": "4d8b1c07-59a2-4e36-9f14-6c2a7b0e5d31",
-      "credentials": {
-        "httpBasicAuth": {
-          "id": "ur7HbBfjmdQDj5bi",
-          "name": "Unnamed credential 3"
-        }
-      }
+      "webhookId": "4d8b1c07-59a2-4e36-9f14-6c2a7b0e5d31"
     },
     {
       "parameters": {
@@ -49,11 +42,12 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        0,
-        384
+        768,
+        304
       ],
-      "id": "a1b2c3d4-0003-4000-8000-000000000003",
-      "name": "Every 6 hours"
+      "id": "ea68e8d5-57d8-43b1-a6d1-65a700042493",
+      "name": "Every 6 hours",
+      "disabled": true
     },
     {
       "parameters": {
@@ -64,38 +58,43 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        224,
-        192
+        992,
+        112
       ],
-      "id": "a1b2c3d4-0004-4000-8000-000000000004",
-      "name": "Read how current the mirror is"
+      "id": "cbd83495-40d6-47b7-99a9-a9311be2f942",
+      "name": "Read how current the mirror is",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
-        "jsCode": "// One watermark per object, read from hubspot.sync_state() (migration 065 returns a row for\n// contacts, companies and deals; migration 062 returned only contacts, so 065 must be applied\n// before this workflow runs or the two branches below both start from the epoch every time).\n//\n// SAME RULES AS THE CONTACTS SYNC, and for the same reasons:\n//\n//   * THE FLOOR IS THE EPOCH, NOT A RECENT DATE. A recent floor silently skips everything last\n//     touched before it, and nothing reports the gap. On the first run the tables are empty, so\n//     this pulls full history; after that the watermark takes over and runs are small.\n//   * THE WATERMARK IS REWOUND TWO SECONDS, not a minute. The watermark is max(hs_lastmodifieddate)\n//     of the rows we STORED — HubSpot timestamps compared against a HubSpot filter — so clock skew\n//     between machines never enters into it, and the only real risk is a record sharing the exact\n//     millisecond of the last one stored, which GT would skip. Two seconds covers that.\n//\n//     A MINUTE WAS ACTIVELY DANGEROUS HERE. Every contact in this portal was bulk-modified on\n//     2026-09-10 between 04:23 and 12:29, so 1.1M records span eight hours: a 10,000-record page\n//     covers about 260 seconds of that range, and rewinding 60 of them threw away a quarter of\n//     each run. Compress the same bulk edit into 20 minutes and a page covers ~10 seconds, the\n//     rewind exceeds it, and the sync loops forever making negative progress.\nconst FLOOR = 0;\nconst REWIND_MS = 2 * 1000;\n\nconst state = {};\nfor (const r of $input.all()) {\n  const j = r.json || {};\n  if (j.source) state[j.source] = j.newest_modified;\n}\n\n// POST {\"since\":\"2026-01-01\"} to the webhook to re-read a period on purpose — after a mapping\n// change, or to repair a gap — without truncating the tables. The schedule and the manual trigger\n// carry no body and ignore it.\nlet override = null;\ntry {\n  const body = $('Webhook: Sync now').first().json.body || {};\n  const t = body.since ? Date.parse(body.since) : NaN;\n  if (Number.isFinite(t)) override = t;\n} catch (e) { /* not triggered by the webhook */ }\n\nconst since = key => {\n  if (override !== null) return String(override);\n  const v = state[key] ? Date.parse(state[key]) : NaN;\n  return String(Number.isFinite(v) ? Math.max(FLOOR, v - REWIND_MS) : FLOOR);\n};\n\nreturn [{ json: { since_deals: since('deals'), since_companies: since('companies') } }];"
+        "jsCode": "// One watermark per object, read from hubspot.sync_state() (migration 065 returns a row for\n// contacts, companies and deals; migration 062 returned only contacts, so 065 must be applied\n// before this workflow runs or the two branches below both start from the epoch every time).\n//\n// SAME RULES AS THE CONTACTS SYNC, and for the same reasons:\n//\n//   * THE FLOOR IS THE EPOCH, NOT A RECENT DATE. A recent floor silently skips everything last\n//     touched before it, and nothing reports the gap. On the first run the tables are empty, so\n//     this pulls full history; after that the watermark takes over and runs are small.\n//   * THE WATERMARK IS REWOUND A MINUTE. HubSpot's clock is not our clock, and a record modified\n//     in the same second the previous run read its last page would fall in the gap between runs\n//     and never be seen again. Re-reading a minute costs nothing — the write is an upsert.\nconst FLOOR = 0;\nconst REWIND_MS = 60 * 1000;\n\nconst state = {};\nfor (const r of $input.all()) {\n  const j = r.json || {};\n  if (j.source) state[j.source] = j.newest_modified;\n}\n\n// POST {\"since\":\"2026-01-01\"} to the webhook to re-read a period on purpose — after a mapping\n// change, or to repair a gap — without truncating the tables. The schedule and the manual trigger\n// carry no body and ignore it.\nlet override = null;\ntry {\n  const body = $('Webhook: Sync now').first().json.body || {};\n  const t = body.since ? Date.parse(body.since) : NaN;\n  if (Number.isFinite(t)) override = t;\n} catch (e) { /* not triggered by the webhook */ }\n\nconst since = key => {\n  if (override !== null) return String(override);\n  const v = state[key] ? Date.parse(state[key]) : NaN;\n  return String(Number.isFinite(v) ? Math.max(FLOOR, v - REWIND_MS) : FLOOR);\n};\n\nreturn [{ json: { since_deals: since('deals'), since_companies: since('companies') } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        448,
-        192
+        1216,
+        112
       ],
-      "id": "a1b2c3d4-0005-4000-8000-000000000005",
+      "id": "88d564a0-5304-476c-87b0-0b94842780d1",
       "name": "Prepare the since timestamps"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/objects/deals/search",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/deals/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'hs_lastmodifieddate', operator: 'GT', value: $json.since_deals }] }],\n  sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['dealname','pipeline','dealstage','amount','closedate','hs_lastmodifieddate'],\n  limit: 100\n}) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "pagination": {
             "pagination": {
-              "paginationMode": "updateAParameterInEachRequest",
               "parameters": {
                 "parameters": [
                   {
@@ -108,7 +107,6 @@
               "paginationCompleteWhen": "other",
               "completeExpression": "={{ !$response.body.paging?.next?.after }}",
               "limitPagesFetched": true,
-              "maxRequestsPerPage": 100,
               "requestInterval": 400
             }
           }
@@ -117,14 +115,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        672,
-        96
+        1440,
+        16
       ],
-      "id": "a1b2c3d4-0006-4000-8000-000000000006",
+      "id": "d16709a4-3704-4789-a00b-97035be6c296",
       "name": "HubSpot: Get deals changed since",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -133,10 +137,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        896,
-        96
+        1664,
+        16
       ],
-      "id": "a1b2c3d4-0007-4000-8000-000000000007",
+      "id": "daa9adf7-c7d3-49f8-86c6-d580c79f58a5",
       "name": "Prepare deal rows"
     },
     {
@@ -146,21 +150,21 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1120,
-        96
+        1888,
+        16
       ],
-      "id": "a1b2c3d4-0008-4000-8000-000000000008",
+      "id": "7fe31988-1931-417e-8676-264fce41ef7d",
       "name": "Chunk deal ids"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v4/associations/deals/contacts/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v4/associations/deals/contacts/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ inputs: $json.ids.map(id => ({ id: String(id) })) }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -173,24 +177,30 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1344,
-        96
+        2112,
+        16
       ],
-      "id": "a1b2c3d4-0009-4000-8000-000000000009",
+      "id": "c0b3cfaf-21c6-442f-80a8-0a7de96582e7",
       "name": "HubSpot: Deal → contact associations",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v4/associations/deals/companies/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v4/associations/deals/companies/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ inputs: $('Chunk deal ids').item.json.ids.map(id => ({ id: String(id) })) }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -203,14 +213,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1568,
-        96
+        2336,
+        16
       ],
-      "id": "a1b2c3d4-000a-4000-8000-00000000000a",
+      "id": "4735eacb-02eb-4f5a-bb5f-220194ff4d47",
       "name": "HubSpot: Deal → company associations",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -219,10 +235,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1792,
-        96
+        2560,
+        16
       ],
-      "id": "a1b2c3d4-000b-4000-8000-00000000000b",
+      "id": "c500213c-3ee9-4ff8-bef9-98c29aa49ad3",
       "name": "Attach deal associations"
     },
     {
@@ -236,25 +252,30 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        2016,
-        96
+        2784,
+        16
       ],
-      "id": "a1b2c3d4-000c-4000-8000-00000000000c",
-      "name": "Upsert deals"
+      "id": "0d8bafaf-2809-4a11-a863-d8a85411a4a9",
+      "name": "Upsert deals",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
+        }
+      }
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/objects/companies/search",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v3/objects/companies/search",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'hs_lastmodifieddate', operator: 'GT', value: $json.since_companies }] }],\n  sorts: [{ propertyName: 'hs_lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['name','domain','state','lifecyclestage','hs_lastmodifieddate'],\n  limit: 100\n}) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "pagination": {
             "pagination": {
-              "paginationMode": "updateAParameterInEachRequest",
               "parameters": {
                 "parameters": [
                   {
@@ -267,7 +288,6 @@
               "paginationCompleteWhen": "other",
               "completeExpression": "={{ !$response.body.paging?.next?.after }}",
               "limitPagesFetched": true,
-              "maxRequestsPerPage": 100,
               "requestInterval": 400
             }
           }
@@ -276,14 +296,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        672,
-        384
+        1440,
+        304
       ],
-      "id": "a1b2c3d4-000d-4000-8000-00000000000d",
+      "id": "38e496b5-5e4b-4454-9062-2d4758c74090",
       "name": "HubSpot: Get companies changed since",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -292,10 +318,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        896,
-        384
+        1664,
+        304
       ],
-      "id": "a1b2c3d4-000e-4000-8000-00000000000e",
+      "id": "fb5d954d-f528-49b8-a42d-479db6cc4cc0",
       "name": "Prepare company rows"
     },
     {
@@ -305,21 +331,21 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1120,
-        384
+        1888,
+        304
       ],
-      "id": "a1b2c3d4-000f-4000-8000-00000000000f",
+      "id": "d48da1e5-7105-488e-8928-df8d5709d0b9",
       "name": "Chunk company ids"
     },
     {
       "parameters": {
-        "url": "https://api.hubapi.com/crm/v4/associations/companies/contacts/batch/read",
         "method": "POST",
+        "url": "https://api.hubapi.com/crm/v4/associations/companies/contacts/batch/read",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
         "jsonBody": "={{ JSON.stringify({ inputs: $json.ids.map(id => ({ id: String(id) })) }) }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
         "options": {
           "batching": {
             "batch": {
@@ -332,14 +358,20 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1344,
-        384
+        2112,
+        304
       ],
-      "id": "a1b2c3d4-0010-4000-8000-000000000010",
+      "id": "a94faeed-53a0-493c-be07-1dd6e23c2670",
       "name": "HubSpot: Company → contact associations",
       "retryOnFail": true,
       "maxTries": 3,
-      "waitBetweenTries": 5000
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "hubspotAppToken": {
+          "id": "kcSaZ1FSKnd4FVMU",
+          "name": "HubSpot App Token account | N8N"
+        }
+      }
     },
     {
       "parameters": {
@@ -348,10 +380,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1568,
-        384
+        2336,
+        304
       ],
-      "id": "a1b2c3d4-0011-4000-8000-000000000011",
+      "id": "ff524386-e2c1-4f78-9fde-d03b5b3e1825",
       "name": "Attach company associations"
     },
     {
@@ -365,63 +397,20 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1792,
-        384
+        2560,
+        304
       ],
-      "id": "a1b2c3d4-0012-4000-8000-000000000012",
-      "name": "Upsert companies"
-    },
-    {
-      "parameters": {
-        "url": "https://api.hubapi.com/crm/v3/pipelines/deals",
-        "method": "GET",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "hubspotAppToken",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        672,
-        640
-      ],
-      "id": "5a9e0000-0000-4000-8000-00000000-a1",
-      "name": "HubSpot: Deal pipelines",
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
-    },
-    {
-      "parameters": {
-        "jsCode": "// The pipeline/stage map, flattened. GET /crm/v3/pipelines/deals returns every pipeline with its\n// stages nested; a deal row stores only the stage id, so this is what turns \"1607069\" into\n// \"Closed\". Four pipelines, 76 stages in this portal — small enough to replace wholesale.\n//\n// WON AND LOST ARE HUBSPOT OWN FLAGS, not a reading of the label. In this portal the stage whose\n// id is literally \"closedlost\" is labelled \"Initial Interest\" and is OPEN at probability 0.5 —\n// any heuristic on the id or the text gets that exactly backwards.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const p of ((item.json || {}).results || [])) {\n    for (const s of (p.stages || [])) {\n      const m = s.metadata || {};\n      rows.push({\n        stage_id: String(s.id),\n        pipeline_id: String(p.id),\n        pipeline_label: p.label || null,\n        stage_label: s.label || null,\n        display_order: Number.isFinite(Number(s.displayOrder)) ? Number(s.displayOrder) : null,\n        is_closed: String(m.isClosed) === 'true',\n        // Empty string and undefined both mean \"not set\"; Number() would turn them into 0, which\n        // is the value that means LOST.\n        probability: (m.probability === undefined || m.probability === null || m.probability === '')\n          ? null : Number(m.probability),\n        synced_at: new Date().toISOString(),\n      });\n    }\n  }\n}\nreturn rows.length ? [{ json: { stages: rows } }] : [];"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        896,
-        640
-      ],
-      "id": "5a9e0000-0000-4000-8000-00000000-a2",
-      "name": "Flatten the stages"
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "insert into hubspot.hubspot_deal_stages\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_deal_stages, $1::jsonb)\non conflict (stage_id) do update set\n  pipeline_id = excluded.pipeline_id,\n  pipeline_label = excluded.pipeline_label,\n  stage_label = excluded.stage_label,\n  display_order = excluded.display_order,\n  is_closed = excluded.is_closed,\n  probability = excluded.probability,\n  synced_at = excluded.synced_at",
-        "options": {
-          "queryReplacement": "={{ JSON.stringify($json.stages) }}"
+      "id": "60b7317c-87bc-4f22-b0a5-54b1f0b5d705",
+      "name": "Upsert companies",
+      "credentials": {
+        "postgres": {
+          "id": "d6rdyWc4ZjkjEckR",
+          "name": "Supabase n8n"
         }
-      },
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [
-        1120,
-        640
-      ],
-      "id": "5a9e0000-0000-4000-8000-00000000-a3",
-      "name": "Cache the deal stages"
+      }
     }
   ],
+  "pinData": {},
   "connections": {
     "When clicking ‘Execute workflow’": {
       "main": [
@@ -477,11 +466,6 @@
           },
           {
             "node": "HubSpot: Get companies changed since",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "HubSpot: Deal pipelines",
             "type": "main",
             "index": 0
           }
@@ -608,32 +592,18 @@
           }
         ]
       ]
-    },
-    "HubSpot: Deal pipelines": {
-      "main": [
-        [
-          {
-            "node": "Flatten the stages",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Flatten the stages": {
-      "main": [
-        [
-          {
-            "node": "Cache the deal stages",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
     }
   },
+  "active": true,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "binaryMode": "separate"
   },
-  "pinData": {}
+  "versionId": "cea6ae10-c080-4fa1-ace8-f1671fc43c0c",
+  "meta": {
+    "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"
+  },
+  "nodeGroups": [],
+  "id": "pVKm2zYFrjmHuW3G",
+  "tags": []
 }

@@ -21,9 +21,26 @@
 
 import { supabaseKey, supabaseHeaders } from '../lib/supabase.js';
 
-// The rebuild walks every contact and then refreshes two matviews. Well under this in practice,
-// but the default 10s would be a coin flip as the contact table grows.
-export const config = { maxDuration: 60 };
+// 300s, RAISED FROM 60 ON 2026-10-06 BECAUSE 60 WAS ALREADY BEING EXCEEDED.
+//
+// The comment here used to say the rebuild was "well under this in practice". It is not, and
+// had not been for some time: measured end to end against production, refresh_market_contacts()
+// takes ~85 SECONDS. It truncates and rebuilds a 118,000-row table and then refreshes FOUR
+// materialized views (market_counts, market_segment_counts, market_sport_counts,
+// state_segment_summary_mv), none of them concurrently. The contact table grew; the budget did
+// not follow.
+//
+// WHAT A TIMEOUT ACTUALLY DID, which is why this was invisible. The whole function is one
+// transaction, so a Vercel timeout drops the connection, PostgREST cancels, and the work rolls
+// back whole — no partial rebuild, no error anyone sees, just a daily cron that silently
+// achieved nothing while every reach number in the UI quietly aged. A failed refresh and a
+// refresh with nothing to do look identical from outside.
+//
+// 300 IS THE NUMBER THE DATABASE ALREADY CHOSE: refresh_market_contacts() carries
+// `set statement_timeout to '300s'`, so that was the intended budget all along and this side of
+// the call simply disagreed with it. Five other routes here already run at 300 (queue-tick,
+// price-refresh, agent-chat, rescan-events, telnyx-usage-sync), so the plan supports it.
+export const config = { maxDuration: 300 };
 
 export default async function handler(req, res) {
   const secret = process.env.CRON_SECRET;
@@ -59,6 +76,13 @@ export default async function handler(req, res) {
     const emails = Array.isArray(counts) ? counts.reduce((n, c) => n + (Number(c.email_count) || 0), 0) : null;
     const phones = Array.isArray(counts) ? counts.reduce((n, c) => n + (Number(c.phone_count) || 0), 0) : null;
 
+    // THE CONTACT DIRECTORY IS REBUILT BY api/refresh-directory.js, NOT HERE, and that split is
+    // measured rather than stylistic. This route already takes ~85s against production data
+    // (2026-10-06), which is past its own 60s maxDuration; adding the directory's ~17s on top
+    // would guarantee a timeout and lose BOTH rebuilds instead of one. They are separate
+    // snapshots over the same contacts, so they can fail independently without disagreeing —
+    // and the Contacts tab prints its rebuild time, so a directory that stopped refreshing says
+    // so on screen.
     res.status(200).json({ ok: true, ms: Date.now() - started, markets, emails, phones });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });

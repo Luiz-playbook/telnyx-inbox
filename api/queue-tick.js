@@ -423,6 +423,21 @@ export default async function handler(req, res) {
       // rather than logged inline so the CRM write never sits between resolving an audience
       // and putting the messages on the wire.
       const hubspotLog = [];
+      // AI-1101: the same idea, for our OWN record of who this blast reached. Until this
+      // existed nothing anywhere stored a blast's recipients — the lists below are resolved
+      // live and then discarded, which is why Market History can show a CakeMail roster and
+      // nothing at all for SMS. Collected during the sends and written once at the end, after
+      // the row is marked sent, so logging can never delay or fail a send.
+      const recipientLog = [];
+      const logRecipients = (addresses, channel, provider, extra = {}) => {
+        for (const address of addresses) {
+          recipientLog.push({
+            queue_id: r.id, event_id: r.event_id || null,
+            market_code: r.state_code || null, segment: r.segment || null,
+            channel, address, provider, outcome: 'handed_off', ...extra,
+          });
+        }
+      };
       if (r.sms && phones.length) {
         // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
         // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
@@ -444,6 +459,10 @@ export default async function handler(req, res) {
               to, from: sm.phone, body: r.sms_copy || '', sentAt: new Date().toISOString(),
               outcome: 'sent via Salesmsg',
             })));
+            // Same list, same reason: only what Salesmsg accepted. 'sent' rather than
+            // 'handed_off' because Salesmsg answers per number, so this one IS a per-recipient
+            // acceptance — unlike the webhook path below.
+            logRecipients(out.sentNumbers || [], 'sms', 'salesmsg', { sender: sm.phone, outcome: 'sent' });
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
@@ -524,6 +543,11 @@ export default async function handler(req, res) {
               to, from: r.sms_from || undefined, body: r.sms_copy || '',
               sentAt: new Date().toISOString(), outcome: 'handed off to Telnyx',
             })));
+            // 'handed_off', NOT delivered, for exactly the reason the status string above says
+            // so: this 200 is n8n accepting the payload, not Telnyx accepting a message and
+            // certainly not a handset receiving one. A log claiming delivery we cannot evidence
+            // would spread the confusion GAPS.md gap 2 is about.
+            logRecipients(phones, 'sms', 'telnyx', { sender: r.sms_from || null });
           }
         } else {
           failed.push('No SMS route: the row has no Salesmsg sender and BULK_SEND_WEBHOOK_URL is unset');
@@ -570,6 +594,11 @@ export default async function handler(req, res) {
                 tags: ['telnyx-inbox', r.state_code || 'blast'].filter(Boolean),
               });
               sent.push(`CakeMail ${out.recipients} (campaign ${out.campaignId})`);
+              // The campaign id is the one provider reference that makes a logged recipient
+              // checkable against the provider's own record later.
+              logRecipients(emails, 'email', 'cakemail', {
+                sender: r.email_from || null, provider_id: String(out.campaignId || '') || null,
+              });
             } catch (e) {
               failed.push(`CakeMail failed: ${String((e && e.message) || e)}`);
             }
@@ -578,6 +607,7 @@ export default async function handler(req, res) {
           const messages = emails.map(to => ({ from: r.email_from || undefined, to, subject, html }));
           const rr = await fetch(emailHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.email_from || undefined, messages }) });
           (rr.ok ? sent : failed).push(rr.ok ? `Email ${messages.length}` : `Email failed (HTTP ${rr.status})`);
+          if (rr.ok) logRecipients(emails, 'email', 'gmail', { sender: r.email_from || null });
         } else {
           failed.push('No email route: the row has no CakeMail sender and EMAIL_SEND_WEBHOOK_URL is unset');
         }
@@ -621,6 +651,27 @@ export default async function handler(req, res) {
           p_segment: r.segment || null,
         });
       }
+      // AI-1101: our own record of who this blast reached, written here for exactly the reasons
+      // the HubSpot block below is written here — the messages are already gone and the row is
+      // already marked, so nothing this does can turn a delivered blast into a reported failure
+      // or leave a sent row reading as unsent for the next tick to send again.
+      //
+      // BEST EFFORT, AND THAT IS A REAL TRADE. A failure here loses the recipient list for this
+      // blast and nothing says so beyond the response field. That is the right way round: the
+      // alternative is a logging error that re-sends a blast to twelve thousand people.
+      //
+      // Re-running a row cannot double the log — record_blast_recipients dedupes on
+      // (queue_id, channel, normalised address), so a retry after a partial failure adds only
+      // what was genuinely new.
+      let recipients_logged;
+      if (recipientLog.length) {
+        try {
+          recipients_logged = await rpc('record_blast_recipients', { p_rows: recipientLog });
+        } catch (e) {
+          recipients_logged = { error: String((e && e.message) || e) };
+        }
+      }
+
       // AI-976: log to HubSpot LAST, and never let it change what happened.
       //
       // It runs after queue_mark_sent and log_market_blast deliberately. The messages are already
@@ -636,7 +687,8 @@ export default async function handler(req, res) {
         }
       }
       results.push({ id: r.id, title: r.title, reason, sent, failed: failed.length ? failed : undefined,
-        notes: notes.length ? notes : undefined, recipients: summary, cooldown_overridden: cooling || undefined, hubspot });
+        notes: notes.length ? notes : undefined, recipients: summary, cooldown_overridden: cooling || undefined,
+        hubspot, recipients_logged });
     }
 
     res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), bulk_sms: bulkSmsStatus(), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS }, bulk_reconcile: bulkReconcile });

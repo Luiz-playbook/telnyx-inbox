@@ -6,10 +6,10 @@
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [
-        304,
+        784,
         -64
       ],
-      "id": "501b3036-f0dd-4e5c-8ef6-78854b086ed8",
+      "id": "96f6dcc6-35ef-49c4-b19f-d89416cf8074",
       "name": "When clicking ‘Execute workflow’"
     },
     {
@@ -21,10 +21,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        304,
+        784,
         128
       ],
-      "id": "0c2d96c2-807a-49c2-b2f4-4016e7d0ce48",
+      "id": "ceddad5d-b2bf-4af8-9d7b-d998b2cf7875",
       "name": "Webhook: Sync now",
       "webhookId": "e7f3a1b9-2c48-4d6e-9a71-3b5c8d2e4f60"
     },
@@ -42,10 +42,10 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
-        304,
+        784,
         320
       ],
-      "id": "5b344ed6-5b5e-4f43-b9b9-07cf125ad994",
+      "id": "32224e0b-da75-4749-b0b4-cf0e277ba4bf",
       "name": "Every 6 hours"
     },
     {
@@ -57,10 +57,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        608,
+        1088,
         128
       ],
-      "id": "3b8689a6-5287-4bc2-8851-b6273d9e615a",
+      "id": "f50fc6c1-3fde-40e8-a296-b245d6026065",
       "name": "Read how current the mirror is",
       "credentials": {
         "postgres": {
@@ -76,10 +76,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        832,
+        1312,
         128
       ],
-      "id": "4c1430f6-f0fc-44b1-a108-e160a8be4d95",
+      "id": "6c0d9aae-4168-4575-a83e-b7d8db64f0c7",
       "name": "Prepare the since timestamp"
     },
     {
@@ -90,7 +90,7 @@
         "nodeCredentialType": "hubspotAppToken",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'lastmodifieddate', operator: 'GT', value: $json.since_contacts }] }],\n  sorts: [{ propertyName: 'lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['email','firstname','lastname','company','state','lifecyclestage','lastmodifieddate'],\n  limit: 100\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  filterGroups: [{ filters: [{ propertyName: 'lastmodifieddate', operator: 'GT', value: $json.since_contacts }] }],\n  sorts: [{ propertyName: 'lastmodifieddate', direction: 'ASCENDING' }],\n  properties: ['email','firstname','lastname','company','state','lifecyclestage',\n               'phone','mobilephone','lastmodifieddate'],\n  limit: 100\n}) }}",
         "options": {
           "pagination": {
             "pagination": {
@@ -106,7 +106,6 @@
               "paginationCompleteWhen": "other",
               "completeExpression": "={{ !$response.body.paging?.next?.after }}",
               "limitPagesFetched": true,
-              "maxRequestsPerPage": 100,
               "requestInterval": 400
             }
           }
@@ -115,10 +114,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1104,
+        1584,
         128
       ],
-      "id": "19bb5592-db13-4cf8-9607-00ab17a4ebdd",
+      "id": "ea09f848-ecb2-4fc2-9263-9bbc55326c3e",
       "name": "HubSpot: Get contacts changed since",
       "retryOnFail": true,
       "maxTries": 3,
@@ -132,21 +131,21 @@
     },
     {
       "parameters": {
-        "jsCode": "// HubSpot search pages come back as { results: [...] }; flatten them into the row shape\n// hubspot.hubspot_contacts expects.\n//\n// 100 pages x 100 records = 10,000 per execution, which is not our choice: HubSpot's search API\n// refuses to page past 10,000 results for ANY one query. The watermark is what gets past it — each\n// run starts where the last one stopped, so a backfill completes over several runs rather than one.\n// 1,116,689 contacts is ~112 runs. Nothing is lost in between; it is only slow to become complete.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      email: p.email || null,\n      firstname: p.firstname || null,\n      lastname: p.lastname || null,\n      company: p.company || null,\n      state: p.state || null,\n      lifecyclestage: p.lifecyclestage || null,\n      // HUBSPOT CALLS THIS 'lastmodifieddate' ON CONTACTS. Only companies, deals and tickets carry\n      // hs_lastmodifieddate; a contact returns nothing for it even when it is named explicitly in\n      // the request, so this line used to store null on every row — and the watermark, which is\n      // max(hs_lastmodifieddate), stayed null with it. Our COLUMN keeps the hs_ name so all three\n      // mirror tables read alike; it is the SOURCE property that differs.\n      hs_lastmodifieddate: p.lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\n// ONE item carrying the whole batch. The upsert below takes the array as a single parameter, and\n// ten thousand separate statements is not a sync, it is an outage.\nreturn rows.length ? [{ json: { rows } }] : [];"
+        "jsCode": "// HubSpot search pages come back as { results: [...] }; flatten them into the row shape\n// hubspot.hubspot_contacts expects.\n//\n// 100 pages x 100 records = 10,000 per execution, which is not our choice: HubSpot's search API\n// refuses to page past 10,000 results for ANY one query. The watermark is what gets past it — each\n// run starts where the last one stopped, so a backfill completes over several runs rather than one.\n// 1,116,689 contacts is ~112 runs. Nothing is lost in between; it is only slow to become complete.\nconst rows = [];\nfor (const item of $input.all()) {\n  for (const r of (item.json.results || [])) {\n    const p = r.properties || {};\n    rows.push({\n      hs_object_id: Number(r.id),\n      email: p.email || null,\n      firstname: p.firstname || null,\n      lastname: p.lastname || null,\n      company: p.company || null,\n      state: p.state || null,\n      lifecyclestage: p.lifecyclestage || null,\n      // TWO NUMBERS, KEPT APART. HubSpot's `phone` is usually a main or office line and\n      // `mobilephone` is the handset; they are different facts about a person, so collapsing\n      // them here would throw the distinction away permanently. The directory picks mobile\n      // first where it needs one number (migration 093) -- that choice belongs at the point\n      // of use, not on the way in.\n      phone: p.phone || null,\n      mobilephone: p.mobilephone || null,\n      // HUBSPOT CALLS THIS 'lastmodifieddate' ON CONTACTS. Only companies, deals and tickets carry\n      // hs_lastmodifieddate; a contact returns nothing for it even when it is named explicitly in\n      // the request, so this line used to store null on every row — and the watermark, which is\n      // max(hs_lastmodifieddate), stayed null with it. Our COLUMN keeps the hs_ name so all three\n      // mirror tables read alike; it is the SOURCE property that differs.\n      hs_lastmodifieddate: p.lastmodifieddate || null,\n      synced_at: new Date().toISOString(),\n    });\n  }\n}\n// ONE item carrying the whole batch. The upsert below takes the array as a single parameter, and\n// ten thousand separate statements is not a sync, it is an outage.\nreturn rows.length ? [{ json: { rows } }] : [];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1328,
+        1808,
         128
       ],
-      "id": "cee84657-ea19-4298-a6be-e9f9c0d6c468",
+      "id": "1798cb6a-77c2-4ee0-9a1d-5c8d19fdfb1e",
       "name": "Prepare contact rows"
     },
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "insert into hubspot.hubspot_contacts\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_contacts, $1::jsonb)\non conflict (hs_object_id) do update set\n  email = excluded.email,\n  firstname = excluded.firstname,\n  lastname = excluded.lastname,\n  company = excluded.company,\n  state = excluded.state,\n  lifecyclestage = excluded.lifecyclestage,\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
+        "query": "insert into hubspot.hubspot_contacts\nselect * from jsonb_populate_recordset(null::hubspot.hubspot_contacts, $1::jsonb)\non conflict (hs_object_id) do update set\n  email = excluded.email,\n  firstname = excluded.firstname,\n  lastname = excluded.lastname,\n  company = excluded.company,\n  state = excluded.state,\n  lifecyclestage = excluded.lifecyclestage,\n  phone = excluded.phone,\n  mobilephone = excluded.mobilephone,\n  hs_lastmodifieddate = excluded.hs_lastmodifieddate,\n  synced_at = excluded.synced_at",
         "options": {
           "queryReplacement": "={{ JSON.stringify($json.rows) }}"
         }
@@ -154,10 +153,10 @@
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
       "position": [
-        1552,
+        2032,
         128
       ],
-      "id": "3dee14bc-8c3d-4bd3-89f8-a111e7a57b86",
+      "id": "def2985f-e991-44ef-900a-7d1e1b270138",
       "name": "Upsert contacts",
       "credentials": {
         "postgres": {
@@ -247,12 +246,12 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "f8441f73-ab30-47a4-a85e-608a0073b61f",
+  "versionId": "ce69b6c3-9262-4568-9dee-cf388bba1f48",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "b9aff67a6c2e6fbcf6b8ae68581422fb16b0169f3623d452b9276d9a484990cf"

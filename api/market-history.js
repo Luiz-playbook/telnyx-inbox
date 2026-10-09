@@ -196,6 +196,52 @@ export default async function handler(req, res) {
   // Pennsylvania list has been sent to seven times — so this is the market audience rather than
   // this campaign than anyone else. The UI says so; the honest framing has to travel with the
   // data, or it becomes a per-send recipient list in the reader mind.
+  // ?sms_recipients=1&state=<code>&at=<iso>[&message=<copy>] — who an SMS blast went to.
+  //
+  // A DIFFERENT PARAMETER FROM ?recipients BECAUSE IT IS A DIFFERENT FACT. That one returns the
+  // CakeMail list as it stands today; this returns recipients actually recorded at send time.
+  // Collapsing them into one endpoint would mean one label over two things that disagree about
+  // what they are claiming, which is the confusion the CakeMail note above exists to avoid.
+  //
+  // MATCHED ON MARKET AND TIME, NOT AN ID, because the rows this tab lists carry no campaign_queue
+  // id — ticketblaster_market_blasts_log is a historical import and nothing in this repo writes
+  // it.
+  //
+  // ONE SOURCE: blast_recipients. 095 also read public.telnyx_messages, on the theory that the
+  // two-way inbox was the only pre-existing record of an outbound SMS. Measured across all 11
+  // SMS blasts in the history — 796 reported recipients — it recovered ZERO rows, because that
+  // table is inbox traffic (22 rows, 11 outbound, one number, all on 2026-07-02) and every blast
+  // predates it. It could only ever have answered wrongly, so 097 removed it.
+  //
+  // EXPECT THIS TO BE EMPTY FOR OLD BLASTS, and that is the honest answer rather than a bug:
+  // per-recipient history did not exist before migration 095 (2026-10-06).
+  if (String(req.query?.sms_recipients || '').trim()) {
+    const at = String(req.query?.at || '').trim();
+    const when = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : null;
+    if (!when) { res.status(400).json({ error: 'at=<ISO timestamp> is required' }); return; }
+    const r = await fetch(`${url}/rest/v1/rpc/blast_recipients_for`, {
+      method: 'POST', headers: { ...h, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        p_market:  String(req.query?.state || '').trim() || null,
+        p_channel: 'sms',
+        p_at:      when,
+        // The function ignores this since 097 (it only narrowed the removed telnyx half). Still
+        // passed because the signature kept it, and changing a function's arguments while the
+        // deployed route calls it is a worse trade than one unused parameter.
+        p_message: String(req.query?.message || '').trim() || null,
+      }),
+    });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => '');
+      res.status(502).json({ error: `blast_recipients_for failed (HTTP ${r.status})`, detail: detail.slice(0, 300) });
+      return;
+    }
+    const list = await r.json().catch(() => []);
+    const rows = Array.isArray(list) ? list : [];
+    res.status(200).json({ ok: true, recipients: rows, count: rows.length });
+    return;
+  }
+
   const wantRecips = String(req.query?.recipients || '').trim();
   if (wantRecips) {
     if (!/^[0-9]+$/.test(wantRecips)) { res.status(400).json({ error: 'recipients must be a campaign id' }); return; }
@@ -453,7 +499,7 @@ export default async function handler(req, res) {
   };
 
   try {
-    const [blasts, broadcasts, campaigns, bridge, lastFetch] = await Promise.all([
+    const [blasts, broadcasts, campaigns, bridge, lastFetch, appSends] = await Promise.all([
       get('ticketblaster_market_blasts_log?select=id,market_key,state_code,channel,template_name,recipient_count,source,blasted_at,message,notes&order=blasted_at.desc&limit=1000'),
       get('salesmsg_broadcasts?select=broadcast_id,name,channel,status,recipients,sent_count,delivered_count,message,sent_at&order=sent_at.desc&limit=1000'),
       // CakeMail sends. This is the history Cole actually reads when deciding what to blast,
@@ -468,6 +514,18 @@ export default async function handler(req, res) {
       // freshness, and until now nothing did — the history could be three months stale and the
       // page looked identical to the day it was current.
       get('blast_templates?select=fetched_at&order=fetched_at.desc.nullslast&limit=1'),
+      // BLASTS THIS APP SENT ITSELF, which until now appeared in Market History nowhere at all.
+      //
+      // api/queue-tick.js calls log_market_blast(code, name, channel, queue_id, segment) — and
+      // THAT overload writes to public.market_blast_log, a cooldown ledger. The tab reads
+      // ticketblaster_market_blasts_log, which a DIFFERENT overload of the same function name
+      // writes and which only ever received the 2026-07-31 Textable import. So every send made
+      // through this application was invisible here: 9 of them, including an SMS.
+      //
+      // campaign_queue is read rather than market_blast_log because the ledger carries only
+      // market/channel/segment/queue id — no copy, no counts, no sender. The queue row has all
+      // of it, and status='sent' is set by the same code path that writes the ledger.
+      get('campaign_queue?select=id,title,state_code,state_name,segment,sms,email,sms_copy,email_copy,email_subject,phone_count,email_count,sms_from,email_from,sent_at,event_id&status=eq.sent&order=sent_at.desc&limit=1000'),
     ]);
 
     // list_name -> market_key, the same mapping v_blast_scored joins on. A list with no bridge
@@ -479,7 +537,67 @@ export default async function handler(req, res) {
     // One shape for both, so the table does not care where a row came from. `source` is the
     // platform, and it is shown — a Textable blast and a CakeMail one are not interchangeable
     // when you are reading history to decide what worked.
+    // APP SENDS -> history rows, one per channel the row actually used.
+    //
+    // A queue row can carry both channels, and Market History is per channel, so a row that sent
+    // SMS and email becomes two.
+    //
+    // CAKEMAIL EMAIL IS DELIBERATELY SKIPPED. Those sends are already in this list from the
+    // CakeMail source below, fetched from CakeMail itself with opens, clicks and bounces that
+    // the queue row does not have. Emitting them from here as well would double every email
+    // blast in the tab and show the worse copy of each.
+    //
+    // The source label is derived from the sender, because that is what actually decides the
+    // carrier: an sms_from shaped 'salesmsg:<team>:<phone>' went to Salesmsg (lib/salesmsg.js)
+    // and anything else went to Telnyx via the n8n bulk webhook. Same for email with
+    // 'cakemail:' against the Gmail webhook. Keep in step with parseSalesmsgFrom /
+    // parseCakemailFrom in api/queue-tick.js.
+    const appRows = [];
+    for (const q of (appSends || [])) {
+      const isSalesmsg = String(q.sms_from || '').startsWith('salesmsg:');
+      const isCakemail = String(q.email_from || '').startsWith('cakemail:');
+      const base = {
+        sent_at: q.sent_at,
+        name: q.title || '(untitled blast)',
+        market: q.state_name || null,
+        state_code: q.state_code || null,
+        status: null,
+        notes: q.segment ? `segment ${q.segment}` : null,
+      };
+      if (q.sms) {
+        appRows.push({
+          ...base,
+          id: `cq:${q.id}:sms`,
+          channel: 'SMS',
+          source: isSalesmsg ? 'salesmsg' : 'telnyx',
+          recipients: num(q.phone_count),
+          // Handed to the carrier, not confirmed delivered — the same distinction queue-tick's
+          // status string draws, and gap 1 is about. A number here would claim more than we know.
+          sent_count: null,
+          message: q.sms_copy || null,
+          subject: null,
+          sender: q.sms_from || null,
+          engagement: { available: false, why: 'SMS blasts carry no open or click tracking.' },
+        });
+      }
+      if (q.email && !isCakemail) {
+        appRows.push({
+          ...base,
+          id: `cq:${q.id}:email`,
+          channel: 'Email',
+          source: 'gmail',
+          recipients: num(q.email_count),
+          sent_count: null,
+          message: q.email_copy || null,
+          subject: q.email_subject || null,
+          sender: q.email_from || null,
+          engagement: { available: false, why: 'Email sent through the Gmail webhook carries no open or click tracking.' },
+        });
+      }
+    }
+
     const rows = [
+      ...appRows,
       ...blasts.map(b => ({
         id: b.id,
         sent_at: b.blasted_at,
@@ -585,7 +703,7 @@ export default async function handler(req, res) {
     res.setHeader('cache-control', 's-maxage=60, stale-while-revalidate=300');
     res.status(200).json({
       ok: true, rows,
-      counts: { blast_log: blasts.length, salesmsg: broadcasts.length, cakemail: campaigns.length },
+      counts: { blast_log: blasts.length, salesmsg: broadcasts.length, cakemail: campaigns.length, app: appRows.length },
       // `synced_at` is when the sync last WROTE, which is not the same as when it last ran: a
       // run that finds nothing new writes nothing. The tab labels it as such rather than
       // claiming a check happened at a time nothing recorded.

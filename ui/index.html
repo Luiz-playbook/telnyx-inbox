@@ -31,7 +31,15 @@
     /* Open, or holding the page you are on: both mean "the thing you want is in here". */
     .admin-wrap[open] > .admin-trigger, .admin-trigger.active{ color:#e55608; border-bottom-color:#e55608; }
     .admin-caret{ font-size:10px; opacity:.6; margin-left:1px; }
-    .admin-menu{ position:absolute; top:100%; left:0; z-index:60; min-width:208px; padding:6px;
+    /* z-index 80, NOT 60, AND THE DIFFERENCE IS A BUG THAT SHIPPED. At 60 this menu tied with
+       `.tooltip` (also 60, lifted there so tips clear the sticky table head) and with `.q-menu`.
+       Equal z-index is broken by document order, and every one of those sits LATER in the page
+       than the header — so the Offers toolbar's tooltip-wrapped "Rescan schedules" button
+       painted straight over the open menu (Vhea, 2026-10-06). Nav chrome has to outrank page
+       controls: 80 clears tooltips (60/61 on hover), .q-menu (60) and .price-pop (70), while
+       staying under the detail panel (9500), toasts (9999) and modals (10000), which should
+       still cover it. */
+    .admin-menu{ position:absolute; top:100%; left:0; z-index:80; min-width:208px; padding:6px;
       background:#fff; border:1px solid #d8e2ef; border-radius:10px;
       box-shadow:0 10px 28px rgba(19,59,73,.14); display:flex; flex-direction:column; }
     .pb-tabs .admin-menu a{ padding:8px 10px; margin:0; border-bottom:0; border-radius:7px;
@@ -39,6 +47,26 @@
     .pb-tabs .admin-menu a:hover{ background:#f4f7fb; color:#133b49; }
     .pb-tabs .admin-menu a.active{ background:#fdeee4; color:#c94d07; border-bottom:0; }
     .admin-sep{ height:1px; background:#edf2f9; margin:5px 6px; }
+    /* A COLLAPSIBLE GROUP INSIDE THE ADMIN MENU. Contacts and Do Not Contact are two views of
+       the same thing — who we can message and who we must not — so they sit under one heading
+       rather than as two more entries in a flat list of eight. A nested <details> for the same
+       reason the Admin menu itself is one: Esc, Tab and the keyboard work without being written.
+       Open by default, because a group that hides the page you came for is worse than a longer
+       menu; it collapses for someone who wants the list short. */
+    .admin-group{ display:flex; flex-direction:column; }
+    .admin-group > summary{ list-style:none; cursor:pointer; display:flex; align-items:center; gap:7px;
+      padding:8px 10px; border-radius:7px; font-size:13.5px; font-weight:600; color:#354052; }
+    .admin-group > summary::-webkit-details-marker{ display:none; }
+    .admin-group > summary:hover{ background:#f4f7fb; color:#133b49; }
+    .admin-group > summary .admin-caret{ margin-left:auto; transition:transform .12s ease; }
+    .admin-group[open] > summary .admin-caret{ transform:rotate(180deg); }
+    /* Indented, with a rule down the left, so a child reads as belonging to the heading above it
+       rather than as a sibling of the top-level entries. */
+    .admin-group-items{ display:flex; flex-direction:column; margin:1px 0 2px 16px;
+      padding-left:8px; border-left:1px solid #e8eef6; }
+    /* The group heading lights up when one of its children is the current page: the menu is shut
+       most of the time, so a closed group must still say the answer is inside it. */
+    .admin-group.has-active > summary{ color:#c94d07; }
     /* "all segments" pill (AI-1079). Deliberately quieter than the segment badge beside it:
        the badge states what the row IS, this only offers a shortcut, and the shortcut must not
        out-shout the fact. Turns solid once the whole set is selected, so the offer reads as
@@ -339,6 +367,66 @@
     .bh-panel-x{ margin-left:auto; flex:0 0 auto; }
     @media (max-width:1100px){ .bh-panel{ width:100vw; } }
 
+    /* CONTACTS (AI-1101). The detail panel reuses .bh-panel wholesale — same geometry, same
+       transform, and the same margin:0 fix, which it needs for the same reason: #view-contacts
+       carries Tailwind space-y-3 and would otherwise push a fixed element down by 0.75rem.
+       Wider than the blast panel because it shows five sources side by side rather than one
+       message. */
+    .ct-panel{ width:min(720px,100vw); }
+    /* WHICH SYSTEMS KNOW THIS PERSON, as three fixed slots rather than a variable list, so the
+       absence of a badge is as readable as its presence — "not in HubSpot" is the finding. */
+    .ct-badge{ display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:999px;
+               font-size:10px; font-weight:800; letter-spacing:.03em; text-transform:uppercase;
+               border:1px solid transparent; white-space:nowrap; }
+    .ct-badge-on{ background:#e8f4f4; border-color:#b8dcdc; color:#1d6a6a; }
+    .ct-badge-off{ background:#f6f8fa; border-color:#e6ecf2; color:#aab6c4; }
+    .ct-sec{ border:1px solid #e5ebf1; border-radius:10px; padding:11px 13px; background:#fff; }
+    .ct-sec + .ct-sec{ margin-top:10px; }
+    .ct-sec-h{ font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+               color:#8695a7; margin-bottom:7px; display:flex; align-items:center; gap:7px; }
+    /* A label/value grid rather than a table: these are facts about one thing, not rows. */
+    .ct-kv{ display:grid; grid-template-columns:minmax(7.5rem,auto) 1fr; gap:3px 12px; font-size:13px; }
+    .ct-kv dt{ color:#8695a7; }
+    .ct-kv dd{ margin:0; color:#354052; overflow-wrap:anywhere; }
+    /* Suppression outranks everything else in the panel, so it is the one block that is coloured
+       like a warning. A contact can look perfectly reachable and be deliberately silenced. */
+    .ct-sec-warn{ background:#fff5f4; border-color:#f0c9c4; }
+    .ct-sec-warn .ct-sec-h{ color:#a8321e; }
+
+    /* "OPEN IN HUBSPOT" ARROW. Sits inline after a name, so it must not change the line height
+       or push the text it follows — hence the fixed box and vertical-align rather than a flex
+       wrapper. Dim until hovered: on a page of 50 contacts, 50 bright arrows would out-shout the
+       names they belong to. */
+    .hs-go{ display:inline-flex; align-items:center; justify-content:center; width:14px; height:14px;
+            margin-left:5px; vertical-align:-2px; color:#aab6c4; flex:0 0 auto; }
+    .hs-go:hover{ color:#e55608; }
+    .hs-go svg{ width:12px; height:12px; }
+
+    /* THE SELECTED SOURCE TAB, IN BRAND ORANGE. daisyUI's own `btn-active` only darkens the
+       button a shade, which on a row of four joined buttons is not enough to say which one you
+       are looking at — the tab and its neighbours read as the same control (Vhea, 2026-10-06).
+       This is the colour the app already uses for "you are here" on the nav tabs above. */
+    .ct-src-on, .ct-src-on:hover{ background:#e55608 !important; border-color:#e55608 !important;
+                                  color:#fff !important; }
+
+    /* IMPORT. A dropzone that reacts to the drag is the difference between "I can drop here" and
+       "I should have clicked"; without the state change the whole affordance is invisible. */
+    .ct-drop{ border:2px dashed #cfdae7; border-radius:12px; padding:22px 18px; text-align:center;
+              cursor:pointer; transition:border-color .12s ease, background .12s ease; background:#fbfdff; }
+    .ct-drop:hover{ border-color:#9fb6cd; background:#f5f9fd; }
+    .ct-drop.over{ border-color:#e55608; background:#fff6f0; }
+    .ct-or{ display:flex; align-items:center; gap:10px; color:#aab6c4; font-size:11px;
+            font-weight:800; letter-spacing:.06em; }
+    .ct-or::before, .ct-or::after{ content:''; height:1px; background:#e6ecf2; flex:1 1 auto; }
+    /* The preview table is capped and scrolls: the point is to confirm the COLUMNS mapped right,
+       which the first few rows settle. */
+    .ct-prev{ max-height:190px; overflow:auto; border:1px solid #e5ebf1; border-radius:8px; }
+    .ct-prev table{ width:100%; font-size:12px; border-collapse:collapse; }
+    .ct-prev th{ position:sticky; top:0; background:#f6f9fc; text-align:left; padding:5px 8px;
+                 font-weight:700; color:#56657a; border-bottom:1px solid #e5ebf1; white-space:nowrap; }
+    .ct-prev td{ padding:4px 8px; border-bottom:1px solid #f1f5f9; color:#354052; white-space:nowrap; }
+    .ct-prev tr:last-child td{ border-bottom:0; }
+
     /* The caret in the first column. Left over from the accordion, where flipping it downwards
        meant "this expands below" — the panel opens to the SIDE, so it points right and stays
        pointing right. Selection is shown by colour and a small nudge towards the panel, which is
@@ -592,9 +680,20 @@
               <div class="admin-sep" role="separator"></div>
               <a href="#" data-tab="templates" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>Templates</a>
               <a href="#" data-tab="rules" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l2 2 4-4"/><rect x="4" y="3" width="16" height="18" rx="2"/></svg>Cole Rules</a>
-              <!-- Do Not Contact was not named in the ticket. It sits here because it is
-                   consulted, not worked -- the same reason it was last among the data tabs. -->
-              <a href="#" data-tab="dnc" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Do Not Contact</a>
+              <!-- AUDIENCE (AI-1101). Named "Audience" rather than "Contacts" because its first
+                   child is called Contacts, and a parent with the same name as its child reads
+                   as a mistake. It is also the word the app already uses for this idea — the
+                   Offers tab says "Build the audience" — so the group is the existing
+                   vocabulary rather than a new one.
+                   Do Not Contact moved in here from the flat list: it is the other half of the
+                   same question. One list is who we can message, the other is who we must not. -->
+              <details class="admin-group" id="admin-group-audience" open>
+                <summary role="menuitem" aria-haspopup="true"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Audience<span class="admin-caret" aria-hidden="true">&#9662;</span></summary>
+                <div class="admin-group-items">
+                  <a href="#" data-tab="contacts" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Contacts</a>
+                  <a href="#" data-tab="dnc" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg>Do Not Contact</a>
+                </div>
+              </details>
               <!-- AI-1077. Lives under Admin because it is configuration you set once and check
                    occasionally, not daily work. -->
               <a href="#" data-tab="forwarding" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg>Call Forwarding</a>
@@ -839,9 +938,12 @@
                       <th>Companies</th>
                       <th>Emails</th>
                       <th>Phone #s</th>
+                      <!-- The reach figures to the left are the number an operator sends on, and
+                           until now nothing could open them. This column does. -->
+                      <th class="w-20"></th>
                     </tr>
                   </thead>
-                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="10" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="10" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
+                  <tbody id="cbs-rows"><tr class="border-0" aria-busy="true"><td colspan="11" class="py-2.5"><span class="sr-only">Loading events&hellip;</span><div class="skeleton h-7 w-full"></div></td></tr><tr class="border-0"><td colspan="11" class="py-2.5"><div class="skeleton h-7 w-11/12"></div></td></tr><tr class="border-0"><td colspan="11" class="py-2.5"><div class="skeleton h-7 w-full"></div></td></tr></tbody>
                 </table>
               </div>
               <!-- Pager. A thousand-plus segment rows in one scroll is unusable, so the table
@@ -1405,6 +1507,277 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <div id="rep-list" class="divide-y divide-base-300 max-h-[calc(100vh-260px)] overflow-auto"></div>
             </div>
           </div>
+
+          <!-- RECIPIENTS PANEL (Offers). Reuses .bh-panel wholesale: same geometry, same
+               transform, same margin:0 fix it needs for the same reason -- #view-compose carries
+               Tailwind space-y-5 and would otherwise push a fixed element down. -->
+          <div id="rc-panel" class="bh-panel ct-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="rc-panel-title">
+            <div class="bh-panel-head">
+              <div class="min-w-0">
+                <div id="rc-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
+                <div id="rc-panel-sub" class="text-xs text-base-content/50 mt-0.5"></div>
+              </div>
+              <button id="rc-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
+            </div>
+            <div class="bh-panel-body">
+              <div id="rc-warn" class="hidden"></div>
+              <div class="flex items-center gap-2 flex-wrap mb-2">
+                <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100 flex-1 min-w-[12rem]">
+                  <span class="text-base-content/40">&#128269;</span>
+                  <input id="rc-search" type="text" class="grow" placeholder="Search a name, org, city, email or phone&hellip;" autocomplete="off">
+                </label>
+                <select id="rc-chan" class="select select-bordered select-sm" aria-label="Channel">
+                  <option value="">Email and SMS</option>
+                  <option value="email">Email only</option>
+                  <option value="sms">SMS only</option>
+                </select>
+              </div>
+              <div id="rc-sum" class="text-xs text-base-content/50 mb-2 leading-relaxed"></div>
+              <div id="rc-rows" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden border border-base-300 rounded-lg"></div>
+              <div class="flex items-center gap-2 pt-2 text-xs">
+                <button id="rc-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
+                <span id="rc-page" class="text-base-content/60"></span>
+                <button id="rc-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ===================================================================== CONTACTS
+               Every contact we hold, from three sources that do not agree with each other
+               (AI-1101). 256k people, so the same rule as Do Not Contact below: nothing here
+               loads "the list" — every number is a server-side count and every page a
+               server-side slice, through /api/contacts because none of the three source tables
+               is readable with the anon key.                                                    -->
+          <div data-view id="view-contacts" class="hidden space-y-3">
+
+            <!-- THE NUMBERS ARE THE POINT, NOT DECORATION. The ticket asks whether our lists
+                 match HubSpot; "77,993 in HubSpot, in no sendable audience" is the answer, and
+                 it has to be on screen rather than something you could work out. -->
+            <div class="flex items-start gap-3 flex-wrap">
+              <div class="flex gap-3 flex-wrap">
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">People</div>
+                  <div id="ct-total" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                  <div class="text-[11px] text-base-content/40 mt-0.5">deduplicated</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">In HubSpot</div>
+                  <div id="ct-hs" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                  <div class="text-[11px] text-base-content/40 mt-0.5">mirrored every 6h</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">In Contact Intel</div>
+                  <div id="ct-intel" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                  <div class="text-[11px] text-base-content/40 mt-0.5">the send audience</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">In both</div>
+                  <div id="ct-both" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                  <div class="text-[11px] text-base-content/40 mt-0.5">matched on email</div>
+                </div>
+                <!-- The gap, called out in warning colour because it IS the finding: a HubSpot
+                     contact that is in no sendable audience cannot be blasted at all. -->
+                <div class="bg-[#fff8f3] border border-[#f3cfae] rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-[#b4560b]">HubSpot only</div>
+                  <div id="ct-hsonly" class="text-2xl font-bold text-[#c94d07] tabular-nums">&mdash;</div>
+                  <div class="text-[11px] text-[#b4560b]/70 mt-0.5">not sendable</div>
+                </div>
+                <div class="bg-base-100 border border-base-300 rounded-xl px-4 py-3 min-w-[7.5rem]">
+                  <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50">Uploaded</div>
+                  <div id="ct-imported" class="text-2xl font-bold text-[#133b49] tabular-nums">&mdash;</div>
+                  <div class="text-[11px] text-base-content/40 mt-0.5">by hand</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- FRESHNESS, STATED. A merged directory is a snapshot, and a snapshot that quietly
+                 stops rebuilding is the exact failure AI-970 hit. Both timestamps are shown so a
+                 stale number is visible rather than merely wrong. -->
+            <div class="flex items-center gap-3 flex-wrap text-xs bg-base-100 border border-base-300 rounded-xl px-4 py-2.5">
+              <span class="text-base-content/60">Directory rebuilt <b id="ct-refreshed" class="text-base-content/80">&mdash;</b></span>
+              <span class="text-base-content/30">&middot;</span>
+              <span class="text-base-content/60">HubSpot synced <b id="ct-hs-synced" class="text-base-content/80">&mdash;</b></span>
+              <div class="ml-auto flex items-center gap-2 flex-wrap">
+                <!-- TWO BUTTONS THAT DO DIFFERENT THINGS, labelled so they cannot be confused.
+                     There is deliberately no "sync Contact Intel": nothing writes that table,
+                     so a button offering to would be a lie. -->
+                <button id="ct-sync-hs" class="btn btn-ghost btn-xs" title="Runs the same incremental HubSpot pull as the 6-hourly schedule">&#8635; Sync from HubSpot</button>
+                <button id="ct-rebuild" class="btn btn-ghost btn-xs" title="Re-merges all three sources into the directory (~20s)">&#8635; Rebuild directory</button>
+              </div>
+            </div>
+
+            <!-- SOURCE IS A PRESENCE FILTER, NOT A SEPARATE LIST. A person held in both HubSpot
+                 and intel is ONE row with both badges — 2,404 people would otherwise appear
+                 twice with nothing to say they were the same person. -->
+            <!-- SOURCE IS THE TABS, AND ONLY THE TABS (AI-1101, revised). This row used to carry
+                 both these tabs and a "Any source / In HubSpot only / In Intel only" dropdown,
+                 which was two controls answering overlapping questions — picking "HubSpot" in
+                 one and "In Intel only" in the other is a contradiction the UI happily accepted.
+                 The dropdown is gone. What it was really FOR survives as the checkbox below,
+                 which asks a different question (is this person reachable at all) and composes
+                 with the tab instead of fighting it. -->
+            <div class="flex items-center gap-2 flex-wrap">
+              <div class="join" id="ct-sources" role="tablist" aria-label="Contact source">
+                <button class="btn btn-sm join-item ct-src-on" data-src="all" role="tab" aria-selected="true">All sources</button>
+                <button class="btn btn-sm join-item" data-src="hubspot" role="tab" aria-selected="false">HubSpot</button>
+                <button class="btn btn-sm join-item" data-src="intel" role="tab" aria-selected="false">Contact Intel</button>
+                <button class="btn btn-sm join-item" data-src="imported" role="tab" aria-selected="false">Self Import</button>
+              </div>
+              <button id="ct-import" class="btn btn-sm btn-warning text-white hover:text-white ml-auto">&#43; Import Contacts</button>
+            </div>
+
+            <div class="flex items-center gap-3 flex-wrap">
+              <!-- Same shape as the Offers tab's search: a bordered label wrapping the icon and
+                   the input, rather than a bare input. Two search boxes on two tabs of one app
+                   should not look like two different controls. -->
+              <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
+                <span class="text-base-content/40">&#128269;</span>
+                <input id="ct-search" type="text" class="grow w-64" placeholder="Search a name, email, phone or company&hellip;"
+                       autocomplete="off" aria-label="Search contacts">
+              </label>
+              <select id="ct-state" class="select select-bordered select-sm w-40" aria-label="Filter by state">
+                <option value="">All states</option>
+              </select>
+              <!-- THE ONE QUESTION THE DROPDOWN WAS THERE TO ANSWER. "Not in the send audience"
+                   is `not in_intel` — the 77,993 HubSpot contacts no blast can reach. It composes
+                   with whichever tab is active instead of competing with it, and it is hidden on
+                   the Contact Intel tab, where every row is in the audience by definition and the
+                   control could only ever return nothing. -->
+              <label id="ct-unreachable-wrap" class="text-xs text-base-content/70 flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="ct-unreachable" class="checkbox checkbox-xs">
+                Not in the send audience
+              </label>
+              <button id="ct-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
+              <span id="ct-count" class="text-xs text-base-content/60"></span>
+              <button id="ct-reload" class="btn btn-ghost btn-sm ml-auto">&#8635; Reload</button>
+            </div>
+
+            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+              <div class="overflow-auto max-h-[calc(100vh-430px)]">
+                <table class="q-table w-full">
+                  <thead>
+                    <tr>
+                      <th>Name</th><th>Email</th><th>Phone</th><th>Company</th>
+                      <th>State</th><th>Sources</th><th>Updated</th><th class="w-28"></th>
+                    </tr>
+                  </thead>
+                  <tbody id="ct-rows"></tbody>
+                </table>
+              </div>
+              <div class="flex items-center gap-2 px-4 py-2.5 border-t border-base-300 text-xs">
+                <button id="ct-prev" class="btn btn-xs btn-ghost">&larr; Prev</button>
+                <span id="ct-page" class="text-base-content/60"></span>
+                <button id="ct-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
+              </div>
+            </div>
+
+            <!-- DETAIL PANEL. Reuses .bh-panel so it behaves exactly like the blast drawer —
+                 slides from the right, leaves the tabs reachable, Esc closes. aria-modal is
+                 false for the same reason it is there: the page behind stays usable. -->
+            <div id="ct-panel" class="bh-panel ct-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="ct-panel-title">
+              <div class="bh-panel-head">
+                <div class="min-w-0">
+                  <div id="ct-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
+                  <div id="ct-panel-sub" class="text-xs text-base-content/50 mt-0.5"></div>
+                </div>
+                <button id="ct-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
+              </div>
+              <div id="ct-panel-body" class="bh-panel-body"></div>
+            </div>
+          </div>
+
+          <!-- IMPORT MODAL. A <dialog> rather than a div: ::backdrop, Esc and focus trapping are
+               free, and this one IS modal — it is a write, and the list behind it is about to
+               change.
+               OUTSIDE #view-contacts, DELIBERATELY. showTab hides a view with Tailwind's
+               `hidden` (display:none), and showModal() on a dialog inside a display:none
+               ancestor opens nothing at all — no error, no backdrop, no dialog. A sibling of the
+               views is the only place it reliably renders. -->
+          <dialog id="ct-import-dlg" class="modal">
+            <div class="modal-box max-w-2xl">
+              <h3 class="font-extrabold text-[#133b49] text-lg">Import contacts</h3>
+              <p class="text-sm text-base-content/60 mt-1">
+                Five columns: <span class="font-mono text-xs">First Name</span>,
+                <span class="font-mono text-xs">Last Name</span>,
+                <span class="font-mono text-xs">Email</span>,
+                <span class="font-mono text-xs">Phone Number</span>,
+                <span class="font-mono text-xs">State</span>.
+                A row needs an email <em>or</em> a phone. <b>State</b> decides which market a
+                contact belongs to &mdash; without one they can be stored and searched but never
+                blasted. Full names and codes both work
+                (<span class="font-mono text-xs">California</span>,
+                <span class="font-mono text-xs">CA</span>,
+                <span class="font-mono text-xs">Ontario</span>).
+              </p>
+
+              <div class="mt-3 flex items-center gap-2 flex-wrap text-xs">
+                <button id="ct-sample" class="btn btn-xs btn-outline">&#8595; Download sample CSV</button>
+                <span class="text-base-content/50">Column order does not matter; headers are matched by name.</span>
+              </div>
+
+              <!-- FILE -->
+              <div id="ct-drop" class="ct-drop mt-4" tabindex="0" role="button"
+                   aria-label="Choose or drop a CSV or Excel file">
+                <div class="font-bold text-[#133b49]">Drop a CSV or Excel file here</div>
+                <div class="text-xs text-base-content/50 mt-1">or click to choose &mdash; .csv, .xlsx, .xls</div>
+                <input id="ct-file" type="file" accept=".csv,.xlsx,.xls,text/csv" class="hidden">
+              </div>
+
+              <div class="ct-or my-3">OR</div>
+
+              <!-- GOOGLE SHEET -->
+              <div>
+                <label class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50" for="ct-sheet-url">Google Sheets URL</label>
+                <div class="flex items-center gap-2 mt-1">
+                  <input id="ct-sheet-url" type="url" placeholder="https://docs.google.com/spreadsheets/d/&hellip;"
+                         class="input input-bordered input-sm flex-1">
+                  <!-- "Read", not "Load": pasting already loads the sheet, so by the time this
+                       button is reachable the only thing left for it to do is read the chosen tab
+                       AGAIN — after someone edits the sheet, or to retry a failure. -->
+                  <button id="ct-sheet-load" class="btn btn-sm" title="Read the selected tab again">Read</button>
+                </div>
+                <div id="ct-sheet-help" class="text-xs text-base-content/50 mt-1.5 leading-relaxed"></div>
+                <!-- TAB PICKER, as a dropdown rather than a row of buttons: a spreadsheet can
+                     carry a dozen tabs and a dozen buttons is a wall, not a choice.
+                     SHOWN WHENEVER A SHEET IS OPEN, even a single-tab one, and defaulted to
+                     whatever the link pointed at. It used to appear only when the file had
+                     several tabs AND the link named none, which meant the common case — paste a
+                     link, get its tab — offered no way to switch without re-pasting a different
+                     URL (Vhea, 2026-10-06). A control that is sometimes there is harder to find
+                     than one that is always there. -->
+                <div id="ct-sheet-tabs" class="hidden mt-2">
+                  <label class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50" for="ct-sheet-tab">
+                    Which tab?
+                  </label>
+                  <div class="flex items-center gap-2 mt-1">
+                    <select id="ct-sheet-tab" class="select select-bordered select-sm flex-1" aria-label="Which tab to import"></select>
+                    <span id="ct-sheet-tabnote" class="text-xs text-base-content/50"></span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- PREVIEW AND CONFIRM. Nothing is written until this is confirmed: the column
+                   mapping is guessed from the headers, and a guess the person never saw is how a
+                   list imports into the wrong fields. -->
+              <div id="ct-preview" class="hidden mt-4">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-base-content/50 mb-1.5">
+                  Preview &mdash; check the columns landed in the right places
+                </div>
+                <div class="ct-prev"><table>
+                  <thead><tr><th>First Name</th><th>Last Name</th><th>Email</th><th>Phone</th></tr></thead>
+                  <tbody id="ct-preview-rows"></tbody>
+                </table></div>
+                <div id="ct-preview-note" class="text-xs mt-2 leading-relaxed"></div>
+              </div>
+
+              <div id="ct-import-status" class="text-xs mt-3 leading-relaxed"></div>
+
+              <div class="modal-action">
+                <button id="ct-import-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+                <button id="ct-import-go" class="btn btn-sm btn-warning text-white hover:text-white" disabled>Import</button>
+              </div>
+            </div>
+          </dialog>
 
           <!-- ================================================================= DO NOT CONTACT
                A 724k-row table, so nothing here loads "the list". Every view is a server-side
@@ -2218,6 +2591,32 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const strategyOf = r => (r && r.strategy) || 'ticket_blasts';
     const passesStrategy = (r, picked) => !picked || !picked.length || picked.indexOf(strategyOf(r)) !== -1;
     const offerTypeOf = r => ((STRATEGIES.byCode[strategyOf(r)] || {}).offer_type) || 'Tickets';
+
+    // ===== HUBSPOT RECORD LINKS =====
+    //
+    // GLOBAL, because the portal id is one fact about this company and it was already written
+    // out by hand inside blastHistoryModule. A second copy in the Contacts tab is the kind of
+    // duplication that survives until the portal changes and then only half the links move.
+    //
+    // The id is not a secret — it is in every HubSpot URL a person has ever pasted — so it sits
+    // here rather than in config.js, where it would need an env var and a build step to say the
+    // same thing.
+    //
+    // 0-1 is HubSpot's object-type id for Contacts. /record/0-1/<id> is the current URL shape;
+    // the older /contact/<id> still redirects, but linking at the shape that redirects means
+    // every click pays for a redirect.
+    const HUBSPOT_PORTAL = '4313631';
+    const hsRecordUrl = id => `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL}/record/0-1/${encodeURIComponent(id)}`;
+
+    // The little arrow that marks "this opens HubSpot". Deliberately an icon and not the word,
+    // because it sits inline beside a name in a dense table where a word would compete with it.
+    // title, not just an icon: an arrow alone does not say where it goes.
+    const hsLinkIcon = (id, label) => !id ? '' :
+      `<a href="${hsRecordUrl(id)}" target="_blank" rel="noopener noreferrer"
+          class="hs-go" title="Open ${esc(label || 'this contact')} in HubSpot"
+          aria-label="Open in HubSpot">`
+      + `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 11 13"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>`;
 
     // ===== US EASTERN, EVERYWHERE =====
     // Every fixture this app sells is North American and every send slot is set in US Eastern,
@@ -3250,6 +3649,974 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       window.__loadReplies = load;
     })();
 
+    // ===== Contacts (AI-1101) =====
+    //
+    // 256,000 people merged from three sources, so the same rule as Do Not Contact below: NEVER
+    // ASK FOR THE LIST. Every number is a server-side count and every page a server-side slice.
+    //
+    // EVERYTHING GOES THROUGH /api/contacts, NOT PostgREST. None of the three source tables is
+    // readable with the anon key this page holds — contact_intel has RLS with no policies (it
+    // returns an empty array, not an error), and the hubspot and ticketblaster schemas are not
+    // exposed to PostgREST at all. A direct read here would look like an empty database.
+    (function contactsModule(){
+      const host = document.getElementById('ct-rows');
+      if(!host) return;
+
+      const esc5 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      const PAGE = 50;
+      let page = 0, term = '', source = 'all', presence = '', stateF = '';
+      let total = null, capped = false, seq = 0;
+
+      const el = id => document.getElementById(id);
+      const dash = '<span class="text-base-content/30">&mdash;</span>';
+      const fmtN = v => v == null ? '—' : Number(v).toLocaleString();
+      const fmtDate2 = t => { if(!t) return ''; const d = new Date(t); return isNaN(d) ? '' : d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+      // "3 hours ago" for freshness, because the question being asked of those two timestamps is
+      // "is this stale", and a date forces the reader to do the subtraction themselves.
+      const ago = t => {
+        if(!t) return '—';
+        const d = new Date(t); if(isNaN(d)) return '—';
+        const s = Math.max(0, (Date.now() - d.getTime()) / 1000);
+        if(s < 90) return 'just now';
+        if(s < 5400) return `${Math.round(s/60)} min ago`;
+        if(s < 172800) return `${Math.round(s/3600)} h ago`;
+        return `${Math.round(s/86400)} d ago`;
+      };
+
+      const api = async (qs) => {
+        const r = await fetch(`/api/contacts${qs}`, { headers: await apiHeaders() });
+        const j = await r.json().catch(() => ({}));
+        if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        return j;
+      };
+      const post = async (bodyObj) => {
+        const r = await fetch('/api/contacts', { method:'POST', headers: await apiHeaders(), body: JSON.stringify(bodyObj) });
+        const j = await r.json().catch(() => ({}));
+        if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+        return j;
+      };
+
+      // ---- list ---------------------------------------------------------------------------
+      // A SEQUENCE NUMBER, NOT A BUSY FLAG. This used to open with `if(busy) return`, which was
+      // wrong twice over: it DROPPED the newer request, so clicking HubSpot then Contact Intel
+      // quickly left Contact Intel selected with HubSpot's rows under it; and because the guard
+      // sat above syncClear(), the Clear button and the audience checkbox kept whatever state
+      // the abandoned request had left them in (Vhea, 2026-10-06). Every call now runs and the
+      // newest answer wins — a slow response for a filter nobody is looking at any more is
+      // discarded on arrival instead of being allowed to prevent the one that is.
+      async function load(){
+        syncClear();                 // first, so it cannot be skipped by an early return below
+        const mine = ++seq;
+        host.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr>';
+        const qs = '?' + new URLSearchParams({
+          source, page: String(page), limit: String(PAGE),
+          ...(term.trim() ? { q: term.trim() } : {}),
+          ...(presence ? { presence } : {}),
+          ...(stateF ? { state: stateF } : {}),
+        });
+        try {
+          const j = await api(qs);
+          if(mine !== seq) return;          // a newer filter is already in flight — that one wins
+          total = Number(j.total || 0); capped = !!j.total_capped;
+          render(j.rows || []);
+        } catch(e){
+          if(mine !== seq) return;          // and a stale FAILURE must not overwrite a live table
+          host.innerHTML = `<tr><td colspan="8" class="text-center text-error py-8">${esc5(e.message || e)}</td></tr>`;
+        }
+      }
+
+      function render(rows){
+        const c = el('ct-count');
+        if(c) c.textContent = total == null ? ''
+          : `${total.toLocaleString()}${capped ? '+' : ''} ${total === 1 ? 'person' : 'people'}${(term || presence || stateF || source !== 'all') ? ' matching' : ''}`;
+        const pages = total == null ? 1 : Math.max(1, Math.ceil(total / PAGE));
+        const pg = el('ct-page');
+        if(pg) pg.textContent = total ? `Page ${page+1} of ${pages.toLocaleString()}${capped ? '+' : ''}` : '';
+        if(el('ct-prev')) el('ct-prev').disabled = page === 0;
+        if(el('ct-next')) el('ct-next').disabled = page + 1 >= pages;
+
+        if(!rows.length){
+          // Distinguishes "nothing matches" from "there is nothing", because on a contact
+          // database those mean very different things and only one is alarming.
+          host.innerHTML = `<tr><td colspan="8" class="text-center text-base-content/50 py-10">${
+            (term || presence || stateF || source !== 'all')
+              ? 'No contact matches that.'
+              : 'No contacts yet. Import a list, or run a HubSpot sync.'}</td></tr>`;
+          return;
+        }
+
+        host.innerHTML = rows.map(r => {
+          const name = [r.first_name, r.last_name].filter(Boolean).join(' ');
+          // Three fixed slots, present or absent. A missing badge is as meaningful as a present
+          // one — "in HubSpot but not in Intel" is the thing worth noticing.
+          const badge = (on, label, title) =>
+            `<span class="ct-badge ${on ? 'ct-badge-on' : 'ct-badge-off'}" title="${esc5(title)}">${label}</span>`;
+          // The arrow only where there IS a record to open. A link that 404s is worse than no
+          // link, and 68% of these people are not in HubSpot at all.
+          return `<tr>
+            <td class="font-semibold text-[#133b49]">${esc5(name) || dash}${
+              r.hubspot_id ? hsLinkIcon(r.hubspot_id, name || r.email || r.phone) : ''}</td>
+            <td class="font-mono text-xs">${esc5(r.email) || dash}</td>
+            <td class="font-mono text-xs">${esc5(r.phone) || dash}</td>
+            <td>${esc5(r.company) || dash}</td>
+            <!-- NOT text-xs. It was, and that made this column 9.75px against the 13px of the
+                 plain columns either side of it — the Do Not Contact table, which is the same
+                 kind of table, puts every plain column at 13px and reserves the small size for
+                 the mono identity columns and the trailing metadata. Matching it (Vhea). -->
+            <td>${esc5(r.state) || dash}</td>
+            <td class="whitespace-nowrap">
+              ${badge(r.in_hubspot, 'HS', r.in_hubspot ? 'In HubSpot' : 'Not in HubSpot')}
+              ${badge(r.in_intel, 'CI', r.in_intel ? 'In Contact Intel (sendable)' : 'Not in Contact Intel — not in any sendable audience')}
+              ${badge(r.in_imported, 'UP', r.in_imported ? 'Uploaded by hand' : 'Not uploaded')}
+            </td>
+            <td class="text-xs text-base-content/50 whitespace-nowrap">${esc5(fmtDate2(r.updated_at))}</td>
+            <!-- "Manage" on the Self Import tab, because that is the only source whose rows can
+                 be changed from here — the panel carries Edit and Delete for uploaded rows and
+                 read-only detail for everything else. The label says which one you are getting
+                 before you click it. -->
+            <td><button class="btn btn-xs" data-detail="${esc5(r.identity_key)}">${
+              source === 'imported' ? 'Manage' : 'View Details'}</button></td>
+          </tr>`;
+        }).join('');
+      }
+
+      // WHICH FILTERS ARE ON, shown as a Clear button exactly as the Offers tab does it: only
+      // once something is filtered, never as permanent chrome.
+      function syncClear(){
+        const on = !!(term.trim() || presence || stateF || source !== 'all');
+        el('ct-clear')?.classList.toggle('hidden', !on);
+        // Hidden on the Contact Intel tab: every row there is in the send audience by
+        // definition, so the box could only ever return an empty list.
+        el('ct-unreachable-wrap')?.classList.toggle('hidden', source === 'intel');
+      }
+
+      async function loadStats(){
+        try {
+          const { stats: s } = await api('?stats=1');
+          const set = (id, v) => { const e = el(id); if(e) e.textContent = fmtN(v); };
+          set('ct-total', s.people); set('ct-hs', s.in_hubspot); set('ct-intel', s.in_intel);
+          set('ct-both', s.hubspot_and_intel); set('ct-hsonly', s.hubspot_only); set('ct-imported', s.in_imported);
+          if(el('ct-refreshed')) el('ct-refreshed').textContent = ago(s.refreshed_at);
+          if(el('ct-hs-synced')) el('ct-hs-synced').textContent = ago(s.hubspot_synced_at);
+        } catch(e){
+          if(el('ct-refreshed')) el('ct-refreshed').textContent = 'unavailable';
+        }
+      }
+
+      // ---- detail panel -------------------------------------------------------------------
+      //
+      // The panel shows every source UNMERGED. Where HubSpot and Intel disagree about a name or
+      // a company, both are shown rather than one being picked — the disagreement is the
+      // information, and it is not hypothetical (HubSpot holds "Ajstock Stock" for a contact
+      // Intel names properly).
+      function openPanel(){
+        const p = el('ct-panel');
+        if(!p) return;
+        // Measured from <main> so the panel lines up with the agent rail and leaves the tabs
+        // reachable — the same fitPanel trick the blast drawer uses, and for the same reason.
+        const m = document.querySelector('main');
+        if(m){ const r = m.getBoundingClientRect(); p.style.top = `${Math.max(0, r.top)}px`; p.style.height = `${r.height}px`; }
+        p.classList.add('open'); p.setAttribute('aria-hidden','false');
+      }
+      function closePanel(){
+        const p = el('ct-panel');
+        if(!p) return;
+        p.classList.remove('open'); p.setAttribute('aria-hidden','true');
+      }
+
+      const kv = pairs => `<dl class="ct-kv">${pairs
+        .filter(([, v]) => v != null && v !== '')
+        .map(([k, v]) => `<dt>${esc5(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+
+      // Which person the panel is showing. Held so a save can re-open the SAME contact and show
+      // what the database actually stored — normalisation included, since the database decides
+      // what a number becomes, not the form.
+      let currentIdentity = null;
+
+      async function showDetail(identityKey){
+        currentIdentity = identityKey;
+        const body = el('ct-panel-body');
+        el('ct-panel-title').textContent = 'Loading…';
+        el('ct-panel-sub').textContent = '';
+        body.innerHTML = '<div class="text-sm text-base-content/50">Fetching every source&hellip;</div>';
+        openPanel();
+
+        let d;
+        try { ({ detail: d } = await api('?detail=' + encodeURIComponent(identityKey))); }
+        catch(e){ body.innerHTML = `<div class="text-sm text-error">${esc5(e.message || e)}</div>`; return; }
+
+        const id = d.identity || {};
+        const name = [id.first_name, id.last_name].filter(Boolean).join(' ') || id.email || id.phone || 'Contact';
+        // innerHTML, not textContent, because the title now carries the HubSpot arrow. `name`
+        // is escaped explicitly since it came from the database rather than from this file.
+        el('ct-panel-title').innerHTML = esc5(name)
+          + (id.hubspot_id ? hsLinkIcon(id.hubspot_id, name) : '');
+        el('ct-panel-sub').innerHTML = [
+          id.company ? esc5(id.company) : '',
+          id.state ? esc5(id.state) : '',
+          `matched on <span class="font-mono">${esc5(identityKey)}</span>`,
+        ].filter(Boolean).join(' &middot; ');
+
+        const out = [];
+
+        // SUPPRESSION FIRST. It overrides every other panel: a contact can look perfectly
+        // reachable and be deliberately silenced, and that has to be the first thing read.
+        const sup = d.suppressed || [];
+        if(sup.length){
+          out.push(`<div class="ct-sec ct-sec-warn">
+            <div class="ct-sec-h">&#9888; On the do-not-contact list</div>
+            ${sup.map(s => kv([
+              ['Email', esc5(s.email) || dash], ['Phone', esc5(s.phone) || dash],
+              ['Reason', esc5(s.reason) || dash], ['Source', esc5(s.source) || dash],
+              ['Added', esc5(fmtDate2(s.created_at))],
+            ])).join('<div class="h-2"></div>')}
+            <div class="text-xs text-[#a8321e] mt-2">Blasts skip this contact. Nothing here can send to them.</div>
+          </div>`);
+        }
+
+        // REACH. The most useful single fact in the panel: an empty list on a contact that
+        // plainly exists means they are in no sendable audience at all.
+        const reach = d.reach || [];
+        out.push(`<div class="ct-sec">
+          <div class="ct-sec-h">Sendable reach
+            <span class="ct-badge ${reach.length ? 'ct-badge-on' : 'ct-badge-off'}">${reach.length ? 'in ' + reach.length + ' market' + (reach.length === 1 ? '' : 's') : 'no audience'}</span>
+          </div>
+          ${reach.length
+            ? reach.map(m => kv([
+                ['Market', `${esc5(m.state_name || '')} <span class="font-mono text-xs text-base-content/50">${esc5(m.code || '')}</span>`],
+                ['Segment', esc5(m.segment) || dash],
+                ['Organisation', esc5(m.organization_name) || dash],
+                ['Channels', [m.has_email ? 'email' : '', m.has_phone ? 'SMS' : ''].filter(Boolean).join(' · ') || dash],
+              ])).join('<div class="h-2"></div>')
+            : `<div class="text-sm text-base-content/60">Not in <span class="font-mono text-xs">market_contacts</span>, so no blast would include them.
+                 That snapshot is rebuilt from Contact Intel &mdash; a HubSpot-only contact is never sendable.</div>`}
+        </div>`);
+
+        // HUBSPOT
+        const hs = (d.hubspot || {});
+        const hsc = hs.contact, hsco = hs.companies || [], hsd = hs.deals || [];
+        out.push(`<div class="ct-sec">
+          <div class="ct-sec-h">HubSpot <span class="ct-badge ${hsc ? 'ct-badge-on' : 'ct-badge-off'}">${hsc ? 'found' : 'not found'}</span></div>
+          ${hsc ? kv([
+              ['Name', esc5([hsc.firstname, hsc.lastname].filter(Boolean).join(' ')) || dash],
+              ['Email', esc5(hsc.email) || dash],
+              // TWO NUMBERS, SHOWN SEPARATELY (093). HubSpot's `phone` is usually a main or
+              // office line and `mobilephone` is the handset — merging them in the panel would
+              // hide which one a text would actually reach. The list merges; this does not.
+              ['Mobile', esc5(hsc.mobilephone) || dash],
+              ['Phone', esc5(hsc.phone) || dash],
+              ['Company', esc5(hsc.company) || dash],
+              ['State', esc5(hsc.state) || dash],
+              ['Lifecycle', esc5(hsc.lifecyclestage) || dash],
+              ['Record', `<a class="font-mono text-xs link" href="${hsRecordUrl(hsc.hs_object_id)}"
+                              target="_blank" rel="noopener noreferrer">${esc5(hsc.hs_object_id)}</a>`
+                           + hsLinkIcon(hsc.hs_object_id, 'this contact')],
+              ['Last change', esc5(fmtDate2(hsc.hs_lastmodifieddate))],
+              ['Mirrored', esc5(fmtDate2(hsc.synced_at))],
+            ]) : '<div class="text-sm text-base-content/60">This contact is not in the HubSpot mirror.</div>'}
+          ${hsco.length ? `<div class="ct-sec-h mt-3">Associated companies</div>${
+            hsco.map(c => kv([['Name', esc5(c.name) || dash], ['Domain', esc5(c.domain) || dash],
+                              ['State', esc5(c.state) || dash], ['Lifecycle', esc5(c.lifecyclestage) || dash]])).join('<div class="h-2"></div>')}` : ''}
+          ${hsd.length ? `<div class="ct-sec-h mt-3">Deals</div>${
+            hsd.map(dl => kv([
+              ['Deal', esc5(dl.dealname) || dash],
+              ['Stage', esc5(dl.stage_label || dl.dealstage) || dash],
+              ['Pipeline', esc5(dl.pipeline_label || dl.pipeline) || dash],
+              ['Amount', dl.amount == null ? dash : '$' + Number(dl.amount).toLocaleString()],
+              ['Close date', esc5(fmtDate2(dl.closedate))],
+            ])).join('<div class="h-2"></div>')}` : ''}
+        </div>`);
+
+        // CONTACT INTEL + COMPANY INTEL
+        const intel = d.intel || [];
+        out.push(`<div class="ct-sec">
+          <div class="ct-sec-h">Contact Intel <span class="ct-badge ${intel.length ? 'ct-badge-on' : 'ct-badge-off'}">${intel.length ? intel.length + ' row' + (intel.length === 1 ? '' : 's') : 'not found'}</span></div>
+          ${intel.length ? intel.map(ci => {
+            const co = ci.company || null;
+            return kv([
+              ['Name', esc5([ci.first_name, ci.last_name].filter(Boolean).join(' ')) || dash],
+              ['Email', esc5(ci.email) || dash],
+              ['Phone', esc5(ci.phone) || dash],
+              ['Title', esc5(ci.title) || dash],
+              ['Decision power', esc5(ci.decision_making_power) || dash],
+              ['Primary contact', ci.is_primary_contact ? 'yes' : (ci.is_primary_contact === false ? 'no' : dash)],
+              ['Source', esc5(ci.source_type) || dash],
+              ['Organisation', co ? esc5(co.organization_name) || dash : dash],
+              ['Segment', co ? esc5(co.lead_segment) || dash : dash],
+              ['Tier', co ? esc5(co.tier) || dash : dash],
+              ['Sport', co ? esc5(co.primary_sport) || dash : dash],
+              ['Location', co ? esc5([co.city, co.state].filter(Boolean).join(', ')) || dash : dash],
+              ['Website', co && co.website_url ? `<a class="link" href="${esc5(co.website_url)}" target="_blank" rel="noopener noreferrer">${esc5(co.domain || co.website_url)}</a>` : dash],
+            ]);
+          }).join('<div class="h-2 border-b border-base-200 mb-2"></div>')
+          : '<div class="text-sm text-base-content/60">Not in Contact Intel, so not part of the send audience.</div>'}
+        </div>`);
+
+        // UPLOADED — the only source with Edit and Delete.
+        //
+        // Not an oversight that HubSpot and Contact Intel have none: one is a mirror and the
+        // other is rebuilt by a scrape, so an edit here would be overwritten by the next sync —
+        // the button would appear to work and then quietly undo itself. A correction to a
+        // HubSpot contact belongs in HubSpot.
+        const imp = d.imported || [];
+        if(imp.length){
+          out.push(`<div class="ct-sec">
+            <div class="ct-sec-h">Uploaded <span class="ct-badge ct-badge-on">${imp.length} row${imp.length === 1 ? '' : 's'}</span></div>
+            ${imp.map(i => `<div data-imp="${esc5(i.id)}">
+              <div data-impview>
+                ${kv([
+                  ['Name', esc5([i.first_name, i.last_name].filter(Boolean).join(' ')) || dash],
+                  ['Email', esc5(i.email) || dash], ['Phone', esc5(i.phone) || dash],
+                  ['File', esc5(i.source_file) || dash], ['Kind', esc5(i.source_kind) || dash],
+                  ['Uploaded by', esc5(i.imported_by) || dash], ['Uploaded', esc5(fmtDate2(i.imported_at))],
+                ])}
+                <div class="flex items-center gap-2 mt-2">
+                  <button class="btn btn-xs" data-impedit="${esc5(i.id)}">Edit</button>
+                  <button class="btn btn-xs btn-ghost text-[#c0341a]" data-impdel="${esc5(i.id)}">Delete</button>
+                </div>
+              </div>
+              <div data-impedit-form class="hidden">
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="text-xs text-base-content/60">First name
+                    <input class="input input-bordered input-sm w-full mt-0.5" data-f="first_name" value="${esc5(i.first_name)}"></label>
+                  <label class="text-xs text-base-content/60">Last name
+                    <input class="input input-bordered input-sm w-full mt-0.5" data-f="last_name" value="${esc5(i.last_name)}"></label>
+                  <label class="text-xs text-base-content/60">Email
+                    <input class="input input-bordered input-sm w-full mt-0.5" data-f="email" value="${esc5(i.email)}"></label>
+                  <label class="text-xs text-base-content/60">Phone
+                    <input class="input input-bordered input-sm w-full mt-0.5" data-f="phone" value="${esc5(i.phone)}"></label>
+                </div>
+                <div class="flex items-center gap-2 mt-2">
+                  <button class="btn btn-xs btn-warning text-white hover:text-white" data-impsave="${esc5(i.id)}">Save</button>
+                  <button class="btn btn-xs btn-ghost" data-impcancel>Cancel</button>
+                  <span class="text-xs text-base-content/50" data-impmsg></span>
+                </div>
+              </div>
+            </div>`).join('<div class="h-2 border-b border-base-200 mb-2"></div>')}
+          </div>`);
+        }
+
+        // MARKET HISTORY — AND THE LABEL IS THE WHOLE POINT.
+        // Nobody ever recorded who an SMS blast went to, so this cannot be "messages they
+        // received". It is blasts sent to their market. Saying otherwise would invent a
+        // recipient history the database does not contain.
+        const bl = d.market_blasts || [];
+        out.push(`<div class="ct-sec">
+          <div class="ct-sec-h">Blasts to this contact&rsquo;s market</div>
+          <div class="text-xs text-base-content/50 mb-2 leading-relaxed">
+            Blasts sent to ${esc5(id.state) || 'their state'} &mdash; <b>not</b> a list of messages this person received.
+            Per-recipient history was never recorded for SMS, so no such list exists for any contact.
+          </div>
+          ${bl.length ? `<div class="ct-prev"><table>
+              <thead><tr><th>Date</th><th>Blast</th><th>Market</th><th>Channel</th><th>Recipients</th></tr></thead>
+              <tbody>${bl.map(b => `<tr>
+                <td>${esc5(fmtDate2(b.blasted_at))}</td>
+                <td>${esc5(b.template_name) || dash}</td>
+                <td>${esc5(b.market_key) || dash}</td>
+                <td>${esc5((b.channel || '').toUpperCase())}</td>
+                <td class="tabular-nums">${b.recipient_count == null ? '—' : Number(b.recipient_count).toLocaleString()}</td>
+              </tr>`).join('')}</tbody></table></div>`
+            : '<div class="text-sm text-base-content/60">No blasts recorded for that market.</div>'}
+        </div>`);
+
+        body.innerHTML = out.join('');
+      }
+
+      // ---- the state filter ----------------------------------------------------------------
+      //
+      // BUILT THE SAME WAY THE OFFERS TAB BUILDS ITS OWN, from the same geo_regions() source:
+      // grouped US / Canada / Test, each option reading "CODE · Full name (count)" with the
+      // untruncated name on the title. Two state filters on two tabs of one app should not be
+      // two different controls — the first version here was a flat list of bare codes ordered by
+      // count, which is a different thing to read (Vhea, 2026-10-06).
+      //
+      // THE COUNTS STILL COME FROM THE DIRECTORY, not from geo_regions: the point of the number
+      // is how many CONTACTS are in that state, and only the directory knows. geo_regions
+      // supplies the names and the country grouping, which it already does for Offers and the
+      // Queue.
+      const clip = (s, n = 17) => { s = (s || '').toString(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+      async function fillStates(){
+        const sel = el('ct-state');
+        if(!sel || sel.dataset.filled) return;
+        try {
+          // Both at once: neither needs the other, and the filter is useless until both land.
+          const [j, rg] = await Promise.all([
+            api('?states=1'),
+            sb ? sb.rpc('geo_regions').then(r => r.error ? [] : (r.data || [])).catch(() => []) : Promise.resolve([]),
+          ]);
+          const counts = {};
+          ((j && j.states) || []).forEach(s => { counts[s.state] = Number(s.n) || 0; });
+          if(!Object.keys(counts).length) return;
+
+          // Only regions we actually hold contacts for. geo_regions lists every state and
+          // province; offering the 20 with nobody in them is a filter that guarantees an empty
+          // table.
+          const regions = (rg || []).filter(r => counts[r.code]);
+
+          // FALLBACK when geo_regions is unavailable or matched nothing: the bare codes, which
+          // is what this control had before. Degraded, but still a working filter — better than
+          // an empty dropdown.
+          if(!regions.length){
+            sel.insertAdjacentHTML('beforeend', Object.keys(counts)
+              .sort((a, b) => counts[b] - counts[a])
+              .map(c => `<option value="${esc5(c)}">${esc5(c)} (${counts[c].toLocaleString()})</option>`).join(''));
+            sel.dataset.filled = '1';
+            return;
+          }
+
+          const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+          // A select is as wide as its widest option, and "Newfoundland and Labrador" drags the
+          // control across half the toolbar — same reason Offers clips, same clip length.
+          const opt = r => `<option value="${esc5(r.code)}" title="${esc5(r.name)}">${
+            esc5(r.code)} &middot; ${esc5(clip(r.name))} (${(counts[r.code] || 0).toLocaleString()})</option>`;
+          const us   = regions.filter(r => r.country === 'US' && r.code !== 'ZZ').sort(byName);
+          const ca   = regions.filter(r => r.country === 'CA').sort(byName);
+          const test = regions.filter(r => r.code === 'ZZ');
+          const nStates = us.filter(r => r.code !== 'DC').length;
+
+          sel.insertAdjacentHTML('beforeend',
+              (us.length   ? `<optgroup label="US STATES (${nStates}${us.length > nStates ? ' + DC' : ''})">${us.map(opt).join('')}</optgroup>` : '')
+            + (ca.length   ? `<optgroup label="CANADA (${ca.length})">${ca.map(opt).join('')}</optgroup>` : '')
+            + (test.length ? `<optgroup label="TEST MARKET">${test.map(opt).join('')}</optgroup>` : ''));
+          sel.dataset.filled = '1';
+        } catch { /* the filter stays "All states", which is still a working filter */ }
+      }
+
+      // ---- import ---------------------------------------------------------------------------
+      //
+      // THE PARSER AND THE HEADER MAP MIRROR api/contacts.js's AND THE DNC MODULE'S, COPIED
+      // DELIBERATELY. Importers that disagree about which column is the email is the kind of
+      // difference nobody notices until a list imports empty. If one changes, change all three.
+      function parseCsv2(text){
+        const rows = []; let row = [], field = '', inQuotes = false;
+        const s2 = String(text).replace(/^﻿/, '');
+        for(let i = 0; i < s2.length; i++){
+          const ch = s2[i];
+          if(inQuotes){
+            if(ch === '"'){ if(s2[i+1] === '"'){ field += '"'; i++; } else inQuotes = false; }
+            else field += ch;
+            continue;
+          }
+          if(ch === '"'){ inQuotes = true; continue; }
+          if(ch === ','){ row.push(field); field = ''; continue; }
+          if(ch === '\r') continue;
+          if(ch === '\n'){ row.push(field); rows.push(row); row = []; field = ''; continue; }
+          field += ch;
+        }
+        if(field.length || row.length){ row.push(field); rows.push(row); }
+        return rows.filter(r => r.some(v => String(v).trim() !== ''));
+      }
+
+      const normH2 = h => String(h || '').toLowerCase().replace(/[^a-z]/g, '');
+      const FIELDS2 = {
+        first_name: ['firstname','first','fname','givenname'],
+        last_name:  ['lastname','last','surname','lname','familyname'],
+        email:      ['email','emailaddress','email1','workemail','contactemail'],
+        phone:      ['phonenumber','phone','mobile','mobilephone','cell','cellphone','telephone','number','phone1'],
+        full_name:  ['name','fullname','contactname','contact'],
+        // A contact needs a location to belong to a market. Spelt several ways because a
+        // spreadsheet will be: the database resolves whatever arrives through state_alias and
+        // then geo_region, so "CA", "California" and "Ontario" all land correctly.
+        state:      ['state','province','region','stateprovince','statecode','st'],
+      };
+
+      // What the modal is holding, parsed and ready, pending confirmation.
+      let staged = null;   // { rows, headers, skipped, label, kind, truncated }
+
+      function mapTable(table, label, kind, truncated){
+        if(!table.length) return { error: 'That file has no rows.' };
+        const header = table[0], idx = {};
+        header.forEach((h, i) => {
+          const n = normH2(h);
+          for(const f of Object.keys(FIELDS2)) if(FIELDS2[f].includes(n) && idx[f] === undefined) idx[f] = i;
+        });
+        // NAMES THE HEADERS IT DID FIND. A file that imports zero rows is almost always a column
+        // mismatch, and guessing which column wastes an afternoon.
+        if(idx.email === undefined && idx.phone === undefined){
+          return { error: `No <b>Email</b> or <b>Phone Number</b> column found. Columns seen: ${
+            header.slice(0,10).map(h => `<span class="font-mono">${esc5(h)}</span>`).join(', ') || '(none)'}.
+            Download the sample to see the expected headers.` };
+        }
+        const get = (r, f) => (idx[f] === undefined ? '' : String(r[idx[f]] ?? '').trim());
+        const rows = []; let skipped = 0, badPhone = 0, noState = 0;
+        for(const r of table.slice(1)){
+          const email = get(r,'email'), phone = get(r,'phone');
+          if(!email && !phone){ skipped++; continue; }
+          let first = get(r,'first_name'), last = get(r,'last_name');
+          // A single "Name" column is split so a sheet that was never in our format still
+          // imports with usable names rather than everything in first_name.
+          if(!first && !last){
+            const full = get(r,'full_name');
+            if(full){ const bits = full.split(/\s+/); first = bits.shift() || ''; last = bits.join(' '); }
+          }
+          // Flagged, not rejected: norm_phone_e164 is the send path's and it accepts short
+          // numbers, so the warning is the honest place for this rather than a silent drop.
+          if(phone && String(phone).replace(/\D/g,'').length < 10) badPhone++;
+          if(!get(r,'state')) noState++;
+          rows.push({ first_name: first || null, last_name: last || null,
+                      email: email || null, phone: phone || null,
+                      state: get(r,'state') || null });
+        }
+        if(!rows.length) return { error: 'No row in that file had an email or a phone number.' };
+        return { rows, headers: header, skipped, badPhone, noState, label, kind, truncated };
+      }
+
+      function showPreview(m){
+        staged = m;
+        const box = el('ct-preview'), rowsHost = el('ct-preview-rows');
+        rowsHost.innerHTML = m.rows.slice(0, 8).map(r => `<tr>
+          <td>${esc5(r.first_name) || dash}</td><td>${esc5(r.last_name) || dash}</td>
+          <td class="font-mono">${esc5(r.email) || dash}</td><td class="font-mono">${esc5(r.phone) || dash}</td>
+        </tr>`).join('');
+        const notes = [`<b>${m.rows.length.toLocaleString()}</b> row${m.rows.length === 1 ? '' : 's'} ready from <b>${esc5(m.label)}</b>`];
+        if(m.skipped) notes.push(`<span class="text-base-content/60">${m.skipped.toLocaleString()} skipped (no email or phone)</span>`);
+        if(m.badPhone) notes.push(`<span class="text-[#b4560b]">${m.badPhone.toLocaleString()} phone number${m.badPhone === 1 ? '' : 's'} look too short to dial</span>`);
+        if(m.truncated) notes.push(`<span class="text-[#b4560b]">only the first 5,000 rows were read</span>`);
+        el('ct-preview-note').innerHTML = notes.join(' &middot; ');
+        box.classList.remove('hidden');
+        el('ct-import-go').disabled = false;
+      }
+
+      const sayImp = html => { const e = el('ct-import-status'); if(e) e.innerHTML = html; };
+
+      // Just the parsed batch and its preview — NOT the URL or the tab list, which a failed read
+      // still needs so the person can pick a different tab. resetImport() clears everything and
+      // is for closing or reopening the modal.
+      function clearStaged(){
+        staged = null;
+        el('ct-preview')?.classList.add('hidden');
+        const go = el('ct-import-go'); if(go) go.disabled = true;
+      }
+
+      function resetImport(){
+        staged = null;
+        el('ct-preview')?.classList.add('hidden');
+        el('ct-import-go').disabled = true;
+        sayImp('');
+        if(el('ct-file')) el('ct-file').value = '';
+        if(el('ct-sheet-url')) el('ct-sheet-url').value = '';
+        // The tab list belongs to the sheet that was open; leaving it up would offer tabs from
+        // the previous file against the next URL typed in.
+        el('ct-sheet-tabs')?.classList.add('hidden');
+        const tl = el('ct-sheet-tab'); if(tl) tl.innerHTML = '';
+        const tn = el('ct-sheet-tabnote'); if(tn) tn.textContent = '';
+        // Cleared with the field, or reopening the modal and pasting the SAME link would be
+        // treated as "already read" and do nothing.
+        lastSheetUrl = '';
+        clearTimeout(sheetTimer);
+      }
+
+      // SheetJS IS LOADED ON DEMAND, NOT AT STARTUP. It is ~900KB and only an .xlsx import needs
+      // it; charging every visitor who opens the Queue for a library used by one button is the
+      // kind of cost that never shows up in a review.
+      let xlsxPromise = null;
+      function loadXlsx(){
+        if(window.XLSX) return Promise.resolve(window.XLSX);
+        if(xlsxPromise) return xlsxPromise;
+        xlsxPromise = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+          s.onload = () => resolve(window.XLSX);
+          s.onerror = () => { xlsxPromise = null; reject(new Error('could not load the Excel reader')); };
+          document.head.appendChild(s);
+        });
+        return xlsxPromise;
+      }
+
+      async function takeFile(f){
+        if(!f) return;
+        resetImport();
+        sayImp(`Reading <b>${esc5(f.name)}</b>&hellip;`);
+        try {
+          let table;
+          if(/\.(xlsx|xls)$/i.test(f.name)){
+            const X = await loadXlsx();
+            const wb = X.read(await f.arrayBuffer(), { type:'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            table = X.utils.sheet_to_json(ws, { header:1, blankrows:false, defval:'' })
+                     .filter(r => r.some(v => String(v).trim() !== ''));
+          } else {
+            table = parseCsv2(await f.text());
+          }
+          const m = mapTable(table, f.name, /\.(xlsx|xls)$/i.test(f.name) ? 'excel' : 'csv', false);
+          if(m.error){ sayImp(`<span class="text-[#c0341a]">${m.error}</span>`); return; }
+          sayImp('');
+          showPreview(m);
+        } catch(e){
+          sayImp(`<span class="text-[#c0341a]">${esc5(e.message || e)}</span>`);
+        }
+      }
+
+      async function takeSheet(gid){
+        const url = el('ct-sheet-url')?.value || '';
+        if(!url.trim()){ sayImp('<span class="text-[#c0341a]">Paste a Google Sheets URL first.</span>'); return; }
+        const btn = el('ct-sheet-load');
+        if(btn) btn.disabled = true;
+        if(gid == null) el('ct-sheet-tabs')?.classList.add('hidden');
+
+        // DROP WHATEVER IS STAGED BEFORE READING ANYTHING, and that is a correctness fix rather
+        // than tidiness. Picking an empty tab used to leave the PREVIOUS tab's preview on screen
+        // with Import still enabled, under an error saying the new tab was empty — so the button
+        // would have imported a tab the person had just navigated away from, while reading that
+        // it had no rows (Vhea, 2026-10-06). Nothing may stay staged across a read.
+        clearStaged();
+        sayImp('Opening the sheet&hellip;');
+        try {
+          const j = await post({ action:'sheet', url, ...(gid != null ? { gid } : {}) });
+
+          // Fills the dropdown and marks which tab is currently loaded. `selected` is the gid
+          // actually read, so the control always agrees with what is in the preview below it.
+          // ALWAYS SHOWN once a sheet is open, whatever it holds — one tab or twelve, link with
+          // a gid or without. `selected` is the tab actually read, so the control states what is
+          // in the preview below it rather than asking a question that has already been answered.
+          const fillTabs = (sheets, selected) => {
+            const sel = el('ct-sheet-tab');
+            if(!sel || !Array.isArray(sheets) || !sheets.length) return;
+            sel.innerHTML = (selected == null ? '<option value="">Choose a tab&hellip;</option>' : '')
+              // THE TITLE ONLY. The row count Google reports is gridProperties.rowCount, which is
+              // the size of the grid, not how much of it is filled — a brand new empty tab says
+              // 1,000. Labelling an empty tab "test (1,000 rows)" is worse than saying nothing,
+              // because it reads as a promise the next click contradicts (Vhea, 2026-10-06).
+              + sheets.map(s => `<option value="${esc5(s.gid)}"${
+                  String(s.gid) === String(selected) ? ' selected' : ''}>${esc5(s.title)}</option>`).join('');
+            el('ct-sheet-tabs').classList.remove('hidden');
+            const note = el('ct-sheet-tabnote');
+            if(note) note.textContent = sheets.length === 1
+              ? 'the only tab in this sheet'
+              : `${sheets.length} tabs in this sheet`;
+          };
+
+          // Several tabs and the link named none: ask rather than guess. Nothing has been read.
+          if(j.needsTab){
+            fillTabs(j.sheets, null);
+            sayImp(`<span class="text-base-content/70">That sheet has ${(j.sheets || []).length} tabs &mdash; choose which one to import.</span>`);
+            return;
+          }
+
+          const label = j.tab ? `Google Sheet — ${j.tab}` : 'Google Sheet';
+          const m = mapTable(j.table || [], label, 'google_sheet', !!j.truncated);
+          if(m.error){
+            // Keep the picker up on a failure too: "that tab has no Email column" is most often
+            // fixed by choosing a different tab, and hiding the control would hide the fix.
+            //
+            // Selected on the tab that was actually READ, resolved the same way as the success
+            // path below. Passing `gid` alone showed "Choose a tab..." after a paste, which
+            // reads as "nothing was tried" next to an error about the columns of a specific tab.
+            if(Array.isArray(j.sheets) && j.sheets.length){
+              fillTabs(j.sheets, (j.sheets.find(x => x.title === j.tab) || {}).gid ?? gid ?? null);
+            }
+            sayImp(`<span class="text-[#c0341a]">${m.error}</span>`);
+            return;
+          }
+
+          // No length test: a one-tab sheet gets the control too, so the UI does not change shape
+          // between sheets and there is always somewhere to look for "which tab is this".
+          if(Array.isArray(j.sheets) && j.sheets.length){
+            fillTabs(j.sheets, (j.sheets.find(s => s.title === j.tab) || {}).gid ?? gid ?? null);
+          }
+
+          sayImp(`<span class="text-base-content/60">Read ${j.tab ? `<b>${esc5(j.tab)}</b> ` : ''}via ${
+            j.via === 'service_account' ? 'the service account' : 'the public link'}.</span>`);
+          showPreview(m);
+        } catch(e){
+          sayImp(`<span class="text-[#c0341a]">${esc5(e.message || e)}</span>`);
+        } finally { if(btn) btn.disabled = false; }
+      }
+
+      async function runImport(){
+        if(!staged) return;
+        const go = el('ct-import-go'), cancel = el('ct-import-cancel');
+        if(go) go.disabled = true; if(cancel) cancel.disabled = true;
+        let ins = 0, upd = 0, skip = staged.skipped || 0;
+        const problems = [];
+        try {
+          // 2,000 a batch, matching MAX_IMPORT_ROWS in the route: a browser request crosses the
+          // public internet and a serverless body limit.
+          const SIZE = 2000;
+          for(let i = 0; i < staged.rows.length; i += SIZE){
+            const batch = staged.rows.slice(i, i + SIZE);
+            sayImp(`Importing &mdash; ${Math.min(i + SIZE, staged.rows.length).toLocaleString()} of ${staged.rows.length.toLocaleString()} rows`);
+            try {
+              const d = await post({ action:'import', rows: batch, source_file: staged.label, source_kind: staged.kind });
+              ins += Number(d.inserted || 0); upd += Number(d.updated || 0); skip += Number(d.skipped || 0);
+            } catch(e){ problems.push(e.message || String(e)); break; }
+          }
+        } finally {
+          if(go) go.disabled = false; if(cancel) cancel.disabled = false;
+        }
+
+        const bits = [`<b>${ins.toLocaleString()}</b> added`, `${upd.toLocaleString()} updated`];
+        if(skip) bits.push(`${skip.toLocaleString()} skipped`);
+        sayImp(bits.join(' &middot; ')
+          + (problems.length ? `<div class="text-[#c0341a] mt-1">${problems.map(esc5).join('<br>')}</div>` : '')
+          + `<div class="text-base-content/50 mt-1">Uploaded contacts are searchable now. They are <b>not</b> part of the send
+               audience &mdash; that is built from Contact Intel &mdash; so no blast will include them yet.</div>`);
+
+        staged = null;
+        el('ct-preview')?.classList.add('hidden');
+        if(el('ct-file')) el('ct-file').value = '';
+        // The directory is a snapshot, so new rows are invisible until it is re-merged. Doing it
+        // here rather than asking means the list the person is looking at agrees with what they
+        // just uploaded.
+        if(ins || upd){
+          sayImp(el('ct-import-status').innerHTML + '<div class="text-base-content/50 mt-1">Rebuilding the directory&hellip;</div>');
+          try { await post({ action:'refresh-directory' }); } catch { /* the Rebuild button remains */ }
+          page = 0; await Promise.all([loadStats(), load()]);
+        }
+      }
+
+      // The sample is generated rather than served as a file: one fewer thing in /public to
+      // drift out of step with the headers the parser above actually accepts.
+      function downloadSample(){
+        // Deliberately shows both state forms, a province, and one row with none — so the sample
+        // doubles as documentation of what is accepted rather than just a header line.
+        const csv = 'First Name,Last Name,Email,Phone Number,State\n'
+                  + 'Ada,Lovelace,ada@example.com,+1 415 555 0100,California\n'
+                  + 'Grace,Hopper,grace@example.com,+1 415 555 0101,CA\n'
+                  + 'Alan,,alan@example.com,,Ontario\n'
+                  + 'Katherine,Johnson,,+1 415 555 0103,\n';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csv], { type:'text/csv' }));
+        a.download = 'playbook-contacts-sample.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      // ---- wiring ---------------------------------------------------------------------------
+      let ctTimer = null;
+      el('ct-search')?.addEventListener('input', e => {
+        term = e.target.value;
+        // Debounced: this searches 256k rows server-side, and a request per keystroke would queue
+        // behind itself and deliver results for a term already typed past.
+        clearTimeout(ctTimer);
+        ctTimer = setTimeout(() => { page = 0; load(); }, 300);
+      });
+      // "Not in the send audience" -> not in_intel. Composes with the source tab rather than
+      // competing with it, which is the whole reason the old presence dropdown was removed.
+      el('ct-unreachable')?.addEventListener('change', e => {
+        presence = e.target.checked ? 'not_intel' : '';
+        page = 0; load();
+      });
+      el('ct-state')?.addEventListener('change', e => { stateF = e.target.value; page = 0; load(); });
+      el('ct-prev')?.addEventListener('click', () => { if(page > 0){ page--; load(); } });
+      el('ct-next')?.addEventListener('click', () => { page++; load(); });
+      // Reload re-reads the TILES as well as the list. They are two queries over the same
+      // snapshot and they drifted apart in practice: the tiles load once when the tab opens, so
+      // after rows changed underneath (an upload, or a hand-run delete) the list said 0 while
+      // the tiles still said 6 (Vhea, 2026-10-06). Anything that re-reads one re-reads both.
+      el('ct-reload')?.addEventListener('click', () => { loadStats(); load(); });
+
+      el('ct-clear')?.addEventListener('click', () => {
+        term = ''; presence = ''; stateF = ''; source = 'all'; page = 0;
+        const s = el('ct-search'); if(s) s.value = '';
+        const u = el('ct-unreachable'); if(u) u.checked = false;
+        const st = el('ct-state'); if(st) st.value = '';
+        setSourceButtons();
+        load();
+      });
+
+      function setSourceButtons(){
+        [...(el('ct-sources')?.querySelectorAll('[data-src]') || [])].forEach(x => {
+          const on = x.dataset.src === source;
+          x.classList.toggle('ct-src-on', on);
+          x.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+      }
+
+      el('ct-sources')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-src]');
+        if(!b) return;
+        source = b.dataset.src;
+        // Switching to Contact Intel while "not in the send audience" is ticked would ask for
+        // rows that cannot exist. Drop the filter rather than show a confusing empty table.
+        if(source === 'intel' && presence === 'not_intel'){
+          presence = '';
+          const u = el('ct-unreachable'); if(u) u.checked = false;
+        }
+        setSourceButtons();
+        page = 0; load();
+      });
+
+      // The gap tile is the number this tab exists to report, so make it do something: one click
+      // filters the list down to exactly the people it counts.
+      el('ct-hsonly')?.closest('div')?.addEventListener('click', () => {
+        source = 'hubspot'; presence = 'not_intel'; page = 0;
+        const u = el('ct-unreachable'); if(u) u.checked = true;
+        setSourceButtons();
+        load();
+      });
+      el('ct-hsonly')?.closest('div')?.style.setProperty('cursor', 'pointer');
+
+      // Delegated, because render() replaces the whole tbody on every page.
+      host.addEventListener('click', e => {
+        const b = e.target.closest('[data-detail]');
+        if(b) showDetail(b.dataset.detail);
+      });
+
+      // EDIT / DELETE for uploaded contacts, delegated on the panel body for the same reason:
+      // showDetail() rebuilds it wholesale every time.
+      el('ct-panel-body')?.addEventListener('click', async e => {
+        const edit   = e.target.closest('[data-impedit]');
+        const cancel = e.target.closest('[data-impcancel]');
+        const save   = e.target.closest('[data-impsave]');
+        const del    = e.target.closest('[data-impdel]');
+        if(!edit && !cancel && !save && !del) return;
+
+        const wrap = e.target.closest('[data-imp]');
+        if(!wrap) return;
+        const view = wrap.querySelector('[data-impview]');
+        const form = wrap.querySelector('[data-impedit-form]');
+        const msg  = wrap.querySelector('[data-impmsg]');
+
+        if(edit)   { view.classList.add('hidden'); form.classList.remove('hidden'); return; }
+        if(cancel) { form.classList.add('hidden'); view.classList.remove('hidden'); return; }
+
+        if(del){
+          const who = wrap.querySelector('[data-f="email"]')?.value
+                   || wrap.querySelector('[data-f="phone"]')?.value || 'this contact';
+          // A delete is not undoable and the row is someone's data, so it is confirmed by name
+          // rather than by a bare "Are you sure?".
+          if(!confirm(`Delete the uploaded contact ${who}?\n\nThis removes the row we uploaded. It does not touch HubSpot or Contact Intel.`)) return;
+          try {
+            await post({ action: 'delete-imported', id: wrap.dataset.imp });
+            wrap.innerHTML = '<div class="text-sm text-base-content/50">Deleted.</div>';
+            await Promise.all([loadStats(), load()]);
+          } catch(err){ alert('Could not delete:\n\n' + (err.message || err)); }
+          return;
+        }
+
+        if(save){
+          const val = f => wrap.querySelector(`[data-f="${f}"]`)?.value || '';
+          const btn = save; btn.disabled = true;
+          if(msg) msg.textContent = 'Saving…';
+          try {
+            await post({
+              action: 'update-imported', id: wrap.dataset.imp,
+              first_name: val('first_name'), last_name: val('last_name'),
+              email: val('email'), phone: val('phone'),
+            });
+            if(msg) msg.textContent = 'Saved.';
+            await Promise.all([loadStats(), load()]);
+            // Re-read the panel so it shows what was actually stored, normalisation included —
+            // the database decides what the number becomes, not the form.
+            showDetail(currentIdentity);
+          } catch(err){
+            if(msg){ msg.textContent = ''; }
+            alert('Could not save:\n\n' + (err.message || err));
+          } finally { btn.disabled = false; }
+        }
+      });
+
+      el('ct-panel-close')?.addEventListener('click', closePanel);
+      document.addEventListener('keydown', e => {
+        if(e.key === 'Escape' && el('ct-panel')?.classList.contains('open')) closePanel();
+      });
+
+      // Sync buttons. Both say what they did; "Sync from HubSpot" is explicit that it handed the
+      // job to n8n rather than finished it, because the pull then runs for as long as it takes.
+      el('ct-sync-hs')?.addEventListener('click', async () => {
+        const b = el('ct-sync-hs'); const was = b.innerHTML;
+        b.disabled = true; b.textContent = 'Syncing…';
+        try {
+          await post({ action:'sync-hubspot' });
+          b.textContent = 'Handed to n8n ✓';
+          // The pull runs in n8n for an unknown time, so the numbers are re-read after a pause
+          // rather than immediately — reading them now would show the pre-sync figures and look
+          // like the sync had done nothing.
+          setTimeout(() => { loadStats(); }, 15000);
+        } catch(e){
+          b.textContent = 'Sync failed';
+          alert('HubSpot sync could not start:\n\n' + (e.message || e));
+        } finally {
+          setTimeout(() => { b.disabled = false; b.innerHTML = was; }, 4000);
+        }
+      });
+
+      el('ct-rebuild')?.addEventListener('click', async () => {
+        const b = el('ct-rebuild'); const was = b.innerHTML;
+        b.disabled = true; b.textContent = 'Rebuilding… (~20s)';
+        try {
+          const j = await post({ action:'refresh-directory' });
+          b.textContent = `${Number(j.row_count || 0).toLocaleString()} people ✓`;
+          await Promise.all([loadStats(), load()]);
+        } catch(e){
+          b.textContent = 'Rebuild failed';
+          alert('The directory could not be rebuilt:\n\n' + (e.message || e));
+        } finally {
+          setTimeout(() => { b.disabled = false; b.innerHTML = was; }, 4000);
+        }
+      });
+
+      // Import modal
+      const dlg = el('ct-import-dlg');
+      el('ct-import')?.addEventListener('click', () => {
+        resetImport();
+        // Said at open time, with the live address, so nobody has to guess who to share with.
+        el('ct-sheet-help').innerHTML =
+          'Either set the sheet to <b>Anyone with the link</b>, or share it with '
+          + '<span class="font-mono text-[11px]">playbook-scrapes@n8n-gemini-450715.iam.gserviceaccount.com</span> (Viewer is enough). '
+          + 'A link to a specific tab imports that tab.';
+        dlg?.showModal();
+      });
+      el('ct-import-cancel')?.addEventListener('click', () => dlg?.close());
+      el('ct-sample')?.addEventListener('click', downloadSample);
+      // "Read" re-reads whatever tab is currently selected, which is the only job left for it
+      // once pasting loads the sheet by itself: the sheet changed, or the last attempt failed.
+      el('ct-sheet-load')?.addEventListener('click', () => {
+        const g = el('ct-sheet-tab')?.value;
+        takeSheet(g || undefined);
+      });
+
+      // Choosing a tab reads it immediately — a separate button press after picking from a
+      // dropdown is a step with no decision in it. The empty placeholder is ignored so
+      // re-selecting it does nothing.
+      el('ct-sheet-tab')?.addEventListener('change', e => {
+        if(e.target.value !== '') takeSheet(e.target.value);
+      });
+
+      // PASTE A LINK AND IT OPENS. Requiring a button press after pasting a URL is a step that
+      // carries no decision — there is nothing to configure first, and the tab picker that
+      // follows is more useful once there is something in it to pick from.
+      //
+      // Guarded against re-reading what is already open: `paste` fires before the value lands,
+      // hence the tick, and `change` fires on blur for a URL typed or dropped rather than
+      // pasted. Both funnel through one place so a paste followed by a blur reads once, not
+      // twice — the sheet is a network round trip, not a local file.
+      let lastSheetUrl = '', sheetTimer = null;
+      const maybeAutoRead = () => {
+        const v = (el('ct-sheet-url')?.value || '').trim();
+        if(!v || v === lastSheetUrl) return;
+        // Only once it looks like a Sheets link. Firing on every keystroke of a half-typed URL
+        // would be a request per character and an error message per request.
+        if(!/\/spreadsheets\/d\/[a-zA-Z0-9-_]{10,}/.test(v)) return;
+        lastSheetUrl = v;
+        takeSheet();
+      };
+      el('ct-sheet-url')?.addEventListener('paste', () => setTimeout(maybeAutoRead, 0));
+      el('ct-sheet-url')?.addEventListener('change', maybeAutoRead);
+      // Covers drag-and-drop into the field and autofill, neither of which fires `paste`.
+      el('ct-sheet-url')?.addEventListener('input', () => { clearTimeout(sheetTimer); sheetTimer = setTimeout(maybeAutoRead, 600); });
+      el('ct-import-go')?.addEventListener('click', runImport);
+
+      const drop = el('ct-drop');
+      drop?.addEventListener('click', () => el('ct-file')?.click());
+      drop?.addEventListener('keydown', e => { if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); el('ct-file')?.click(); } });
+      el('ct-file')?.addEventListener('change', e => takeFile(e.target.files && e.target.files[0]));
+      // dragover must be prevented or the browser navigates to the file instead of dropping it.
+      ;['dragenter','dragover'].forEach(ev => drop?.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+      ;['dragleave','drop'].forEach(ev => drop?.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+      drop?.addEventListener('drop', e => takeFile(e.dataTransfer?.files && e.dataTransfer.files[0]));
+
+      // Loaded on first view, not at startup: six counts over a 256k-row directory is not work
+      // to do for someone who opened the app to look at the Queue.
+      let loadedOnce2 = false;
+      window.__loadContacts = () => {
+        if(loadedOnce2) return; loadedOnce2 = true;
+        loadStats(); fillStates(); load();
+      };
+    })();
+
     // ===== Do Not Contact =====
     //
     // 724,000 rows and growing, so the rule for this whole module is: NEVER ASK FOR THE LIST.
@@ -3758,7 +5125,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     })();
 
     // Tab switching — Compose, Queue and Templates are built; others show the placeholder.
-    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', forwarding:'view-forwarding', inbox:'view-inbox' };
+    const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates', history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc', contacts:'view-contacts', forwarding:'view-forwarding', inbox:'view-inbox' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
@@ -3771,6 +5138,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'prices' && window.__loadPrices) window.__loadPrices();
       if(tab === 'replies' && window.__loadReplies) window.__loadReplies();
       if(tab === 'dnc' && window.__loadDnc) window.__loadDnc();
+      if(tab === 'contacts' && window.__loadContacts) window.__loadContacts();
       if(tab === 'forwarding' && window.__loadForwarding) window.__loadForwarding();
       if(tab === 'inbox' && window.__loadInbox) window.__loadInbox();
       // AI-1074. A tab inside Admin lights the Admin trigger instead: the row must still say
@@ -3778,6 +5146,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const aw = document.getElementById('admin-menu');
       if(aw){
         aw.querySelector('.admin-trigger')?.classList.toggle('active', !!aw.querySelector(`[data-tab="${tab}"]`));
+        // AI-1101. And a tab inside a GROUP lights the group heading too, so a collapsed
+        // "Audience" still says the current page is in there.
+        aw.querySelectorAll('.admin-group').forEach(g =>
+          g.classList.toggle('has-active', !!g.querySelector(`[data-tab="${tab}"]`)));
         aw.open = false;   // a chosen destination closes the menu it was chosen from
       }
     }
@@ -3805,7 +5177,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       if(tab === 'prices' && target && window.__focusPrice) window.__focusPrice(target);
     }
     window.addEventListener('hashchange', routeHash);
-    routeHash();
+    // DEFERRED BY A TICK, AND IT IS LOAD-BEARING. showTab calls window.__loadQueue,
+    // __loadBlastHistory, __loadPrices and __loadTelnyxUsage — and every one of those is
+    // registered by a module IIFE defined LATER in this file than this line (6715, 13000, 11055,
+    // 11205 against 4477). Calling routeHash() inline therefore ran it while those four were
+    // still undefined, so `if(tab === 'history' && window.__loadBlastHistory)` was false and the
+    // loader never fired: opening or refreshing the app on #queue, #history, #prices or
+    // #reports showed that tab's skeleton rows forever, while CLICKING the same tab worked,
+    // because by then the modules had registered (Vhea, 2026-10-06).
+    //
+    // setTimeout rather than queueMicrotask: a microtask still runs inside this script's own
+    // execution, so the later IIFEs would still not have run. Zero delay is enough — it only has
+    // to land after the current script finishes. The default view is already in the markup, so
+    // nothing flashes.
+    setTimeout(routeHash, 0);
 
     // Market dropdown → phone numbers for the selected market.
     const marketSel = document.getElementById('market-select');
@@ -5135,13 +6520,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           const k = lg ? known.find(p => p[0] === lg) : null;
           const hasRows = lg && ROWS.some(e => String(e.league || '').toLowerCase() === lg);
           tb.innerHTML = (k && !hasRows)
-            ? '<tr><td colspan="10" class="text-center py-10">'
+            ? '<tr><td colspan="11" class="text-center py-10">'
               + '<div class="font-semibold text-[#133b49]">No schedule yet for ' + esc(k[1]) + '</div>'
               + '<div class="text-sm text-base-content/50 mt-1">'
               + (k[3] ? 'The schedule loads on its own, once a week &mdash; these will appear within a week of the fixtures being published.'
                       : 'No schedule feed is connected for this one, so nothing will appear here.')
               + '</div></td></tr>'
-            : '<tr><td colspan="10" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
+            : '<tr><td colspan="11" class="text-center text-base-content/50 py-8">No events match.</td></tr>';
           return;
         }
         const today = todayYmd();
@@ -5224,10 +6609,219 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             const tag = ar.filtered ? ' <span class="text-[10px] text-[#c94d07]" title="Filtered to the audience sport chosen above — this is a subset of the market, not its total.">&#9662;</span>' : '';
             return `<td>${reachCell(ar.email)}${tag}</td><td>${reachCell(ar.phone)}${tag}</td>`;
           })()}
+          <!-- OPENS THE REACH FIGURES TO THE LEFT. Disabled where there is no market, because
+               there is no audience to resolve and the panel would have nothing to show. -->
+          <td>${noMkt
+            ? '<span class="text-base-content/30 text-xs">&mdash;</span>'
+            : `<button class="btn btn-xs" data-viewrecips="${esc(e.state_code || '')}" data-seg="${esc(e.segment || '')}" data-ev="${esc(evTitle(e))}">View</button>`}</td>
         </tr>`;
         }).join('');
         paintPick();
       }
+
+      // ===== RECIPIENTS PANEL (AI-1101) =====
+      //
+      // The reach figures in this table are the number an operator sends on, and nothing could
+      // open them. This does, and shows the three things that decide whether a row is really
+      // reachable: suppression, duplication, and whether we have already blasted them.
+      //
+      // THE COUNTS HERE ARE DEDUPLICATED AND THE TABLE'S ARE NOT, which is the point rather than
+      // an inconsistency to hide. market_contacts holds one row per contact ROW: 118,493 rows
+      // collapse to 101,295 people, so a reach figure overstates by about 14%, and 625 people
+      // sit in more than one market where two campaigns can each blast them believing they are
+      // alone. The panel says so in words rather than leaving it to be found after a send.
+      const RC = { code: '', seg: '', ev: '', q: '', chan: '', page: 0, total: 0, busy: 0,
+                   lastRows: null, lastSum: null };
+
+      function rcOpen(){
+        const p = el('rc-panel'); if(!p) return;
+        const m = document.querySelector('main');
+        if(m){ const r = m.getBoundingClientRect(); p.style.top = `${Math.max(0, r.top)}px`; p.style.height = `${r.height}px`; }
+        p.classList.add('open'); p.setAttribute('aria-hidden','false');
+      }
+      function rcClose(){
+        const p = el('rc-panel'); if(!p) return;
+        p.classList.remove('open'); p.setAttribute('aria-hidden','true');
+      }
+
+      const rcAgo = t => {
+        if(!t) return null;
+        const d = new Date(t); if(isNaN(d)) return null;
+        const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+        return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+      };
+
+      async function rcLoad(){
+        const host = el('rc-rows'); if(!host) return;
+        const mine = ++RC.busy;
+        host.innerHTML = '<div class="text-sm text-base-content/50 p-3">Loading recipients&hellip;</div>';
+        const qs = new URLSearchParams({ market_recipients: '1', code: RC.code, page: String(RC.page), limit: '100' });
+        if(RC.seg) qs.set('segment', RC.seg);
+        if(RC.q.trim()) qs.set('q', RC.q.trim());
+        try {
+          const r = await fetch(`/api/contacts?${qs}`, { headers: await apiHeaders() });
+          const j = await r.json().catch(() => ({}));
+          if(mine !== RC.busy) return;                       // a newer request already started
+          if(!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+          RC.total = Number(j.total || 0);
+          RC.lastRows = j.rows || [];
+          RC.lastSum  = j.page_summary || {};
+          rcPaintWarn(j.recency);
+          rcPaint(RC.lastRows, RC.lastSum);
+        } catch(e){
+          if(mine !== RC.busy) return;
+          host.innerHTML = `<div class="text-sm text-error p-3">${esc(e.message || e)}</div>`;
+        }
+      }
+
+      // THE BANNER IS BUILT FROM ALL THREE LEDGERS. The cooldown reads one of them, so a banner
+      // built from that alone would say "no recent sends" about a market blasted yesterday
+      // through a different path.
+      function rcPaintWarn(rec){
+        const box = el('rc-warn'); if(!box) return;
+        if(!rec){ box.classList.add('hidden'); return; }
+        const last = [rec.last_app, rec.last_textable, rec.last_logged].filter(Boolean)
+          .sort((a,b) => new Date(b) - new Date(a))[0];
+        const ago = rcAgo(last);
+        if(!ago){
+          box.className = 'text-xs rounded-lg px-3 py-2 mb-2 bg-base-200 text-base-content/60';
+          box.textContent = 'No send to this market has ever been recorded.';
+          box.classList.remove('hidden');
+          return;
+        }
+        // Inside the cooldown floor is the case worth colouring. 14 days matches the decider's
+        // own floor; outside it this is context, not a warning.
+        const days = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+        const hot = days < 14;
+        box.className = `text-xs rounded-lg px-3 py-2 mb-2 ${hot
+          ? 'bg-[#fff5f4] border border-[#f0c9c4] text-[#a8321e]'
+          : 'bg-base-200 text-base-content/60'}`;
+        box.innerHTML = `${hot ? '&#9888; ' : ''}This market was last blasted <b>${esc(ago)}</b>`
+          + (rec.sends_90d ? ` &middot; ${Number(rec.sends_90d).toLocaleString()} send${rec.sends_90d === 1 ? '' : 's'} in the last 90 days` : '')
+          + (hot ? ' &mdash; inside the 14-day cooldown floor.' : '.');
+        box.classList.remove('hidden');
+      }
+
+      function rcPaint(rows, sum){
+        const host = el('rc-rows');
+        const sumEl = el('rc-sum');
+
+        // Channel is filtered in the browser, not the query: the page is at most 100 rows and a
+        // round trip to hide a column would be slower than the filter it replaces.
+        const list = rows.filter(r => RC.chan === 'email' ? !!r.email : RC.chan === 'sms' ? !!r.phone : true);
+
+        if(sumEl){
+          // THE HEADLINE HAS TO MOVE WITH THE FILTER. It used to be the server's page summary
+          // only, so choosing "Email only" changed the list and left every number above it
+          // identical — which reads as the filter having done nothing, especially when the rows
+          // that vanished were below the fold (Vhea, 2026-10-06).
+          const bits = [];
+          if(RC.chan){
+            bits.push(`<b>${list.length.toLocaleString()}</b> shown &mdash; ${RC.chan === 'email' ? 'email only' : 'SMS only'}`);
+            bits.push(`${RC.total.toLocaleString()} ${RC.total === 1 ? 'person' : 'people'} in this market`);
+          } else {
+            bits.push(`<b>${RC.total.toLocaleString()}</b> ${RC.total === 1 ? 'person' : 'people'}`);
+            if(sum.emailable != null) bits.push(`${sum.emailable} emailable on this page`);
+            if(sum.smsable != null)   bits.push(`${sum.smsable} textable`);
+          }
+          if(sum.suppressed)       bits.push(`<span class="text-[#a8321e]">${sum.suppressed} suppressed</span>`);
+          if(sum.in_other_markets) bits.push(`<span class="text-[#b4560b]">${sum.in_other_markets} also in another market</span>`);
+          sumEl.innerHTML = bits.join(' &middot; ')
+            // SAID PLAINLY, because it is a real limitation rather than a detail: the channel
+            // filter runs in the browser over the 100 rows on screen, while the person count is
+            // the whole market. Without this line "22 shown" next to "1,560 people" invites the
+            // reading that 22 is the market's email audience.
+            + (RC.chan ? '<div class="mt-1">The channel filter applies to this page of 100, not the whole market.</div>' : '')
+            + '<div class="mt-1">Counted per PERSON. The reach figures in the table count contact rows, and the same address can appear under several organisations &mdash; the send collapses them, so it reaches fewer people than the column suggests.</div>';
+        }
+
+        if(!list.length){
+          host.innerHTML = `<div class="text-sm text-base-content/50 p-3">${
+            RC.q || RC.chan ? 'Nobody in this market matches that.' : 'This market has no contacts.'}</div>`;
+          return;
+        }
+
+        // table-fixed, so one long cell cannot widen the whole table and push the panel into a
+        // horizontal scroll. The widths are declared once here rather than fought per row.
+        host.innerHTML = `<table class="w-full text-xs table-fixed">
+          <thead class="sticky top-0 bg-base-100"><tr class="border-b border-base-300">
+            <th class="text-left py-1.5 px-2 w-[30%]">Who</th>
+            <th class="text-left py-1.5 px-2 w-[28%]">Email</th>
+            <th class="text-left py-1.5 px-2 w-[18%]">Phone</th>
+            <th class="text-left py-1.5 px-2 w-[24%]">Flags</th>
+          </tr></thead>
+          <tbody>${list.map(r => {
+            const flags = [];
+            if(r.suppressed_email || r.suppressed_phone)
+              flags.push(`<span class="ct-badge" style="background:#fff5f4;border-color:#f0c9c4;color:#a8321e" title="On the do-not-contact list. The send path skips them.">suppressed</span>`);
+            if((r.other_markets || []).length){
+              // CAPPED AT THREE, THEN "+N". One contact sits in 30 markets, and spelling all of
+              // them out made the badge wider than the rest of the table put together -- the panel
+              // grew a horizontal scrollbar and squeezed the Who column into four-line wrapping
+              // (Vhea, 2026-10-06). The full list stays on the tooltip, so nothing is lost.
+              const mk = r.other_markets;
+              const shown = mk.slice(0, 3).join(', ') + (mk.length > 3 ? ` +${mk.length - 3}` : '');
+              flags.push(`<span class="ct-badge" style="background:#fff8f3;border-color:#f3cfae;color:#b4560b" title="Also reachable under ${esc(mk.join(', '))} — a blast to any of those markets would reach them too.">also ${esc(shown)}</span>`);
+            }
+            if(r.dupe_in_market > 1)
+              flags.push(`<span class="ct-badge ct-badge-off" title="${r.dupe_in_market} contact rows in this market share this person. The send collapses them into one message.">${r.dupe_in_market}&times; in market</span>`);
+            if(r.blast_count)
+              flags.push(`<span class="ct-badge ct-badge-on" title="Recorded in the send log.">blasted ${esc(rcAgo(r.last_blasted_at) || '')}</span>`);
+            const org = [r.organization_name, r.city].filter(Boolean).join(' · ');
+            return `<tr class="border-b border-base-200 align-top">
+              <td class="py-1.5 px-2">
+                <div class="font-semibold text-[#133b49] truncate" title="${esc(r.contact_name) || ''}">${esc(r.contact_name) || '<span class="text-base-content/30">&mdash;</span>'}</div>
+                <div class="text-base-content/50 truncate" title="${esc(org)}">${esc(org)}</div>
+              </td>
+              <td class="py-1.5 px-2 font-mono truncate ${r.suppressed_email ? 'line-through text-base-content/40' : ''}" title="${esc(r.email) || ''}">${esc(r.email) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2 font-mono truncate ${r.suppressed_phone ? 'line-through text-base-content/40' : ''}" title="${esc(r.phone) || ''}">${esc(r.phone) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+              <td class="py-1.5 px-2"><div class="flex flex-wrap gap-1">${flags.join('') || '<span class="text-base-content/30">&mdash;</span>'}</div></td>
+            </tr>`;
+          }).join('')}</tbody></table>`;
+
+        const pages = Math.max(1, Math.ceil(RC.total / 100));
+        const pg = el('rc-page'); if(pg) pg.textContent = `Page ${RC.page + 1} of ${pages.toLocaleString()}`;
+        const pv = el('rc-prev'); if(pv) pv.disabled = RC.page === 0;
+        const nx = el('rc-next'); if(nx) nx.disabled = RC.page + 1 >= pages;
+      }
+
+      function rcShow(code, seg, ev){
+        RC.code = code; RC.seg = seg || ''; RC.ev = ev || ''; RC.q = ''; RC.chan = ''; RC.page = 0;
+        RC.lastRows = null; RC.lastSum = null;   // or the previous market's rows flash first
+        const sr = el('rc-search'); if(sr) sr.value = '';
+        const ch = el('rc-chan');   if(ch) ch.value = '';
+        el('rc-panel-title').textContent = `Recipients - ${code}${seg ? ' / ' + seg : ''}`;
+        el('rc-panel-sub').textContent = ev || '';
+        rcOpen();
+        rcLoad();
+      }
+
+      // Delegated: render() replaces the whole tbody on every page and filter change.
+      el('cbs-rows')?.addEventListener('click', e => {
+        const b = e.target.closest('[data-viewrecips]');
+        if(!b) return;
+        e.stopPropagation();   // the row itself is clickable for selection
+        rcShow(b.dataset.viewrecips, b.dataset.seg, b.dataset.ev);
+      });
+      el('rc-panel-close')?.addEventListener('click', rcClose);
+      document.addEventListener('keydown', e => {
+        if(e.key === 'Escape' && el('rc-panel')?.classList.contains('open')) rcClose();
+      });
+      let rcTimer = null;
+      el('rc-search')?.addEventListener('input', e => {
+        RC.q = e.target.value;
+        clearTimeout(rcTimer);
+        rcTimer = setTimeout(() => { RC.page = 0; rcLoad(); }, 300);
+      });
+      el('rc-chan')?.addEventListener('change', e => {
+        RC.chan = e.target.value;
+        // Repaint, do not refetch: the filter is applied in the browser, so asking the server
+        // for the identical rows again only adds a round trip before the same answer.
+        if(RC.lastRows) rcPaint(RC.lastRows, RC.lastSum || {});
+        else rcLoad();
+      });
+      el('rc-prev')?.addEventListener('click', () => { if(RC.page > 0){ RC.page--; rcLoad(); } });
+      el('rc-next')?.addEventListener('click', () => { RC.page++; rcLoad(); });
 
       // AI-964. The bulk bar, mirroring the Queue's paintBulk — including the indeterminate
       // header checkbox, which matters: without it a part-selected page shows an empty box that
@@ -5692,12 +7286,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // events_master, and ROWS holds a copy fetched before the edit.
       async function load(){
         const tb = el('cbs-rows');
-        if(!sb){ tb.innerHTML = '<tr><td colspan="10" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
+        if(!sb){ tb.innerHTML = '<tr><td colspan="11" class="text-center text-error py-8">config.js not filled in</td></tr>'; return; }
         // counts_refreshed_at is a single timestamp and rides along in the same round trip,
         // so knowing how old the figures are costs nothing.
         const [ev, rg, q, ca] = await Promise.all([ fetchAllEvents(), sb.rpc('geo_regions'), sb.rpc('get_campaign_queue'), sb.rpc('counts_refreshed_at') ]);
         paintCountsAge(ca && !ca.error ? ca.data : null);
-        if(ev.error){ tb.innerHTML = `<tr><td colspan="10" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
+        if(ev.error){ tb.innerHTML = `<tr><td colspan="11" class="text-center text-error py-8">${esc(ev.error.message)}</td></tr>`; return; }
         ROWS = ev.data || [];
         REGIONS = rg.error ? [] : (rg.data || []);
         // Reach per market x segment x the ORGANISATION's own sport. Absent until migration 080
@@ -10991,9 +12585,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
       let ROWS = [], filter = '', chanF = '', statusF = '', fromF = '', toF = '';
 
-      // Sources arrive from the database in lower case — cakemail, textable, salesmsg — which is
-      // how they are stored, not how they should be read in a filter or a chip.
-      const nice = v => { const t = String(v || ''); return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; };
+      // Sources arrive from the database in lower case — cakemail, textable, salesmsg, telnyx,
+      // gmail — which is how they are stored, not how they should be read in a filter or a chip.
+      //
+      // A capitalise-the-first-letter rule gets most of them right and "Cakemail" wrong, which is
+      // a product name spelled incorrectly in the UI. The map holds the ones whose casing is not
+      // simply title case; anything unlisted still falls back to the old behaviour, so a source
+      // nobody has seen yet still renders sensibly rather than blank.
+      const SRC_LABEL = { cakemail: 'CakeMail', salesmsg: 'Salesmsg', telnyx: 'Telnyx',
+                          gmail: 'Gmail', textable: 'Textable', log: 'Log', manual: 'Manual' };
+      const nice = v => {
+        const t = String(v || '');
+        return SRC_LABEL[t.toLowerCase()] || (t ? t.charAt(0).toUpperCase() + t.slice(1) : t);
+      };
       // The blast whose panel is open, or null. Was a Set of expanded row ids; a panel shows one
       // thing at a time, so it is a single id now.
       let selected = null;
@@ -11700,9 +13304,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // is four numbers and it is what the row is judged on — while the copy, the replies and
         // the roster each get the full remaining height instead of stacking into a long scroll.
         const cid2 = cid;
+        // AI-1101. Recipients is no longer CakeMail-only. An SMS blast now has a roster too —
+        // from blast_recipients, written at send time, merged with anything recoverable from the
+        // Telnyx inbox. It will be empty for blasts sent before 2026-10-06, because nothing
+        // recorded recipients until then; the tab says so rather than being hidden, since
+        // "nobody knows" and "this cannot be asked" are different answers.
+        const isSms = r.channel === 'SMS';
         const tabs = [
           ['copy', r.channel === 'SMS' ? 'Message' : 'Copy'],
-          ...(cid2 ? [['replies', 'Replies'], ['recipients', 'Recipients']] : []),
+          ...(cid2 ? [['replies', 'Replies']] : []),
+          ...(cid2 || isSms ? [['recipients', 'Recipients']] : []),
           // FOLLOW UP AS A TAB, not the header button it started as (Vhea, 2026-09-17). It is
           // one of the things you do with a blast you are reading, and the panel already has a
           // row for those. A button in the header read as chrome — same visual weight as Close.
@@ -11735,7 +13346,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           panelTab = b.dataset.ptab; renderPanel();
         }));
         if(panelTab === 'replies')    loadReplies(cid2, body.querySelector('[data-people]'));
-        if(panelTab === 'recipients') loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+        if(panelTab === 'recipients'){
+          // Two different facts, two different loaders. CakeMail's is the list as it stands
+          // today; the SMS one is who we actually recorded sending to. One renderer for both
+          // would have to caveat itself twice over and would end up claiming neither clearly.
+          if(isSms) loadSmsRecipients(r, body.querySelector('[data-people]'));
+          else      loadRecipients(cid2, body.querySelector('[data-people]'), false, r);
+        }
         if(panelTab === 'followup')   renderFollowUpTab(r, body.querySelector('[data-followupform]'));
 
         fitPanel();
@@ -11811,7 +13428,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         s.className = 'text-xs text-base-content/40'; s.textContent = text; return s; };
 
       const personName = p => [p.first, p.last].filter(Boolean).join(' ') || p.email || '(unknown)';
-      const hsLink = id => `https://app.hubspot.com/contacts/4313631/record/0-1/${encodeURIComponent(id)}`;
+      // Delegates to the global, so the portal id is stated once (see hsRecordUrl above).
+      const hsLink = id => hsRecordUrl(id);
 
       // A reply body arrives with the whole quoted thread under it. Show what the person wrote,
       // which is everything above the first quote marker — the rest is our own blast read back.
@@ -11863,6 +13481,82 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // whole list on every page: keeping this in the render would slam every expanded row shut
       // the moment you pressed Load more.
       const RECIP_OPEN = new Set();
+
+      // WHO AN SMS BLAST ACTUALLY REACHED (AI-1101).
+      //
+      // Unlike the CakeMail roster below, this is not "the list as it stands today" — it is the
+      // recipients recorded at send time in blast_recipients. (095 also read telnyx_messages;
+      // across all 11 historic SMS blasts it recovered zero rows, because that table is the
+      // two-way inbox and every blast predates its contents, so 097 removed it.)
+      //
+      // IT WILL BE EMPTY FOR OLD BLASTS, and the empty state has to say WHY. Nothing recorded
+      // SMS recipients before 2026-10-06, so "no recipients" here means "never written down",
+      // not "sent to nobody" — and those two readings differ by the entire credibility of the
+      // number next to it.
+      const SMS_RECIP_CACHE = new Map();
+      async function loadSmsRecipients(row, host){
+        if(!host || !row) return;
+        const key = String(row.id);
+        const paint = (st) => {
+          if(st.error){ host.innerHTML = `<div class="text-sm text-error p-2">${esc(st.error)}</div>`; return; }
+          const list = st.recipients || [];
+          if(!list.length){
+            host.innerHTML = `<div class="text-sm text-base-content/60 p-2 leading-relaxed">
+              No recipients were recorded for this blast.
+              <div class="text-xs text-base-content/50 mt-1">
+                Per-recipient history for SMS only began on 6 October 2026. Before that nothing
+                stored who a blast went to &mdash; the numbers were resolved at send time and
+                discarded &mdash; so this is &ldquo;never written down&rdquo;, not &ldquo;sent to
+                nobody&rdquo;. ${row.recipients != null
+                  ? `The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span> recipients.`
+                  : ''}
+              </div></div>`;
+            return;
+          }
+          // ONE SOURCE SINCE 097, so no provenance column: every row here was written by this
+          // application at send time. The incompleteness line stays, because the roster can still
+          // be shorter than the blast's own count -- a partial send, or a blast that predates the
+          // log entirely.
+          host.innerHTML = `<div class="text-xs text-base-content/50 mb-2 leading-relaxed">
+              <div><span class="font-semibold text-[#133b49]">${list.length.toLocaleString()}</span> recipient${list.length === 1 ? '' : 's'} recorded.</div>
+              ${row.recipients != null && Number(row.recipients) !== list.length
+                ? `<div class="mt-0.5">The blast reported <span class="font-semibold text-[#133b49]">${Number(row.recipients).toLocaleString()}</span>, so this roster is incomplete.</div>`
+                : ''}
+              <div class="mt-1">Recorded at send time. &ldquo;Handed off&rdquo; means the carrier accepted the message, not that a handset received it.</div>
+            </div>
+            <div class="border border-base-300 rounded-lg overflow-auto"><table class="w-full text-xs">
+              <thead><tr>
+                <th class="text-left py-1 pr-2">Number</th><th class="text-left py-1 pr-2">Name</th>
+                <th class="text-left py-1 pr-2">Company</th><th class="text-left py-1 pr-2">Outcome</th>
+                <th class="text-left py-1">Sent</th>
+              </tr></thead>
+              <tbody>${list.map(x => `<tr class="border-t border-base-200">
+                <td class="py-1 pr-2 font-mono">${esc(x.address)}</td>
+                <td class="py-1 pr-2">${esc([x.first_name, x.last_name].filter(Boolean).join(' ')) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+                <td class="py-1 pr-2">${esc(x.company) || '<span class="text-base-content/30">&mdash;</span>'}</td>
+                <td class="py-1 pr-2 text-base-content/60">${esc((x.outcome || '').replace(/_/g, ' '))}</td>
+                <td class="py-1 text-base-content/50 whitespace-nowrap">${esc(fmtDate(x.sent_at))}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>`;
+        };
+
+        if(SMS_RECIP_CACHE.has(key)){ paint(SMS_RECIP_CACHE.get(key)); return; }
+        host.innerHTML = '<div class="text-sm text-base-content/50 p-2">Loading recipients&hellip;</div>';
+        try {
+          const qs = new URLSearchParams({ sms_recipients: '1', at: row.sent_at || '' });
+          if(row.state_code) qs.set('state', row.state_code);
+          // The body narrows the Telnyx half, which would otherwise return any outbound message
+          // that merely shares a day with this blast.
+          if(row.message) qs.set('message', row.message);
+          const rr = await fetch(`/api/market-history?${qs}`, { headers: await apiHeaders() });
+          const j = await rr.json().catch(() => ({}));
+          const st = rr.ok ? j : { error: j.error || `HTTP ${rr.status}` };
+          SMS_RECIP_CACHE.set(key, st);
+          paint(st);
+        } catch(e){
+          paint({ error: String((e && e.message) || e) });
+        }
+      }
 
       async function loadRecipients(cid, host, more, row){
         if(!cid || !host) return;
