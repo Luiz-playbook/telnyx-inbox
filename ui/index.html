@@ -412,6 +412,24 @@
     .cat-pill{ display:inline-block; padding:1px 7px; border-radius:999px; background:#eef3f6;
                color:#4a6b7c; font-size:10px; margin-right:3px; white-space:nowrap; }
     .cat-warn{ color:#9a7b45; font-size:10px; font-weight:700; }
+    /* Row actions. ICONS, NOT WORD LABELS, and the reason is the repetition: "Edit  Delete" on
+       fifty rows is a hundred words of furniture competing with the data. Same two glyphs and
+       the same quiet grey as .price-edit and .evt-rescan, so a row action looks like a row
+       action everywhere in this app. Each carries a title, because an icon with no tooltip is
+       a guess. */
+    .cat-act{ cursor:pointer; background:none; border:0; padding:2px 4px; line-height:1;
+              color:#b6c2cf; font-size:13px; }
+    .cat-act:hover{ color:#133b49; }
+    .cat-act.cat-del:hover{ color:#c0341a; }
+    /* The actions column must not absorb the click target of the row beside it. */
+    .cat-acts{ white-space:nowrap; text-align:right; }
+    /* The editor form. Two columns on a roomy screen, one on a phone — the six season dates are
+       the bulk of it and they read as pairs. */
+    .mk-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px 14px; }
+    @media (max-width:640px){ .mk-grid{ grid-template-columns:1fr; } }
+    .mk-grid label{ display:block; font-size:11px; font-weight:700; color:#5e6e82;
+                    margin-bottom:3px; }
+    .mk-grid .mk-full{ grid-column:1 / -1; }
     .price-pop .pp-mapwrap{ position:fixed; z-index:60; width:min(430px, 40vw); max-height:82vh;
                             display:flex; flex-direction:column; overflow:hidden;
                             background:#fff; border:1px solid #efe2cd; border-radius:9px;
@@ -921,6 +939,7 @@
                 <div class="admin-group-items">
                   <a href="#" data-tab="catalog-games" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>Games</a>
                   <a href="#" data-tab="catalog-venues" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>Venues</a>
+                  <a href="#" data-tab="catalog-markets" role="menuitem"><svg class="tab-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-5.2-7-11a7 7 0 0 1 14 0c0 5.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>Markets</a>
                 </div>
               </details>
               <!-- AI-1077. Lives under Admin because it is configuration you set once and check
@@ -1612,10 +1631,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           <!-- ===== MARKET HISTORY / AI DECIDER ===== -->
           <!-- Same shell as Campaigns and Queue: title row, search left / filters right, the
                tab's own action on its own right-aligned row, then the table. -->
-          <!-- CATALOG (AI-1086). One view, two catalogs. Josh's structure keeps strategy as a
-               FILTER rather than a tab, so these are not two strategies side by side — they are
-               the two master lists the strategies draw from, and the sub-tabs only swap which
-               list is on screen. -->
+          <!-- CATALOG (AI-1086). One view, three catalogs. Josh's structure keeps strategy as a
+               FILTER rather than a tab, so these are not strategies side by side — they are the
+               master lists the strategies draw from, and the sub-tabs only swap which list is on
+               screen. Games and Venues are read-only; Markets is editable, because its rows are
+               human research rather than a feed's output. -->
           <div data-view id="view-catalog" class="hidden space-y-4">
             <div class="flex items-center justify-between flex-wrap gap-3">
               <div class="cat-sub" id="cat-sub"></div>
@@ -1626,6 +1646,10 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <input id="cat-search" type="text" class="grow w-64" placeholder="Search&hellip;" autocomplete="off" />
               </label>
               <button id="cat-clear" class="btn btn-ghost btn-sm hidden">Clear</button>
+              <!-- Only the editable catalogs show this. Games is 4,600 rows pulled from the
+                   schedule feeds and Venues is a loader's output; typing either in by hand is
+                   not a thing anyone should be invited to do from here. -->
+              <button id="cat-add" class="btn btn-sm btn-warning text-white hover:text-white hidden">+ Add market</button>
             </div>
             <div id="cat-note" class="text-xs text-base-content/50"></div>
             <!-- The card is what gives the table its background — camp-table sets none, so a
@@ -1639,8 +1663,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 </table>
               </div>
             </div>
-            <!-- Pager. Both catalogs page, for different reasons: Games because 4,600 rows in one
-                 scroll is unusable, Venues because consistency beats saving a click on 89. -->
+            <!-- Pager. All three page, for different reasons: Games because 4,600 rows in one
+                 scroll is unusable, Venues and Markets because consistency beats saving a click
+                 on 89 and 18. It hides itself below one page, so Markets never shows it. -->
             <div class="flex items-center justify-between gap-3" id="cat-pager">
               <span class="text-xs text-base-content/50" id="cat-range"></span>
               <div class="join">
@@ -2116,6 +2141,99 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
               <div class="modal-action">
                 <button id="ct-import-cancel" class="btn btn-ghost btn-sm">Cancel</button>
                 <button id="ct-import-go" class="btn btn-sm btn-warning text-white hover:text-white" disabled>Import</button>
+              </div>
+            </div>
+          </dialog>
+
+          <!-- MARKET EDITOR (AI-1086). Outside #view-catalog for the same reason the import
+               dialog sits outside #view-contacts: showTab() hides a view with display:none, and
+               showModal() on a dialog inside a display:none ancestor opens nothing — no error,
+               no backdrop, nothing to debug.
+
+               WHY THE SIX DATE FIELDS ARE THE POINT OF THIS FORM. Migration 108 ships them NULL
+               deliberately: they change every year, vary by district, and the seasonal cron
+               schedules real sends against them, so a plausible guess is worse than a blank.
+               This form is how the blanks get filled by someone who looked it up — hence the
+               district and athletics body sitting right above them, and the source URL and
+               "verified" checkbox below. -->
+          <dialog id="mk-dlg" class="modal">
+            <div class="modal-box max-w-3xl">
+              <h3 id="mk-title" class="font-extrabold text-[#133b49] text-lg">Add market</h3>
+              <p class="text-sm text-base-content/60 mt-1 mb-4" id="mk-sub"></p>
+
+              <div class="mk-grid">
+                <div>
+                  <label for="mk-state_code">State code</label>
+                  <input id="mk-state_code" maxlength="2" class="input input-bordered input-sm w-full" placeholder="TN" />
+                </div>
+                <div>
+                  <label for="mk-state_name">State name</label>
+                  <input id="mk-state_name" class="input input-bordered input-sm w-full" placeholder="Tennessee" />
+                </div>
+                <div>
+                  <label for="mk-market_city">Market city <span class="font-normal text-base-content/40">&mdash; biggest city in the market</span></label>
+                  <input id="mk-market_city" class="input input-bordered input-sm w-full" placeholder="Nashville" />
+                </div>
+                <div>
+                  <label for="mk-school_district">School district <span class="font-normal text-base-content/40">&mdash; whose calendar answers the school dates</span></label>
+                  <input id="mk-school_district" class="input input-bordered input-sm w-full" placeholder="Metro Nashville Public Schools" />
+                </div>
+                <div class="mk-full">
+                  <label for="mk-athletics_body">Athletics body <span class="font-normal text-base-content/40">&mdash; whose calendar answers the season starts</span></label>
+                  <input id="mk-athletics_body" class="input input-bordered input-sm w-full" placeholder="TSSAA" />
+                </div>
+
+                <div>
+                  <label for="mk-school_first_day">First day of school</label>
+                  <input id="mk-school_first_day" type="date" class="input input-bordered input-sm w-full" />
+                </div>
+                <div>
+                  <label for="mk-school_last_day">Last day of school</label>
+                  <input id="mk-school_last_day" type="date" class="input input-bordered input-sm w-full" />
+                </div>
+                <div>
+                  <label for="mk-fall_sports_start">Fall sports start <span class="font-normal text-base-content/40">&mdash; Aug&ndash;Nov</span></label>
+                  <input id="mk-fall_sports_start" type="date" class="input input-bordered input-sm w-full" />
+                </div>
+                <div>
+                  <label for="mk-winter_sports_start">Winter sports start <span class="font-normal text-base-content/40">&mdash; Dec&ndash;Feb</span></label>
+                  <input id="mk-winter_sports_start" type="date" class="input input-bordered input-sm w-full" />
+                </div>
+                <div>
+                  <label for="mk-spring_sports_start">Spring sports start <span class="font-normal text-base-content/40">&mdash; Mar&ndash;May</span></label>
+                  <input id="mk-spring_sports_start" type="date" class="input input-bordered input-sm w-full" />
+                </div>
+                <div>
+                  <label for="mk-summer_sports_start">Summer sports start <span class="font-normal text-base-content/40">&mdash; Jun&ndash;Jul</span></label>
+                  <input id="mk-summer_sports_start" type="date" class="input input-bordered input-sm w-full" />
+                </div>
+
+                <div class="mk-full">
+                  <label for="mk-source_url">Source URL <span class="font-normal text-base-content/40">&mdash; where the dates came from</span></label>
+                  <input id="mk-source_url" class="input input-bordered input-sm w-full" placeholder="https://&hellip;" />
+                </div>
+                <div class="mk-full">
+                  <label for="mk-notes">Notes</label>
+                  <textarea id="mk-notes" rows="2" class="textarea textarea-bordered textarea-sm w-full"></textarea>
+                </div>
+                <div class="mk-full">
+                  <label class="flex items-center gap-2 font-normal cursor-pointer">
+                    <input id="mk-verified" type="checkbox" class="checkbox checkbox-sm" />
+                    <span class="text-sm">I checked these against the named district and athletics body</span>
+                  </label>
+                  <p class="text-xs text-base-content/50 mt-1">
+                    Leave this off for dates you have not confirmed. Unticked rows show as
+                    <span class="cat-warn">unverified</span> in the list, which is what stops a
+                    send being scheduled against a guess.
+                  </p>
+                </div>
+              </div>
+
+              <div id="mk-status" class="text-xs mt-3 leading-relaxed"></div>
+
+              <div class="modal-action">
+                <button id="mk-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+                <button id="mk-save" class="btn btn-sm btn-warning text-white hover:text-white">Save</button>
               </div>
             </div>
           </dialog>
@@ -5522,15 +5640,22 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     // ---- Catalog: the master lists behind the offers (AI-1086) ---------------------------------
     //
-    // ONE RENDERER, TWO CONFIGS. A master list is a master list — browse, search, filter,
+    // ONE RENDERER, THREE CONFIGS. A master list is a master list — browse, search, filter,
     // inspect. The rows differ; the behaviour does not. This file already carries seventeen
-    // bespoke renderX functions, and two more for tables that behave identically would make
-    // nineteen.
+    // bespoke renderX functions, and three more for tables that behave identically would make
+    // twenty.
     //
-    // The one real divergence is VOLUME, and it is a flag rather than a fork. events_master is
-    // ~4,600 rows, so its search and filters are pushed into PostgREST and the result is capped;
-    // youth_event_venues is 89, so it loads once and filters in memory. Doing Games client-side
-    // would download the whole table so someone can type in a search box.
+    // Two divergences, both flags rather than forks:
+    //
+    //   VOLUME. events_master is ~4,600 rows, so its search and filters are pushed into
+    //   PostgREST and the result is capped; youth_event_venues is 89 and market_season_calendar
+    //   is 18, so they load once and filter in memory. Doing Games client-side would download
+    //   the whole table so someone can type in a search box.
+    //
+    //   EDITABLE. Only Markets. Games comes from the schedule feeds and Venues from a loader, so
+    //   a hand edit to either would be overwritten by the next run and is not offered. Markets
+    //   is eighteen rows of research whose six date columns ship empty on purpose, so the only
+    //   way they get filled is a person typing them in — see api/markets.js.
     //
     // Uses the top-level `cfg` and `esc`. esc2 and initcap exist in this file but live inside
     // other IIFEs, so they are not in scope here — the small helpers below are local on purpose
@@ -5602,7 +5727,71 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 : '<span class="text-base-content/30" title="Flagship programme — the venue name is unambiguous.">confirmed</span>') },
           ],
         },
+        markets: {
+          label: 'Markets',
+          table: 'market_season_calendar',
+          serverSide: false,
+          // Explicit, not '*' — PostgREST 400s on an unknown column, and naming them means a
+          // column added to the table later does not silently change what this tab shows.
+          select: 'state_code,state_name,market_city,school_district,athletics_body,'
+                + 'school_first_day,school_last_day,fall_sports_start,winter_sports_start,'
+                + 'spring_sports_start,summer_sports_start,source_url,verified_at,notes',
+          order: 'market_city.asc',
+          // The ONE editable catalog. Games comes from the schedule feeds and Venues from a
+          // loader; markets are eighteen rows of human research, and the dates in them are
+          // blank until a person fills them in. See api/markets.js.
+          editable: true,
+          addLabel: '+ Add market',
+          note: 'The greenfield markets behind the Youth Events offers — one row per state, with the school and season dates the seasonal send is timed against. Dates are blank until someone confirms them against the named district and athletics body; a guess here would schedule a real send.',
+          search: ['market_city', 'state_name', 'state_code', 'school_district', 'athletics_body'],
+          filters: [
+            // A state filter would be pointless on a table with one row per state — every
+            // option would return exactly one market. What is worth filtering is how much of
+            // the row is actually filled in, which is the whole job this tab exists for.
+            { key: 'dates', label: 'All markets', derive: r => (DATE_KEYS.some(k => r[k]) ? 'has dates' : 'no dates yet') },
+            { key: 'checked', label: 'Checked or not', derive: r => (r.verified_at ? 'confirmed' : 'unverified') },
+          ],
+          columns: [
+            { h: 'Market', v: r => `<span class="font-semibold">${esc(r.market_city)}</span>` },
+            { h: 'State', v: r => esc(`${r.state_name} (${r.state_code})`) },
+            { h: 'School district', v: r => esc(r.school_district || '—') },
+            { h: 'Athletics', v: r => esc(r.athletics_body || '—') },
+            // One cell, because a school year is a span and two columns of mostly-blank dates
+            // read as four columns of nothing.
+            { h: 'School year', v: r => (r.school_first_day || r.school_last_day)
+                ? esc(`${r.school_first_day || '?'} → ${r.school_last_day || '?'}`)
+                : '<span class="text-base-content/30">not filled in</span>' },
+            // Four season starts as labelled pills. A row with two of four filled in is the
+            // normal half-done state here, so the pills show WHICH are known rather than a
+            // count that hides it.
+            { h: 'Season starts', v: r => {
+                const got = SEASONS.filter(s => r[s.col]);
+                if (!got.length) return '<span class="text-base-content/30">none yet</span>';
+                return got.map(s => `<span class="cat-pill" title="${esc(s.label)} — ${esc(r[s.col])}">${esc(s.short)} ${esc(r[s.col])}</span>`).join('');
+              } },
+            { h: 'Source', v: r => (r.verified_at
+                ? `<span class="text-base-content/30" title="Confirmed ${esc(String(r.verified_at).slice(0, 10))}">confirmed</span>`
+                : '<span class="cat-warn" title="Nobody has confirmed these dates against the district and athletics body. Do not schedule a send against them yet.">unverified</span>') },
+            // Icons, not words — see .cat-act. The key travels on the button so the handler
+            // never has to work out which row it came from by position.
+            { h: '', cls: 'cat-acts', v: r => `<button class="cat-act" data-mkedit="${esc(r.state_code)}" title="Edit ${esc(r.market_city)}">&#9998;</button>`
+                + `<button class="cat-act cat-del" data-mkdel="${esc(r.state_code)}" title="Delete ${esc(r.market_city)}">&#10005;</button>` },
+          ],
+        },
       };
+
+      // The six date columns, in the order the form shows them. Named once because the config,
+      // the form and the save all have to agree on them.
+      const DATE_KEYS = ['school_first_day', 'school_last_day', 'fall_sports_start',
+        'winter_sports_start', 'spring_sports_start', 'summer_sports_start'];
+      const SEASONS = [
+        { col: 'fall_sports_start',   short: 'Fall',   label: 'Fall sports start (Aug–Nov)' },
+        { col: 'winter_sports_start', short: 'Winter', label: 'Winter sports start (Dec–Feb)' },
+        { col: 'spring_sports_start', short: 'Spring', label: 'Spring sports start (Mar–May)' },
+        { col: 'summer_sports_start', short: 'Summer', label: 'Summer sports start (Jun–Jul)' },
+      ];
+      const MK_TEXT = ['state_code', 'state_name', 'market_city', 'school_district',
+        'athletics_body', 'source_url', 'notes'];
 
       const PAGE = 50;
       let current = 'games', rows = [], total = 0, loading = false, page = 0;
@@ -5628,11 +5817,20 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         // current selection is re-added explicitly or it would vanish from its own dropdown.
         for (const f of c.filters) {
           const sel = el('cat-filters').querySelector(`[data-catfilter="${f.key}"]`);
-          const vals = [...new Set(rows.map(r => r[f.col]).filter(Boolean).concat(keep[f.key] ? [keep[f.key]] : []))].sort();
-          for (const v of vals) sel.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(String(v).toUpperCase())}</option>`);
+          const vals = [...new Set(rows.map(r => fval(f, r)).filter(Boolean).concat(keep[f.key] ? [keep[f.key]] : []))].sort();
+          // Codes are upper-cased (nba, tn); a derived filter's value is a phrase, and
+          // "NO DATES YET" shouted in a dropdown reads as an error rather than a choice.
+          for (const v of vals) {
+            const label = f.derive ? String(v) : String(v).toUpperCase();
+            sel.insertAdjacentHTML('beforeend', `<option value="${esc(v)}">${esc(label)}</option>`);
+          }
           if (keep[f.key]) sel.value = keep[f.key];
         }
       }
+
+      // A filter either names a column or derives its value from the row. Server-side
+      // catalogs can only use the first — a derived value has nothing to send to PostgREST.
+      const fval = (f, r) => (f.derive ? f.derive(r) : r[f.col]);
 
       function visibleRows(){
         const c = conf();
@@ -5642,8 +5840,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         return rows.filter(r => {
           for (const [k, v] of Object.entries(f)) {
             if (!v) continue;
-            const col = c.filters.find(x => x.key === k).col;
-            if (String(r[col] || '') !== v) return false;
+            const f = c.filters.find(x => x.key === k);
+            if (String(fval(f, r) || '') !== v) return false;
           }
           return !q || c.search.some(k => String(r[k] || '').toLowerCase().includes(q));
         });
@@ -5652,7 +5850,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       function paint(){
         const c = conf();
         el('cat-head').innerHTML = '<tr class="border-b border-base-300 bg-base-100">'
-          + c.columns.map(x => `<th>${esc(x.h)}</th>`).join('') + '</tr>';
+          + c.columns.map(x => `<th${x.cls ? ` class="${x.cls}"` : ''}>${esc(x.h)}</th>`).join('') + '</tr>';
         const all = visibleRows();
         // Server-side catalogs arrive already paged; client-side ones are sliced here. Either
         // way the pager below is driven from the same two numbers.
@@ -5669,7 +5867,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             + `<div class="skeleton h-7 w-full"></div></td></tr>`
             + skeleton('w-11/12') + skeleton('w-full')
           : list.length
-            ? list.map(r => '<tr>' + c.columns.map(x => `<td>${x.v(r)}</td>`).join('') + '</tr>').join('')
+            ? list.map(r => '<tr>' + c.columns.map(x => `<td${x.cls ? ` class="${x.cls}"` : ''}>${x.v(r)}</td>`).join('') + '</tr>').join('')
             : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-10">Nothing matches that.</td></tr>`;
         el('cat-summary').textContent = loading ? 'Loading…' : `${count} ${count === 1 ? 'row' : 'rows'}`;
 
@@ -5681,6 +5879,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         el('cat-note').textContent = c.note;
         const dirty = !!el('cat-search').value.trim() || Object.values(filterState()).some(Boolean);
         el('cat-clear').classList.toggle('hidden', !dirty);
+        const add = el('cat-add');
+        add.classList.toggle('hidden', !c.editable);
+        if (c.editable) { add.textContent = c.addLabel || '+ Add'; add.disabled = loading; }
       }
 
       async function load(){
@@ -5732,7 +5933,101 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         t = setTimeout(load, 300);
       }
 
+      // ---- the market editor -------------------------------------------------------------
+      //
+      // WRITES GO THROUGH /api/markets, NOT STRAIGHT TO POSTGREST. Migration 108 grants the
+      // anon key `select` and nothing else, on purpose: these dates are what the seasonal cron
+      // schedules real sends against, and the anon key is published to every visitor in
+      // config.js. The route holds the service-role key and authenticates the caller.
+      //
+      // The form is seeded from the row already on screen rather than re-fetched. The list is
+      // eighteen rows loaded a moment ago, and a second round-trip to show a dialog would be
+      // latency for nothing.
+      let editing = null;                     // null = adding, otherwise the state_code
+      const mk = id => document.getElementById('mk-' + id);
+
+      function mkOpen(row){
+        editing = row ? row.state_code : null;
+        mk('title').textContent = row ? `Edit ${row.market_city}, ${row.state_code}` : 'Add market';
+        mk('sub').textContent = row
+          ? 'Changes save to the market calendar the seasonal Youth Events send reads.'
+          : 'One row per state. The dates can be left blank and filled in once someone has looked them up.';
+        for (const k of MK_TEXT) mk(k).value = (row && row[k]) || '';
+        for (const k of DATE_KEYS) mk(k).value = (row && row[k]) || '';
+        mk('verified').checked = !!(row && row.verified_at);
+        // The primary key. Editable on create, locked afterwards — changing it would be a
+        // different market, and the route matches on it to find the row.
+        mk('state_code').disabled = !!row;
+        mk('status').textContent = '';
+        mk('status').className = 'text-xs mt-3 leading-relaxed';
+        document.getElementById('mk-dlg').showModal();
+        (row ? mk('market_city') : mk('state_code')).focus();
+      }
+
+      function mkSay(msg, bad){
+        mk('status').textContent = msg;
+        mk('status').className = 'text-xs mt-3 leading-relaxed ' + (bad ? 'text-[#c0341a]' : 'text-base-content/60');
+      }
+
+      async function mkSave(){
+        const body = { verified: mk('verified').checked };
+        for (const k of MK_TEXT) body[k] = mk(k).value.trim();
+        for (const k of DATE_KEYS) body[k] = mk(k).value;
+        // Checked on the client too, so the obvious mistake is caught without a round-trip.
+        // The route checks it again — this one is a courtesy, that one is the rule.
+        if (body.school_first_day && body.school_last_day && body.school_last_day < body.school_first_day) {
+          return mkSay('Last day of school is before the first day.', true);
+        }
+        const btn = document.getElementById('mk-save');
+        btn.disabled = true;
+        mkSay('Saving…');
+        try {
+          const r = await fetch('/api/markets' + (editing ? '?state_code=' + encodeURIComponent(editing) : ''), {
+            method: editing ? 'PATCH' : 'POST',
+            headers: await apiHeaders(),
+            body: JSON.stringify(body),
+          });
+          const out = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((out && out.error) || ('HTTP ' + r.status));
+          document.getElementById('mk-dlg').close();
+          await load();                       // re-read, so what is on screen is what was stored
+        } catch (err) {
+          mkSay(String(err.message || err), true);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      async function mkDelete(code){
+        const row = rows.find(x => x.state_code === code);
+        const who = row ? `${row.market_city}, ${row.state_code}` : code;
+        // A market is a row of researched dates, and deleting it takes the send timing for that
+        // state with it. Naming what goes is the difference between a confirm someone reads and
+        // one they click through.
+        if (!confirm(`Delete the market ${who}?
+
+This removes its school and season dates. Venues in this market are not touched.`)) return;
+        try {
+          const r = await fetch('/api/markets?state_code=' + encodeURIComponent(code), {
+            method: 'DELETE', headers: await apiHeaders(),
+          });
+          const out = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((out && out.error) || ('HTTP ' + r.status));
+          await load();
+        } catch (err) {
+          el('cat-note').textContent = 'Could not delete ' + who + ': ' + String(err.message || err);
+        }
+      }
+
+      document.getElementById('mk-cancel')?.addEventListener('click', () => document.getElementById('mk-dlg').close());
+      document.getElementById('mk-save')?.addEventListener('click', mkSave);
+
       document.addEventListener('click', e => {
+        if (e.target.closest('#cat-add')) { mkOpen(null); return; }
+        const ed = e.target.closest('[data-mkedit]');
+        if (ed) { mkOpen(rows.find(x => x.state_code === ed.dataset.mkedit) || null); return; }
+        const del = e.target.closest('[data-mkdel]');
+        if (del) { mkDelete(del.dataset.mkdel); return; }
         const b = e.target.closest('[data-cat]');
         if (b) { current = b.dataset.cat; page = 0; el('cat-search').value = ''; renderSubTabs(); load(); return; }
         if (e.target.closest('#cat-prev')) { if (page > 0) { page--; conf().serverSide ? load() : paint(); } return; }
@@ -6011,8 +6306,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const VIEW = { compose:'view-compose', queue:'view-queue', prices:'view-prices', templates:'view-templates',
       history:'view-history', replies:'view-replies', reports:'view-reports', rules:'view-rules', dnc:'view-dnc',
       contacts:'view-contacts', forwarding:'view-forwarding', inbox:'view-inbox',
-      // Both catalogs render into one view; the tab decides which config it opens with.
-      'catalog-games':'view-catalog', 'catalog-venues':'view-catalog' };
+      // All three catalogs render into one view; the tab decides which config it opens with.
+      'catalog-games':'view-catalog', 'catalog-venues':'view-catalog', 'catalog-markets':'view-catalog' };
     function showTab(tab){
       document.querySelectorAll('.pb-tabs [data-tab]').forEach(x => x.classList.toggle('active', x.dataset.tab === tab));
       document.querySelectorAll('[data-view]').forEach(v => v.classList.add('hidden'));
