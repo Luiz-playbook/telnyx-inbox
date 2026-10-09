@@ -1,4 +1,4 @@
--- 090: strategy — what KIND of offer this is, and the spine that lets there be more than one.
+-- 102: strategy — what KIND of offer this is, and the spine that lets there be more than one.
 --
 -- WHAT THIS IS FOR (AI-1075)
 --

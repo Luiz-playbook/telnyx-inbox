@@ -7,7 +7,7 @@
 //
 // WHAT IT DOES. Daily at 06:00: pull the last two days of Cole's Gmail through the
 // "Google Service Account | Cole" credential, classify each message as demo_booking / other on
-// subject + sender + snippet, and upsert every one into public.inbox_emails (migration 094).
+// subject + sender + snippet, and upsert every one into public.inbox_emails (migration 106).
 // The SendBlaster inbox tab reads that table and filters by Gmail label.
 //
 // WHY TWO DAYS FOR A DAILY RUN. Overlap on purpose: a run that is late, skipped, or that

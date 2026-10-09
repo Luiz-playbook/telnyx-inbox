@@ -5010,7 +5010,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
 
     // ===== INBOX (AI-1102) =====
     //
-    // Reads public.inbox_emails with the anon key (select policy, migration 094). Nothing here
+    // Reads public.inbox_emails with the anon key (select policy, migration 106). Nothing here
     // writes: the sync owns the rows and Gmail owns the mail. Paged server-side like the DNC
     // tab, because a year of a busy mailbox is thousands of rows.
     (() => {
@@ -9292,7 +9292,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       // dateFrom / dateTo are ET day strings (YYYY-MM-DD), inclusive, and independent: either
       // may be blank. They replace the old single-day `dayF`.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
-      // AI-1075. Reads get_campaign_queue()'s new strategy column (migration 091).
+      // AI-1075. Reads get_campaign_queue()'s new strategy column (migration 103).
       let qStratF = [], qStratCtl = null;
       // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
       //

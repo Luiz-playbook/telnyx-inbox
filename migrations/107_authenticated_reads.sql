@@ -1,4 +1,4 @@
--- 095: let signed-in users read what anon can read.
+-- 107: let signed-in users read what anon can read.
 --
 -- THE BUG. Migrations 090, 093 and 094 each created a table and gave it one read policy,
 -- `for select to anon`. That is the key the UI holds in config.js, so it looked right. But the

@@ -1,4 +1,4 @@
--- 090 ROLLBACK: undo migrations/090_offer_strategy.sql completely.
+-- 102 ROLLBACK: undo migrations/102_offer_strategy.sql completely.
 --
 -- Run this and the database is byte-for-byte back to where it was before 090: no offers tables,
 -- no strategy columns, no indexes, no policies. Nothing else in the schema is touched.

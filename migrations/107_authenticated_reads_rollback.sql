@@ -1,4 +1,4 @@
--- 095 ROLLBACK: remove the authenticated read policies again.
+-- 107 ROLLBACK: remove the authenticated read policies again.
 --
 -- Puts the five tables back to anon-only reads, which is the state that made the Inbox tab
 -- (and the strategy dropdown, and the group-MMS tables) invisible to anyone signed in. There

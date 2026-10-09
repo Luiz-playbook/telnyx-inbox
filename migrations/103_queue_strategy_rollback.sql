@@ -1,7 +1,7 @@
--- 091 ROLLBACK: put get_campaign_queue() back to its pre-091 signature.
+-- 103 ROLLBACK: put get_campaign_queue() back to its pre-103 signature.
 --
 -- Restores the function WITHOUT the strategy column. The body below is generated from
--- 091_queue_strategy.sql by removing exactly the two lines that migration added, so it cannot
+-- 103_queue_strategy.sql by removing exactly the two lines that migration added, so it cannot
 -- drift from what is actually live.
 --
 -- RUN THIS BEFORE THE 090 ROLLBACK if you are undoing both. 090's rollback drops

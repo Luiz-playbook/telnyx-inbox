@@ -1,4 +1,4 @@
--- 093 ROLLBACK: remove the group MMS tables.
+-- 105 ROLLBACK: remove the group MMS tables.
 --
 -- SAFE in the sense that 093 touched nothing that existed before: two new tables, their
 -- indexes and policies, and nothing else. Dropping them takes their policies, grants and

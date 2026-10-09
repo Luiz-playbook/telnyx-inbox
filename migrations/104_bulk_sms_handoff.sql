@@ -1,4 +1,4 @@
--- 092: remember which bulk-sender campaign a queue row became (AI-965).
+-- 104: remember which bulk-sender campaign a queue row became (AI-965).
 --
 -- WHAT THIS IS FOR
 --
