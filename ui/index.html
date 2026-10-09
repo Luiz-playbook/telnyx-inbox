@@ -423,6 +423,17 @@
     .cat-act.cat-del:hover{ color:#c0341a; }
     /* The actions column must not absorb the click target of the row beside it. */
     .cat-acts{ white-space:nowrap; text-align:right; }
+    /* Jump to the related row in another catalog. Same quiet grey as the other row actions, so
+       it reads as "this cell goes somewhere" rather than competing with the text beside it. */
+    .cat-jump{ cursor:pointer; background:none; border:0; padding:0 0 0 3px; line-height:1;
+               color:#b6c2cf; font-size:11px; vertical-align:baseline; }
+    .cat-jump:hover{ color:#133b49; }
+    /* The landing row flashes once. A jump that silently filters a list leaves the operator
+       hunting for which row they were sent to, which is the whole problem the link was meant to
+       solve. An animation rather than a persistent highlight, so it does not read as a selection
+       that needs clearing. */
+    @keyframes cat-flash { 0%,100%{ background:transparent; } 25%,75%{ background:#fdf2e3; } }
+    tr.cat-landed > td{ animation: cat-flash 1.6s ease-in-out 1; }
     /* The editor form. Two columns on a roomy screen, one on a phone — the six season dates are
        the bulk of it and they read as pairs. */
     .mk-grid{ display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:10px 14px; }
@@ -1665,9 +1676,24 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             <!-- Pager. All three page, for different reasons: Games because 4,600 rows in one
                  scroll is unusable, Venues and Markets because consistency beats saving a click
-                 on 89 and 18. It hides itself below one page, so Markets never shows it. -->
+                 on 89 and 18.
+
+                 THE PAGE SIZE IS A CONTROL, NOT A CONSTANT. 50 suits Games, where the point is
+                 to not scroll 4,600 rows; it is silly on Markets, which has 18. Rather than a
+                 per-catalog default nobody can override, the size is a dropdown and it is
+                 remembered per catalog — see PAGE_SIZES.
+
+                 It no longer hides itself below one page: the row carries the count and the size
+                 control, and both are worth seeing on a list of 18. The Prev/Next buttons
+                 disable themselves instead. -->
             <div class="flex items-center justify-between gap-3" id="cat-pager">
-              <span class="text-xs text-base-content/50" id="cat-range"></span>
+              <div class="flex items-center gap-2">
+                <span class="text-xs text-base-content/50" id="cat-range"></span>
+                <label class="flex items-center gap-1.5 text-xs text-base-content/50">
+                  <span>Rows</span>
+                  <select id="cat-size" class="select select-bordered select-xs" aria-label="Rows per page"></select>
+                </label>
+              </div>
               <div class="join">
                 <button class="btn btn-sm join-item" id="cat-prev">&laquo; Prev</button>
                 <button class="btn btn-sm join-item" id="cat-next">Next &raquo;</button>
@@ -5728,9 +5754,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // Bryant-Denny those are Tuscaloosa and Huntsville, and reading one as the other is
             // the mistake a shared column name invited.
             { h: 'City', v: r => esc(`${r.venue_city}, ${r.state_code}`) },
+            // The icon jumps to this market's row in the Markets catalog. Added because two
+            // columns side by side answer "are these the same thing?" but not "so what does this
+            // market say?" — and the dates that time the send live only on that row.
             { h: 'Market', v: r => (r.market_city
                 ? esc(r.market_city) + (r.in_market_city ? ''
                     : ' <span class="text-base-content/30" title="This venue is not in the market city. Sends for this state are timed off the market city&rsquo;s school calendar.">(venue is elsewhere)</span>')
+                  + ` <button class="cat-jump" data-gomarket="${esc(r.state_code)}" title="Open ${esc(r.market_city)} in Markets — its school and season dates">&#8599;</button>`
                 : '<span class="cat-warn" title="No market row for this state, so nothing times a send here yet.">no market row</span>') },
             { h: 'Level', v: r => esc(String(r.level || '').toUpperCase()) },
             // Medium = the venue name has not been checked against a primary source. Shown, not
@@ -5809,10 +5839,33 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         'athletics_body', 'source_url', 'notes'];
 
       const PAGE = 50;
+      // Rows per page is a CONTROL, not a constant. 50 is right for Games, where the point is
+      // not scrolling 4,600 rows, and silly for Markets, which has 18 — so each catalog opens at
+      // a size that suits it and the operator can change it.
+      //
+      // Remembered per catalog, in memory only. Not localStorage: it would survive a logout on a
+      // shared machine, and it is a one-keystroke preference rather than a setting.
+      const PAGE_SIZES = [10, 25, 50, 100, 250];
+      const DEFAULT_SIZE = { games: 50, venues: 25, markets: 25 };
+      const sizeByCatalog = { ...DEFAULT_SIZE };
       let current = 'games', rows = [], total = 0, loading = false, page = 0;
+      const pageSize = () => sizeByCatalog[current] || 50;
+      // Set by a jump from another catalog; consumed by the next paint and then cleared, so the
+      // flash happens once rather than on every repaint while the operator is reading the row.
+      let landOn = null;
       const el = id => document.getElementById(id);
       const conf = () => CATALOGS[current];
       const supa = () => String(cfg.SUPABASE_URL || '').replace(/\/$/, '');
+
+      function renderSizeControl(){
+        const sel = el('cat-size');
+        const cur = pageSize();
+        // The current value is added if it is not one of the presets, so a size set elsewhere
+        // never silently snaps to something else.
+        const opts = [...new Set(PAGE_SIZES.concat(cur))].sort((a, b) => a - b);
+        sel.innerHTML = opts.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${v}</option>`).join('');
+        sel.disabled = loading;
+      }
 
       function renderSubTabs(){
         el('cat-sub').innerHTML = Object.entries(CATALOGS)
@@ -5869,7 +5922,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         const all = visibleRows();
         // Server-side catalogs arrive already paged; client-side ones are sliced here. Either
         // way the pager below is driven from the same two numbers.
-        const list = c.serverSide ? all : all.slice(page * PAGE, page * PAGE + PAGE);
+        const list = c.serverSide ? all : all.slice(page * pageSize(), page * pageSize() + pageSize());
         const count = c.serverSide ? total : all.length;
         // Loading looks the same here as it does on the Queue, Ticket Prices and Blast History:
         // three pulsing skeleton rows with a screen-reader label. A plain "Loading…" line was
@@ -5886,12 +5939,28 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             : `<tr><td colspan="${c.columns.length}" class="text-center text-base-content/50 py-10">Nothing matches that.</td></tr>`;
         el('cat-summary').textContent = loading ? 'Loading…' : `${count} ${count === 1 ? 'row' : 'rows'}`;
 
-        const from = count ? page * PAGE + 1 : 0, to = Math.min(page * PAGE + list.length, count);
+        const from = count ? page * pageSize() + 1 : 0, to = Math.min(page * pageSize() + list.length, count);
         el('cat-range').textContent = count ? `${from}–${to} of ${count}` : '';
         el('cat-prev').disabled = page === 0 || loading;
         el('cat-next').disabled = loading || to >= count;
-        el('cat-pager').classList.toggle('hidden', count <= PAGE);
+        // The pager row stays put. It carries the count and the rows control, both of which are
+        // worth seeing on 18 rows; only Prev/Next go dead. Hiding the row made the size control
+        // vanish exactly on the catalogs small enough to want a smaller page.
+        el('cat-pager').classList.remove('hidden');
         el('cat-note').textContent = c.note;
+        renderSizeControl();
+        // LAND THE JUMP. The row is marked after the table is written, because the markup is
+        // replaced wholesale above and a class set before that is gone. Cleared immediately so a
+        // later repaint — a filter change, a page turn — does not flash it again.
+        if (landOn) {
+          const key = String(landOn).toUpperCase();
+          const i = list.findIndex(r => String(r.state_code || '').toUpperCase() === key);
+          if (i > -1) {
+            const tr = el('cat-body').children[i];
+            if (tr) { tr.classList.add('cat-landed'); tr.scrollIntoView({ block: 'nearest' }); }
+          }
+          landOn = null;
+        }
         const dirty = !!el('cat-search').value.trim() || Object.values(filterState()).some(Boolean);
         el('cat-clear').classList.toggle('hidden', !dirty);
         const add = el('cat-add');
@@ -5909,8 +5978,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
         if (c.serverSide) {
           // One page per request. The old flat limit of 300 silently truncated a 4,600-row table
           // and called it the answer.
-          qs.set('offset', String(page * PAGE));
-          qs.set('limit', String(PAGE));
+          qs.set('offset', String(page * pageSize()));
+          qs.set('limit', String(pageSize()));
           const q = el('cat-search').value.trim().replace(/[(),*]/g, '');
           if (q) qs.set('or', `(${c.search.map(k => `${k}.ilike.*${q}*`).join(',')})`);
           for (const [k, v] of Object.entries(filterState())) {
@@ -5935,6 +6004,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           return;
         }
         loading = false;
+        // TURN TO THE PAGE HOLDING THE LANDING ROW. paint() slices by page, so the page has to
+        // be right before it runs — otherwise the row is not in the markup at all and the flash
+        // silently does nothing. Client-side catalogs only: a server-side one would need the
+        // row's position from the database, and nothing jumps into Games.
+        if (landOn && !conf().serverSide) {
+          const all = visibleRows();
+          const at = all.findIndex(r => String(r.state_code || "").toUpperCase() === String(landOn).toUpperCase());
+          page = at > -1 ? Math.floor(at / pageSize()) : 0;
+        }
         paint();
       }
 
@@ -6038,6 +6116,17 @@ This removes its school and season dates. Venues in this market are not touched.
       document.getElementById('mk-save')?.addEventListener('click', mkSave);
 
       document.addEventListener('click', e => {
+        // Jump to a market from the Venues list. It changes the PAGE, not the search or the
+        // filters: typing "AL" into the search box would match Alabama, Alaska and Albuquerque
+        // alike, and a filter a link applied for you is one you cannot undo because you never
+        // saw it being set.
+        const go = e.target.closest('[data-gomarket]');
+        if (go) {
+          const code = go.dataset.gomarket;
+
+          window.__openCatalog('markets', { focus: code });
+          return;
+        }
         if (e.target.closest('#cat-add')) { mkOpen(null); return; }
         const ed = e.target.closest('[data-mkedit]');
         if (ed) { mkOpen(rows.find(x => x.state_code === ed.dataset.mkedit) || null); return; }
@@ -6056,12 +6145,25 @@ This removes its school and season dates. Venues in this market are not touched.
       });
       document.addEventListener('input', e => { if (e.target.id === 'cat-search') onSearch(); });
       document.addEventListener('change', e => {
-        if (e.target && e.target.dataset && e.target.dataset.catfilter) { page = 0; conf().serverSide ? load() : paint(); }
+        if (e.target && e.target.dataset && e.target.dataset.catfilter) { page = 0; conf().serverSide ? load() : paint(); return; }
+        if (e.target && e.target.id === 'cat-size') {
+          const v = Number(e.target.value);
+          if (!(v > 0)) return;
+          sizeByCatalog[current] = v;
+          // Back to the first page. Staying on page 7 after enlarging the page is how an operator
+          // lands past the end of a list and reads an empty table as "no rows".
+          page = 0;
+          conf().serverSide ? load() : paint();
+        }
       });
 
       // Opened from the Admin menu; reloads each time so a catalog edited elsewhere is not stale.
-      window.__openCatalog = which => {
+      // opts.focus is the state_code of a row to land on: the list is filtered to it and the row
+      // flashes once. Used by the Venues to Markets jump, where landing on page 1 of 18 markets
+      // and leaving the operator to find the right one would defeat the point of the link.
+      window.__openCatalog = (which, opts = {}) => {
         current = CATALOGS[which] ? which : 'games';
+        landOn = opts.focus || null;
         page = 0;
         renderSubTabs();
         load();
