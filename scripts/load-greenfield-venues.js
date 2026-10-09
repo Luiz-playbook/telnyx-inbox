@@ -15,6 +15,10 @@
 // eighteen greenfield states present, and how much of the knowledge base is still blank.
 
 import { readFileSync } from 'node:fs';
+// The sports rule and the greenfield list live in lib/youth-venues.js so api/venues.js applies
+// the SAME mapping to a venue typed in by hand. A second copy here would defeat the sentence at
+// the top of this file about a venue not drifting out of step with the rule.
+import { SPORTS_BY_VENUE_TYPE, GREENFIELD } from '../lib/youth-venues.js';
 
 const DRY = process.argv.includes('--dry');
 const SUPA_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
@@ -24,15 +28,10 @@ const H = { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'content-type
 
 // Josh, Oct 1: basketball venues support basketball and volleyball; football venues support
 // football, soccer, lacrosse and field hockey; baseball venues support baseball and softball.
-const SPORTS_BY_VENUE_TYPE = {
-  basketball: ['basketball', 'volleyball'],
-  football: ['football', 'soccer', 'lacrosse', 'field hockey'],
-  baseball: ['baseball', 'softball'],
-};
+
 
 // The eighteen Josh named. Vermont was said twice on the call; it is one state.
-const GREENFIELD = ['AL', 'AK', 'AR', 'CT', 'DE', 'HI', 'ID', 'ME', 'MS',
-  'MT', 'NH', 'NM', 'ND', 'RI', 'SD', 'VT', 'WV', 'WY'];
+
 
 // Minimal CSV reader: quoted fields, doubled quotes, commas inside quotes.
 function parseCsv(text) {
@@ -108,10 +107,36 @@ if (DRY) { console.log('\n--dry: nothing written.'); process.exit(0); }
 
 // --- write -------------------------------------------------------------------------------------
 
+// Rows a person has corrected through the UI, as "org||venue" keys. The loader must not delete
+// or overwrite these — see migration 116. Best effort: a database without 116 has no such
+// column, and the loader still has to work there, so a 400 means "no protected rows" rather
+// than a crash. It says so, because silently reverting someone's work is the failure here.
+async function protectedKeys(table) {
+  if (table !== 'youth_event_venues') return new Set();
+  const r = await fetch(`${SUPA_URL}/rest/v1/${table}?select=org,venue&edited_by_hand=is.true`, { headers: H });
+  if (!r.ok) {
+    console.log('  (no edited_by_hand column — migration 116 not applied, nothing is protected)');
+    return new Set();
+  }
+  const rows = await r.json();
+  if (rows.length) console.log(`  protecting ${rows.length} hand-edited row(s) from this load`);
+  return new Set(rows.map(x => `${x.org}||${x.venue}`));
+}
+
 async function replace(table, rows, conflict) {
-  const del = await fetch(`${SUPA_URL}/rest/v1/${table}?state_code=in.(${GREENFIELD.join(',')})`,
+  const keep = await protectedKeys(table);
+  // Two halves of the same promise. Deleting everything and re-inserting would wipe the edit;
+  // skipping the delete but still inserting would upsert over it, because the insert carries
+  // resolution=merge-duplicates. So the edited rows are excluded from BOTH.
+  const del = await fetch(`${SUPA_URL}/rest/v1/${table}?state_code=in.(${GREENFIELD.join(',')})`
+      + (keep.size ? '&edited_by_hand=is.false' : ''),
     { method: 'DELETE', headers: { ...H, Prefer: 'return=minimal' } });
   if (!del.ok) throw new Error(`${table} clear: ${(await del.text()).slice(0, 200)}`);
+  if (keep.size) {
+    const before = rows.length;
+    rows = rows.filter(x => !keep.has(`${x.org}||${x.venue}`));
+    if (before !== rows.length) console.log(`  skipped ${before - rows.length} CSV row(s) that have been edited by hand`);
+  }
   for (let i = 0; i < rows.length; i += 500) {
     const r = await fetch(`${SUPA_URL}/rest/v1/${table}`, {
       method: 'POST',

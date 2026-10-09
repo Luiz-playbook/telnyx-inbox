@@ -2264,6 +2264,86 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
           </dialog>
 
+          <!-- VENUE EDITOR (AI-1086). Outside #view-catalog, like the market editor and for the
+               same reason: showModal() inside a display:none ancestor opens nothing at all.
+
+               THERE IS NO MARKET FIELD, AND THAT IS THE POINT. A venue's market is its state's
+               market — migration 115 — so picking the state picks the market, and the dropdown
+               shows which one it will be. A separate market selector would reintroduce exactly
+               the two-columns-one-name confusion 115 removed.
+
+               Sports are not editable either: they are derived from the venue type by Josh's
+               rule and recomputed on every write, so the form SHOWS them and never asks. -->
+          <dialog id="vn-dlg" class="modal">
+            <div class="modal-box max-w-3xl">
+              <h3 id="vn-title" class="font-extrabold text-[#133b49] text-lg">Add venue</h3>
+              <p class="text-sm text-base-content/60 mt-1 mb-4" id="vn-sub"></p>
+
+              <div class="mk-grid">
+                <div class="mk-full">
+                  <label for="vn-state">State <span class="font-normal text-base-content/40">&mdash; sets the market this venue belongs to</span></label>
+                  <select id="vn-state" class="select select-bordered select-sm w-full"></select>
+                </div>
+                <div>
+                  <label for="vn-venue_city">City <span class="font-normal text-base-content/40">&mdash; where the building is</span></label>
+                  <input id="vn-venue_city" class="input input-bordered input-sm w-full" placeholder="Tuscaloosa" />
+                </div>
+                <div>
+                  <label for="vn-org">Organisation</label>
+                  <input id="vn-org" class="input input-bordered input-sm w-full" placeholder="University of Alabama" />
+                </div>
+                <div class="mk-full">
+                  <label for="vn-venue">Venue name</label>
+                  <input id="vn-venue" class="input input-bordered input-sm w-full" placeholder="Bryant-Denny Stadium" />
+                </div>
+                <div>
+                  <label for="vn-venue_type">Venue type</label>
+                  <select id="vn-venue_type" class="select select-bordered select-sm w-full">
+                    <option value="football">football</option>
+                    <option value="basketball">basketball</option>
+                    <option value="baseball">baseball</option>
+                  </select>
+                </div>
+                <div>
+                  <label for="vn-level">Level</label>
+                  <select id="vn-level" class="select select-bordered select-sm w-full">
+                    <option value="d1">d1 &mdash; NCAA Division 1</option>
+                    <option value="minor">minor &mdash; minor-league park</option>
+                    <option value="pro">pro &mdash; major pro stadium</option>
+                  </select>
+                </div>
+                <div class="mk-full">
+                  <label>Supports <span class="font-normal text-base-content/40">&mdash; set by the venue type, not editable</span></label>
+                  <div id="vn-sports" class="pt-1"></div>
+                  <p class="text-xs text-base-content/50 mt-1">
+                    Josh's rule: a basketball venue hosts basketball and volleyball; a football
+                    venue hosts football, soccer, lacrosse and field hockey; a baseball venue
+                    hosts baseball and softball. There is no point inviting a football programme
+                    to a basketball venue.
+                  </p>
+                </div>
+                <div class="mk-full">
+                  <label for="vn-confidence">Venue name checked?</label>
+                  <select id="vn-confidence" class="select select-bordered select-sm w-full">
+                    <option value="Medium">Not checked &mdash; shows as unverified</option>
+                    <option value="High">Confirmed against the organisation&rsquo;s own site</option>
+                  </select>
+                </div>
+                <div class="mk-full">
+                  <label for="vn-notes">Notes</label>
+                  <textarea id="vn-notes" rows="2" class="textarea textarea-bordered textarea-sm w-full"></textarea>
+                </div>
+              </div>
+
+              <div id="vn-status" class="text-xs mt-3 leading-relaxed"></div>
+
+              <div class="modal-action">
+                <button id="vn-cancel" class="btn btn-ghost btn-sm">Cancel</button>
+                <button id="vn-save" class="btn btn-sm btn-warning text-white hover:text-white">Save</button>
+              </div>
+            </div>
+          </dialog>
+
           <!-- ================================================================= DO NOT CONTACT
                A 724k-row table, so nothing here loads "the list". Every view is a server-side
                page or a server-side count, and the search asks the database rather than
@@ -5731,6 +5811,11 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           serverSide: false,
           select: 'state_code,state_name,venue_city,market_city,in_market_city,org,level,venue,venue_type,sports,confidence,notes',
           order: 'state_code.asc',
+          // Editable, unlike Games: a venue list is research, and 39 of these 89 names have
+          // never been checked against the organisation's own site. Migration 116 gives the row
+          // an edited_by_hand flag so the loader stops overwriting a correction.
+          editable: true,
+          addLabel: '+ Add venue',
           note: 'Places we could HOST a youth event — not where a ticketed game is played. City is where the building is; Market is the one city per state whose school calendar times the send, so most venues sit outside it. Greenfield states only so far, and the venue names are a research starting point that has not been verified.',
           search: ['venue', 'org', 'venue_city', 'market_city', 'state_name'],
           filters: [
@@ -5767,6 +5852,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             // hidden, for the same reason the zone map flags its derived sections.
             // Labelled "unverified" rather than "check": "check" reads as an instruction with no
             // object — check what, against what? — and the column header now says so too.
+            { h: '', cls: 'cat-acts', v: r => `<button class="cat-act" data-vnedit="${esc(r.id)}" title="Edit ${esc(r.venue)}">&#9998;</button>`
+                + `<button class="cat-act cat-del" data-vndel="${esc(r.id)}" title="Delete ${esc(r.venue)}">&#10005;</button>` },
             { h: 'Source', v: r => (r.confidence === 'Medium'
                 ? '<span class="cat-warn" title="This venue name came from research and has not been confirmed against the organisation’s own site. Confirm before using it in a blast.">unverified</span>'
                 : '<span class="text-base-content/30" title="Flagship programme — the venue name is unambiguous.">confirmed</span>') },
@@ -6112,6 +6199,138 @@ This removes its school and season dates. Venues in this market are not touched.
         }
       }
 
+      // ---- the venue editor -------------------------------------------------------------
+      //
+      // Writes go through /api/venues for the same reason the market editor uses /api/markets:
+      // the anon key has select and nothing else on this table, and it is published to every
+      // visitor in config.js.
+      //
+      // THREE FIELDS THE FORM DELIBERATELY DOES NOT HAVE.
+      //   * Market. A venue's market is its state's market (migration 115), so the state
+      //     dropdown shows which market it will belong to and there is nothing else to pick.
+      //     A separate market selector would reintroduce the confusion 115 removed.
+      //   * Sports. Derived from the venue type by Josh's rule and recomputed server-side on
+      //     every write, so the form shows them live and never asks.
+      //   * edited_by_hand. Set by the route. A form that could clear it could hand its own
+      //     correction back to the loader to be overwritten.
+      let vnEditing = null;                  // null = adding, otherwise the row id
+      let vnMarkets = null;                  // the 18 states, fetched once for the dropdown
+      const vn = id => document.getElementById('vn-' + id);
+      // Kept in step with lib/youth-venues.js by hand, because this file has no build step and
+      // cannot import it. The SERVER is authoritative: it recomputes sports on every write, so a
+      // drift here shows the wrong pills and still stores the right row.
+      const VN_SPORTS = {
+        basketball: ['basketball', 'volleyball'],
+        football: ['football', 'soccer', 'lacrosse', 'field hockey'],
+        baseball: ['baseball', 'softball'],
+      };
+
+      function vnDrawSports(){
+        const list = VN_SPORTS[vn('venue_type').value] || [];
+        vn('sports').innerHTML = list.map(s => `<span class="cat-pill">${esc(s)}</span>`).join('')
+          || '<span class="text-base-content/30">pick a venue type</span>';
+      }
+
+      // The state list comes from market_season_calendar, not from the venues already loaded: a
+      // greenfield state with no venues yet would otherwise be impossible to add one to.
+      async function vnLoadMarkets(){
+        if (vnMarkets) return vnMarkets;
+        try {
+          const r = await fetch(`${supa()}/rest/v1/market_season_calendar?select=state_code,state_name,market_city&order=state_name.asc`,
+            { headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY } });
+          vnMarkets = r.ok ? await r.json() : [];
+        } catch { vnMarkets = []; }
+        return vnMarkets;
+      }
+
+      async function vnOpen(row){
+        vnEditing = row ? String(row.id) : null;
+        vn('title').textContent = row ? `Edit ${row.venue}` : 'Add venue';
+        vn('sub').textContent = row
+          ? 'Saving marks this row as hand-edited, so the venue loader stops overwriting it.'
+          : 'A venue we could HOST a youth event at, not where a ticketed game is played.';
+        const markets = await vnLoadMarkets();
+        // Each option says which market the state belongs to, because that is the consequence of
+        // the choice and it is not otherwise visible anywhere on this form.
+        vn('state').innerHTML = '<option value="">Pick a state&hellip;</option>'
+          + markets.map(m => `<option value="${esc(m.state_code)}" data-name="${esc(m.state_name)}"${row && row.state_code === m.state_code ? ' selected' : ''}>${esc(m.state_name)} &mdash; market: ${esc(m.market_city)}</option>`).join('');
+        for (const k of ['venue_city', 'org', 'venue', 'notes']) vn(k).value = (row && row[k]) || '';
+        vn('venue_type').value = (row && row.venue_type) || 'football';
+        vn('level').value = (row && row.level) || 'd1';
+        vn('confidence').value = (row && row.confidence) || 'Medium';
+        vnDrawSports();
+        vn('status').textContent = '';
+        vn('status').className = 'text-xs mt-3 leading-relaxed';
+        document.getElementById('vn-dlg').showModal();
+        (row ? vn('venue') : vn('state')).focus();
+      }
+
+      function vnSay(msg, bad){
+        vn('status').textContent = msg;
+        vn('status').className = 'text-xs mt-3 leading-relaxed ' + (bad ? 'text-[#c0341a]' : 'text-base-content/60');
+      }
+
+      async function vnSave(){
+        const code = vn('state').value;
+        if (!code) return vnSay('Pick a state. It decides which market this venue belongs to.', true);
+        const opt = vn('state').selectedOptions[0];
+        const body = {
+          state_code: code,
+          state_name: (opt && opt.dataset.name) || '',
+          venue_city: vn('venue_city').value.trim(),
+          org: vn('org').value.trim(),
+          venue: vn('venue').value.trim(),
+          venue_type: vn('venue_type').value,
+          level: vn('level').value,
+          confidence: vn('confidence').value,
+          notes: vn('notes').value.trim(),
+        };
+        for (const pair of [['venue_city', 'City'], ['org', 'Organisation'], ['venue', 'Venue name']]) {
+          if (!body[pair[0]]) return vnSay(pair[1] + ' is required.', true);
+        }
+        const btn = document.getElementById('vn-save');
+        btn.disabled = true;
+        vnSay('Saving…');
+        try {
+          const r = await fetch('/api/venues' + (vnEditing ? '?id=' + encodeURIComponent(vnEditing) : ''), {
+            method: vnEditing ? 'PATCH' : 'POST',
+            headers: await apiHeaders(),
+            body: JSON.stringify(body),
+          });
+          const out = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((out && out.error) || ('HTTP ' + r.status));
+          document.getElementById('vn-dlg').close();
+          await load();
+        } catch (err) {
+          vnSay(String(err.message || err), true);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      async function vnDelete(id){
+        const row = rows.find(x => String(x.id) === String(id));
+        const who = row ? `${row.venue} (${row.org})` : 'this venue';
+        // Says what a delete does NOT do. The CSV still lists the venue, so a loader run brings
+        // it back, and someone who is not told that will read the reappearance as a broken
+        // delete rather than as the source still holding it.
+        if (!confirm('Delete ' + who + '?\n\nThis removes the row from the table. data/greenfield-venues.csv still lists it, so running the venue loader would bring it back.')) return;
+        try {
+          const r = await fetch('/api/venues?id=' + encodeURIComponent(id), {
+            method: 'DELETE', headers: await apiHeaders(),
+          });
+          const out = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((out && out.error) || ('HTTP ' + r.status));
+          await load();
+        } catch (err) {
+          el('cat-note').textContent = 'Could not delete ' + who + ': ' + String(err.message || err);
+        }
+      }
+
+      document.getElementById('vn-cancel')?.addEventListener('click', () => document.getElementById('vn-dlg').close());
+      document.getElementById('vn-save')?.addEventListener('click', vnSave);
+      document.getElementById('vn-venue_type')?.addEventListener('change', vnDrawSports);
+
       document.getElementById('mk-cancel')?.addEventListener('click', () => document.getElementById('mk-dlg').close());
       document.getElementById('mk-save')?.addEventListener('click', mkSave);
 
@@ -6127,7 +6346,16 @@ This removes its school and season dates. Venues in this market are not touched.
           window.__openCatalog('markets', { focus: code });
           return;
         }
-        if (e.target.closest('#cat-add')) { mkOpen(null); return; }
+        if (e.target.closest('#cat-add')) {
+          // One button, two editors. Games is not editable so it never renders.
+          if (current === 'markets') mkOpen(null);
+          else if (current === 'venues') vnOpen(null);
+          return;
+        }
+        const ve = e.target.closest('[data-vnedit]');
+        if (ve) { vnOpen(rows.find(x => String(x.id) === ve.dataset.vnedit) || null); return; }
+        const vd = e.target.closest('[data-vndel]');
+        if (vd) { vnDelete(vd.dataset.vndel); return; }
         const ed = e.target.closest('[data-mkedit]');
         if (ed) { mkOpen(rows.find(x => x.state_code === ed.dataset.mkedit) || null); return; }
         const del = e.target.closest('[data-mkdel]');
