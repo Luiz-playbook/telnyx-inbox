@@ -1,0 +1,105 @@
+-- 117: waitlist-sms gets the Event Waitlist SMS, verbatim (Josh via Charles, 2026-10-09).
+--
+-- WHAT THIS REPLACES. 096 found no SMS copy under Cole's "Event Waitlist SMS:" heading and left
+-- the row on its 011 placeholder. 098 then pasted the waitlist EMAIL body in as an admitted
+-- stopgap -- 454 characters, three SMS segments, "Best,\nWill" sign-off -- and said in as many
+-- words: "WHAT TO DO WHEN HIS COPY ARRIVES: replace the body below and delete this whole note."
+-- A real SMS line for this play now exists, so that is what this migration does.
+--
+-- SOURCE, AND WHY NOT THE SHORTER VERSION. Josh's message carries a section headed "TEMPLATES
+-- (short)" and cites docs/knowledge-base/event-waitlist-strategy.md as its source. That doc
+-- holds the full sequence; its Day 3 SMS reads "Building a waitlist for... Want me to put [Org
+-- Name] on it?" where the condensed paste reads "Waitlist for... Put [Org] on it?" and renames
+-- the tokens [Sender Name] -> [Sender] and [Org Name] -> [Org]. The doc's wording is what went
+-- in, because it is the source the paste was compressed FROM and its token names are the ones
+-- the rest of the sequence uses.
+--
+--   ⚠ THAT DOC IS UNTRACKED. It is in the working tree and has never been committed, so this
+--   note points at a file git does not have. Commit it alongside this migration or the
+--   provenance is a dead reference.
+--
+-- COLE'S COPY IS NOT TOUCHED. waitlist-email keeps the body and subject 096 gave it, and the two
+-- Teammate AI rows keep theirs. The strategy doc contains a rival Day 0 email for this play (see
+-- the inventory below); it is deliberately NOT written anywhere, because this row is the only
+-- Event Waitlist slot that had nothing real in it.
+--
+-- ─────────────────────────────────────────────────────────────────────────────────────────────
+-- THE ROW STAYS is_placeholder = true, AND THAT IS THE ONLY THING KEEPING IT SAFE.
+--
+-- The copy carries six tokens: [First Name], [Sender Name], [Sport], [State], [Org Name],
+-- [waitlist_link]. Exactly none of them resolve, and -- the part worth stopping on -- none of
+-- them are CAUGHT either:
+--
+--   * fillTokens() in api/queue-draft.js substitutes [GAME], [DATE] and [SPORT] and nothing else.
+--     [Sport] is not [SPORT]; the replace is case-sensitive, so even the one token that has a
+--     filler misses it.
+--   * The leftover-token guard is LEFTOVER = /\[[A-Z][A-Z_ ]{1,20}\]/ (api/queue-draft.js:79).
+--     It only matches tokens that are ALL CAPS after the first letter. "[First Name]",
+--     "[Org Name]", "[Sender Name]" and "[waitlist_link]" are mixed case, so the regex does not
+--     fire on a single one of them. The guard that exists to stop a literal "[GAME]" reaching
+--     12,000 inboxes does not see this copy at all.
+--
+-- So if someone flips is_placeholder to false on this row, the draft path will fill it, find
+-- nothing to complain about, and write "Hey [First Name], [Sender Name] at Playbook" to the
+-- queue as finished copy. Nothing downstream looks again. The placeholder flag is not
+-- bookkeeping here -- it is the whole guardrail. Leave it set until the tokens are either
+-- removed or implemented.
+--
+-- (A second gate happens to help today: pick() in api/queue-draft.js matches play = 'Ticketblast'
+-- only, so no Event Waitlist row is ever selected by the drafter regardless of this flag. That is
+-- an accident of an unfinished multi-strategy drafter, not a decision, and it will stop being
+-- true the moment the drafter learns the other plays. Do not rely on it.)
+-- ─────────────────────────────────────────────────────────────────────────────────────────────
+--
+-- WHAT IT FIXES ANYWAY. Against the 098 stopgap this is a real improvement on both counts 098
+-- raised: filled with plausible values it is ~144 characters, so ONE segment instead of three
+-- (12,000 phones: 12,000 segments, not 36,000), and it has no email furniture or sign-off. It
+-- also signs nobody, which sidesteps the Will-vs-James split 096 documented -- the strategy doc
+-- says the from line is "BDA or AE who owns the territory", i.e. per-market, which is why
+-- [Sender Name] is in the body at all.
+--
+--   ⚠ 144 is not much margin under the 160-character single-segment ceiling. A long org name
+--   and a long sender name together will push a real send to two segments. The condensed paste
+--   came in at 122 for the same inputs if that margin turns out to matter.
+--
+-- THE ROW'S `sender` IS LEFT AS 'Josh Marcus' (from 011). It disagrees with Cole's email body on
+-- the same play, which signs Will, and with the doc's own "BDA or AE" rule. Three answers to one
+-- question and no authority to pick between them, so it is recorded here, not resolved.
+--
+-- THE ROW'S `strategy` IS LEFT ALONE, AND IN PROD THAT MEANS 'event_waitlist'. Checked against
+-- the live database rather than assumed: both waitlist rows already carry 'event_waitlist', and
+-- offer_strategies holds a third row ('event_waitlist' / 'Event Waitlist' / 'Waitlist') that NO
+-- MIGRATION IN THIS REPO CREATES -- 102 seeded 'ticket_blasts' and 'youth_events' only. The
+-- strategy and the re-tagging were done straight against the database, so a database rebuilt
+-- from these files alone would not have them. 118 seeds the strategy row to close that gap.
+-- Still outstanding: the two Teammate AI rows are tagged 'ticket_blasts' in prod, which they are
+-- not.
+--
+-- WHAT ELSE THE SEQUENCE HAS THAT HAS NO ROW (inventory, so the next reader does not re-derive
+-- it). The doc is a 4-email, 2-SMS sequence; this table holds one body per slug per channel.
+--   Day 0 Email #1, ICP   subject "Bringing a [Sport] event to [State]". Would collide with
+--                         Cole's waitlist-email. NOT WRITTEN -- see above.
+--   Day 0 Email #1, SCP   subject "[Sport] event in [State]?". A per-segment variant; the table
+--                         has one subject per slug and `variant` is Ticketblast-shaped
+--                         ('initial', 'followup', 'playoffs'...). No slot. NOT WRITTEN.
+--   Day 10 Email #2       social proof, subject "re: [original subject]" -- a threading
+--                         convention nothing here implements. NOT WRITTEN.
+--   Threshold Email #3    the date-announced handoff into a ticket blast. Own slug. NOT WRITTEN.
+--   + SMS #2
+--   Day 45 Email #4       dormant re-ask. Own slug. NOT WRITTEN.
+-- Per-recipient tokens cannot work here in any case: one queue row is one blast to a whole market
+-- and nothing substitutes per recipient (096, rule 2), so [First Name] and [Org Name] have no
+-- source even in principle. They are kept because the instruction was to add the copy as is.
+--
+-- ⚠ PROD CURRENTLY HOLDS THE CONDENSED LINE, NOT THIS ONE. The live waitlist-sms body is 113
+-- characters and reads "...Waitlist for a [Sport] event in [State]. Put [Org] on it?" -- the
+-- forwarded note's short version, which is what an earlier draft of this file carried. Running
+-- this migration REPLACES it with the strategy doc's longer wording above (145 characters, still
+-- one segment). That is the intended direction -- the doc is the source -- but it is a change to
+-- a row somebody has already set, not a no-op, so it should not arrive as a surprise.
+--
+-- Re-running is safe: a plain update by slug. The previous body is 098 in git history.
+
+update public.message_templates set body =
+'Hey [First Name], [Sender Name] at Playbook. Building a waitlist for a [Sport] event in [State]. Want me to put [Org Name] on it? [waitlist_link]'
+ where slug = 'waitlist-sms';
