@@ -1468,6 +1468,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <button id="ib-next" class="btn btn-xs btn-ghost">Next &rarr;</button>
               </div>
             </div>
+            <!-- READER. Reuses .bh-panel like the Contacts drawer: slides from the right, tabs
+                 stay reachable, Esc closes, the page behind stays usable (aria-modal false).
+                 The list shows one line per email; this is where the whole thing is read. -->
+            <div id="ib-panel" class="bh-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="ib-panel-title">
+              <div class="bh-panel-head">
+                <div class="min-w-0">
+                  <div id="ib-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
+                  <div id="ib-panel-sub" class="text-xs text-base-content/50 mt-0.5 break-words"></div>
+                </div>
+                <button id="ib-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
+              </div>
+              <div id="ib-panel-body" class="bh-panel-body"></div>
+            </div>
           </div>
 
           <div data-view id="view-replies" class="hidden space-y-3">
@@ -1505,6 +1518,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
             </div>
             <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <div id="rep-list" class="divide-y divide-base-300 max-h-[calc(100vh-260px)] overflow-auto"></div>
+            </div>
+            <!-- READER. Reuses .bh-panel like the Contacts drawer: slides from the right, tabs
+                 stay reachable, Esc closes, the page behind stays usable (aria-modal false).
+                 The list shows one line per reply; this is where the whole thing is read. -->
+            <div id="rep-panel" class="bh-panel" role="dialog" aria-modal="false" aria-hidden="true" aria-labelledby="rep-panel-title">
+              <div class="bh-panel-head">
+                <div class="min-w-0">
+                  <div id="rep-panel-title" class="font-extrabold text-[#133b49] leading-snug break-words"></div>
+                  <div id="rep-panel-sub" class="text-xs text-base-content/50 mt-0.5 break-words"></div>
+                </div>
+                <button id="rep-panel-close" class="btn btn-ghost btn-sm bh-panel-x" aria-label="Close">&#10005;</button>
+              </div>
+              <div id="rep-panel-body" class="bh-panel-body"></div>
             </div>
           </div>
 
@@ -2479,6 +2505,51 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // ===== READER DRAWER (Replies + Inbox) =====
+    //
+    // One opener for every ".bh-panel" reader: sizes it to <main> so the tabs stay reachable
+    // (the blast drawer's fitPanel trick), wires Close and Esc once, and hands back {title, sub,
+    // body, close}. The tabs that use it only decide what to put in it.
+    //
+    // READS WITH THE ANON KEY ON PURPOSE. telnyx_messages and telnyx_conversations carry an
+    // anon-only select policy; a signed-in session runs as `authenticated` and gets ZERO ROWS
+    // AND NO ERROR through sb.from() - the same trap that emptied the Inbox tab on 2026-10-09.
+    // The anon key is already public in config.js, so this grants nothing new; it only asks the
+    // question as the role that is allowed to answer it.
+    const readerPanel = (() => {
+      const wired = new Set();
+      function open(pid){
+        const p = document.getElementById(pid);
+        if(!p) return null;
+        const m = document.querySelector('main');
+        if(m){ const r = m.getBoundingClientRect(); p.style.top = `${Math.max(0, r.top)}px`; p.style.height = `${r.height}px`; }
+        const close = () => { p.classList.remove('open'); p.setAttribute('aria-hidden','true'); };
+        if(!wired.has(pid)){
+          wired.add(pid);
+          document.getElementById(pid + '-close')?.addEventListener('click', close);
+          document.addEventListener('keydown', e => { if(e.key === 'Escape' && p.classList.contains('open')) close(); });
+        }
+        p.classList.add('open'); p.setAttribute('aria-hidden','false');
+        const body = document.getElementById(pid + '-body');
+        if(body) body.scrollTop = 0;
+        return {
+          title: document.getElementById(pid + '-title'),
+          sub: document.getElementById(pid + '-sub'),
+          body, close,
+        };
+      }
+      async function anonGet(path){
+        const r = await fetch(cfg.SUPABASE_URL + '/rest/v1/' + path, { headers: { apikey: cfg.SUPABASE_ANON_KEY, Authorization: 'Bearer ' + cfg.SUPABASE_ANON_KEY } });
+        if(!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      }
+      const whenFull = iso => iso ? new Date(iso).toLocaleString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit', timeZone:'America/New_York' }) + ' ET' : '';
+      // Message text as it was written: line breaks kept, nothing rendered as HTML.
+      const textBlock = t => `<div class="whitespace-pre-wrap break-words text-[15px] leading-relaxed text-[#1a2430]">${esc(t || '')}</div>`;
+      const kv = pairs => `<dl class="ct-kv">${pairs.filter(([, v]) => v != null && v !== '').map(([k, v]) => `<dt>${esc(k)}</dt><dd>${v}</dd>`).join('')}</dl>`;
+      return { open, anonGet, whenFull, textBlock, kv };
+    })();
 
     // ── STRATEGY (AI-1075) ──────────────────────────────────────────────────────────────────
     //
@@ -3463,8 +3534,68 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const host = document.getElementById('rep-list');
       if(!host) return;
       const esc3 = v => (v ?? '').toString().replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-      let chan = 'email', provider = '', dest = '', unreadOnly = false, ROWS = [];
+      let chan = 'email', provider = '', dest = '', unreadOnly = false, ROWS = [], VISIBLE = [];
       let repStratF = [], repStratCtl = null;
+
+      // OPEN A REPLY. The list carries 160 characters of preview; the drawer carries the rest.
+      // Email: the one row from email_replies. SMS: reply_inbox returns one row per
+      // CONVERSATION (its reply_id is the conversation id), so the drawer shows the whole thread,
+      // ours and theirs, oldest first - a reply only makes sense next to what it answers.
+      async function openReply(r){
+        const P = readerPanel.open('rep-panel');
+        if(!P) return;
+        P.title.textContent = r.correspondent || 'unknown';
+        P.sub.innerHTML = [r.provider && `<span class="badge badge-xs badge-ghost">${esc3(r.provider)}</span>`,
+                           r.destination && `&rarr; ${esc3(r.destination)}`,
+                           r.market_key && esc3(r.market_key)].filter(Boolean).join(' &middot; ');
+        P.body.innerHTML = '<div class="text-sm text-base-content/50">Loading&hellip;</div>';
+        try {
+          if(chan === 'email'){
+            const rows = await readerPanel.anonGet(`email_replies?id=eq.${encodeURIComponent(r.reply_id)}&select=subject,from_email,to_email,body,received_at,market_key,segment,campaign_id&limit=1`);
+            const e = rows[0];
+            if(!e){ P.body.innerHTML = '<div class="text-sm text-base-content/60">This reply is no longer in the database.</div>'; return; }
+            P.body.innerHTML = readerPanel.kv([
+              ['Subject', esc(e.subject || '(no subject)')],
+              ['From', esc(e.from_email || '')],
+              ['To', esc(e.to_email || '')],
+              ['Received', esc(readerPanel.whenFull(e.received_at))],
+              ['Market', esc([e.market_key, e.segment].filter(Boolean).join(' · '))],
+              ['Blast', e.campaign_id ? `<a href="#queue" class="text-[#1d4fd7] hover:underline" title="Open the Queue tab">${esc(String(e.campaign_id).slice(0, 8))}&hellip;</a>` : ''],
+            ]) + '<div class="mt-4 pt-4 border-t border-base-300">' + readerPanel.textBlock(e.body || '(empty)') + '</div>';
+          } else {
+            const [convs, msgs] = await Promise.all([
+              readerPanel.anonGet(`telnyx_conversations?id=eq.${encodeURIComponent(r.reply_id)}&select=telnyx_number,contact_number,last_message_at&limit=1`),
+              readerPanel.anonGet(`telnyx_messages?conversation_id=eq.${encodeURIComponent(r.reply_id)}&select=direction,from_number,to_number,body,status,created_at&order=created_at.asc&limit=200`),
+            ]);
+            const c = convs[0] || {};
+            P.sub.innerHTML = `${esc(c.contact_number || r.correspondent || '')} &harr; ${esc(c.telnyx_number || r.destination || '')} &middot; ${msgs.length} message${msgs.length === 1 ? '' : 's'}`;
+            if(!msgs.length){ P.body.innerHTML = '<div class="text-sm text-base-content/60">No messages stored for this conversation.</div>'; return; }
+            // Bubbles: theirs on the left, ours on the right - the shape every phone uses, so
+            // nobody has to read a direction column to know who said what.
+            P.body.innerHTML = '<div class="flex flex-col gap-2">' + msgs.map(m => {
+              const out = m.direction === 'outbound';
+              return `<div class="flex ${out ? 'justify-end' : 'justify-start'}">
+                <div class="max-w-[85%] rounded-2xl px-3.5 py-2 ${out ? 'bg-[#133b49] text-white' : 'bg-base-200 text-[#1a2430]'}">
+                  <div class="whitespace-pre-wrap break-words text-[15px] leading-snug">${esc(m.body || '')}</div>
+                  <div class="text-[10px] mt-1 ${out ? 'text-white/60' : 'text-base-content/50'}">${esc(readerPanel.whenFull(m.created_at))}${out && m.status ? ' &middot; ' + esc(m.status) : ''}</div>
+                </div></div>`;
+            }).join('') + '</div>';
+            // Keep the newest in view: a thread is read from its end.
+            P.body.scrollTop = P.body.scrollHeight;
+          }
+        } catch(e){
+          P.body.innerHTML = `<div class="text-sm text-error">Could not load this reply: ${esc(e.message || e)}</div>`;
+        }
+      }
+      host.addEventListener('click', e => {
+        const row = e.target.closest('[data-ri]');
+        if(row && VISIBLE[+row.dataset.ri]) openReply(VISIBLE[+row.dataset.ri]);
+      });
+      host.addEventListener('keydown', e => {
+        if(e.key !== 'Enter' && e.key !== ' ') return;
+        const row = e.target.closest('[data-ri]');
+        if(row && VISIBLE[+row.dataset.ri]){ e.preventDefault(); openReply(VISIBLE[+row.dataset.ri]); }
+      });
 
       const ago = t => {
         if(!t) return '';
@@ -3567,8 +3698,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           host.innerHTML = `<div class="p-6 text-sm text-base-content/60 leading-relaxed">${why}</div>`;
           return;
         }
-        host.innerHTML = rows.map(r => `
-          <div class="flex items-start gap-3 px-4 py-3 hover:bg-base-200/40">
+        VISIBLE = rows;
+        host.innerHTML = rows.map((r, i) => `
+          <div class="flex items-start gap-3 px-4 py-3 hover:bg-base-200/40 cursor-pointer" data-ri="${i}" role="button" tabindex="0" title="Open">
             <span class="mt-1.5 w-2 h-2 rounded-full shrink-0 ${r.unread ? 'bg-[#e55608]' : 'bg-transparent'}"></span>
             <div class="min-w-0 flex-1">
               <div class="flex items-baseline gap-2">
@@ -5018,7 +5150,42 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       const el = id => document.getElementById(id);
       const SOURCE = 'gmail:cole';
       const PAGE = 50;
-      let page = 0, term = '', label = '', showAll = false, lastCount = 0;
+      let page = 0, term = '', label = '', showAll = false, lastCount = 0, LAST = [];
+
+      // OPEN AN EMAIL. The table shows the subject and one truncated line; the drawer shows the
+      // headers, the labels, why the classifier tagged it, and the stored body (the first
+      // ~1,500 characters of the text part - the sync keeps that much and Gmail keeps the rest,
+      // which is what the Gmail link is for).
+      async function openEmail(r){
+        const P = readerPanel.open('ib-panel');
+        if(!P) return;
+        const labels = (r.labels || []).filter(l => !isSystemLabel(l));
+        P.title.textContent = r.subject || '(no subject)';
+        P.sub.innerHTML = esc(r.from_name && r.from_name !== r.from_email ? `${r.from_name} <${r.from_email || ''}>` : (r.from_email || ''));
+        const gmail = r.gmail_message_id ? `<a class="btn btn-sm btn-outline" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/${esc(r.gmail_message_id)}">Open in Gmail &nearr;</a>` : '';
+        const head = readerPanel.kv([
+          ['Received', esc(readerPanel.whenFull(r.received_at))],
+          ['To', esc(r.to_email || '')],
+          ['Labels', labels.length ? labels.map(l => `<span class="badge badge-sm badge-ghost mr-1">${esc(l)}</span>`).join('') : ''],
+          ['Tagged', (r.is_demo_booking
+              ? '<span class="badge badge-sm bg-[#eaf5ee] text-[#067523] border-[#cfe9d8]">demo booking</span>'
+              : '<span class="badge badge-sm badge-ghost">other</span>')
+            + (r.classifier_reason ? ` <span class="text-xs text-base-content/60">${esc(r.classifier_reason)}</span>` : '')],
+        ]);
+        P.body.innerHTML = head + `<div class="mt-3 flex gap-2">${gmail}</div>`
+          + '<div id="ib-panel-text" class="mt-4 pt-4 border-t border-base-300 text-sm text-base-content/50">Loading&hellip;</div>';
+        try {
+          const rows = await readerPanel.anonGet(`inbox_emails?id=eq.${encodeURIComponent(r.id)}&select=body_preview,to_email&limit=1`);
+          const e = rows[0] || {};
+          const t = el('ib-panel-text'); if(!t) return;
+          t.className = 'mt-4 pt-4 border-t border-base-300';
+          t.innerHTML = e.body_preview
+            ? readerPanel.textBlock(e.body_preview) + (e.body_preview.length >= 1400 ? '<div class="text-xs text-base-content/50 mt-3">Showing the first part. The whole email is in Gmail.</div>' : '')
+            : readerPanel.textBlock(r.snippet || '') + '<div class="text-xs text-base-content/50 mt-3">Only the first line was synced for this one. The whole email is in Gmail.</div>';
+        } catch(err){
+          const t = el('ib-panel-text'); if(t) t.innerHTML = `<span class="text-error">Could not load the body: ${esc(err.message || err)}</span>`;
+        }
+      }
 
       const when = iso => {
         if(!iso) return '';
@@ -5092,14 +5259,15 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
           tb.innerHTML = '<tr><td colspan="5" class="text-center text-base-content/50 py-8">' + why + '</td></tr>';
           return;
         }
-        tb.innerHTML = rows.map(r => {
+        LAST = rows;
+        tb.innerHTML = rows.map((r, i) => {
           const labels = (r.labels || []).filter(l => !isSystemLabel(l));
           const from = r.from_name && r.from_name !== r.from_email
             ? '<div class="font-semibold text-[#133b49]">' + esc(r.from_name) + '</div><div class="text-xs text-base-content/50">' + esc(r.from_email || '') + '</div>'
             : '<div class="font-semibold text-[#133b49]">' + esc(r.from_email || '') + '</div>';
           // A link into the very message in Gmail: the tab shows the first line, Gmail has the rest.
           const open = r.gmail_message_id ? ' <a class="text-xs text-[#1d4fd7] hover:underline" target="_blank" rel="noopener" href="https://mail.google.com/mail/u/0/#all/' + esc(r.gmail_message_id) + '">open in Gmail</a>' : '';
-          return '<tr>'
+          return '<tr class="cursor-pointer hover:bg-base-200/40" data-ii="' + i + '" title="Open">'
             + '<td class="whitespace-nowrap text-xs text-base-content/60">' + esc(when(r.received_at)) + '</td>'
             + '<td>' + from + '</td>'
             + '<td><div class="font-semibold text-[#133b49]">' + esc(r.subject || '(no subject)') + open + '</div><div class="text-xs text-base-content/60 max-w-[52ch] truncate" title="' + esc(r.snippet || '') + '">' + esc(r.snippet || '') + '</div></td>'
@@ -5118,6 +5286,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
       el('ib-prev')   && el('ib-prev').addEventListener('click', () => { if(page > 0){ page--; load(); } });
       el('ib-next')   && el('ib-next').addEventListener('click', () => { page++; load(); });
       el('ib-reload') && el('ib-reload').addEventListener('click', () => { loadStats(); loadLabels(); load(); });
+      // A click on the row opens it; a click on the "open in Gmail" link inside the row is that
+      // link's own business and must not also open the drawer.
+      el('ib-rows') && el('ib-rows').addEventListener('click', e => {
+        if(e.target.closest('a')) return;
+        const row = e.target.closest('[data-ii]');
+        if(row && LAST[+row.dataset.ii]) openEmail(LAST[+row.dataset.ii]);
+      });
 
       // Loaded on first view, like the other data tabs.
       let once = false;
