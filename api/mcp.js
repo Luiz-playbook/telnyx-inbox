@@ -175,7 +175,7 @@ const TOOLS = {
       'last sent to. Use for "how does Ohio perform" or "which markets are cold".',
     inputSchema: {
       type: 'object',
-      properties: { market_key: { type: 'string', description: 'One market key, e.g. TX. Omit for all.' } },
+      properties: { market_key: { type: 'string', description: 'One market key as the queue reports it, e.g. los_angeles or houston (not a state code). Omit for all.' } },
     },
     run: async ({ market_key }) => {
       const rows = await rpc('rpc_market_performance');
