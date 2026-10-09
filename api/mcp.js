@@ -349,7 +349,7 @@ async function handleMessage(msg) {
 export default async function handler(req, res) {
   // One line per request, no secrets: enough to see what a connector client actually sends
   // (claude.ai's add-connector dialog failed twice on 2026-10-09 and the runtime log was empty).
-  console.log('[mcp]', req.method, (req.url || '').replace(/(key=|mcp\/)[^&/?]+/, '$1***'),
+  console.log('[mcp]', req.method, (req.url || '').replace(/(key=|mcp\/)[^&/?]+/g, '$1***'),
     'accept=' + (req.headers.accept || '-'), 'auth=' + (req.headers.authorization ? 'bearer' : 'none'),
     'ua=' + String(req.headers['user-agent'] || '-').slice(0, 60));
   // Browsers never call this; CORS is for the odd web-based MCP inspector.
