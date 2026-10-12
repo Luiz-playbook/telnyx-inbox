@@ -26,7 +26,7 @@ import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { defangHtml } from '../lib/defang.js';
-import { fillTokens, gameLabel, prettyDate } from '../lib/tokens.js';
+import { fillTokens, gameLabel, prettyDate, injectBody, wantsBody } from '../lib/tokens.js';
 
 export const config = { maxDuration: 30 };
 
@@ -176,7 +176,7 @@ export default async function handler(req, res) {
     // does it inside the same UPDATE rather than as a second call from here: the cron runs
     // hourly, and two statements would leave a window in which the row is confirmed AND already
     // carries the new design — the exact state being prevented.
-    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed,
+    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed, wants_body: wantsBody(filled),
       source_account_id: owner, foreign: owner !== cm.accountId });
     return;
   }
@@ -200,7 +200,7 @@ export default async function handler(req, res) {
   const wantRow = String(req.query?.queue_id || '').trim();
   if (wantRow) {
     if (!/^[0-9a-f-]{36}$/i.test(wantRow)) { res.status(400).json({ error: 'queue_id must be a row id' }); return; }
-    const r = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=email_html,cakemail_template_id,cakemail_template_name&id=eq.${encodeURIComponent(wantRow)}&limit=1`, { headers: h });
+    const r = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=email_html,email_copy,cakemail_template_id,cakemail_template_name&id=eq.${encodeURIComponent(wantRow)}&limit=1`, { headers: h });
     if (!r.ok) { res.status(502).json({ error: `campaign_queue read failed (HTTP ${r.status})` }); return; }
     const row = (await r.json().catch(() => []))[0];
     if (!row) { res.status(404).json({ error: 'that blast is not in the queue' }); return; }
@@ -208,7 +208,11 @@ export default async function handler(req, res) {
     res.status(200).json({
       ok: true, attached: true,
       template_id: row.cakemail_template_id, name: row.cakemail_template_name,
-      html: defangHtml(row.email_html),
+      // The SAME injection api/queue-tick.js does on the way out. A preview that skipped it
+      // would show [BODY] sitting in the middle of the design while recipients get the copy —
+      // which is the one thing this view must never do.
+      wants_body: wantsBody(row.email_html),
+      html: defangHtml(injectBody(row.email_html, row)),
     });
     return;
   }

@@ -13257,6 +13257,12 @@ This removes its school and season dates. Venues in this market are not touched.
               <span class="font-bold text-[#e55608] uppercase tracking-wide">Design</span>
               <span class="font-semibold text-[#133b49] truncate" title="${esc(row.cakemail_template_name || '')}">${esc(row.cakemail_template_name || ('CakeMail template ' + (row.cakemail_template_id || '?')))}</span>
               <span class="text-base-content/55">${isSent ? 'is what went out.' : 'is what sends.'}</span>
+              ${/* TWO KINDS OF DESIGN, and conflating them is how copy goes missing. One has
+                    [BODY] and wraps this blast's words; the other stands alone and the text box
+                    is simply unused. The row says which, because otherwise "design attached"
+                    looks identical in both cases while the outcome differs completely.
+                    (No backticks in here: template literal.) */''}
+              <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 hidden" data-cmkind="${esc(row.id)}"></span>
               <button class="link link-primary text-xs shrink-0" data-cmtoggle="${esc(row.id)}" aria-pressed="false" title="The stored plain-text copy is kept as the record of this blast. It is not what recipients see while a design is attached.">show text record</button>
               ${isSent ? '' : `<span class="ml-auto shrink-0 flex items-center gap-1">
                    ${/* The row holds a COPY of this design (migration 120), so editing it in
@@ -14090,6 +14096,15 @@ This removes its school and season dates. Venues in this market are not touched.
             // srcdoc + sandbox="" — no scripts, no navigation, and every href was moved to
             // data-href on the server before it got here.
             frame.srcdoc = j.html || '';
+            const kind = tb.querySelector(`[data-cmkind="${CSS.escape(id)}"]`);
+            if(kind){
+              kind.textContent = j.wants_body ? 'wraps your copy' : 'replaces your copy';
+              kind.className = 'text-[10px] px-1.5 py-0.5 rounded shrink-0 '
+                + (j.wants_body ? 'bg-[#dff3e6] text-[#1b7a44]' : 'bg-base-200 text-base-content/60');
+              kind.title = j.wants_body
+                ? 'This design has [BODY] in it, so the text record below is dropped into it when the blast sends. Edit the text and the change goes out — no need to re-attach.'
+                : 'This design has no [BODY] placeholder, so it is sent as-is and the text below is NOT used. Add [BODY] to the template in CakeMail where the words should go, then press Refresh.';
+            }
           }catch(e){
             frame.removeAttribute('srcdoc');
             const wrap = tb.querySelector(`[data-designwrap="${CSS.escape(id)}"]`);
@@ -14161,10 +14176,13 @@ This removes its school and season dates. Venues in this market are not touched.
               toast({ type: gaps.length || j.unconfirmed ? 'warn' : 'ok',
                       title: `"${j.name}" is now what this blast sends`,
                       lines: [
-                        'The text in the body box is kept as the record and is not what recipients see.',
+                        ...(j.wants_body ? [] : ['The text in the body box is kept as the record and is not what recipients see.']),
                         ...(gaps.length
                           ? [`${gaps.join(' and ')} came out blank on this row, so the design has a gap where it expected one. Fill the game or date on the blast, then attach it again.`]
                           : []),
+                        ...(j.wants_body
+                          ? ['It has [BODY] in it, so this blast’s own copy is dropped in when it sends — edit the text and the change goes out.']
+                          : ['It has no [BODY] placeholder, so it sends as-is and the drafted copy is NOT used. Add [BODY] to the template in CakeMail where the words should go, then press Refresh.']),
                         ...(j.foreign ? ['This design was taken from another CakeMail account. The blast still sends from its own sender — nothing is sent from that account.'] : []),
                         ...(j.unconfirmed ? [UNCONFIRMED_NOTE] : []),
                       ] });

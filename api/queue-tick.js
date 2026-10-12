@@ -39,6 +39,7 @@
 // Keep this in sync with EMAIL_SENDERS / cakemailSender in ui/index.html.
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName, isRetiredSender } from '../lib/cakemail.js';
+import { injectBody } from '../lib/tokens.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
 import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, armCampaign, findCampaignByKey, listCampaigns } from '../lib/bulk-sms.js';
@@ -567,7 +568,10 @@ export default async function handler(req, res) {
         // a badge above the body box saying so — a body that reads one way and sends another,
         // unlabelled, is the worst outcome available here.
         const design = String(r.email_html || '').trim();
-        const html = design || nl2br(r.email_copy || '');
+        // [BODY] in the design is filled HERE, not when it was attached, so an edit to the copy
+        // in the Queue is always what goes out. A design with no [BODY] stands alone and the
+        // copy is not used — see lib/tokens.js.
+        const html = design ? injectBody(design, r) : nl2br(r.email_copy || '');
         if (design) notes.push(`design: ${r.cakemail_template_name || `CakeMail template ${r.cakemail_template_id || '?'}`}`);
         // The row's title is queue bookkeeping — "[TEST] angels — Anaheim" — and it used to
         // be sent as the subject line, so that string reached the recipient's inbox.
