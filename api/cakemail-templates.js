@@ -27,7 +27,7 @@ import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailPost, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { defangHtml } from '../lib/defang.js';
 import { designIsStale } from '../lib/design.js';
-import { fillTokens, gameLabel, prettyDate, injectBody, wantsBody } from '../lib/tokens.js';
+import { fillTokens, gameLabel, prettyDate, injectBody, wantsBody, bodyPlan } from '../lib/tokens.js';
 
 export const config = { maxDuration: 30 };
 
@@ -223,7 +223,7 @@ export default async function handler(req, res) {
     // does it inside the same UPDATE rather than as a second call from here: the cron runs
     // hourly, and two statements would leave a window in which the row is confirmed AND already
     // carries the new design — the exact state being prevented.
-    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed, wants_body: wantsBody(filled),
+    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed, wants_body: wantsBody(filled), body_plan: bodyPlan(filled),
       source_account_id: owner, foreign: owner !== cm.accountId });
     return;
   }
@@ -265,6 +265,9 @@ export default async function handler(req, res) {
       // would show [BODY] sitting in the middle of the design while recipients get the copy —
       // which is the one thing this view must never do.
       wants_body: wantsBody(row.email_html),
+      // WHERE the copy lands, and how much of the design is left untouched when it has to
+      // guess. See lib/tokens.js — the fallback is a guess and the count is what says so.
+      body_plan: bodyPlan(row.email_html),
       // HOW MANY OTHER BLASTS SHARE THIS DESIGN. One template in CakeMail, many rows: editing it
       // there changes every one of them, and with the tick now pulling updates automatically
       // they would all take that change at send. The row has to be able to say so BEFORE

@@ -14157,14 +14157,30 @@ This removes its school and season dates. Venues in this market are not touched.
               stale.title = 'This design has changed in CakeMail since it was attached. The blast will send the newer version — the tick pulls it automatically just before sending — and pressing Refresh now takes it immediately so the preview above matches.';
               stale.classList.remove('hidden');
             }
+            // THREE OUTCOMES, NOT TWO. The fallback is the one that needs watching: the copy
+            // does go in, and then the rest of the design's own words follow it. `others` is
+            // how many blocks that is, and it is on the chip rather than buried in a tooltip
+            // because it is the difference between a clean email and a confusing one.
             const kind = tb.querySelector(`[data-cmkind="${CSS.escape(id)}"]`);
+            const plan = j.body_plan || { mode: j.wants_body ? 'token' : 'none' };
             if(kind){
-              kind.textContent = j.wants_body ? 'wraps your copy' : 'replaces your copy';
-              kind.className = 'text-[10px] px-1.5 py-0.5 rounded shrink-0 '
-                + (j.wants_body ? 'bg-[#dff3e6] text-[#1b7a44]' : 'bg-base-200 text-base-content/60');
-              kind.title = j.wants_body
-                ? 'This design has [BODY] in it, so the text record below is dropped into it when the blast sends. Edit the text and the change goes out — no need to re-attach.'
-                : 'This design has no [BODY] placeholder, so it is sent as-is and the text below is NOT used. Add [BODY] to the template in CakeMail where the words should go, then press Refresh.';
+              const base = 'text-[10px] px-1.5 py-0.5 rounded shrink-0 ';
+              if(plan.mode === 'token'){
+                kind.textContent = 'wraps your copy';
+                kind.className = base + 'bg-[#dff3e6] text-[#1b7a44]';
+                kind.title = 'This design has [BODY] in it, so the text record is dropped into it when the blast sends. Edit the text and the change goes out — no need to re-attach.';
+              } else if(plan.mode === 'first-paragraph'){
+                const n = plan.others || 0;
+                kind.textContent = n ? `copy in 1st paragraph · ${n} block${n === 1 ? '' : 's'} unchanged` : 'copy in 1st paragraph';
+                kind.className = base + 'font-bold bg-[#fdeee4] text-[#e55608]';
+                kind.title = 'This design has no [BODY], so the copy was placed in its first paragraph — a guess. '
+                  + (n ? `The design's other ${n} block${n === 1 ? '' : 's'} of text are unchanged and WILL be sent after your copy. Check the preview. ` : '')
+                  + 'Add [BODY] to the template in CakeMail where the words really belong, then press Refresh, and this becomes exact.';
+              } else {
+                kind.textContent = 'replaces your copy';
+                kind.className = base + 'bg-base-200 text-base-content/60';
+                kind.title = 'This design has no [BODY] and no paragraph to put the copy in, so it is sent as-is and the text below is NOT used.';
+              }
             }
           }catch(e){
             frame.removeAttribute('srcdoc');
