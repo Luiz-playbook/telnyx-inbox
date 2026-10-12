@@ -13885,7 +13885,14 @@ This removes its school and season dates. Venues in this market are not touched.
                              dialog that just sat there would leave someone believing their edit
                              had landed when it had not. -->
                         <div class="hidden items-center gap-2 px-3 py-2 border-b border-base-300 bg-[#fdeee4] text-xs" data-backbar>
-                          <span class="text-[#133b49]">Editing in CakeMail in the other tab. Save it there, then come back.</span>
+                          ${/* THE ACCOUNT IS NAMED HERE, not only in a tooltip. Templates are
+                                strictly per sub-account and THE PARENT IS NOT A SUPERSET: with
+                                CakeMail on the parent, GET /templates/968380 answers 400
+                                Forbidden and their app says "Unable to fetch template". Verified
+                                2026-10-12. Someone reasonably assumed the parent could open any
+                                of them, so the correction belongs on screen at the moment they
+                                leave for CakeMail. (No backticks in here: template literal.) */''}
+                          <span class="text-[#133b49]">Editing in CakeMail in the other tab &mdash; it must be on <b>${esc(accountLabel)}</b>, not the parent account. Save it there, then come back.</span>
                           <button class="btn btn-xs btn-primary ml-auto shrink-0" data-reload>I&rsquo;m done &mdash; pull my changes</button>
                         </div>
                         <iframe sandbox="" class="w-full h-[17rem] bg-white" title="Template preview" data-prevframe></iframe>
