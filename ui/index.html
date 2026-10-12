@@ -12054,6 +12054,15 @@ This removes its school and season dates. Venues in this market are not touched.
       // the working set, the pager is only a window onto it, so selecting on page 1 and acting
       // from page 2 is fine while selecting and then filtering away is not.
       const picked = new Set();
+      // ROWS BEING SENT RIGHT NOW. Held here rather than written to the row as status='sending',
+      // which statusCell has always had a branch for and nothing has ever set. A status in the
+      // database would survive the thing that set it: close the tab mid-send, or let the request
+      // die, and the row reads "Sending…" forever with no process behind it. In memory it cannot
+      // outlive the send, and the finally clause clears it even when the send throws.
+      //
+      // A CakeMail send is five sequential API calls, so this is a real wait — several seconds —
+      // during which the row otherwise sat there looking untouched.
+      const sendingIds = new Set();
       // The last filtered and last paged row sets, kept so ticking a box can update the bar
       // and the header checkbox without a full re-render — which would blow away focus and
       // scroll position on every click.
@@ -12373,6 +12382,10 @@ This removes its school and season dates. Venues in this market are not touched.
           : `<div class="text-[11px] text-base-content/50 mt-0.5">sends ${esc(whenLabel(r.scheduled_for))}</div>`;
 
       function statusCell(r){
+        // In flight, from this browser. Checked FIRST so it wins over whatever the row still says
+        // it is — mid-send it is neither pending nor sent, and showing the old status next to a
+        // spinner would be the screen arguing with itself.
+        if(sendingIds.has(r.id)) return '<span class="loading loading-spinner loading-xs align-middle"></span> <span class="text-[#e55608] font-semibold">Sending&hellip;</span>';
         if(r.status==='sent')     return '<span class="badge badge-ghost badge-sm">&#10003; Sent</span>';
         // Partly sent (migration 058): at least one channel delivered, at least one failed. It
         // stays in the Queue on purpose — see matchesStatus. The failure text is the whole point
@@ -14409,6 +14422,11 @@ This removes its school and season dates. Venues in this market are not touched.
         if(!ok) return;
         const orig = btn.innerHTML; btn.disabled = true;
         btn.innerHTML = '<span class="loading loading-spinner loading-xs"></span>';
+        // AND THE ROW SAYS SO TOO, not just the button. That button lives in a per-row actions
+        // menu which closes on the next render, so on its own it is an indicator nobody is
+        // looking at by the time it matters. A CakeMail send is five sequential API calls.
+        sendingIds.add(r.id);
+        render();
         try {
           // No secret is attached, deliberately: config.js is public, so anything put here
           // would be too. The server allows this call because it names ONE row and TEST MODE
@@ -14449,6 +14467,11 @@ This removes its school and season dates. Venues in this market are not touched.
           toast({ type:'err', title:'Send now failed', lines:[ String((e && e.message) || e), 'The blast is unchanged — schedule and status are as they were.' ] });
         } finally {
           btn.disabled = false; btn.innerHTML = orig;
+          // Cleared BEFORE the refresh, so the spinner is replaced by the row's real new status
+          // in one repaint rather than flicking back to the old one first. In `finally`, so a
+          // throw cannot leave a row spinning — the failure a status column in the database
+          // would have made permanent.
+          sendingIds.delete(r.id);
           await refresh();
         }
       }
