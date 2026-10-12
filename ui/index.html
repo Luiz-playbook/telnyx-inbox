@@ -11945,13 +11945,13 @@ This removes its school and season dates. Venues in this market are not touched.
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
         { v:'cakemail:1761047:l4vuKoFJ5s9eJryDK0sV', method:'CakeMail', label:'josh.marcus@callplaybook.com' },
         { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
-        // cole@ IS OFFERED, BUT ONLY AS A DESIGN SOURCE. Same shape as every other sender so the
-        // flow is uniform — pick it, browse his templates, attach one, preview it. What it
-        // cannot do is deliver: the address is confirmed in CakeMail (checked 2026-10-12), so
-        // the refusal is enforced in api/queue-tick.js via isRetiredSender, not by this label.
-        // The reason is unchanged from when it was withheld entirely: every Playbook template
-        // signs off as Josh (migration 043), so a blast FROM cole@ contradicts itself.
-        { v:'cakemail:1679383:a0JY63GyFWwXfa6AgN92', method:'CakeMail', label:'cole@callplaybook.com', noSend:true },
+        // cole@ sends like any other sender now. It was offered as design-only first, with the
+        // refusal enforced in api/queue-tick.js, because every Playbook template signs off as
+        // Josh (migration 043) and a blast FROM cole@ contradicts itself in the inbox. That is a
+        // judgement about COPY, not a technical limit — the address is confirmed in CakeMail and
+        // delivers fine (verified 2026-10-13, campaign 15508434) — and it is the operator's call
+        // to make per blast, so the block is gone. Match the sign-off to the From address.
+        { v:'cakemail:1679383:a0JY63GyFWwXfa6AgN92', method:'CakeMail', label:'cole@callplaybook.com' },
         // No Salesmsg here: it is an SMS product and carries nothing on the email side.
         // It lives in the "Text from" list, populated from /api/salesmsg-senders.
       ];
@@ -12835,9 +12835,6 @@ This removes its school and season dates. Venues in this market are not touched.
       // A row stored with a sender no longer offered (the retired SalesMessage placeholder)
       // would render as the default option while still holding a value nothing can send from,
       // so the fallback is applied on read and written back in refresh().
-      // Mirrors RETIRED_SENDERS in lib/cakemail.js — keep both in sync. This one only decides
-      // what the screen says; api/queue-tick.js is what actually refuses to deliver.
-      const isRetiredSender = v => EMAIL_SENDERS.some(s => s.v === v && s.noSend);
       const validEmailFrom = v => EMAIL_SENDERS.some(s => s.v === v);
       const emailFromOf = r => (validEmailFrom(r.email_from) ? r.email_from : DEFAULT_EMAIL_FROM);
       // 'cakemail:<account_id>:<sender_id>' -> { accountId, senderId }; anything else -> null.
@@ -13111,7 +13108,7 @@ This removes its school and season dates. Venues in this market are not touched.
           // sending" is a decision the operator makes right here, and choosing a real sender
           // turns the channel back on. Only a sent row is locked.
           const offOpt = (label, on) => `<option value=""${on?'':' selected'}>&mdash; ${label} &mdash;</option>`;
-          const emailSel = `<select aria-label="Email sender for this blast" class="select select-bordered select-xs mini-select w-56${r.email?'':' text-base-content/50'}" data-qemail="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending email', r.email)}${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}"${(r.email && s.v===curEmail)?' selected':''}>${esc(s.method)} · ${esc(s.label)}${s.noSend?' · design only':''}</option>`).join('')}</select>`;
+          const emailSel = `<select aria-label="Email sender for this blast" class="select select-bordered select-xs mini-select w-56${r.email?'':' text-base-content/50'}" data-qemail="${esc(r.id)}" ${sent?'disabled':''}>${offOpt('Not sending email', r.email)}${EMAIL_SENDERS.map(s=>`<option value="${esc(s.v)}"${(r.email && s.v===curEmail)?' selected':''}>${esc(s.method)} · ${esc(s.label)}</option>`).join('')}</select>`;
           // Telnyx numbers come from the telnyx_numbers table; Salesmsg numbers come from the
           // Salesmsg API via /api/salesmsg-senders (OAuth). The Salesmsg entry used to be a
           // hardcoded '(placeholder)' whose value 'salesmessage' was then handed to the TELNYX
@@ -13310,11 +13307,10 @@ This removes its school and season dates. Venues in this market are not touched.
              </div>`;
           const offNote = what => `<div class="flex-1 p-4 text-xs text-base-content/45 leading-relaxed">
             ${sent ? `No ${what} went out with this blast.` : `Not sending ${what} on this blast. Choose a sender above to turn it back on.`}</div>`;
-          const panelHead = (label, sel, via, noSend) => `<div class="shrink-0 flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
-            <span class="prev-label">${label}</span>${sel}${via?`<span class="text-[11px] text-base-content/45">via ${esc(via)}</span>`:''}
-            ${noSend?`<span class="text-[11px] font-bold px-1.5 py-0.5 rounded bg-[#fdeee4] text-[#e55608]" title="This address is offered so its designs can be browsed and attached. It will not deliver - api/queue-tick.js refuses it and the blast fails with a message saying so. Pick a sending address before you confirm.">DESIGN ONLY - CANNOT SEND</span>`:''}</div>`;
+          const panelHead = (label, sel, via) => `<div class="shrink-0 flex items-center gap-2 flex-wrap px-3 py-2 border-b border-base-300 bg-base-200/50">
+            <span class="prev-label">${label}</span>${sel}${via?`<span class="text-[11px] text-base-content/45">via ${esc(via)}</span>`:''}</div>`;
           const emailPanel = `<section class="min-w-0 flex flex-col border border-base-300 rounded-lg overflow-hidden bg-white">
-            ${panelHead('Email', emailSel, r.email ? emailMethodOf(curEmail) : '', r.email && isRetiredSender(curEmail))}
+            ${panelHead('Email', emailSel, r.email ? emailMethodOf(curEmail) : '')}
             ${r.email ? `<div class="shrink-0 px-3.5 py-2 border-b border-base-300 text-xs flex items-baseline bg-base-200/20">
                 <span class="inline-block w-14 shrink-0 text-base-content/40">Subject</span>
                 <span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span>

@@ -38,7 +38,7 @@
 // lib/cakemail.js, anything else to the Gmail mail merge webhook.
 // Keep this in sync with EMAIL_SENDERS / cakemailSender in ui/index.html.
 
-import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName, isRetiredSender } from '../lib/cakemail.js';
+import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { injectBody } from '../lib/tokens.js';
 import { renderAttachedTemplate } from '../lib/design.js';
 import { replyAddressFor } from '../lib/reply-address.js';
@@ -719,14 +719,7 @@ export default async function handler(req, res) {
         // before migration 044, or drafted with no email template.
         const subject = String(r.email_subject || '').trim() || r.title;
         const cm = parseCakemailFrom(r.email_from);
-        // A RETIRED SENDER IS SELECTABLE BUT NOT SENDABLE (lib/cakemail.js). cole@ is offered in
-        // the picker so his designs can be browsed and attached through the ordinary flow, and
-        // his address is still confirmed in CakeMail — so without this the choice would really
-        // deliver, signing off as Josh from Cole's address. Refused here rather than relying on
-        // the UI to grey an option out: the UI is a hint, this is the rule.
-        if (isRetiredSender(r.email_from)) {
-          failed.push(`${r.email_from} is a design-only sender and cannot deliver — choose a sending address for this blast`);
-        } else if (cm) {
+        if (cm) {
           // Straight to the CakeMail API — one campaign for the whole market, five calls
           // total regardless of recipient count. A failure here must not abort the run:
           // record it and let the remaining due rows proceed.
