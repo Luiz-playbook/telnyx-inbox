@@ -186,6 +186,33 @@ export default async function handler(req, res) {
   // ---------------------------------------------------------------------------------------
   // GET — browse and preview.
   // ---------------------------------------------------------------------------------------
+  // ?queue_id=<uuid> — THE DESIGN THIS ROW WILL ACTUALLY SEND, for the preview in the Queue.
+  //
+  // Deliberately the row's STORED email_html and not a fresh render of the template. They are
+  // not the same thing and the difference is the whole point of migration 120: the row holds a
+  // copy taken at the moment it was attached, with [GAME]/[DATE]/[SPORT] already filled for THIS
+  // blast. Re-rendering the template here would show a preview with empty tokens, and would show
+  // any edit made in CakeMail since — i.e. it would show something other than what is going to
+  // be sent, in the one place whose job is to show what is going to be sent. Refresh is how a
+  // CakeMail edit is deliberately taken.
+  //
+  // Defanged, like every other preview — see lib/defang.js.
+  const wantRow = String(req.query?.queue_id || '').trim();
+  if (wantRow) {
+    if (!/^[0-9a-f-]{36}$/i.test(wantRow)) { res.status(400).json({ error: 'queue_id must be a row id' }); return; }
+    const r = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=email_html,cakemail_template_id,cakemail_template_name&id=eq.${encodeURIComponent(wantRow)}&limit=1`, { headers: h });
+    if (!r.ok) { res.status(502).json({ error: `campaign_queue read failed (HTTP ${r.status})` }); return; }
+    const row = (await r.json().catch(() => []))[0];
+    if (!row) { res.status(404).json({ error: 'that blast is not in the queue' }); return; }
+    if (!row.email_html) { res.status(200).json({ ok: true, attached: false }); return; }
+    res.status(200).json({
+      ok: true, attached: true,
+      template_id: row.cakemail_template_id, name: row.cakemail_template_name,
+      html: defangHtml(row.email_html),
+    });
+    return;
+  }
+
   // ?accounts=1 — which CakeMail accounts the picker may browse.
   //
   // A DESIGN DOES NOT HAVE TO LIVE IN THE SENDING ACCOUNT. We copy the rendered HTML onto the

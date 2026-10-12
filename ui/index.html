@@ -13256,7 +13256,8 @@ This removes its school and season dates. Venues in this market are not touched.
             <div class="shrink-0 flex items-center gap-2 px-3.5 py-2 border-b border-base-300 bg-[#fdeee4] text-xs">
               <span class="font-bold text-[#e55608] uppercase tracking-wide">Design</span>
               <span class="font-semibold text-[#133b49] truncate" title="${esc(row.cakemail_template_name || '')}">${esc(row.cakemail_template_name || ('CakeMail template ' + (row.cakemail_template_id || '?')))}</span>
-              <span class="text-base-content/55">${isSent ? 'is what went out — the text below is the record, not the message.' : 'is what sends. The text below is kept as the record, and is not what recipients see.'}</span>
+              <span class="text-base-content/55">${isSent ? 'is what went out.' : 'is what sends.'}</span>
+              <button class="link link-primary text-xs shrink-0" data-cmtoggle="${esc(row.id)}" aria-pressed="false" title="The stored plain-text copy is kept as the record of this blast. It is not what recipients see while a design is attached.">show text record</button>
               ${isSent ? '' : `<span class="ml-auto shrink-0 flex items-center gap-1">
                    ${/* The row holds a COPY of this design (migration 120), so editing it in
                          CakeMail changes NOTHING here until it is pulled again. Refresh is that
@@ -13296,7 +13297,16 @@ This removes its school and season dates. Venues in this market are not touched.
                 <span class="font-semibold text-[#133b49] flex-1${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-subject="${esc(r.id)}">${esc(r.email_subject || r.title || '(no subject)')}</span>
               </div>
               ${designBadge(r, sent)}
-              <div class="mail-body copy-pane flex-1 min-h-20 p-4 text-sm${sent?'':' edit-live'}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
+              ${/* THE DESIGN SITS WHERE THE BODY WAS. This panel answers "what does this blast
+                    send", and while a design is attached the answer is not the text box. The
+                    text is not thrown away — it is the stored record and the badge toggles to
+                    it — but it stops being the thing you read first, because it stops being the
+                    thing that is sent. Loaded lazily, per row, on expand.
+                    (No backticks in here: template literal.) */''}
+              ${r.email_html ? `<div class="flex-1 min-h-20 bg-white" data-designwrap="${esc(r.id)}">
+                   <iframe sandbox="" class="w-full h-72 border-0 bg-white" title="The design this blast sends" data-designframe="${esc(r.id)}"></iframe>
+                 </div>` : ''}
+              <div class="mail-body copy-pane flex-1 min-h-20 p-4 text-sm${sent?'':' edit-live'}${r.email_html?' hidden':''}"${sent?'':` contenteditable="${PLAINTEXT_CE ? 'plaintext-only' : 'true'}"`} data-copy-email="${esc(r.id)}">${nl2br(r.email_copy||'')}</div>`
               : offNote('email')}
             ${panelFoot('email', r.id)}
           </section>`;
@@ -13861,7 +13871,7 @@ This removes its school and season dates. Venues in this market are not touched.
           return CM_LIB[accountId];
         }
 
-        function cmPickerDialog({ templates, accountLabel, current, accounts, sendingAccountId }){
+        function cmPickerDialog({ templates, accountLabel, current, sendingAccountId }){
           return new Promise(resolve => {
             const ov = document.createElement('div');
             ov.className = 'pb-modal-overlay';
@@ -13883,17 +13893,13 @@ This removes its school and season dates. Venues in this market are not touched.
             ov.innerHTML =
               `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Choose a CakeMail template" style="max-width:54rem">
                  <div class="font-extrabold text-lg text-[#133b49]">Choose a CakeMail template</div>
-                 <div class="text-sm text-base-content/70 mb-2">The design you pick becomes what this blast actually sends &mdash; the text in the body box stays as the record.</div>
-                 <div class="flex items-center gap-2 mb-3 flex-wrap">
-                   <span class="text-xs text-base-content/50">Designs in</span>
-                   <select class="select select-bordered select-xs" data-acct aria-label="Which CakeMail account to browse"></select>
-                   ${/* A DESIGN DOES NOT HAVE TO LIVE IN THE SENDING ACCOUNT. The rendered HTML is
-                         copied onto the row and goes out from the sender the row already has, so
-                         browsing a retired account's designs never sends from it. That is what
-                         makes this selector safe, and the badge below is what keeps it honest.
-                         (No backticks in here: template literal.) */''}
-                   <span class="text-[11px] px-1.5 py-0.5 rounded bg-base-200 text-base-content/60 hidden" data-acctbadge></span>
-                 </div>
+                 ${/* ONE ACCOUNT, THE SENDER'S. An account selector lived here briefly and was
+                       removed (Charles, 2026-10-12): whichever sender the blast goes out from is
+                       whose designs it should offer, so choosing an account separately was a
+                       second way to say the same thing and could disagree with the first.
+                       Changing the sender changes the library, which is the uniform flow.
+                       (No backticks in here: template literal.) */''}
+                 <div class="text-sm text-base-content/70 mb-3">Designs in <b>${esc(accountLabel)}</b>, the account this blast sends from. The design you pick becomes what it actually sends &mdash; the text in the body box stays as the record.</div>
                  ${`<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mb-3 max-h-[16rem] overflow-y-auto p-0.5" data-grid></div>
                       <div class="border border-base-300 rounded-lg overflow-hidden bg-base-200/30 mb-3">
                         <div class="px-3 py-1.5 border-b border-base-300 text-xs text-base-content/55 flex items-center gap-2">
@@ -13940,10 +13946,7 @@ This removes its school and season dates. Venues in this market are not touched.
                </div>`;
             document.body.appendChild(ov);
             const grid = ov.querySelector('[data-grid]');
-            const acctSel = ov.querySelector('[data-acct]');
-            const acctBadge = ov.querySelector('[data-acctbadge]');
-            // The account being BROWSED, which is not necessarily the one being sent from.
-            let acct = sendingAccountId;
+            const acct = sendingAccountId;
             let list = templates;
             const okBtn = ov.querySelector('[data-ok]');
             const errEl = ov.querySelector('[data-err]');
@@ -13967,41 +13970,6 @@ This removes its school and season dates. Venues in this market are not touched.
               if(noteEl) noteEl.textContent = list.length ? list.length + ' template' + (list.length === 1 ? '' : 's') : '';
             }
 
-            // THE WARNING THAT KEEPS THE SELECTOR HONEST. Browsing another account never sends
-            // from it — the HTML is copied onto this row and goes out from the sender the row
-            // already has. Said plainly, because "Cole" appearing in a picker on a Josh blast is
-            // otherwise a reasonable thing to panic about.
-            function paintAcctBadge(){
-              if(!acctBadge) return;
-              const a = (accounts || []).find(x => String(x.id) === String(acct));
-              const foreign = String(acct) !== String(sendingAccountId);
-              if(!foreign){ acctBadge.classList.add('hidden'); return; }
-              acctBadge.textContent = 'design only — still sends from ' + accountLabel;
-              acctBadge.title = 'This account is only being browsed for its design. The HTML is copied onto this blast, which still sends from '
-                                + accountLabel + '. Nothing is ever sent from ' + ((a && a.label) || ('account ' + acct)) + '.';
-              acctBadge.classList.remove('hidden');
-            }
-
-            async function loadAccount(id){
-              acct = String(id);
-              chosen = null; okBtn.disabled = true;
-              if(editLink) editLink.classList.add('hidden');
-              if(backBar){ backBar.classList.add('hidden'); backBar.classList.remove('flex'); }
-              frame.srcdoc = '';
-              prevLabel.textContent = 'Loading templates…';
-              errEl.classList.add('hidden');
-              try{
-                list = await cmTemplates(acct);
-                prevLabel.textContent = 'Pick a template to preview it.';
-              }catch(e){
-                list = [];
-                errEl.textContent = 'Could not read that account: ' + ((e && e.message) || e);
-                errEl.classList.remove('hidden');
-                prevLabel.textContent = 'Pick a template to preview it.';
-              }
-              paintGrid();
-              paintAcctBadge();
-            }
 
             const close = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
             const onKey = e => { if(e.key === 'Escape') close(null); };
@@ -14076,13 +14044,7 @@ This removes its school and season dates. Venues in this market are not touched.
               // letting it be read as "the edit did not save".
               if(noteEl) noteEl.textContent = 'Preview updated. Tile thumbnails refresh on CakeMail’s side and may lag.';
             });
-            if(acctSel){
-              acctSel.innerHTML = (accounts || []).map(a =>
-                `<option value="${esc(a.id)}"${String(a.id) === String(sendingAccountId) ? ' selected' : ''}>${esc(a.label)}${String(a.id) === String(sendingAccountId) ? ' — this blast’s sender' : ''}</option>`).join('');
-              acctSel.addEventListener('change', () => loadAccount(acctSel.value));
-            }
             paintGrid();
-            paintAcctBadge();
           });
         }
 
@@ -14105,24 +14067,50 @@ This removes its school and season dates. Venues in this market are not touched.
             return;
           }
           btn.disabled = false; btn.textContent = old;
-          // The account list is a second, tiny request and is cached for the page like the
-          // libraries are. A failure here is not fatal: the picker falls back to the row's own
-          // account, which is exactly what it offered before the selector existed.
-          let accounts = [];
-          try{
-            const ar = await fetch('/api/cakemail-templates?accounts=1', { headers: await apiHeaders() });
-            const aj = await ar.json().catch(() => ({}));
-            if(ar.ok && aj.accounts) accounts = aj.accounts;
-          }catch{ /* falls back below */ }
-          if(!accounts.length) accounts = [{ id: cm.accountId, label }];
-
           const picked = await cmPickerDialog({ templates, accountLabel: label, current: row.cakemail_template_id,
-                                                accounts, sendingAccountId: cm.accountId });
+                                                sendingAccountId: cm.accountId });
           if(!picked) return;
           await cmAttach(id, picked.id, btn);
         }));
 
         tb.querySelectorAll('[data-cmdetach]').forEach(btn => btn.addEventListener('click', () => cmAttach(btn.dataset.cmdetach, null, btn)));
+
+        // THE DESIGN PREVIEW. Lazily, once per expanded row — the table renders 25 rows and a
+        // design is ~30 KB, so fetching them all on render would pull a megabyte nobody asked
+        // for. The frame only exists on rows that have one.
+        async function paintDesign(id){
+          const frame = tb.querySelector(`[data-designframe="${CSS.escape(id)}"]`);
+          if(!frame || frame.dataset.loaded) return;
+          frame.dataset.loaded = '1';
+          try{
+            const r = await fetch('/api/cakemail-templates?queue_id=' + encodeURIComponent(id) + '&_=' + Date.now(),
+                                  { headers: await apiHeaders() });
+            const j = await r.json().catch(() => ({}));
+            if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+            // srcdoc + sandbox="" — no scripts, no navigation, and every href was moved to
+            // data-href on the server before it got here.
+            frame.srcdoc = j.html || '';
+          }catch(e){
+            frame.removeAttribute('srcdoc');
+            const wrap = tb.querySelector(`[data-designwrap="${CSS.escape(id)}"]`);
+            if(wrap) wrap.innerHTML = `<div class="p-4 text-xs text-error">Could not load the design preview: ${esc((e && e.message) || String(e))}</div>`;
+          }
+        }
+        tb.querySelectorAll('[data-designframe]').forEach(f => paintDesign(f.dataset.designframe));
+
+        // The text record is still there, it is just no longer first. Toggling does not change
+        // what sends — only Detach does that — so the button says "record", not "use".
+        tb.querySelectorAll('[data-cmtoggle]').forEach(btn => btn.addEventListener('click', () => {
+          const id = btn.dataset.cmtoggle;
+          const body = tb.querySelector(`[data-copy-email="${CSS.escape(id)}"]`);
+          const wrap = tb.querySelector(`[data-designwrap="${CSS.escape(id)}"]`);
+          if(!body || !wrap) return;
+          const showingText = !body.classList.contains('hidden');
+          body.classList.toggle('hidden', showingText);
+          wrap.classList.toggle('hidden', !showingText);
+          btn.textContent = showingText ? 'show text record' : 'show the design';
+          btn.setAttribute('aria-pressed', showingText ? 'false' : 'true');
+        }));
         // Refresh IS an attach of the same template — render it again, fill the tokens again,
         // copy it onto the row again. No separate endpoint, and no way for the two to drift.
         tb.querySelectorAll('[data-cmrefresh]').forEach(btn => btn.addEventListener('click', () => {
