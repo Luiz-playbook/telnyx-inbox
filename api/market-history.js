@@ -20,6 +20,8 @@ import { hubspotToken } from '../lib/hubspot.js';
 // Shared with api/cakemail-templates.js — see the note in lib/defang.js for why there is
 // exactly one copy of this.
 import { defangHtml } from '../lib/defang.js';
+// Shared with api/cakemail-templates.js, which names the same accounts in its picker.
+import { accountLabels } from '../lib/cakemail.js';
 
 export const config = { maxDuration: 30 };
 
@@ -29,25 +31,6 @@ const num = v => (v == null || v === '' ? null : Number(v));
 // lib/cakemail.js does, so moving a sub-account is a deployment change and not a code change.
 // An unknown id falls back to the raw number rather than being hidden: an unlabelled account is
 // something to notice, not something to swallow.
-function accountLabels() {
-  // Seeded with the live ids so an account can still be NAMED on a deploy that is missing its
-  // environment — which is the deploy most likely to be raising an error about it. Built only
-  // from the *_ACCOUNT_ID vars, this map was empty in exactly the case it was needed for, and
-  // the error fell back to "account 1679383". These ids mirror FALLBACK_ACCOUNT_ENV in
-  // lib/cakemail.js, which resolves the same three the same way and for the same reason.
-  // Anything the environment declares still wins, so moving a sub-account is a deployment
-  // change and not a code change.
-  const map = {
-    '1679383': 'Playbook Sports - Cole',
-    '1761047': 'Playbook Sports - Josh',
-    '1679456': 'Test',
-  };
-  const put = (env, label) => { const id = (process.env[env] || '').trim(); if (id) map[id] = label; };
-  put('PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Cole');
-  put('PBSPORTS_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Josh');
-  put('PBTESTACCOUNT_CAKEMAIL_ACCOUNT_ID', 'Test');
-  return map;
-}
 
 // Said in the two places a missing PAT surfaces — the HTML preview and the recipient roster.
 // The account is NAMED rather than numbered, because the id is a lookup for the reader and the

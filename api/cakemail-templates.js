@@ -24,7 +24,7 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { cakemailGet, cakemailKey, cakemailKeyEnvName, parseCakemailFrom } from '../lib/cakemail.js';
+import { cakemailGet, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { defangHtml } from '../lib/defang.js';
 import { fillTokens, gameLabel, prettyDate } from '../lib/tokens.js';
 
@@ -112,16 +112,34 @@ export default async function handler(req, res) {
     if (!cm) { res.status(400).json({ error: 'this blast does not send through CakeMail, so a CakeMail template cannot be attached to it' }); return; }
     if (!cakemailKey(cm.accountId)) { res.status(502).json({ error: missingKey(cm.accountId) }); return; }
 
-    let name = null, html = '';
-    try {
-      // Name first, so the badge can be labelled and so a wrong id fails BEFORE anything is
-      // written. The render is the expensive call of the two.
-      const detail = await cakemailGet(`/templates/${templateId}`, { accountId: cm.accountId });
-      name = (detail && detail.data && detail.data.name) || `Template ${templateId}`;
-      const raw = await cakemailGet(`/templates/${templateId}/render`, { accountId: cm.accountId, raw: true });
-      html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
-    } catch (e) {
-      res.status(502).json({ error: String((e && e.message) || e) });
+    // WHICH ACCOUNT OWNS THIS TEMPLATE — resolved, not assumed.
+    //
+    // The design does not have to live in the sending account: the picker can browse any account
+    // we hold a key for, because the HTML is copied onto the row and still goes out from the
+    // row's own sender. So the template id here may belong to a different account than cm.
+    //
+    // RESOLVED RATHER THAN PASSED IN, and that is the point. Passing it would mean storing it
+    // too — otherwise Refresh, which re-attaches by id alone and may run days later from a
+    // fresh page load, would look in the row's account and not find it. That would be a fourth
+    // column and a second migration to carry something the API can simply be asked. Template ids
+    // are account-scoped at the URL but globally unique in practice, so the owner is found by
+    // trying the row's own account first and the rest only if that misses.
+    const candidates = [cm.accountId, ...cakemailAccounts().map(a => a.id).filter(id => id !== cm.accountId)];
+    let name = null, html = '', owner = null, lastErr = null;
+    for (const candidate of candidates) {
+      try {
+        // Name first, so a wrong id fails BEFORE anything is written. The render is the
+        // expensive call of the two.
+        const detail = await cakemailGet(`/templates/${templateId}`, { accountId: candidate });
+        name = (detail && detail.data && detail.data.name) || `Template ${templateId}`;
+        const raw = await cakemailGet(`/templates/${templateId}/render`, { accountId: candidate, raw: true });
+        html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
+        owner = candidate;
+        break;
+      } catch (e) { lastErr = e; }
+    }
+    if (!owner) {
+      res.status(502).json({ error: `CakeMail could not read template ${templateId} from any account we hold a key for. ${String((lastErr && lastErr.message) || '')}`.trim() });
       return;
     }
     if (!html.trim()) { res.status(502).json({ error: `CakeMail returned no HTML for template ${templateId}. A template that has never been saved in the editor renders empty.` }); return; }
@@ -158,7 +176,8 @@ export default async function handler(req, res) {
     // does it inside the same UPDATE rather than as a second call from here: the cron runs
     // hourly, and two statements would leave a window in which the row is confirmed AND already
     // carries the new design — the exact state being prevented.
-    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed });
+    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed,
+      source_account_id: owner, foreign: owner !== cm.accountId });
     return;
   }
 
@@ -167,6 +186,23 @@ export default async function handler(req, res) {
   // ---------------------------------------------------------------------------------------
   // GET — browse and preview.
   // ---------------------------------------------------------------------------------------
+  // ?accounts=1 — which CakeMail accounts the picker may browse.
+  //
+  // A DESIGN DOES NOT HAVE TO LIVE IN THE SENDING ACCOUNT. We copy the rendered HTML onto the
+  // row and send it from whatever sender the row already has, so a template built under a
+  // retired sender is still perfectly usable: nothing is ever sent FROM the account it was
+  // browsed from. That is what makes listing every account safe, and it is the whole reason
+  // Cole's Ticketblast can be put on a production blast.
+  //
+  // `can_send` is the warning the picker shows. Cole's sender is deliberately absent from
+  // EMAIL_SENDERS (ui/index.html) because every Playbook template signs off as Josh, so a blast
+  // FROM cole@ would contradict itself in the inbox. Browsing his designs does not resurrect
+  // that sender, and the flag says so rather than leaving the account looking fully available.
+  if (String(req.query?.accounts || '').trim()) {
+    res.status(200).json({ ok: true, accounts: cakemailAccounts() });
+    return;
+  }
+
   const accountId = String(req.query?.account_id || '').trim();
   if (!/^[0-9]+$/.test(accountId)) { res.status(400).json({ error: 'account_id is required' }); return; }
   if (!cakemailKey(accountId)) { res.status(502).json({ error: missingKey(accountId) }); return; }
