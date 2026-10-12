@@ -178,3 +178,32 @@ test('heldByDraft: a row is never held by its own draft, and a row with no marke
   assert.equal(m.heldByDraft([{ ...whole, id: 'd' }], { id: 'r', state_code: '', segment: null }), null);
   assert.equal(m.heldByDraft([], { id: 'r', state_code: 'MA' }), null);
 });
+
+// ▲ 2026-10-13. Only the bulk sender's own numbers go to it. Until today every Telnyx number did,
+// and a blast on any other number came back "route … is not sendable" instead of sending.
+const ROUTES = [{ from_number: '+13159988112', sendable: true }, { from_number: '+16093602796', sendable: false }];
+
+test('smsPathFor: one of the bulk sender\'s numbers goes to the bulk sender, sendable or not', () => {
+  assert.equal(m.smsPathFor({ configured: true, from: '+13159988112', routes: ROUTES }), 'bulk');
+  // Not sendable right now is still ours: the bulk sender refuses it and the row fails visibly,
+  // rather than the n8n webhook sending it around the consent gate.
+  assert.equal(m.smsPathFor({ configured: true, from: '+16093602796', routes: ROUTES }), 'bulk');
+  // Formatting is not identity.
+  assert.equal(m.smsPathFor({ configured: true, from: '(315) 998-8112', routes: ROUTES }), 'bulk');
+  assert.equal(m.smsPathFor({ configured: true, from: '13159988112', routes: ROUTES }), 'bulk');
+});
+
+test('smsPathFor: any other Telnyx number, or no sender, stays on the n8n webhook', () => {
+  assert.equal(m.smsPathFor({ configured: true, from: '+16158050766', routes: ROUTES }), 'webhook');
+  assert.equal(m.smsPathFor({ configured: true, from: '', routes: ROUTES }), 'webhook');
+  assert.equal(m.smsPathFor({ configured: true, from: null, routes: ROUTES }), 'webhook');
+});
+
+test('smsPathFor: bulk sender off means the webhook, without asking for routes', () => {
+  assert.equal(m.smsPathFor({ configured: false, from: '+13159988112', routes: undefined }), 'webhook');
+});
+
+test('smsPathFor: routes unknown means unknown — never a guess either way', () => {
+  assert.equal(m.smsPathFor({ configured: true, from: '+13159988112', routes: new Error('down') }), 'unknown');
+  assert.equal(m.smsPathFor({ configured: true, from: '+16158050766', routes: undefined }), 'unknown');
+});

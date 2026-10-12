@@ -41,7 +41,7 @@
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
-import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, findCampaignByKey, listCampaigns, campaignKeyFor, startsCooldown, draftHolds, heldByDraft, DRAFT_HOLD_DAYS } from '../lib/bulk-sms.js';
+import { bulkSmsConfigured, bulkSmsStatus, listRoutes, smsPathFor, stageCampaign, findCampaignByKey, listCampaigns, campaignKeyFor, startsCooldown, draftHolds, heldByDraft, DRAFT_HOLD_DAYS } from '../lib/bulk-sms.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
@@ -424,6 +424,13 @@ export default async function handler(req, res) {
     }
 
     const results = [], held = [], errors = [];
+    // The bulk sender's numbers, asked for at most once a tick and only when a row needs them.
+    // A failed read is kept as the Error: smsPathFor reads it as 'unknown'. See lib/bulk-sms.js.
+    let bulkRoutes;
+    const bulkRoutesOnce = async () => {
+      if (bulkRoutes === undefined) bulkRoutes = await listRoutes().catch(e => e instanceof Error ? e : new Error(String(e)));
+      return bulkRoutes;
+    };
     for (const r of due) {
       const mkt = (r.state_code || '').toUpperCase();
       const cooling = isCooled(mkt, r.segment || null);
@@ -514,9 +521,15 @@ export default async function handler(req, res) {
       if (r.sms && phones.length) {
         // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
         // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
-        // lib/salesmsg.js (OAuth, no API key); anything else is a Telnyx number and goes to
-        // the n8n bulk webhook. Keep in sync with SMS_SENDERS / salesmsgSender in ui/index.html.
+        // lib/salesmsg.js (OAuth, no API key); anything else is a Telnyx number. One of the bulk
+        // sender's own numbers goes to the bulk sender (AI-965); any other Telnyx number goes to
+        // the n8n bulk webhook, as it always did (▲ 2026-10-13, smsPathFor in lib/bulk-sms.js).
+        // Keep in sync with SMS_SENDERS / salesmsgSender in ui/index.html.
         const sm = parseSalesmsgFrom(r.sms_from);
+        const configured = bulkSmsConfigured();
+        const smsPath = sm ? null : smsPathFor({
+          configured, from: r.sms_from, routes: configured ? await bulkRoutesOnce() : undefined,
+        });
         if (sm) {
           try {
             // Fan-out, not one call: Salesmsg broadcasts target saved contacts through a
@@ -539,7 +552,13 @@ export default async function handler(req, res) {
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
-        } else if (bulkSmsConfigured()) {
+        } else if (smsPath === 'unknown') {
+          // Neither path is safe to guess: the webhook would send one of the bulk sender's numbers
+          // around its consent gate, the bulk sender refuses every number that is not its own.
+          // A row with no other channel stays queued and the next tick asks again; one whose email
+          // went out is marked 'partial' with this text, as any half-failed blast is.
+          failed.push(`SMS not sent: could not read the bulk sender's numbers to tell whether ${r.sms_from} is one of them — ${String((bulkRoutes && bulkRoutes.message) || bulkRoutes)}`);
+        } else if (smsPath === 'bulk') {
           // AI-965, as built 2026-10-09. Stage a DRAFT in the bulk sender; a person approves it
           // in the Operator App after reading the census. Nothing here arms. See lib/bulk-sms.js.
           //
