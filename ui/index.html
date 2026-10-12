@@ -12838,6 +12838,21 @@ This removes its school and season dates. Venues in this market are not touched.
         const m = /^cakemail:([^:]+):(.+)$/.exec(String(v || ''));
         return m ? { accountId: m[1], senderId: m[2] } : null;
       };
+      // WHERE CAKEMAIL'S OWN TEMPLATE EDITOR LIVES.
+      //
+      // ⚠️ THE PATH IS A BEST GUESS AND IS THE ONE THING HERE THAT NEEDS CONFIRMING. Their app
+      // is a React SPA whose routes live in lazy chunks — main.js is a Sentry stub and the
+      // webpack runtime carries no named template chunk — so the pattern could not be read off
+      // the bundle. Open a template in CakeMail, copy the address bar, and correct this line.
+      // Everything else about the round trip is independent of it.
+      //
+      // A NEW TAB, NOT AN IFRAME, AND THAT IS NOT A PREFERENCE. app.cakemail.com answers
+      // `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`
+      // (verified 2026-10-12), so a framed editor renders nothing whatsoever. Those headers are
+      // the site refusing to be embedded and there is no honest way around them from here.
+      const CAKEMAIL_APP = 'https://app.cakemail.com';
+      const cakemailEditUrl = (accountId, templateId) =>
+        `${CAKEMAIL_APP}/templates/${encodeURIComponent(templateId)}?account_id=${encodeURIComponent(accountId)}`;
       // Resolved against the live Salesmsg list, not stored: DEFAULT_SMS_TEAM_ID names an
       // inbox, and only the list knows which number that inbox currently sends from. A value
       // not in the dropdown would select nothing, so an absent team falls through to Telnyx.
@@ -13807,22 +13822,6 @@ This removes its school and season dates. Venues in this market are not touched.
         // Cached per account for the life of the page: the library is small and static, and
         // re-fetching it every time the dialog opens makes picking between two designs feel like
         // a network operation.
-        // WHERE CAKEMAIL'S OWN TEMPLATE EDITOR LIVES.
-        //
-        // ⚠️ THE PATH IS A BEST GUESS AND IS THE ONE THING HERE THAT NEEDS CONFIRMING. Their app
-        // is a React SPA whose routes live in lazy chunks — main.js is a Sentry stub and the
-        // webpack runtime carries no named template chunk — so the pattern could not be read off
-        // the bundle. Open a template in CakeMail, copy the address bar, and correct this line.
-        // Everything else about the round trip is independent of it.
-        //
-        // A NEW TAB, NOT AN IFRAME, AND THAT IS NOT A PREFERENCE. app.cakemail.com answers
-        // `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`
-        // (verified 2026-10-12), so a framed editor renders nothing whatsoever. Those headers are
-        // the site refusing to be embedded and there is no honest way around them from here.
-        const CAKEMAIL_APP = 'https://app.cakemail.com';
-        const cakemailEditUrl = (accountId, templateId) =>
-          `${CAKEMAIL_APP}/templates/${encodeURIComponent(templateId)}?account_id=${encodeURIComponent(accountId)}`;
-
         const CM_LIB = {};
         async function cmTemplates(accountId){
           if(CM_LIB[accountId]) return CM_LIB[accountId];
