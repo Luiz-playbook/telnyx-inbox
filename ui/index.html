@@ -13930,6 +13930,11 @@ This removes its school and season dates. Venues in this market are not touched.
         // queue_set_email_html in migration 120. The row in QUEUE is updated from the answer and
         // the table re-rendered, so the badge appears and disappears without a round trip to
         // reload the whole queue.
+        // Said in full both times, because the two paths are reached from different places and
+        // the consequence is the same either way: the hourly tick will NOT send this row until
+        // someone approves it again. A blast that silently stopped being scheduled would be a
+        // worse surprise than the one this is preventing.
+        const UNCONFIRMED_NOTE = 'This blast was confirmed, so its approval has been withdrawn — it now says Pending and will not send until you confirm it again.';
         async function cmAttach(id, templateId, btn){
           const old = btn ? btn.textContent : '';
           if(btn){ btn.disabled = true; btn.textContent = templateId ? 'Attaching…' : 'Detaching…'; }
@@ -13949,6 +13954,11 @@ This removes its school and season dates. Venues in this market are not touched.
               row.email_html = j.attached ? '1' : null;
               row.cakemail_template_id = j.attached ? j.template_id : null;
               row.cakemail_template_name = j.attached ? j.name : null;
+              // Migration 121 withdrew the approval server-side, in the same UPDATE. Mirrored
+              // here or the row would go on showing Confirmed until the next full reload — a
+              // badge saying the design is live above a status saying it is approved to send,
+              // when it is now waiting for a person again.
+              if(j.unconfirmed){ row.status = 'pending'; row.confirmed_at = null; }
             }
             render();
             if(j.attached){
@@ -13956,16 +13966,19 @@ This removes its school and season dates. Venues in this market are not touched.
               // are supposed to be there. It names the tokens the design uses that came out
               // BLANK for this row, which is the case that quietly ships "on  —" to a market.
               const gaps = j.empties || [];
-              toast({ type: gaps.length ? 'warn' : 'ok',
+              toast({ type: gaps.length || j.unconfirmed ? 'warn' : 'ok',
                       title: `"${j.name}" is now what this blast sends`,
                       lines: [
                         'The text in the body box is kept as the record and is not what recipients see.',
                         ...(gaps.length
                           ? [`${gaps.join(' and ')} came out blank on this row, so the design has a gap where it expected one. Fill the game or date on the blast, then attach it again.`]
                           : []),
+                        ...(j.unconfirmed ? [UNCONFIRMED_NOTE] : []),
                       ] });
             } else {
-              toast({ type:'ok', title:'Design detached', lines:['This blast sends the plain-text body again.'] });
+              toast({ type: j.unconfirmed ? 'warn' : 'ok', title:'Design detached',
+                      lines:[ 'This blast sends the plain-text body again.',
+                              ...(j.unconfirmed ? [UNCONFIRMED_NOTE] : []) ] });
             }
           }catch(e){
             toast({ type:'err', title: templateId ? 'Could not attach that design' : 'Could not detach the design',

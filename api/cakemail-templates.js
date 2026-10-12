@@ -81,12 +81,27 @@ export default async function handler(req, res) {
 
     // A sent row is history. Rewriting what it sent would make the Queue disagree with what is
     // in the recipients' inboxes and with what Market History reports.
-    if (row.status === 'sent') { res.status(409).json({ error: 'this blast has already been sent — its copy cannot be changed' }); return; }
+    //
+    // PARTIAL COUNTS AS SENT, which is the Queue's own rule — it renders both read-only with
+    // `sent = r.status==='sent' || r.status==='partial'` (ui/index.html), so the button is never
+    // offered on either. Checked here as well because the UI not offering something is not the
+    // same as the server refusing it. A partial row is the worse of the two to touch: a channel
+    // has already delivered, queue-tick has no per-channel guard, and re-sending would mail the
+    // half that already worked a second time.
+    if (row.status === 'sent' || row.status === 'partial') {
+      res.status(409).json({ error: row.status === 'partial'
+        ? 'this blast has already partly gone out — its copy cannot be changed'
+        : 'this blast has already been sent — its copy cannot be changed' });
+      return;
+    }
+
+    // Noted BEFORE the write, because the write is what changes it (migration 121).
+    const wasConfirmed = row.status === 'confirmed';
 
     if (body.detach) {
       const ok = await setHtml(supaUrl, h, queueId, null, null, null);
       if (!ok.ok) { res.status(502).json({ error: ok.error }); return; }
-      res.status(200).json({ ok: true, attached: false });
+      res.status(200).json({ ok: true, attached: false, unconfirmed: wasConfirmed });
       return;
     }
 
@@ -139,7 +154,11 @@ export default async function handler(req, res) {
       ['[SPORT]', row.sport],
     ].filter(([tok, val]) => html.includes(tok) && !String(val || '').trim()).map(([tok]) => tok);
 
-    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties });
+    // `unconfirmed` is reported so the UI can say the approval was withdrawn. Migration 121
+    // does it inside the same UPDATE rather than as a second call from here: the cron runs
+    // hourly, and two statements would leave a window in which the row is confirmed AND already
+    // carries the new design — the exact state being prevented.
+    res.status(200).json({ ok: true, attached: true, template_id: Number(templateId), name, bytes: filled.length, empties, unconfirmed: wasConfirmed });
     return;
   }
 
