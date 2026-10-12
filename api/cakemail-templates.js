@@ -24,7 +24,7 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { cakemailGet, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
+import { cakemailGet, cakemailPost, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { defangHtml } from '../lib/defang.js';
 import { designIsStale } from '../lib/design.js';
 import { fillTokens, gameLabel, prettyDate, injectBody, wantsBody } from '../lib/tokens.js';
@@ -103,6 +103,52 @@ export default async function handler(req, res) {
       const ok = await setHtml(supaUrl, h, queueId, null, null, null);
       if (!ok.ok) { res.status(502).json({ error: ok.error }); return; }
       res.status(200).json({ ok: true, attached: false, unconfirmed: wasConfirmed });
+      return;
+    }
+
+    // DUPLICATE — the one and only write this app makes to CakeMail, and it is deliberately a
+    // separate, explicitly-requested action rather than anything automatic.
+    //
+    // A template is shared. Editing it to suit one market rewrites it for every blast using it.
+    // Copying it first gives this blast a design of its own to edit freely, and leaves the
+    // original exactly as the other blasts expect it.
+    //
+    // THE COPY LANDS IN THE SENDING ACCOUNT, not the account it came from. That is the point for
+    // a design borrowed from elsewhere — afterwards the blast owns its design outright, in the
+    // account it sends from, and the loan is over.
+    if (body.duplicate) {
+      const srcId = String(body.template_id || row.cakemail_template_id || '').trim();
+      if (!/^[0-9]+$/.test(srcId)) { res.status(400).json({ error: 'template_id is required to duplicate' }); return; }
+      const cmDup = parseCakemailFrom(row.email_from);
+      if (!cmDup) { res.status(400).json({ error: 'this blast does not send through CakeMail' }); return; }
+      if (!cakemailKey(cmDup.accountId)) { res.status(502).json({ error: missingKey(cmDup.accountId) }); return; }
+
+      let src = null, from = null;
+      for (const candidate of [cmDup.accountId, ...cakemailAccounts().map(a => a.id).filter(id => id !== cmDup.accountId)]) {
+        try { const j = await cakemailGet(`/templates/${srcId}`, { accountId: candidate }); if (j && j.data) { src = j.data; from = candidate; break; } } catch { /* next */ }
+      }
+      if (!src) { res.status(502).json({ error: `Could not read template ${srcId} from any account we hold a key for.` }); return; }
+
+      // The name has to say what it is at a glance in CakeMail's own list, where it sits beside
+      // the original with no other context.
+      const label = String(row.title || '').replace(/^\s*\[TEST\]\s*/i, '').trim().slice(0, 60);
+      const name = `${src.name || 'Template'} — ${label || 'copy'}`.slice(0, 120);
+      try {
+        const made = await cakemailPost('/templates', {
+          accountId: cmDup.accountId,
+          body: {
+            name,
+            description: `Copied from template ${srcId} for the blast "${label}". Editing this one affects only that blast.`,
+            content: src.content,
+            ...(Array.isArray(src.tags) && src.tags.length ? { tags: src.tags } : {}),
+          },
+        });
+        const newId = made && (made.id || (made.data && made.data.id));
+        if (!newId) throw new Error('CakeMail returned no id for the new template');
+        res.status(200).json({ ok: true, duplicated: true, template_id: Number(newId), name, account_id: cmDup.accountId, from_account_id: from });
+      } catch (e) {
+        res.status(502).json({ error: String((e && e.message) || e) });
+      }
       return;
     }
 
@@ -219,6 +265,11 @@ export default async function handler(req, res) {
       // would show [BODY] sitting in the middle of the design while recipients get the copy —
       // which is the one thing this view must never do.
       wants_body: wantsBody(row.email_html),
+      // HOW MANY OTHER BLASTS SHARE THIS DESIGN. One template in CakeMail, many rows: editing it
+      // there changes every one of them, and with the tick now pulling updates automatically
+      // they would all take that change at send. The row has to be able to say so BEFORE
+      // somebody opens the editor.
+      shared_with: await sharedCount(supaUrl, h, row.cakemail_template_id, wantRow),
       // HAS CAKEMAIL MOVED ON. true/false/null, and null is not false — see lib/design.js. The
       // row renders the warning only on a definite true, so an outage never produces a scary
       // banner about a design that is probably fine.
@@ -290,4 +341,16 @@ async function setHtml(supaUrl, h, id, html, templateId, name) {
   if (r.ok) return { ok: true };
   const detail = await r.text().catch(() => '');
   return { ok: false, error: `queue_set_email_html failed (HTTP ${r.status}) ${detail.slice(0, 200)}` };
+}
+
+// Other queue rows sending the same design. Excludes this row and anything already sent, since
+// those cannot be affected by an edit made now.
+async function sharedCount(supaUrl, h, templateId, selfId) {
+  if (!templateId) return 0;
+  const q = `${supaUrl}/rest/v1/campaign_queue?select=id&cakemail_template_id=eq.${encodeURIComponent(templateId)}`
+          + `&id=neq.${encodeURIComponent(selfId)}&status=not.in.(sent,partial)`;
+  const r = await fetch(q, { headers: { ...h, Prefer: 'count=exact' } });
+  if (!r.ok) return 0;
+  const rows = await r.json().catch(() => []);
+  return Array.isArray(rows) ? rows.length : 0;
 }

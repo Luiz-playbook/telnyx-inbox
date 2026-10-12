@@ -13268,6 +13268,12 @@ This removes its school and season dates. Venues in this market are not touched.
                     about a design that is very probably fine.
                     (No backticks in here: template literal.) */''}
               <span class="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 bg-[#fdeee4] text-[#e55608] hidden" data-cmstale="${esc(row.id)}"></span>
+              ${/* SHARED-DESIGN COUNT. One template, many rows: editing it in CakeMail rewrites
+                    it for all of them, and the tick now pulls updates automatically, so they
+                    would every one take that change at send. Shown before Edit is clicked, not
+                    after, because afterwards is too late.
+                    (No backticks in here: template literal.) */''}
+              <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 bg-base-200 text-base-content/60 hidden" data-cmshared="${esc(row.id)}"></span>
               <button class="link link-primary text-xs shrink-0" data-cmtoggle="${esc(row.id)}" aria-pressed="false" title="The stored plain-text copy is kept as the record of this blast. It is not what recipients see while a design is attached.">show text record</button>
               ${isSent ? '' : `<span class="ml-auto shrink-0 flex items-center gap-1">
                    ${/* The row holds a COPY of this design (migration 120), so editing it in
@@ -13275,6 +13281,7 @@ This removes its school and season dates. Venues in this market are not touched.
                          pull — it re-renders the template and re-copies it onto the row. Without
                          it, an edit made in CakeMail would look applied and never be sent. */''}
                    ${row.cakemail_template_id ? `<a class="btn btn-ghost btn-xs" target="_blank" rel="noopener noreferrer" href="${esc(cakemailEditUrl(row.cakemail_template_id))}" title="Open this design in CakeMail's editor in a new tab. The address carries no account, so CakeMail opens it against whichever account you are currently viewing — switch into ${esc(senderLabelOf(row))} there if it says the template cannot be fetched.">Edit &#8599;</a>
+                      <button class="btn btn-ghost btn-xs" data-cmdup="${esc(row.id)}" title="Make this blast its own copy of the design in CakeMail, so editing it changes nothing else. The copy is created in this blast's own sending account.">Duplicate</button>
                       <button class="btn btn-ghost btn-xs" data-cmrefresh="${esc(row.id)}" title="Pull this design again from CakeMail, picking up anything you changed there">Refresh</button>` : ''}
                    <button class="btn btn-ghost btn-xs" data-cmdetach="${esc(row.id)}" title="Go back to sending the plain-text body below">Detach</button>
                  </span>`}
@@ -14131,6 +14138,14 @@ This removes its school and season dates. Venues in this market are not touched.
             // srcdoc + sandbox="" — no scripts, no navigation, and every href was moved to
             // data-href on the server before it got here.
             frame.srcdoc = j.html || '';
+            const shared = tb.querySelector(`[data-cmshared="${CSS.escape(id)}"]`);
+            if(shared && j.shared_with > 0){
+              shared.textContent = `shared with ${j.shared_with} other blast${j.shared_with === 1 ? '' : 's'}`;
+              shared.title = `${j.shared_with} other queued blast${j.shared_with === 1 ? ' uses' : 's use'} this same CakeMail template. `
+                + 'Editing it in CakeMail changes what they all send, and they will take that change automatically at send time. '
+                + 'Press Duplicate first if the edit is only meant for this blast.';
+              shared.classList.remove('hidden');
+            }
             const stale = tb.querySelector(`[data-cmstale="${CSS.escape(id)}"]`);
             if(stale && j.stale === true){
               stale.textContent = 'UPDATED IN CAKEMAIL';
@@ -14169,6 +14184,42 @@ This removes its school and season dates. Venues in this market are not touched.
         }));
         // Refresh IS an attach of the same template — render it again, fill the tokens again,
         // copy it onto the row again. No separate endpoint, and no way for the two to drift.
+        // DUPLICATE. Confirmed first, because it is the only thing in this app that creates
+        // anything in CakeMail, and because the result is a second template in a library the
+        // operator also maintains by hand.
+        tb.querySelectorAll('[data-cmdup]').forEach(btn => btn.addEventListener('click', async () => {
+          const id = btn.dataset.cmdup;
+          const row = QUEUE.find(x => x.id === id);
+          if(!row || !row.cakemail_template_id) return;
+          const ok = await askConfirm({
+            title: 'Give this blast its own copy of the design?',
+            body: `A new template is created in CakeMail, copied from "${row.cakemail_template_name || row.cakemail_template_id}", `
+                + `and this blast is switched to it. Editing the copy then changes nothing else. `
+                + `The original is left exactly as it is for every other blast using it.`,
+          });
+          if(!ok) return;
+          const old = btn.textContent;
+          btn.disabled = true; btn.textContent = 'Copying…';
+          try{
+            const r = await fetch('/api/cakemail-templates', {
+              method: 'POST', headers: await apiHeaders(),
+              body: JSON.stringify({ queue_id: id, duplicate: true, template_id: row.cakemail_template_id }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+            // The copy exists; attaching it is the same path as any other attach, so the
+            // un-confirm rule and the token fill apply to it unchanged.
+            btn.textContent = 'Attaching…';
+            await cmAttach(id, j.template_id, null);
+            toast({ type:'ok', title:`"${j.name}" is now this blast's own design`,
+                    lines:[ 'It was copied into CakeMail and attached here. Edit it freely — nothing else uses it.' ] });
+          }catch(e){
+            toast({ type:'err', title:'Could not duplicate the design', lines:[ String((e && e.message) || e) ] });
+          }finally{
+            btn.disabled = false; btn.textContent = old;
+          }
+        }));
+
         tb.querySelectorAll('[data-cmrefresh]').forEach(btn => btn.addEventListener('click', () => {
           const row = QUEUE.find(x => x.id === btn.dataset.cmrefresh);
           if(row && row.cakemail_template_id) cmAttach(row.id, row.cakemail_template_id, btn);
