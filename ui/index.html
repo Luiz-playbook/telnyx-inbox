@@ -11945,13 +11945,21 @@ This removes its school and season dates. Venues in this market are not touched.
         { v:'rion@callplaybook.com', method:'Mail merge',   label:'rion@callplaybook.com' },
         { v:'cakemail:1761047:l4vuKoFJ5s9eJryDK0sV', method:'CakeMail', label:'josh.marcus@callplaybook.com' },
         { v:'cakemail:1679456:VRaDAQAVWKX6YzrXb63r', method:'CakeMail', label:'pbtest@playbookemail.com (test)' },
-        // cole@ sends like any other sender now. It was offered as design-only first, with the
-        // refusal enforced in api/queue-tick.js, because every Playbook template signs off as
-        // Josh (migration 043) and a blast FROM cole@ contradicts itself in the inbox. That is a
-        // judgement about COPY, not a technical limit — the address is confirmed in CakeMail and
-        // delivers fine (verified 2026-10-13, campaign 15508434) — and it is the operator's call
-        // to make per blast, so the block is gone. Match the sign-off to the From address.
-        { v:'cakemail:1679383:a0JY63GyFWwXfa6AgN92', method:'CakeMail', label:'cole@callplaybook.com' },
+        // THE COLE ACCOUNT, SENDING AS JOSH — and the sender id is the one .env already names,
+        // PBSPORTS_COLE_CAKEMAIL_SENDER_ID (Bk0SjruxSB2im5kcnhpY). This used to point at
+        // a0JY63GyFWwXfa6AgN92, which is a different sender in the same account: cole@. Both are
+        // confirmed in CakeMail, so both deliver — the UI simply disagreed with the deployment
+        // about which one this account sends from.
+        //
+        // IT ALSO SETTLES THE THING THAT GOT COLE WITHHELD IN THE FIRST PLACE. Every Playbook
+        // template signs off as "Josh Marcus, CEO of Playbook Sports" (migration 043), so a blast
+        // FROM cole@ contradicted itself in the inbox. From this sender the From line and the
+        // sign-off agree, and no judgement is needed per blast.
+        //
+        // The label says whose account it is because josh.marcus@ appears twice in this list
+        // otherwise — the other one is the production account, 1761047, with its own quota and
+        // its own template library. Verified live 2026-10-13: campaign 15508459, delivered.
+        { v:'cakemail:1679383:Bk0SjruxSB2im5kcnhpY', method:'CakeMail', label:'Josh.marcus@callplaybook.com (Cole’s account)' },
         // No Salesmsg here: it is an SMS product and carries nothing on the email side.
         // It lives in the "Text from" list, populated from /api/salesmsg-senders.
       ];
