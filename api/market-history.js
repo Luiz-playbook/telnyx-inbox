@@ -358,10 +358,16 @@ export default async function handler(req, res) {
   // aggregate: filtering on it returns every bounce with its own subtype in the row's `type`
   // (bounce_hb, bounce_sb, …), so the nine subtypes never need nine requests.
   //
-  // NEEDS logs:read ON THAT ACCOUNT'S TOKEN. Cole's PAT has campaigns+reports but not logs or
-  // suppressions, so his campaigns answer 403 here while production works — the 403 is passed
-  // through with the scope named rather than being flattened into an empty roster, because
-  // "nobody opened this" and "we are not allowed to ask" must not look the same.
+  // NEEDS logs:read ON THAT ACCOUNT'S TOKEN, and a 403 is passed through with the scope named
+  // rather than flattened into an empty roster, because "nobody opened this" and "we are not
+  // allowed to ask" must not look the same.
+  //
+  // No longer true of any live token: this used to say Cole's PAT had campaigns+reports but
+  // neither logs nor suppressions, so his campaigns answered 403 here while production worked.
+  // Re-checked 2026-10-13 after the token was reissued — logs, reports, suppressions and
+  // templates all answer 200 on BOTH 1679383 and 1761047. The scope is granted when a PAT is
+  // created (POST /users/self/pats), so fixing one of these is self-service and does not involve
+  // CakeMail support. The guard stays because a future token can always be issued narrow again.
   const wantActivity = String(req.query?.activity || '').trim();
   if (wantActivity) {
     if (!/^[0-9]+$/.test(wantActivity)) { res.status(400).json({ error: 'activity must be a campaign id' }); return; }
