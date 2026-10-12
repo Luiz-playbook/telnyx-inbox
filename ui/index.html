@@ -13214,7 +13214,15 @@ This removes its school and season dates. Venues in this market are not touched.
               <span class="font-bold text-[#e55608] uppercase tracking-wide">Design</span>
               <span class="font-semibold text-[#133b49] truncate" title="${esc(row.cakemail_template_name || '')}">${esc(row.cakemail_template_name || ('CakeMail template ' + (row.cakemail_template_id || '?')))}</span>
               <span class="text-base-content/55">${isSent ? 'is what went out — the text below is the record, not the message.' : 'is what sends. The text below is kept as the record, and is not what recipients see.'}</span>
-              ${isSent ? '' : `<button class="btn btn-ghost btn-xs ml-auto shrink-0" data-cmdetach="${esc(row.id)}" title="Go back to sending the plain-text body below">Detach</button>`}
+              ${isSent ? '' : `<span class="ml-auto shrink-0 flex items-center gap-1">
+                   ${/* The row holds a COPY of this design (migration 120), so editing it in
+                         CakeMail changes NOTHING here until it is pulled again. Refresh is that
+                         pull — it re-renders the template and re-copies it onto the row. Without
+                         it, an edit made in CakeMail would look applied and never be sent. */''}
+                   ${row.cakemail_template_id ? `<a class="btn btn-ghost btn-xs" target="_blank" rel="noopener noreferrer" href="${esc(cakemailEditUrl(parseCakemailFrom(emailFromOf(row))?.accountId || '', row.cakemail_template_id))}" title="Open this design in CakeMail's editor in a new tab">Edit &#8599;</a>
+                      <button class="btn btn-ghost btn-xs" data-cmrefresh="${esc(row.id)}" title="Pull this design again from CakeMail, picking up anything you changed there">Refresh</button>` : ''}
+                   <button class="btn btn-ghost btn-xs" data-cmdetach="${esc(row.id)}" title="Go back to sending the plain-text body below">Detach</button>
+                 </span>`}
             </div>`;
           const panelFoot = (which, id) => sent ? '' : `<div class="shrink-0 flex items-center gap-2 px-3 py-2 border-t border-base-300 bg-base-200/30">
                <select class="select select-bordered select-xs max-w-[15rem]" data-tpl${which}="${esc(id)}" aria-label="Use a template for the ${which === "email" ? "email" : "SMS"}" title="Replace the ${which === "email" ? "email" : "SMS"} with one of this strategy's templates">
@@ -13799,6 +13807,22 @@ This removes its school and season dates. Venues in this market are not touched.
         // Cached per account for the life of the page: the library is small and static, and
         // re-fetching it every time the dialog opens makes picking between two designs feel like
         // a network operation.
+        // WHERE CAKEMAIL'S OWN TEMPLATE EDITOR LIVES.
+        //
+        // ⚠️ THE PATH IS A BEST GUESS AND IS THE ONE THING HERE THAT NEEDS CONFIRMING. Their app
+        // is a React SPA whose routes live in lazy chunks — main.js is a Sentry stub and the
+        // webpack runtime carries no named template chunk — so the pattern could not be read off
+        // the bundle. Open a template in CakeMail, copy the address bar, and correct this line.
+        // Everything else about the round trip is independent of it.
+        //
+        // A NEW TAB, NOT AN IFRAME, AND THAT IS NOT A PREFERENCE. app.cakemail.com answers
+        // `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`
+        // (verified 2026-10-12), so a framed editor renders nothing whatsoever. Those headers are
+        // the site refusing to be embedded and there is no honest way around them from here.
+        const CAKEMAIL_APP = 'https://app.cakemail.com';
+        const cakemailEditUrl = (accountId, templateId) =>
+          `${CAKEMAIL_APP}/templates/${encodeURIComponent(templateId)}?account_id=${encodeURIComponent(accountId)}`;
+
         const CM_LIB = {};
         async function cmTemplates(accountId){
           if(CM_LIB[accountId]) return CM_LIB[accountId];
@@ -13835,7 +13859,25 @@ This removes its school and season dates. Venues in this market are not touched.
                  ${templates.length
                    ? `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mb-3 max-h-[16rem] overflow-y-auto p-0.5" data-grid></div>
                       <div class="border border-base-300 rounded-lg overflow-hidden bg-base-200/30 mb-3">
-                        <div class="px-3 py-1.5 border-b border-base-300 text-xs text-base-content/55" data-prevlabel>Pick a template to preview it.</div>
+                        <div class="px-3 py-1.5 border-b border-base-300 text-xs text-base-content/55 flex items-center gap-2">
+                          <span data-prevlabel>Pick a template to preview it.</span>
+                          <!-- OPENS CAKEMAIL IN A NEW TAB, because their app cannot be framed:
+                               app.cakemail.com answers X-Frame-Options: DENY and a
+                               Content-Security-Policy of frame-ancestors 'none', so an iframe
+                               of it renders nothing at all. Verified 2026-10-12.
+                               (No backticks in here: this comment lives inside a template
+                               literal, and one would end it early.) -->
+                          <a class="btn btn-ghost btn-xs ml-auto shrink-0 hidden" target="_blank" rel="noopener noreferrer" data-edit>Edit in CakeMail &#8599;</a>
+                        </div>
+                        <!-- THE RETURN LEG. Shown only after Edit was clicked. It exists because
+                             the row holds a COPY of the design (migration 120): saving in
+                             CakeMail changes nothing here until the template is pulled again. A
+                             dialog that just sat there would leave someone believing their edit
+                             had landed when it had not. -->
+                        <div class="hidden items-center gap-2 px-3 py-2 border-b border-base-300 bg-[#fdeee4] text-xs" data-backbar>
+                          <span class="text-[#133b49]">Editing in CakeMail in the other tab. Save it there, then come back.</span>
+                          <button class="btn btn-xs btn-primary ml-auto shrink-0" data-reload>I&rsquo;m done &mdash; pull my changes</button>
+                        </div>
                         <iframe sandbox="" class="w-full h-[17rem] bg-white" title="Template preview" data-prevframe></iframe>
                       </div>`
                    : `<div class="border border-dashed border-base-300 rounded-lg p-5 text-sm text-base-content/55 mb-3">
@@ -13858,6 +13900,9 @@ This removes its school and season dates. Venues in this market are not touched.
             const noteEl = ov.querySelector('[data-note]');
             const frame = ov.querySelector('[data-prevframe]');
             const prevLabel = ov.querySelector('[data-prevlabel]');
+            const editLink = ov.querySelector('[data-edit]');
+            const backBar = ov.querySelector('[data-backbar]');
+            const reloadBtn = ov.querySelector('[data-reload]');
             let chosen = null, previewSeq = 0;
 
             const close = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
@@ -13867,21 +13912,21 @@ This removes its school and season dates. Venues in this market are not touched.
             ov.querySelector('[data-cancel]').addEventListener('click', () => close(null));
             okBtn.addEventListener('click', () => { if(chosen) close(chosen); });
 
-            ov.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', async () => {
-              ov.querySelectorAll('[data-pick]').forEach(x => x.classList.remove('border-[#e55608]','ring-1','ring-[#e55608]'));
-              b.classList.add('border-[#e55608]','ring-1','ring-[#e55608]');
-              chosen = templates.find(t => String(t.id) === b.dataset.pick) || null;
-              okBtn.disabled = !chosen;
+            // SEQUENCED, because clicking through four tiles starts four fetches and they can
+            // land out of order — the preview would settle on whichever was slowest, not on the
+            // one that is selected. Shared with the reload button, which is the same request.
+            async function showPreview(){
               if(!chosen) return;
-              // SEQUENCED, because clicking through four tiles starts four fetches and they can
-              // land out of order — the preview would settle on whichever was slowest, not on
-              // the one that is selected.
               const seq = ++previewSeq;
               prevLabel.textContent = 'Loading ' + chosen.name + '…';
               errEl.classList.add('hidden');
               try{
                 const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(accountId)
-                                      + '&id=' + encodeURIComponent(chosen.id), { headers: await apiHeaders() });
+                                      + '&id=' + encodeURIComponent(chosen.id)
+                                      // Cache-bust: after an edit in CakeMail this is the same URL
+                                      // with different content, and a 304 would show the old design
+                                      // back to someone who just changed it.
+                                      + '&_=' + Date.now(), { headers: await apiHeaders() });
                 const j = await r.json().catch(() => ({}));
                 if(seq !== previewSeq) return;
                 if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
@@ -13895,7 +13940,41 @@ This removes its school and season dates. Venues in this market are not touched.
                 errEl.textContent = 'Could not load the preview: ' + ((e && e.message) || e) + '. You can still attach it.';
                 errEl.classList.remove('hidden');
               }
+            }
+
+            ov.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => {
+              ov.querySelectorAll('[data-pick]').forEach(x => x.classList.remove('border-[#e55608]','ring-1','ring-[#e55608]'));
+              b.classList.add('border-[#e55608]','ring-1','ring-[#e55608]');
+              chosen = templates.find(t => String(t.id) === b.dataset.pick) || null;
+              okBtn.disabled = !chosen;
+              if(editLink && chosen){
+                editLink.href = cakemailEditUrl(accountId, chosen.id);
+                editLink.classList.remove('hidden');
+              }
+              // Picking a different template drops the return bar: it belonged to the one that
+              // was being edited, and leaving it up would invite pulling changes into another.
+              if(backBar) backBar.classList.add('hidden');
+              if(backBar) backBar.classList.remove('flex');
+              showPreview();
             }));
+
+            // Clicking Edit does not block the dialog — the tab opens and the return bar appears
+            // beneath the preview, so the way back is on screen the whole time they are away.
+            if(editLink) editLink.addEventListener('click', () => {
+              if(!backBar) return;
+              backBar.classList.remove('hidden');
+              backBar.classList.add('flex');
+            });
+            if(reloadBtn) reloadBtn.addEventListener('click', async () => {
+              const old = reloadBtn.textContent;
+              reloadBtn.disabled = true; reloadBtn.textContent = 'Pulling…';
+              await showPreview();
+              reloadBtn.disabled = false; reloadBtn.textContent = old;
+              // The thumbnail is CakeMail's own screenshot service and lags an edit by minutes,
+              // so the tile is NOT refreshed here. Saying so beats showing a stale picture and
+              // letting it be read as "the edit did not save".
+              if(noteEl) noteEl.textContent = 'Preview updated. Tile thumbnails refresh on CakeMail’s side and may lag.';
+            });
             if(noteEl && templates.length) noteEl.textContent = templates.length + ' template' + (templates.length === 1 ? '' : 's');
           });
         }
@@ -13925,6 +14004,12 @@ This removes its school and season dates. Venues in this market are not touched.
         }));
 
         tb.querySelectorAll('[data-cmdetach]').forEach(btn => btn.addEventListener('click', () => cmAttach(btn.dataset.cmdetach, null, btn)));
+        // Refresh IS an attach of the same template — render it again, fill the tokens again,
+        // copy it onto the row again. No separate endpoint, and no way for the two to drift.
+        tb.querySelectorAll('[data-cmrefresh]').forEach(btn => btn.addEventListener('click', () => {
+          const row = QUEUE.find(x => x.id === btn.dataset.cmrefresh);
+          if(row && row.cakemail_template_id) cmAttach(row.id, row.cakemail_template_id, btn);
+        }));
 
         // ONE PATH FOR ATTACH AND DETACH, because they are the same write — see the note on
         // queue_set_email_html in migration 120. The row in QUEUE is updated from the answer and
