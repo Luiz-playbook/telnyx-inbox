@@ -17,6 +17,7 @@
 // Until one is deleted, any change to the request path here must be made in both. Better: pick
 // this one, point README.md at it, and delete the other.
 import http from 'node:http';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -178,6 +179,71 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('content-type', MIME[path.extname(fp)] || 'application/octet-stream');
   fs.createReadStream(fp).pipe(res);
 });
+
+// ---------------------------------------------------------------------------------------------
+// AUTO-RESTART ON A lib/ EDIT.
+//
+// The check above is correct and stays, but it was only ever a refusal: Node has cached the old
+// copy of a lib, nothing out here can rewrite a specifier inside a module, so the honest move is
+// to stop. The missing half is that a dev server is the one process that can simply start again.
+// Without this, every edit to lib/ costs an interrupted test and a manual restart — four in one
+// afternoon, which is how a safety net turns into an obstacle.
+//
+// WHY RE-EXEC AND NOT A MODULE-CACHE TRICK. There isn't one. The handler is already imported with
+// a ?t= cache-buster, and that is exactly why it is not enough: the handler reloads, its static
+// `import '../lib/x.js'` resolves to the same plain URL, and Node hands back the copy it loaded
+// at boot. ESM has no public uncache. A new process is the only way to get a new module graph.
+//
+// THE PORT IS RELEASED BEFORE THE CHILD STARTS, or the replacement dies on EADDRINUSE while the
+// parent is still holding the socket. close() alone waits for keep-alive connections that a
+// browser will happily hold open for a minute, so the sockets are dropped first where that is
+// supported, and a timeout is the backstop.
+//
+// Mirrors the same block in scripts/dev-server.js — that file's header explains why there are
+// two of these and that a change to one must be made in the other.
+//
+// api/ IS NOT WATCHED. Handlers are re-imported per request with a cache-buster, so they are
+// already live; restarting on those would throw away a working process for no reason.
+function watchLibsAndRestart() {
+  const WATCHED = path.join(root, 'lib');
+  if (!fs.existsSync(WATCHED)) return;
+  let timer = null, going = false;
+  const changed = new Set();
+
+  const restart = () => {
+    if (going) return;
+    going = true;
+    const what = [...changed].sort().join(', ');
+    console.log(`
+  lib/ changed (${what}) — restarting so Node picks it up…
+`);
+    const spawnChild = () => {
+      // execArgv carries --env-file=.env, so the replacement keeps the same environment.
+      // DETACHED AND UNREF'D, or the replacement dies with the process that started it. The
+      // child must outlive this one: as its own process-group leader nothing cascades to it when
+      // the parent exits, and unref() lets the parent's event loop end without waiting on it.
+      // stdio stays inherited so the new server keeps printing to the same terminal.
+      const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)],
+        { stdio: 'inherit', detached: true });
+      child.on('error', (e) => { console.error('  could not restart:', e.message); process.exit(1); });
+      child.on('spawn', () => { child.unref(); setTimeout(() => process.exit(0), 150).unref(); });
+    };
+    // Drop held-open connections so the port is actually free, then hand over.
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+    server.close(spawnChild);
+    setTimeout(spawnChild, 1500).unref();   // backstop if close() never calls back
+  };
+
+  fs.watch(WATCHED, { recursive: true }, (_evt, file) => {
+    if (!file || !String(file).endsWith('.js')) return;
+    changed.add(String(file).replace(/\\/g, '/'));
+    // Debounced: editors write a file in several events, and a save should cost one restart.
+    clearTimeout(timer);
+    timer = setTimeout(restart, 250);
+  });
+  console.log('  watching       lib/ — a change there restarts this server automatically');
+}
+watchLibsAndRestart();
 
 server.listen(PORT, () => {
   console.log(`\n  local dev  ->  http://localhost:${PORT}`);
