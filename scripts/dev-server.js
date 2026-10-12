@@ -98,7 +98,14 @@ function changedLibFiles(entry) {
   return stale.sort();
 }
 
+let INFLIGHT = 0;   // requests being served right now; a restart waits for these
 const server = http.createServer(async (req, res) => {
+  // A RESTART MUST NOT DROP A REQUEST. Closing the port under an in-flight call
+  // surfaces in the browser as "Failed to fetch" — indistinguishable from the
+  // server being down, and genuinely alarming on a Send now, where the honest
+  // reading of a dropped connection is "I do not know whether that sent".
+  INFLIGHT++;
+  res.on('close', () => { INFLIGHT--; });
   decorate(res);
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const pathname = decodeURIComponent(url.pathname);
@@ -178,11 +185,18 @@ const server = http.createServer(async (req, res) => {
 function watchLibsAndRestart() {
   const WATCHED = path.join(ROOT, 'lib');
   if (!fs.existsSync(WATCHED)) return;
-  let timer = null, going = false;
+  let timer = null, going = false, firstSeen = 0;
   const changed = new Set();
 
   const restart = () => {
     if (going) return;
+    // WAIT FOR QUIET. A lib edit is never so urgent that it should interrupt a call
+    // already being served; the request is finished first and the restart follows.
+    // Capped so a hung or streaming request cannot postpone it forever.
+    if (INFLIGHT > 0 && Date.now() - firstSeen < 20000) {
+      setTimeout(restart, 200);
+      return;
+    }
     going = true;
     const what = [...changed].sort().join(', ');
     console.log(`
@@ -208,6 +222,7 @@ function watchLibsAndRestart() {
 
   fs.watch(WATCHED, { recursive: true }, (_evt, file) => {
     if (!file || !String(file).endsWith('.js')) return;
+    if (!firstSeen) firstSeen = Date.now();
     changed.add(String(file).replace(/\\/g, '/'));
     // Debounced: editors write a file in several events, and a save should cost one restart.
     clearTimeout(timer);
