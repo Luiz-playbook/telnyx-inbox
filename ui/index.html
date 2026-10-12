@@ -12840,19 +12840,30 @@ This removes its school and season dates. Venues in this market are not touched.
       };
       // WHERE CAKEMAIL'S OWN TEMPLATE EDITOR LIVES.
       //
-      // ⚠️ THE PATH IS A BEST GUESS AND IS THE ONE THING HERE THAT NEEDS CONFIRMING. Their app
-      // is a React SPA whose routes live in lazy chunks — main.js is a Sentry stub and the
-      // webpack runtime carries no named template chunk — so the pattern could not be read off
-      // the bundle. Open a template in CakeMail, copy the address bar, and correct this line.
-      // Everything else about the round trip is independent of it.
+      // Confirmed from the address bar (Charles, 2026-10-12), not guessed — and the guess was
+      // wrong in two ways worth recording. It is a HASH route, so a query string appended the
+      // obvious way lands before the '#' and the router never sees it. And the ACCOUNT IS NOT
+      // IN THE URL AT ALL: CakeMail resolves the template against whichever sub-account the
+      // session currently has selected. So if the operator's CakeMail is switched to a
+      // different sub-account than the blast sends from, this opens a not-found rather than the
+      // design. No URL can fix that, which is why accountId is not a parameter here — taking
+      // one would imply a control we do not have.
       //
       // A NEW TAB, NOT AN IFRAME, AND THAT IS NOT A PREFERENCE. app.cakemail.com answers
-      // `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`
+      // X-Frame-Options: DENY and a Content-Security-Policy of frame-ancestors 'none'
       // (verified 2026-10-12), so a framed editor renders nothing whatsoever. Those headers are
       // the site refusing to be embedded and there is no honest way around them from here.
       const CAKEMAIL_APP = 'https://app.cakemail.com';
-      const cakemailEditUrl = (accountId, templateId) =>
-        `${CAKEMAIL_APP}/templates/${encodeURIComponent(templateId)}?account_id=${encodeURIComponent(accountId)}`;
+      const cakemailEditUrl = templateId =>
+        `${CAKEMAIL_APP}/#/campaigns/templates/${encodeURIComponent(templateId)}/edit`;
+      // The From address as a person reads it. Needed because the edit link cannot name the
+      // account in its URL, so the UI has to name it in words instead.
+      const senderLabelOf = row => {
+        const v = emailFromOf(row);
+        const s = EMAIL_SENDERS.find(x => x.v === v);
+        const cm = parseCakemailFrom(v);
+        return (s && s.label) || (cm ? 'account ' + cm.accountId : v || 'this sender');
+      };
       // Resolved against the live Salesmsg list, not stored: DEFAULT_SMS_TEAM_ID names an
       // inbox, and only the list knows which number that inbox currently sends from. A value
       // not in the dropdown would select nothing, so an absent team falls through to Telnyx.
@@ -13234,7 +13245,7 @@ This removes its school and season dates. Venues in this market are not touched.
                          CakeMail changes NOTHING here until it is pulled again. Refresh is that
                          pull — it re-renders the template and re-copies it onto the row. Without
                          it, an edit made in CakeMail would look applied and never be sent. */''}
-                   ${row.cakemail_template_id ? `<a class="btn btn-ghost btn-xs" target="_blank" rel="noopener noreferrer" href="${esc(cakemailEditUrl(parseCakemailFrom(emailFromOf(row))?.accountId || '', row.cakemail_template_id))}" title="Open this design in CakeMail's editor in a new tab">Edit &#8599;</a>
+                   ${row.cakemail_template_id ? `<a class="btn btn-ghost btn-xs" target="_blank" rel="noopener noreferrer" href="${esc(cakemailEditUrl(row.cakemail_template_id))}" title="Open this design in CakeMail's editor in a new tab. The address carries no account, so CakeMail opens it against whichever sub-account your session is on — switch to ${esc(senderLabelOf(row))} there if it is not found.">Edit &#8599;</a>
                       <button class="btn btn-ghost btn-xs" data-cmrefresh="${esc(row.id)}" title="Pull this design again from CakeMail, picking up anything you changed there">Refresh</button>` : ''}
                    <button class="btn btn-ghost btn-xs" data-cmdetach="${esc(row.id)}" title="Go back to sending the plain-text body below">Detach</button>
                  </span>`}
@@ -13947,7 +13958,7 @@ This removes its school and season dates. Venues in this market are not touched.
               chosen = templates.find(t => String(t.id) === b.dataset.pick) || null;
               okBtn.disabled = !chosen;
               if(editLink && chosen){
-                editLink.href = cakemailEditUrl(accountId, chosen.id);
+                editLink.href = cakemailEditUrl(chosen.id);
                 editLink.classList.remove('hidden');
               }
               // Picking a different template drops the return bar: it belonged to the one that
