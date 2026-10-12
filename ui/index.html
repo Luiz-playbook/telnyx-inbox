@@ -1904,7 +1904,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <li><b>77</b> changes</li>
                   <li><b>3</b> tickets &mdash; AI-1086, AI-1097, AI-1098</li>
                   <li>in <b>QA</b>, <b>staging</b> and <b>production</b></li>
-                  <li>9 Oct 2026</li>
+                  <li>9&ndash;13 Oct 2026</li>
                 </ul>
               </header>
 
@@ -1918,7 +1918,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <summary>
                     <span class="rn-who">Vhea</span>
                     <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
-                    <span class="rn-tally">6 areas &middot; 23 entries</span>
+                    <span class="rn-tally">7 areas &middot; 30 entries</span>
                     <span class="rn-caret" aria-hidden="true">&#9662;</span>
                   </summary>
                   <div class="rn-devbody">
@@ -2053,6 +2053,43 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                         <p>The bell, the unread count, and read / unread / delete / select-all all work on screen. Nothing yet
                           generates a notification &mdash; the screen is in place so the shape can be agreed before anything starts
                           producing them.</p></li>
+                    </ul>
+
+                    <h2>Email designs from CakeMail</h2>
+                    <p class="rn-areanote">A blast could only ever send the plain-text body typed into the Queue. It can now
+                      send a designed template built in CakeMail &mdash; with the drafted copy placed inside it.</p>
+                    <ul class="rn-items">
+                      <li><h3>Choose a CakeMail template, from the Queue</h3>
+                        <p>Expand a blast and the email panel has <b>Choose CakeMail Template</b> beside the existing
+                          <b>Use template&hellip;</b>. It opens the designs in that blast&rsquo;s own sending account, as thumbnails
+                          with a live preview. Pick one and it becomes what the blast actually sends.</p></li>
+                      <li><h3>The design wraps your copy, if you let it</h3>
+                        <p>Put <b>[BODY]</b> in the CakeMail template where the words belong and the blast&rsquo;s own copy is
+                          dropped in at send time &mdash; so editing the text in the Queue still changes what goes out, with no
+                          need to re-attach. A design without <b>[BODY]</b> falls back to the first paragraph, which is a guess:
+                          the row says which of the two happened, and how many of the design&rsquo;s own blocks will be sent after
+                          your copy.</p></li>
+                      <li><h3>Edit the design in CakeMail, then pull it back</h3>
+                        <p><b>Edit</b> opens the template in CakeMail&rsquo;s own editor in a new tab &mdash; their app refuses to be
+                          embedded, so it cannot live inside this one. When you come back, <b>Refresh</b> pulls the change onto
+                          the blast. CakeMail must be viewing the account that owns the template, which the row names.</p></li>
+                      <li><h3>Designs update themselves before sending</h3>
+                        <p>A row warns <b>UPDATED IN CAKEMAIL</b> when the template has moved on since it was attached, and the
+                          hourly tick re-renders just before sending so an edit is never silently dropped. If CakeMail cannot be
+                          reached the blast still goes out with the stored design &mdash; an outage costs the update, not the
+                          send.</p></li>
+                      <li><h3>Duplicate a design meant for one blast</h3>
+                        <p>One template serves many blasts, so editing it in CakeMail changes what they all send. The row says
+                          <b>shared with N other blasts</b> before you open the editor, and <b>Duplicate</b> gives this blast its
+                          own copy to edit freely. That copy is the only thing this app ever writes to CakeMail.</p></li>
+                      <li><h3>Attaching or detaching un-confirms the blast</h3>
+                        <p>A confirmed blast sends on the hourly tick with no further human step. Changing its design changes what
+                          goes out, so the approval is withdrawn and the row returns to <b>Pending</b> &mdash; re-confirming is one
+                          click, and nothing leaves on the strength of an approval given for different words.</p></li>
+                      <li><h3>A blast says when it is sending</h3>
+                        <p><b>Send now</b> used to spin a button inside a menu that closes as soon as the table redraws. The row
+                          itself now reads <b>Sending&hellip;</b> for as long as the send is in flight, which for CakeMail is five
+                          sequential calls.</p></li>
                     </ul>
 
                   </div>

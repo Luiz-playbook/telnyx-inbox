@@ -769,6 +769,9 @@ export default async function handler(req, res) {
               emailDelivered = true;
               // The campaign id is the one provider reference that makes a logged recipient
               // checkable against the provider's own record later.
+              // Said out loud: these addresses are in the market and were NOT mailed, which is a
+              // data problem to fix at source rather than something to discover later.
+              if (out.skipped) notes.push(`${out.skipped} address${out.skipped === 1 ? '' : 'es'} skipped as unmailable (${out.skippedSample.join(', ')}${out.skipped > out.skippedSample.length ? ', …' : ''})`);
               logRecipients(emails, 'email', 'cakemail', {
                 sender: r.email_from || null, provider_id: String(out.campaignId || '') || null,
               });
