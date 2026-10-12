@@ -40,6 +40,7 @@
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName, isRetiredSender } from '../lib/cakemail.js';
 import { injectBody } from '../lib/tokens.js';
+import { renderAttachedTemplate } from '../lib/design.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
 import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, armCampaign, findCampaignByKey, listCampaigns } from '../lib/bulk-sms.js';
@@ -567,7 +568,42 @@ export default async function handler(req, res) {
         // and what the row reads as. It stops being what goes out, which is why the Queue puts
         // a badge above the body box saying so — a body that reads one way and sends another,
         // unlabelled, is the worst outcome available here.
-        const design = String(r.email_html || '').trim();
+        let design = String(r.email_html || '').trim();
+
+        // TAKE THE LATEST DESIGN, BEST EFFORT. A template edited in CakeMail after the blast was
+        // set up would otherwise go out in its old form, and the operator who made that edit has
+        // no reason to suspect it. So the template is re-rendered here and the fresher version
+        // used when it differs.
+        //
+        // BEST EFFORT IS LOAD-BEARING. lib/cakemail.js is explicit that a send must not depend
+        // on a third-party read succeeding at the moment the cron fires; the whole reason the
+        // HTML is copied onto the row is so a blast can go out when CakeMail cannot be reached.
+        // So every failure here falls back to the snapshot and the blast still sends. The only
+        // thing an outage costs is the update.
+        //
+        // NOT FOR sent/partial — those never reach this branch (they are not due) and their copy
+        // is history either way.
+        //
+        // ⚠️ TODO(notifications): the operator should be TOLD when this swaps a confirmed
+        // blast's design, before it goes. The notification plumbing does not exist yet, so for
+        // now it is recorded in the run's notes and the Queue shows the same warning ahead of
+        // time. Wire this to a real notification when that lands — the warning in the Queue is
+        // seen only by someone who happens to open the row.
+        if (design && r.cakemail_template_id) {
+          try {
+            const fresh = await renderAttachedTemplate(r);
+            if (fresh && fresh.html !== design) {
+              design = fresh.html;
+              notes.push(`design refreshed from CakeMail before sending (${r.cakemail_template_name || r.cakemail_template_id})`);
+              // Written back so the Queue and Market History agree with what actually went out.
+              await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, {
+                method: 'POST', headers: { ...sh, 'content-type': 'application/json' },
+                body: JSON.stringify({ p_id: r.id, p_html: fresh.html, p_template_id: r.cakemail_template_id, p_template_name: r.cakemail_template_name }),
+              }).catch(() => {});
+            }
+          } catch { notes.push('could not check CakeMail for a newer design — sent the stored one'); }
+        }
+
         // [BODY] in the design is filled HERE, not when it was attached, so an edit to the copy
         // in the Queue is always what goes out. A design with no [BODY] stands alone and the
         // copy is not used — see lib/tokens.js.

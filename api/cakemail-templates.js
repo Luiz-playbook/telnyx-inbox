@@ -26,6 +26,7 @@ import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { defangHtml } from '../lib/defang.js';
+import { designIsStale } from '../lib/design.js';
 import { fillTokens, gameLabel, prettyDate, injectBody, wantsBody } from '../lib/tokens.js';
 
 export const config = { maxDuration: 30 };
@@ -200,9 +201,15 @@ export default async function handler(req, res) {
   const wantRow = String(req.query?.queue_id || '').trim();
   if (wantRow) {
     if (!/^[0-9a-f-]{36}$/i.test(wantRow)) { res.status(400).json({ error: 'queue_id must be a row id' }); return; }
-    const r = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=email_html,email_copy,cakemail_template_id,cakemail_template_name&id=eq.${encodeURIComponent(wantRow)}&limit=1`, { headers: h });
-    if (!r.ok) { res.status(502).json({ error: `campaign_queue read failed (HTTP ${r.status})` }); return; }
-    const row = (await r.json().catch(() => []))[0];
+    // THROUGH get_campaign_queue(), NOT THE TABLE — the same reason the attach path gives. The
+    // staleness check re-runs fillTokens, which needs event_date and sport, and those are JOINED
+    // IN from events_master; they are not columns on campaign_queue. Reading the table directly
+    // 400s on event_date, and if it did not it would quietly compare against a render with the
+    // date missing and call every row stale.
+    const r = await fetch(`${supaUrl}/rest/v1/rpc/get_campaign_queue`, { method: 'POST', headers: { ...h, 'content-type': 'application/json' }, body: '{}' });
+    if (!r.ok) { res.status(502).json({ error: `get_campaign_queue failed (HTTP ${r.status})` }); return; }
+    const all = await r.json().catch(() => []);
+    const row = (Array.isArray(all) ? all : []).find(x => String(x.id) === wantRow);
     if (!row) { res.status(404).json({ error: 'that blast is not in the queue' }); return; }
     if (!row.email_html) { res.status(200).json({ ok: true, attached: false }); return; }
     res.status(200).json({
@@ -212,6 +219,10 @@ export default async function handler(req, res) {
       // would show [BODY] sitting in the middle of the design while recipients get the copy —
       // which is the one thing this view must never do.
       wants_body: wantsBody(row.email_html),
+      // HAS CAKEMAIL MOVED ON. true/false/null, and null is not false — see lib/design.js. The
+      // row renders the warning only on a definite true, so an outage never produces a scary
+      // banner about a design that is probably fine.
+      stale: await designIsStale(row),
       html: defangHtml(injectBody(row.email_html, row)),
     });
     return;
