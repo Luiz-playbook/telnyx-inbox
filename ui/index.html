@@ -14298,16 +14298,28 @@ This removes its school and season dates. Venues in this market are not touched.
               // are supposed to be there. It names the tokens the design uses that came out
               // BLANK for this row, which is the case that quietly ships "on  —" to a market.
               const gaps = j.empties || [];
-              toast({ type: gaps.length || j.unconfirmed ? 'warn' : 'ok',
+              // THE SAME THREE OUTCOMES THE ROW'S CHIP SHOWS. This said "the drafted copy is NOT
+              // used" for every design without [BODY], which stopped being true the moment the
+              // first-paragraph fallback landed — the copy IS used, just placed by guess. A
+              // message that contradicts what the row is doing is worse than no message.
+              const plan = j.body_plan || { mode: j.wants_body ? 'token' : 'none' };
+              const others = plan.others || 0;
+              const bodyLine =
+                plan.mode === 'token'
+                  ? 'It has [BODY] in it, so this blast’s own copy is dropped in when it sends — edit the text and the change goes out.'
+                  : plan.mode === 'first-paragraph'
+                    ? `It has no [BODY], so your copy went into the design’s first paragraph — a guess.`
+                      + (others ? ` The design’s other ${others} block${others === 1 ? '' : 's'} of text are unchanged and will be sent after it, so check the preview.` : '')
+                      + ' Add [BODY] in CakeMail where the words really belong, then press Refresh, and this becomes exact.'
+                    : 'It has no [BODY] and no paragraph to put the copy in, so it sends as-is and the drafted copy is NOT used.';
+              toast({ type: gaps.length || j.unconfirmed || plan.mode !== 'token' ? 'warn' : 'ok',
                       title: `"${j.name}" is now what this blast sends`,
                       lines: [
-                        ...(j.wants_body ? [] : ['The text in the body box is kept as the record and is not what recipients see.']),
+                        ...(plan.mode === 'none' ? ['The text in the body box is kept as the record and is not what recipients see.'] : []),
                         ...(gaps.length
                           ? [`${gaps.join(' and ')} came out blank on this row, so the design has a gap where it expected one. Fill the game or date on the blast, then attach it again.`]
                           : []),
-                        ...(j.wants_body
-                          ? ['It has [BODY] in it, so this blast’s own copy is dropped in when it sends — edit the text and the change goes out.']
-                          : ['It has no [BODY] placeholder, so it sends as-is and the drafted copy is NOT used. Add [BODY] to the template in CakeMail where the words should go, then press Refresh.']),
+                        bodyLine,
                         ...(j.foreign ? ['This design was taken from another CakeMail account. The blast still sends from its own sender — nothing is sent from that account.'] : []),
                         ...(j.unconfirmed ? [UNCONFIRMED_NOTE] : []),
                       ] });
