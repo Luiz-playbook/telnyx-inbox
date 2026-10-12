@@ -12866,6 +12866,13 @@ This removes its school and season dates. Venues in this market are not touched.
       const CAKEMAIL_APP = 'https://app.cakemail.com';
       const cakemailEditUrl = templateId =>
         `${CAKEMAIL_APP}/#/campaigns/templates/${encodeURIComponent(templateId)}/edit`;
+      // THE FALLBACK, and the reason there are two links instead of one. The edit route above is
+      // the fast path and works when CakeMail is already viewing the account that owns the
+      // template. When it is not, that route does not redirect or offer a switcher — it renders
+      // a dead "Unable to fetch template" card (confirmed twice, 2026-10-12). Browse degrades
+      // properly: it lists whatever account you ARE in, with the app's own navigation intact, so
+      // the way forward is always on screen. Confirmed URL, from Charles.
+      const CAKEMAIL_BROWSE_URL = `${CAKEMAIL_APP}/#/campaigns/templates/browse`;
       // The From address as a person reads it. Needed because the edit link cannot name the
       // account in its URL, so the UI has to name it in words instead.
       const senderLabelOf = row => {
@@ -13915,7 +13922,9 @@ This removes its school and season dates. Venues in this market are not touched.
                                 hold and reports "Unable to fetch template", which reads like a
                                 broken link rather than the wrong context.
                                 (No backticks in here: template literal.) */''}
-                          <span class="text-[#133b49]">Editing in CakeMail in the other tab &mdash; make sure you are viewing <b>${esc(accountLabel)}</b> there, not the parent. Save it, then come back.</span>
+                          <span class="text-[#133b49]">Editing in CakeMail in the other tab. Save it there, then come back.
+                            <br><span class="text-base-content/55">Says &ldquo;Unable to fetch template&rdquo;? CakeMail is viewing a different account &mdash;
+                            <a class="link" target="_blank" rel="noopener noreferrer" data-browse>open all templates</a> and pick <b data-tplname></b> from there.</span></span>
                           <button class="btn btn-xs btn-primary ml-auto shrink-0" data-reload>I&rsquo;m done &mdash; pull my changes</button>
                         </div>
                         <iframe sandbox="" class="w-full h-[17rem] bg-white" title="Template preview" data-prevframe></iframe>
@@ -14050,6 +14059,10 @@ This removes its school and season dates. Venues in this market are not touched.
             // beneath the preview, so the way back is on screen the whole time they are away.
             if(editLink) editLink.addEventListener('click', () => {
               if(!backBar) return;
+              const br = backBar.querySelector('[data-browse]');
+              if(br) br.href = CAKEMAIL_BROWSE_URL;
+              const nm = backBar.querySelector('[data-tplname]');
+              if(nm) nm.textContent = chosen ? chosen.name : 'it';
               backBar.classList.remove('hidden');
               backBar.classList.add('flex');
             });
