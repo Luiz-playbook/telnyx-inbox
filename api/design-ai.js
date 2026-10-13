@@ -38,6 +38,27 @@ const MODEL = (process.env.DESIGN_AI_MODEL || 'gpt-4o').trim();
 // words; this file decides where words go.
 const toText = h => String(h || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
 
+// WHAT THE MODEL ACTUALLY SENDS BACK, which is not always a string.
+//
+// Asked for {"blocks": ["...", "..."]}, gpt-4o returned nineteen OBJECTS — shaped like
+// {id, text} — and String(object) is "[object Object]". That went into the template and
+// overwrote all nineteen blocks with it before anything noticed, because every one of them
+// differed from the original and so counted as a change. Verified and reverted 2026-10-14.
+//
+// So nothing is stringified blindly. A string is taken as-is; an object is searched for the
+// field it plainly meant; anything else yields null and the caller REFUSES THE WHOLE EDIT
+// rather than writing part of it. A half-applied rewrite is worse than a rejected one: the
+// design is shared, and the damage is only visible by reading it.
+const asBlockText = (v) => {
+  if (typeof v === 'string') return v;
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    for (const k of ['text', 'content', 'block', 'html', 'value', 'copy']) {
+      if (typeof v[k] === 'string') return v[k];
+    }
+  }
+  return null;
+};
+
 // Plain text to the markup a design expects. Escaped first: a model can and will produce an
 // ampersand or an angle bracket, and one of those unescaped inside a 30 KB design is a broken
 // email nobody notices until it has gone out.
@@ -174,7 +195,7 @@ export default async function handler(req, res) {
         { role: 'system', content: RULES.concat(
             `This design has ${nodes.length} text block${nodes.length === 1 ? '' : 's'}, numbered below.`,
             `Return JSON: {"blocks": ["<new text for 1>", "<new text for 2>", ...]} with EXACTLY ${nodes.length} item${nodes.length === 1 ? '' : 's'}, in the same order.`,
-            'Return a block unchanged if the instruction does not concern it. Never merge, split, add or drop blocks.',
+            'Each item must be a PLAIN STRING, not an object. Return a block unchanged if the instruction does not concern it. Never merge, split, add or drop blocks.',
           ).join('\n') },
         { role: 'user', content: `${context(row)}\n\nBlocks:\n${numbered}\n\nWhat to change: ${instruction}` },
       ]);
@@ -186,9 +207,18 @@ export default async function handler(req, res) {
       // Only blocks whose TEXT actually changed are rewritten. An untouched block keeps its
       // original markup — links, bold, inline styles and all — instead of being flattened by a
       // round trip through plain text it did not need.
+      // Every item is resolved to text BEFORE anything is written. One unreadable item fails the
+      // whole edit, because the alternative is a design half in the model's words and half in
+      // "[object Object]".
+      const wants = blocks.map(asBlockText);
+      const badAt = wants.findIndex(w => w === null);
+      if (badAt >= 0) {
+        res.status(502).json({ error: `The model returned block ${badAt + 1} in a form this cannot read (${typeof blocks[badAt]}). Nothing was changed.` });
+        return;
+      }
       const changed = [];
       const next = nodes.map((orig, i) => {
-        const want = String(blocks[i] ?? '').trim();
+        const want = String(wants[i]).trim();
         if (!want || want === toText(orig)) return orig;
         changed.push({ index: i + 1, before: toText(orig), after: want });
         return `<p>${toHtml(want)}</p>`;
@@ -209,8 +239,8 @@ export default async function handler(req, res) {
         ).join('\n') },
       { role: 'user', content: `${context(row)}\n\nCurrent copy:\n"""\n${toText(before)}\n"""\n\nWhat to change: ${instruction}` },
     ]);
-    const after = String(out.copy || '').trim();
-    if (!after) { res.status(502).json({ error: 'The model returned an empty body' }); return; }
+    const after = String(asBlockText(out.copy) || '').trim();
+    if (!after) { res.status(502).json({ error: 'The model did not return a usable body' }); return; }
     await cakemailPatch(`/templates/${templateId}`, { accountId: owner,
       body: { content: { ...detail.content, html: `<p>${toHtml(after)}</p>` } } });
     res.status(200).json({ ok: true, target: 'template', kind: 'html', name: detail.name,

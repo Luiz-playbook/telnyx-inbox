@@ -14002,18 +14002,28 @@ This removes its school and season dates. Venues in this market are not touched.
             // A template never opened in the builder has no thumbnail and gets a name-only tile:
             // "no preview yet" is information, and a design that does not exist yet is exactly
             // the one to notice before attaching it.
+            // THE ZOOM SITS ON THE CARD, not in the footer. A footer button only works on the tile
+            // you have already selected, which makes looking at a design properly a two-step:
+            // pick it, then press Preview. The icon previews the card under the cursor, selected
+            // or not. A <button> cannot be nested inside a <button>, so the tile is a wrapper
+            // with the pick surface and the zoom as siblings.
             const tile = t => `
-              <button type="button" data-pick="${esc(t.id)}" class="text-left border-2 border-base-300 rounded-xl overflow-hidden bg-white hover:border-[#e55608] focus:border-[#e55608] focus:outline-none transition shadow-sm${String(t.id) === String(current||'') ? ' border-[#e55608] ring-2 ring-[#e55608]/30' : ''}">
-                <div class="h-[180px] bg-base-200 flex items-center justify-center overflow-hidden">
-                  ${t.thumbnail_url
-                    ? `<img src="${esc(t.thumbnail_url)}" alt="" loading="lazy" class="w-full h-full object-cover object-top">`
-                    : `<span class="text-xs text-base-content/40">No preview yet</span>`}
-                </div>
-                <div class="px-3 py-2 border-t border-base-200">
-                  <div class="text-sm font-semibold text-[#133b49] truncate" title="${esc(t.name)}">${esc(t.name)}</div>
-                  <div class="text-[11px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || '&nbsp;'}</div>
-                </div>
-              </button>`;
+              <div class="relative group border-2 border-base-300 rounded-xl overflow-hidden bg-white hover:border-[#e55608] transition shadow-sm${String(t.id) === String(current||'') ? ' border-[#e55608] ring-2 ring-[#e55608]/30' : ''}" data-card="${esc(t.id)}">
+                <button type="button" data-pick="${esc(t.id)}" class="block w-full text-left focus:outline-none focus:ring-2 focus:ring-[#e55608]/40">
+                  <div class="h-[180px] bg-base-200 flex items-center justify-center overflow-hidden">
+                    ${t.thumbnail_url
+                      ? `<img src="${esc(t.thumbnail_url)}" alt="" loading="lazy" class="w-full h-full object-cover object-top">`
+                      : `<span class="text-xs text-base-content/40">No preview yet</span>`}
+                  </div>
+                  <div class="px-3 py-2 border-t border-base-200">
+                    <div class="text-sm font-semibold text-[#133b49] truncate" title="${esc(t.name)}">${esc(t.name)}</div>
+                    <div class="text-[11px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || '&nbsp;'}</div>
+                  </div>
+                </button>
+                <button type="button" data-zoom="${esc(t.id)}" aria-label="Preview ${esc(t.name)} full screen"
+                  title="Preview full screen"
+                  class="absolute top-2 right-2 btn btn-xs btn-circle bg-white/90 border-base-300 hover:bg-white shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+              </div>`;
 
             ov.innerHTML =
               `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Choose a Playbook Mail template" style="max-width:68rem;width:94vw">
@@ -14045,7 +14055,6 @@ This removes its school and season dates. Venues in this market are not touched.
                    <span class="text-xs text-base-content/45" data-note></span>
                    <div class="ml-auto flex gap-2">
                      <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
-                     <button class="btn btn-sm btn-outline" data-preview disabled>Preview full screen</button>
                      <button class="btn btn-sm btn-primary" data-ok disabled>Use this design</button>
                    </div>
                  </div>
@@ -14054,7 +14063,6 @@ This removes its school and season dates. Venues in this market are not touched.
 
             const grid = ov.querySelector('[data-grid]');
             const okBtn = ov.querySelector('[data-ok]');
-            const previewBtn = ov.querySelector('[data-preview]');
             const errEl = ov.querySelector('[data-err]');
             const noteEl = ov.querySelector('[data-note]');
             const countEl = ov.querySelector('[data-count]');
@@ -14074,6 +14082,11 @@ This removes its school and season dates. Venues in this market are not touched.
                      ${list.length ? 'No design matches that search.' : 'No saved designs in this account yet. Build one in Playbook Mail and it will show up here.'}
                    </div>`;
               grid.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => onPick(b)));
+              grid.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const t = list.find(x => String(x.id) === b.dataset.zoom);
+                if(t) openFullPreview(t);
+              }));
               if(countEl) countEl.textContent = list.length
                 ? (shown.length === list.length ? `${list.length} design${list.length === 1 ? '' : 's'}`
                                                 : `${shown.length} of ${list.length}`)
@@ -14085,14 +14098,13 @@ This removes its school and season dates. Venues in this market are not touched.
               b.classList.add('border-[#e55608]','ring-2','ring-[#e55608]/30');
               chosen = list.find(t => String(t.id) === b.dataset.pick) || null;
               okBtn.disabled = !chosen;
-              previewBtn.disabled = !chosen;
               if(noteEl) noteEl.textContent = chosen ? chosen.name : '';
             }
 
             // FULL SCREEN, WITH THE WAY OUT ON IT. Josh asked for a preview someone can sit in
             // and get comfortable with, carrying its own Edit and its own X — one extra step
             // before committing, rather than a thumbnail and a leap of faith.
-            async function openFullPreview(){
+            async function openFullPreview(chosen){
               if(!chosen) return;
               const fs = document.createElement('div');
               fs.className = 'pb-modal-overlay';
@@ -14118,6 +14130,41 @@ This removes its school and season dates. Venues in this market are not touched.
                      <button class="btn btn-sm btn-outline shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsclose aria-label="Close preview">&#10005;</button>
                    </div>
+                   ${/* INLINE, NOT A MODAL ON A MODAL. The first version opened a third overlay
+                         on top of the preview on top of the picker, which buried the very thing
+                         being edited. It also offered "this blast" vs "the design" — a choice
+                         that makes no sense here: you are looking AT the design, so that is what
+                         Edit with AI edits. The per-blast option lives on the row's own button,
+                         where the blast is what you are looking at.
+                         (No backticks in here: template literal.) */''}
+                   ${/* A REAL LINK, NOT window.open(). The first version asked for confirmation
+                         and then called window.open — but that runs AFTER an await, so the
+                         browser no longer sees a user gesture and blocks the tab silently:
+                         pressing Edit appeared to do nothing at all. An anchor the person
+                         actually clicks is never blocked, and it carries Josh's warning with it
+                         instead of in a dialog that has to be dismissed first.
+                         (No backticks in here: template literal.) */''}
+                   <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3 text-xs" data-fsedbar>
+                     <div class="text-[#133b49] mb-2">This opens <b>Playbook Mail</b> in a new tab, on the design
+                       <b>${esc(chosen ? chosen.name : '')}</b>. Make sure it is viewing <b>${esc(accountLabel)}</b> there, or it will say the
+                       template cannot be fetched. Save your changes, come back to this tab, and press <b>Refresh</b> on the blast.</div>
+                     <div class="flex gap-2">
+                       <a class="btn btn-sm btn-primary" target="_blank" rel="noopener noreferrer" data-fsed-go>Open Playbook Mail &#8599;</a>
+                       <button class="btn btn-sm btn-ghost" data-fsed-cancel>Cancel</button>
+                     </div>
+                   </div>
+                   <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3" data-fsaibar>
+                     <div class="text-xs font-semibold text-[#133b49] mb-1.5">Edit this design with AI</div>
+                     <div class="flex gap-2 items-start">
+                       <textarea class="textarea textarea-bordered textarea-sm flex-1 text-xs" rows="2" data-fsai-what
+                         placeholder="e.g. make the opening shorter and mention the cheapest seat" aria-label="What to change"></textarea>
+                       <div class="flex flex-col gap-1.5 shrink-0">
+                         <button class="btn btn-sm btn-primary" data-fsai-go>Make the change</button>
+                         <button class="btn btn-xs btn-ghost" data-fsai-cancel>Cancel</button>
+                       </div>
+                     </div>
+                     <div class="text-[11px] mt-1.5" data-fsai-note></div>
+                   </div>
                    <div class="bg-base-200/40" style="height:min(74vh,760px)">
                      <iframe sandbox="" class="w-full h-full border-0 bg-white" title="Full preview" data-fsframe></iframe>
                    </div>
@@ -14131,7 +14178,7 @@ This removes its school and season dates. Venues in this market are not touched.
               document.addEventListener('keydown', onKeyFs);
               fs.addEventListener('mousedown', e => { if(e.target === fs) close(); });
               fs.querySelector('[data-fsclose]').addEventListener('click', close);
-              fs.querySelector('[data-fsedit]').addEventListener('click', async () => { if(await goEdit()) close(); });
+              fs.querySelector('[data-fsedit]').addEventListener('click', () => goEdit());
               const frame = fs.querySelector('[data-fsframe]');
               const shell = fs.querySelector('.pb-modal-card');
               let html = '', big = false, blobUrl = null;
@@ -14151,38 +14198,87 @@ This removes its school and season dates. Venues in this market are not touched.
                 window.open(blobUrl, '_blank', 'noopener');
               });
 
-              fs.querySelector('[data-fsai]').addEventListener('click', () => aiPanel(rowId, chosen));
+              // ONE LOADER, so the AI can show its own result. The first version edited and then
+              // left the preview exactly as it was, which read as "nothing happened" — the
+              // change had been made, just not anywhere the person was looking.
+              const aiBar = fs.querySelector('[data-fsaibar]');
+              const edBar = fs.querySelector('[data-fsedbar]');
+              const aiNote = fs.querySelector('[data-fsai-note]');
+              const show = (bar) => {
+                for(const b of [aiBar, edBar]) b.classList.toggle('hidden', b !== bar);
+              };
 
-              try{
-                const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(acct)
-                                      + '&id=' + encodeURIComponent(chosen.id) + '&_=' + Date.now(),
-                                      { headers: await apiHeaders() });
-                const j = await r.json().catch(() => ({}));
-                if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-                html = j.html || '';
-                frame.srcdoc = html;
-              }catch(e){
-                frame.removeAttribute('srcdoc');
-                frame.insertAdjacentHTML('afterend', `<div class="p-4 text-sm text-error">Could not load the preview: ${esc((e && e.message) || String(e))}</div>`);
+              async function loadPreview(){
+                try{
+                  const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(acct)
+                                        + '&id=' + encodeURIComponent(chosen.id) + '&_=' + Date.now(),
+                                        { headers: await apiHeaders() });
+                  const j = await r.json().catch(() => ({}));
+                  if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                  html = j.html || '';
+                  frame.srcdoc = html;
+                }catch(e){
+                  frame.removeAttribute('srcdoc');
+                  frame.insertAdjacentHTML('afterend', `<div class="p-4 text-sm text-error">Could not load the preview: ${esc((e && e.message) || String(e))}</div>`);
+                }
               }
+
+              fs.querySelector('[data-fsai]').addEventListener('click', () => {
+                show(aiBar);
+                aiNote.textContent = '';
+                fs.querySelector('[data-fsai-what]').focus();
+              });
+              fs.querySelector('[data-fsai-cancel]').addEventListener('click', () => show(null));
+              fs.querySelector('[data-fsed-cancel]').addEventListener('click', () => show(null));
+
+              fs.querySelector('[data-fsai-go]').addEventListener('click', async (e) => {
+                const whatEl = fs.querySelector('[data-fsai-what]');
+                const instruction = whatEl.value.trim();
+                if(!instruction){ aiNote.className = 'text-[11px] mt-1.5 text-error'; aiNote.textContent = 'Say what you would like changed.'; whatEl.focus(); return; }
+                const btn = e.currentTarget, label = btn.textContent;
+                btn.disabled = true; btn.textContent = 'Thinking…';
+                aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
+                aiNote.textContent = 'Editing the design in Playbook Mail…';
+                try{
+                  // ALWAYS the template. You are looking at the design, so the design is what
+                  // this edits — the per-blast option is on the row's own button, where the
+                  // blast is what is on screen.
+                  const r = await fetch('/api/design-ai', { method:'POST', headers: await apiHeaders(),
+                    body: JSON.stringify({ queue_id: rowId, instruction, target: 'template' }) });
+                  const j = await r.json().catch(() => ({}));
+                  if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                  const n = (j.changed || []).length;
+                  if(!n){
+                    aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
+                    aiNote.textContent = j.note || 'The model made no changes.';
+                  } else {
+                    await loadPreview();          // the whole point: show what changed
+                    whatEl.value = '';
+                    aiNote.className = 'text-[11px] mt-1.5 text-[#1b7a44]';
+                    aiNote.textContent = `${n} block${n === 1 ? '' : 's'} rewritten. This design is used by ${j.affected} blast${j.affected === 1 ? '' : 's'} — press Refresh on the row to pull it in.`;
+                  }
+                }catch(err){
+                  aiNote.className = 'text-[11px] mt-1.5 text-error';
+                  aiNote.textContent = String((err && err.message) || err);
+                }finally{
+                  btn.disabled = false; btn.textContent = label;
+                }
+              });
+
+              await loadPreview();
             }
 
-            // LEAVING THE APP IS ANNOUNCED. Josh asked for this directly: a new tab opening onto
-            // another product, with a save-and-come-back step, is not something to spring on
-            // someone mid-task. It also names the account, which is the one thing that makes the
-            // difference between the editor opening and it saying "unable to fetch template".
-            async function goEdit(){
+            // LEAVING THE APP IS ANNOUNCED — as a strip with a real link in it, not a confirm
+            // dialog. Josh asked for the warning; the link has to be an anchor the person clicks
+            // because a scripted window.open after an awaited dialog is not a user gesture and
+            // browsers drop it silently. It also stops a third overlay stacking on the preview,
+            // which compounded two 45% scrims into near-black.
+            function goEdit(){
               if(!chosen) return false;
-              const ok = await askConfirm({
-                title: 'Open this design in Playbook Mail?',
-                body: `A new tab opens on Playbook Mail with "${chosen.name}". Make sure it is viewing ${accountLabel}, `
-                    + `or it will say the template cannot be fetched.\n\nSave your changes there, come back to this tab, `
-                    + `and press Refresh on the blast to pull them in. Nothing here changes until you do.`,
-                okText: 'Open Playbook Mail',
-              });
-              if(!ok) return false;
-              window.open(cakemailEditUrl(chosen.id), '_blank', 'noopener');
-              return true;
+              const a = fs.querySelector('[data-fsed-go]');
+              if(a) a.href = cakemailEditUrl(chosen.id);
+              show(edBar);
+              return false;
             }
 
             const close = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
@@ -14191,7 +14287,6 @@ This removes its school and season dates. Venues in this market are not touched.
             ov.addEventListener('mousedown', e => { if(e.target === ov) close(null); });
             ov.querySelector('[data-cancel]').addEventListener('click', () => close(null));
             okBtn.addEventListener('click', () => { if(chosen) close(chosen); });
-            previewBtn.addEventListener('click', openFullPreview);
             if(searchEl) searchEl.addEventListener('input', () => { filter = searchEl.value.trim().toLowerCase(); paintGrid(); });
 
             const newTpl = ov.querySelector('[data-newtpl]');
