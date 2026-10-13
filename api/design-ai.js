@@ -120,6 +120,21 @@ const context = r => [
   r.ticket_price != null ? `Cheapest ticket: $${r.ticket_price}` : '',
 ].filter(Boolean).join('\n');
 
+// WHY NOTHING CHANGED, when the instruction was never about words in the first place.
+//
+// This edits text and only text. A BEE design keeps its colours in nine style paths --
+// descriptor.text.style.color, descriptor.button.style.background-color, the row and page
+// background-colors and so on -- none of which lib/beetext.js reads or writes, by design: the
+// text nodes are the part that can be round-tripped without understanding the builder.
+//
+// So "make the colours blue" comes back with all nineteen blocks unchanged and nothing is
+// written, which is correct and reads as broken. "The model made no changes" is true and
+// useless here; it is the one instruction people try first on a design they are looking at.
+const VISUAL = /\b(colou?rs?|background|backdrop|font|typeface|image|images|photo|picture|logo|layout|spacing|padding|margin|border|theme|styling|bolder|bigger|smaller|wider|align|alignment)\b/i;
+const noChangeNote = (instruction) => VISUAL.test(String(instruction || ''))
+  ? 'Nothing changed, because this edits the WORDS in a design. Colours, images, fonts and layout belong to the design itself \u2014 open it in Playbook Mail to change those. Whatever you change there is what the blast sends.'
+  : 'The model made no changes.';
+
 const RULES = [
   'You are editing outreach email copy for Playbook Sports, a sports-organisation software company.',
   'Keep the sender\'s voice: direct, warm, concise, no marketing cliché and no exclamation marks.',
@@ -244,7 +259,7 @@ export default async function handler(req, res) {
         changed.push({ index: i + 1, before: toText(orig), after: want });
         return `<p>${toHtml(want)}</p>`;
       });
-      if (!changed.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], affected: shared + 1, note: 'The model made no changes.' }); return; }
+      if (!changed.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
 
       await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
         body: { content: { ...detail.content, json: applyBeeText(detail.content.json, next) } } }));
