@@ -29,6 +29,7 @@ import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 import { cakemailGet, cakemailPatch, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/beetext.js';
 import { beeColourSlots, applyBeeColours, beeColoursToPrompt, sameColour } from '../lib/beestyle.js';
+import { beeStyleSlots, applyBeeStyles, beeStylesToPrompt, fontChoices } from '../lib/beeshape.js';
 import { gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
@@ -131,9 +132,9 @@ const context = r => [
 // So "make the colours blue" comes back with all nineteen blocks unchanged and nothing is
 // written, which is correct and reads as broken. "The model made no changes" is true and
 // useless here; it is the one instruction people try first on a design they are looking at.
-const VISUAL = /\b(image|images|photo|picture|logo|layout|spacing|padding|margin|font|typeface|bigger|smaller|wider|align|alignment|move|reorder)\b/i;
+const VISUAL = /\b(image|images|photo|picture|logo|icon|swap|replace the (image|photo|picture)|move|reorder|add a|remove the|delete the|new row|new section)\b/i;
 const noChangeNote = (instruction) => VISUAL.test(String(instruction || ''))
-  ? 'Nothing changed. This edits the words and the colours of a design; images, fonts, spacing and layout are part of the design itself \u2014 open it in Playbook Mail for those. Whatever you change there is what the blast sends.'
+  ? 'Nothing changed. This edits a design\u2019s words, colours, sizes, spacing and type. Swapping pictures and adding, removing or reordering sections are structural changes \u2014 open it in Playbook Mail for those. Whatever you change there is what the blast sends.'
   : 'The model made no changes.';
 
 const RULES = [
@@ -153,6 +154,17 @@ const COLOUR_RULES = [
   'Text must stay readable on what is behind it, and a button label readable on its button. Never set a text colour close to its background.',
   'A colour is listed with what it is FOR. "Make the buttons blue" means the button slots, not every slot that happens to share their colour.',
   'Keep greys grey unless asked otherwise: they are borders, rules and small print, not brand colour.',
+];
+
+// SHAPE AND TYPE have a different failure mode again: not an ugly design but an unreadable one,
+// or one that breaks out of the 600px an email client gives it. The units matter more than the
+// taste, so the rules are about units.
+const SHAPE_RULES = [
+  'Copy the accepted form on each line exactly. A length needs its unit: 16px, not 16.',
+  'Return a value unchanged if the instruction does not concern it. Most of them will be unchanged.',
+  'Body text below 14px is hard to read on a phone. Do not go under it unless asked to.',
+  'Never widen the design past 700px — email clients cut off what will not fit.',
+  'A font-family must be copied character for character from the list of choices given.',
 ];
 
 export default async function handler(req, res) {
@@ -245,18 +257,24 @@ export default async function handler(req, res) {
       // chances for the second to contradict the first.
       const slots = beeColourSlots(detail.content.json);
       const palette = beeColoursToPrompt(detail.content.json);
+      const styles = beeStyleSlots(detail.content.json);
+      const sizing = beeStylesToPrompt(detail.content.json);
       const out = await ask([
         { role: 'system', content: RULES.concat(
             slots.length ? COLOUR_RULES : [],
+            styles.length ? SHAPE_RULES : [],
             `This design has ${nodes.length} text block${nodes.length === 1 ? '' : 's'}, numbered below.`,
             slots.length ? `It also has ${slots.length} colour${slots.length === 1 ? '' : 's'}, numbered separately.` : '',
-            `Return JSON: {"blocks": ["<new text for 1>", ...]${slots.length ? `, "colors": ["<hex for 1>", ...]` : ''}}`,
+            styles.length ? `And ${styles.length} size, spacing and type settings, numbered separately again.` : '',
+            `Return JSON: {"blocks": ["<new text for 1>", ...]${slots.length ? `, "colors": ["<hex for 1>", ...]` : ''}${styles.length ? `, "styles": ["<value for 1>", ...]` : ''}}`,
             `"blocks" must have EXACTLY ${nodes.length} item${nodes.length === 1 ? '' : 's'}, in the same order.`,
             slots.length ? `"colors" must have EXACTLY ${slots.length} items, in the same order. Omit "colors" entirely if no colour should change.` : '',
+            styles.length ? `"styles" must have EXACTLY ${styles.length} items, in the same order. Omit "styles" entirely if no size, spacing or type should change.` : '',
             'Each item must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
           ).filter(Boolean).join('\n') },
         { role: 'user', content: `${context(row)}\n\nBlocks:\n${numbered}`
             + (slots.length ? `\n\nColours:\n${palette}` : '')
+            + (styles.length ? `\n\nSizes, spacing and type:\n${sizing}\n\nFont stacks you may use:\n${fontChoices(detail.content.json).map(f => `  ${f}`).join('\n')}` : '')
             + `\n\nWhat to change: ${instruction}` },
       ]);
       const blocks = out.blocks;
@@ -311,11 +329,34 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!changed.length && !recoloured.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], recoloured: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
+      // SIZES, SPACING AND TYPE, on the same terms as the colours: absent or the wrong length
+      // means "none of this changes", a wrong VALUE fails the whole edit. The difference from a
+      // bad colour is that a bad length is usually silently ignored by the mail client rather
+      // than rendered oddly, so the design would come back looking untouched and the feature
+      // would look broken when in fact the answer was.
+      const restyled = [];
+      const wantStyles = Array.isArray(out.styles) && out.styles.length === styles.length
+        ? out.styles.map(asBlockText) : null;
+      if (wantStyles && !wantStyles.includes(null)) {
+        try {
+          json = applyBeeStyles(json, wantStyles);
+          styles.forEach((slot, i) => {
+            const to = String(wantStyles[i] || '').trim();
+            if (to && to.toLowerCase() !== slot.value.toLowerCase()) {
+              restyled.push({ index: i + 1, role: slot.role, prop: slot.prop, before: slot.value, after: to, count: slot.count });
+            }
+          });
+        } catch (e) {
+          res.status(502).json({ error: `${String((e && e.message) || e)} Nothing was changed.` });
+          return;
+        }
+      }
+
+      if (!changed.length && !recoloured.length && !restyled.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], recoloured: [], restyled: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
 
       await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
         body: { content: { ...detail.content, json } } }));
-      res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, recoloured, affected: shared + 1 });
+      res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, recoloured, restyled, affected: shared + 1 });
       return;
     }
 
