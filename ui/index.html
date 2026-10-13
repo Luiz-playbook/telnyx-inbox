@@ -867,6 +867,20 @@
        They were loose rows under the prose and read as more body copy; the panel makes the
        part you can change look different from the part you can only read. */
     .pbw-panel{ border:1px solid #e8edf1; background:#fafcfd; border-radius:12px; padding:12px 14px; }
+    /* OFFERS SOURCE SWITCH (migration 120). Two cards, not two tabs: this picks which generator
+       fills the board, and that is a bigger decision than any filter below it. The active one
+       is filled in the house navy so there is never a question of which list is on screen. */
+    .cbs-src{ display:grid; grid-template-columns:repeat(2, minmax(0, 22rem)); gap:12px; }
+    .cbs-src-btn{ display:flex; align-items:center; gap:12px; text-align:left; padding:12px 16px; border-radius:12px;
+                  border:2px solid #d9e1e8; background:#fff; color:#133b49; cursor:pointer; transition:border-color .12s, background .12s; }
+    .cbs-src-btn:hover{ border-color:#133b49; }
+    .cbs-src-btn:focus-visible{ outline:3px solid #e55608; outline-offset:2px; }
+    .cbs-src-btn.on{ background:#133b49; border-color:#133b49; color:#fff; }
+    .cbs-src-ico{ font-size:1.6rem; line-height:1; flex:0 0 auto; }
+    .cbs-src-text{ display:grid; gap:2px; min-width:0; }
+    .cbs-src-name{ font-weight:800; font-size:1rem; letter-spacing:.01em; }
+    .cbs-src-sub{ font-size:.75rem; opacity:.75; line-height:1.3; }
+    @media (max-width:640px){ .cbs-src{ grid-template-columns:1fr; } }
     .pbw-row{ display:flex; align-items:center; gap:8px; }
     .pbw-label{ font-size:13px; font-weight:700; color:#133b49; }
     .pbw-rule{ height:1px; background:#e8edf1; margin:11px 0; }
@@ -1349,12 +1363,17 @@
                  over one list: Ticket Blasts reads the league calendars, Event Waitlist reads a
                  proposed event and the markets it is shopped to. The switch decides which
                  generator's rows are on screen; everything below it belongs to one or the other. -->
-            <div class="flex items-center gap-3 flex-wrap">
-              <div role="tablist" class="tabs tabs-boxed bg-base-200/60" id="cbs-source">
-                <button role="tab" class="tab tab-active" data-source="ticket_blasts">Ticket Blasts</button>
-                <button role="tab" class="tab" data-source="event_waitlist">Event Waitlist</button>
-              </div>
-              <span class="text-xs text-base-content/50" id="cbs-source-note">Games on the league calendars, with who we can reach for each.</span>
+            <div role="tablist" id="cbs-source" class="cbs-src">
+              <button role="tab" class="cbs-src-btn on" data-source="ticket_blasts" aria-selected="true">
+                <span class="cbs-src-ico" aria-hidden="true">&#127915;</span>
+                <span class="cbs-src-text"><span class="cbs-src-name">Ticket Blasts</span>
+                  <span class="cbs-src-sub">Games on the league calendars, and who we can reach for each</span></span>
+              </button>
+              <button role="tab" class="cbs-src-btn" data-source="event_waitlist" aria-selected="false">
+                <span class="cbs-src-ico" aria-hidden="true">&#9995;</span>
+                <span class="cbs-src-text"><span class="cbs-src-name">Event Waitlist</span>
+                  <span class="cbs-src-sub">A proposed event, shopped to markets we have never run one in</span></span>
+              </button>
             </div>
             <div class="cbs-games flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
@@ -1405,10 +1424,9 @@
                   <input id="cbs-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Games to">
                   <button id="cbs-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
-                <!-- STRATEGY (AI-1075). First in the row because it is the broadest cut: it
-                     says which KIND of offer you are looking at, and every filter after it
-                     narrows within that. -->
-                <div id="cbs-strategy"></div>
+                <!-- The strategy filter that sat here (AI-1075) is gone: the source switch above
+                     the toolbar is the strategy now, and every row on this board is a ticket
+                     offer by construction. -->
                 <select id="cbs-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
@@ -10311,11 +10329,10 @@ This removes its school and season dates. Venues in this market are not touched.
         function setSource(src){
           document.querySelectorAll('#view-compose .cbs-games').forEach(n => n.classList.toggle('hidden', src === 'event_waitlist'));
           host.classList.toggle('hidden', src !== 'event_waitlist');
-          document.querySelectorAll('#cbs-source [data-source]').forEach(b => b.classList.toggle('tab-active', b.dataset.source === src));
-          const note = el('cbs-source-note');
-          if(note) note.textContent = src === 'event_waitlist'
-            ? 'A proposed event, shopped to the markets you pick. Each market shows the next message of the sequence that is due.'
-            : 'Games on the league calendars, with who we can reach for each.';
+          document.querySelectorAll('#cbs-source [data-source]').forEach(b => {
+            const on = b.dataset.source === src;
+            b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
           try { localStorage.setItem('cbs-source', src); } catch(_){}
           if(src === 'event_waitlist') loadProposals();
         }
@@ -10557,12 +10574,9 @@ This removes its school and season dates. Venues in this market are not touched.
         }
       })();
 
-      // AI-1075. Mounted after the strategies are loaded, because the control renders one
-      // checkbox per strategy and an empty menu would be indistinguishable from a broken one.
+      // The strategy filter is no longer mounted on this board (the source switch replaced it,
+      // migration 120). stratF stays empty, which passesStrategy reads as "every strategy".
       let stratCtl = null;
-      loadStrategies().then(() => { stratCtl = mountStrategyFilter('cbs-strategy', picked => {
-        stratF = picked; page = 1; cbsClears(); render();
-      }); });
       el('cbs-clear')?.addEventListener('click', () => {
         filter = sportF = leagueF = stateF = windowF = dateFromF = dateToF = priceF = segF = '';
         ['cbs-search','cbs-sport','cbs-league','cbs-state','cbs-window','cbs-date-from','cbs-date-to','cbs-price','cbs-segment']
