@@ -13385,6 +13385,14 @@ This removes its school and season dates. Venues in this market are not touched.
                ${which === 'email' && parseCakemailFrom(emailFromOf(r))
                  ? `<button class="btn btn-xs btn-outline border-base-300" data-cmpick="${esc(id)}" title="Browse the designed templates in this sender's Playbook Mail account">Choose Playbook Mail Template</button>`
                  : ''}
+               ${/* AI SITS WITH THE OTHER TWO WAYS OF GETTING WORDS INTO THIS BOX: a stored
+                     template, a Playbook Mail design, or a rewrite. It is on EVERY email row, not
+                     only ones with a design attached, because rewriting this blast's own copy has
+                     nothing to do with whether a design is on it.
+                     (No backticks in here: template literal.) */''}
+               ${which === 'email'
+                 ? `<button class="btn btn-xs btn-outline border-base-300 gap-1" data-cmai="${esc(id)}" title="Edit with AI — rewrite this blast's own words, or the design itself."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg> Edit with AI</button>`
+                 : ''}
                <button class="btn btn-xs btn-primary hidden" data-save${which}="${esc(id)}">Save ${which === "email" ? "email" : "SMS"}</button>
                <button class="btn btn-xs btn-ghost text-base-content/50 hidden" data-undo${which}="${esc(id)}" title="Put the ${which === "email" ? "subject and body" : "message"} back to what is stored. Nothing has been saved yet.">Undo changes</button>
                <span class="text-xs text-base-content/50" data-copystatus${which}="${esc(id)}"></span>
@@ -13982,7 +13990,7 @@ This removes its school and season dates. Venues in this market are not touched.
         // review), and the name a person reads should be the name they use. The code, the API
         // calls and the comments still say CakeMail, because that is what the service is called
         // and renaming those would make the error messages lie.
-        function cmPickerDialog({ templates, accountLabel, current, sendingAccountId }){
+        function cmPickerDialog({ templates, accountLabel, current, sendingAccountId, rowId }){
           return new Promise(resolve => {
             const ov = document.createElement('div');
             ov.className = 'pb-modal-overlay';
@@ -14098,7 +14106,16 @@ This removes its school and season dates. Venues in this market are not touched.
                    <div class="flex items-center gap-2 px-4 py-2.5 border-b border-base-300 bg-base-200/50">
                      <span class="font-semibold text-[#133b49] truncate">${esc(chosen.name)}</span>
                      <span class="text-xs text-base-content/45 truncate">${esc(accountLabel)}</span>
-                     <button class="btn btn-sm btn-outline ml-auto shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
+                     <button class="btn btn-sm btn-outline ml-auto shrink-0" data-fsai>Edit with AI</button>
+                     <button class="btn btn-sm btn-ghost shrink-0" data-fsbig title="Make the preview taller or shorter">Enlarge</button>
+                     ${/* A REAL TAB, not another overlay. The preview is fetched with the
+                           operator's session, so there is no URL that could simply be opened —
+                           the HTML is turned into a blob URL instead, which also means the tab
+                           shows exactly the bytes that were previewed rather than re-fetching
+                           and possibly differing.
+                           (No backticks in here: template literal.) */''}
+                     <button class="btn btn-sm btn-ghost shrink-0" data-fstab title="Open this preview in its own browser tab">Open in tab &#8599;</button>
+                     <button class="btn btn-sm btn-outline shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsclose aria-label="Close preview">&#10005;</button>
                    </div>
                    <div class="bg-base-200/40" style="height:min(74vh,760px)">
@@ -14106,20 +14123,44 @@ This removes its school and season dates. Venues in this market are not touched.
                    </div>
                  </div>`;
               document.body.appendChild(fs);
-              const close = () => { fs.remove(); document.removeEventListener('keydown', onKeyFs); };
+              const close = () => {
+                if(blobUrl) URL.revokeObjectURL(blobUrl);
+                fs.remove(); document.removeEventListener('keydown', onKeyFs);
+              };
               const onKeyFs = e => { if(e.key === 'Escape'){ e.stopPropagation(); close(); } };
               document.addEventListener('keydown', onKeyFs);
               fs.addEventListener('mousedown', e => { if(e.target === fs) close(); });
               fs.querySelector('[data-fsclose]').addEventListener('click', close);
               fs.querySelector('[data-fsedit]').addEventListener('click', async () => { if(await goEdit()) close(); });
               const frame = fs.querySelector('[data-fsframe]');
+              const shell = fs.querySelector('.pb-modal-card');
+              let html = '', big = false, blobUrl = null;
+
+              fs.querySelector('[data-fsbig]').addEventListener('click', (e) => {
+                big = !big;
+                // The frame's own box grows; the card is already as wide as the viewport allows.
+                frame.parentElement.style.height = big ? 'min(90vh,1200px)' : 'min(74vh,760px)';
+                shell.style.maxWidth = big ? '98vw' : 'min(900px,96vw)';
+                e.currentTarget.textContent = big ? 'Shrink' : 'Enlarge';
+              });
+
+              fs.querySelector('[data-fstab]').addEventListener('click', () => {
+                if(!html) return;
+                // Revoked on close, not here: the tab needs the URL to stay alive while it loads.
+                blobUrl = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+                window.open(blobUrl, '_blank', 'noopener');
+              });
+
+              fs.querySelector('[data-fsai]').addEventListener('click', () => aiPanel(rowId, chosen));
+
               try{
                 const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(acct)
                                       + '&id=' + encodeURIComponent(chosen.id) + '&_=' + Date.now(),
                                       { headers: await apiHeaders() });
                 const j = await r.json().catch(() => ({}));
                 if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-                frame.srcdoc = j.html || '';
+                html = j.html || '';
+                frame.srcdoc = html;
               }catch(e){
                 frame.removeAttribute('srcdoc');
                 frame.insertAdjacentHTML('afterend', `<div class="p-4 text-sm text-error">Could not load the preview: ${esc((e && e.message) || String(e))}</div>`);
@@ -14199,12 +14240,18 @@ This removes its school and season dates. Venues in this market are not touched.
           }
           btn.disabled = false; btn.textContent = old;
           const picked = await cmPickerDialog({ templates, accountLabel: label, current: row.cakemail_template_id,
-                                                sendingAccountId: cm.accountId });
+                                                sendingAccountId: cm.accountId, rowId: id });
           if(!picked) return;
           await cmAttach(id, picked.id, btn);
         }));
 
         tb.querySelectorAll('[data-cmdetach]').forEach(btn => btn.addEventListener('click', () => cmAttach(btn.dataset.cmdetach, null, btn)));
+        // AI from the row itself. The picker's copy of this button exists for the moment of
+        // choosing; this one is for the blast you already have open, which is the common case.
+        tb.querySelectorAll('[data-cmai]').forEach(btn => btn.addEventListener('click', () => {
+          const row = QUEUE.find(x => x.id === btn.dataset.cmai);
+          aiPanel(btn.dataset.cmai, row && row.cakemail_template_id ? { id: row.cakemail_template_id, name: row.cakemail_template_name } : null);
+        }));
 
         // THE DESIGN PREVIEW. Lazily, once per expanded row — the table renders 25 rows and a
         // design is ~30 KB, so fetching them all on render would pull a megabyte nobody asked
@@ -14297,6 +14344,102 @@ This removes its school and season dates. Venues in this market are not touched.
           btn.classList.toggle('opacity-40', on);
           btn.classList.toggle('pointer-events-none', on);
         };
+
+        // EDIT WITH AI. Two targets, and the whole point of the panel is that the difference
+        // between them is impossible to miss:
+        //
+        //   this blast  — rewrites this blast's own copy. Nothing reaches Playbook Mail, no
+        //                 other blast changes, and Undo in the Queue puts it back.
+        //   the design  — rewrites the template itself, which changes every blast using it.
+        //
+        // Default is this blast, which is what Josh asked for: "by default you'd be editing
+        // the draft; editing the template with AI would be a more advanced thing you have to
+        // ask for". The count of other affected blasts is fetched with the row, so the
+        // template option can state its cost before it is chosen rather than after.
+        async function aiPanel(rowId, tpl){
+          const row = QUEUE.find(x => x.id === rowId) || {};
+          // Counted from the rows already in memory: every queued blast carries its template
+          // id, so "how many others use this design" needs no request. Sent and partly-sent
+          // rows are excluded — an edit now cannot change what has already gone out.
+          const shared = !row.cakemail_template_id ? 0 : QUEUE.filter(x =>
+            x.id !== rowId && String(x.cakemail_template_id || '') === String(row.cakemail_template_id)
+            && x.status !== 'sent' && x.status !== 'partial').length;
+          const p = document.createElement('div');
+          p.className = 'pb-modal-overlay';
+          p.style.zIndex = '10020';
+          p.innerHTML =
+            `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Edit with AI" style="max-width:34rem">
+               <div class="font-extrabold text-lg text-[#133b49] mb-1">Edit with AI</div>
+               <div class="text-sm text-base-content/70 mb-3">Say what you want changed, in your own words.</div>
+               <textarea class="textarea textarea-bordered w-full text-sm mb-3" rows="3" data-ai-what
+                 placeholder="e.g. make it shorter and mention the cheapest seat" aria-label="What to change"></textarea>
+               <div class="text-xs font-semibold text-[#133b49] mb-1">What should it change?</div>
+               <label class="flex gap-2 items-start p-2 rounded border border-base-300 mb-1.5 cursor-pointer">
+                 <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="draft" checked>
+                 <span class="text-xs"><b>Just this blast</b><br><span class="text-base-content/60">Rewrites this blast&rsquo;s own words. Nothing is saved to Playbook Mail and no other blast changes.</span></span>
+               </label>
+               <label class="flex gap-2 items-start p-2 rounded border border-base-300 cursor-pointer${tpl ? '' : ' opacity-40 pointer-events-none'}">
+                 <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="template"${tpl ? '' : ' disabled'}>
+                 <span class="text-xs"><b>The design itself</b>${tpl ? '' : ' &mdash; no design attached'}<br><span class="text-base-content/60">Edits the template in Playbook Mail${shared ? `, which changes this blast <b>and ${shared} other${shared === 1 ? '' : 's'}</b>` : ''}. Press Duplicate first if the change is only meant for this blast.</span></span>
+               </label>
+               <div class="text-xs text-error mt-2 hidden" data-ai-err></div>
+               <div class="text-xs text-base-content/60 mt-2 hidden" data-ai-out></div>
+               <div class="flex gap-2 mt-3">
+                 <span class="text-xs text-base-content/45 self-center" data-ai-note></span>
+                 <div class="ml-auto flex gap-2">
+                   <button class="btn btn-sm btn-ghost" data-ai-cancel>Cancel</button>
+                   <button class="btn btn-sm btn-primary" data-ai-go>Make the change</button>
+                 </div>
+               </div>
+             </div>`;
+          document.body.appendChild(p);
+          const what = p.querySelector('[data-ai-what]');
+          const err = p.querySelector('[data-ai-err]');
+          const out = p.querySelector('[data-ai-out]');
+          const go = p.querySelector('[data-ai-go]');
+          const shut = () => { p.remove(); document.removeEventListener('keydown', onK); };
+          const onK = e => { if(e.key === 'Escape'){ e.stopPropagation(); shut(); } };
+          document.addEventListener('keydown', onK);
+          p.addEventListener('mousedown', e => { if(e.target === p) shut(); });
+          p.querySelector('[data-ai-cancel]').addEventListener('click', shut);
+          what.focus();
+
+          go.addEventListener('click', async () => {
+            const instruction = what.value.trim();
+            if(!instruction){ err.textContent = 'Say what you would like changed.'; err.classList.remove('hidden'); what.focus(); return; }
+            const target = p.querySelector('input[name="ai-target"]:checked').value;
+            err.classList.add('hidden'); out.classList.add('hidden');
+            go.disabled = true; go.textContent = 'Thinking…';
+            try{
+              const r = await fetch('/api/design-ai', { method:'POST', headers: await apiHeaders(),
+                body: JSON.stringify({ queue_id: rowId, instruction, target }) });
+              const j = await r.json().catch(() => ({}));
+              if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+              if(target === 'draft'){
+                // The row holds the new words; the Queue is repainted from it rather than
+                // reloaded, so the open panel and the expanded row stay where they were.
+                const q = QUEUE.find(x => x.id === rowId);
+                if(q) q.email_copy = j.after;
+                render();
+                toast({ type:'ok', title:'This blast’s copy was rewritten',
+                        lines:[ 'Only this blast changed. Undo in the row puts it back.' ] });
+                shut();
+              } else {
+                const n = (j.changed || []).length;
+                if(!n){ out.textContent = j.note || 'The model made no changes.'; out.classList.remove('hidden'); return; }
+                toast({ type:'ok', title:`"${j.name || 'The design'}" was edited in Playbook Mail`,
+                        lines:[ `${n} text block${n === 1 ? '' : 's'} changed. This affects ${j.affected} blast${j.affected === 1 ? '' : 's'}.`,
+                                'Press Refresh on the row to pull the new design in.' ] });
+                shut();
+              }
+            }catch(e){
+              err.textContent = String((e && e.message) || e);
+              err.classList.remove('hidden');
+            }finally{
+              go.disabled = false; go.textContent = 'Make the change';
+            }
+          });
+        }
 
         // DUPLICATE. Confirmed first, because it is the only thing in this app that creates
         // anything in CakeMail, and because the result is a second template in a library the
