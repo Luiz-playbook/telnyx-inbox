@@ -2060,7 +2060,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       send a designed template built in CakeMail &mdash; with the drafted copy placed inside it.</p>
                     <ul class="rn-items">
                       <li><h3>Choose a CakeMail template, from the Queue</h3>
-                        <p>Expand a blast and the email panel has <b>Choose CakeMail Template</b> beside the existing
+                        <p>Expand a blast and the email panel has <b>Choose Playbook Mail Template</b> beside the existing
                           <b>Use template&hellip;</b>. It opens the designs in that blast&rsquo;s own sending account, as thumbnails
                           with a live preview. Pick one and it becomes what the blast actually sends.</p></li>
                       <li><h3>The design wraps your copy, if you let it</h3>
@@ -2074,7 +2074,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                           embedded, so it cannot live inside this one. When you come back, <b>Refresh</b> pulls the change onto
                           the blast. CakeMail must be viewing the account that owns the template, which the row names.</p></li>
                       <li><h3>Designs update themselves before sending</h3>
-                        <p>A row warns <b>UPDATED IN CAKEMAIL</b> when the template has moved on since it was attached, and the
+                        <p>A row warns <b>UPDATED IN PLAYBOOK MAIL</b> when the template has moved on since it was attached, and the
                           hourly tick re-renders just before sending so an edit is never silently dropped. If CakeMail cannot be
                           reached the blast still goes out with the stored design &mdash; an outage costs the update, not the
                           send.</p></li>
@@ -13368,7 +13368,7 @@ This removes its school and season dates. Venues in this market are not touched.
                          it, an edit made in CakeMail would look applied and never be sent. */''}
                    ${row.cakemail_template_id ? `<a class="btn btn-ghost btn-xs px-1 shrink-0" target="_blank" rel="noopener noreferrer" href="${esc(cakemailEditUrl(row.cakemail_template_id))}" aria-label="Edit this design in CakeMail" title="Edit in CakeMail (opens a new tab). The address carries no account, so CakeMail opens it against whichever account you are currently viewing — switch into ${esc(senderLabelOf(row))} there if it says the template cannot be fetched."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></a>
                       <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmdup="${esc(row.id)}" aria-label="Duplicate this design for this blast" title="Duplicate — give this blast its own copy of the design in CakeMail, so editing it changes nothing else. The copy is created in this blast's own sending account."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button>
-                      <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmrefresh="${esc(row.id)}" aria-label="Pull the latest design from CakeMail" title="Refresh — pull this design again from CakeMail, picking up anything you changed there."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>` : ''}
+                      <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmrefresh="${esc(row.id)}" aria-label="Pull the latest design from CakeMail" title="Refresh — pull this design again from Playbook Mail, picking up anything you changed there."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>` : ''}
                    <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmdetach="${esc(row.id)}" aria-label="Detach this design" title="Detach — go back to sending the plain-text body below."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                  </span>`}
             </div>`;
@@ -13383,7 +13383,7 @@ This removes its school and season dates. Venues in this market are not touched.
                      template…" because they answer the same question from two libraries:
                      Cole's words, or a design built in CakeMail. */''}
                ${which === 'email' && parseCakemailFrom(emailFromOf(r))
-                 ? `<button class="btn btn-xs btn-outline border-base-300" data-cmpick="${esc(id)}" title="Browse the designed templates in this sender's CakeMail account">Choose CakeMail Template</button>`
+                 ? `<button class="btn btn-xs btn-outline border-base-300" data-cmpick="${esc(id)}" title="Browse the designed templates in this sender's Playbook Mail account">Choose Playbook Mail Template</button>`
                  : ''}
                <button class="btn btn-xs btn-primary hidden" data-save${which}="${esc(id)}">Save ${which === "email" ? "email" : "SMS"}</button>
                <button class="btn btn-xs btn-ghost text-base-content/50 hidden" data-undo${which}="${esc(id)}" title="Put the ${which === "email" ? "subject and body" : "message"} back to what is stored. Nothing has been saved yet.">Undo changes</button>
@@ -13974,116 +13974,171 @@ This removes its school and season dates. Venues in this market are not touched.
           return CM_LIB[accountId];
         }
 
+        // THE TEMPLATE PICKER. Rebuilt to Josh's notes from the 2026-10-13 review: bigger tiles,
+        // a full-screen preview you can sit in before committing, search, and a warning before
+        // anyone is sent out to another product.
+        //
+        // IT SAYS "PLAYBOOK MAIL", NOT CAKEMAIL. That is what the team calls it (Josh, same
+        // review), and the name a person reads should be the name they use. The code, the API
+        // calls and the comments still say CakeMail, because that is what the service is called
+        // and renaming those would make the error messages lie.
         function cmPickerDialog({ templates, accountLabel, current, sendingAccountId }){
           return new Promise(resolve => {
             const ov = document.createElement('div');
             ov.className = 'pb-modal-overlay';
-            // A template that has never been opened in CakeMail's editor has no thumbnail. It
-            // gets a name-only tile rather than a broken image: "no preview yet" is information,
-            // and a missing design is exactly the one you want to notice before attaching it.
+
+            // BIGGER TILES. These were 110px thumbnails four to a row, which is a contact sheet,
+            // not a thing you choose a design from. A template is a picture; the picture is the
+            // whole basis for the choice, so it gets the room.
+            //
+            // A template never opened in the builder has no thumbnail and gets a name-only tile:
+            // "no preview yet" is information, and a design that does not exist yet is exactly
+            // the one to notice before attaching it.
             const tile = t => `
-              <button type="button" data-pick="${esc(t.id)}" class="text-left border border-base-300 rounded-lg overflow-hidden bg-white hover:border-[#e55608] focus:border-[#e55608] focus:outline-none transition${String(t.id) === String(current||'') ? ' border-[#e55608] ring-1 ring-[#e55608]' : ''}">
-                <div class="h-[110px] bg-base-200 flex items-center justify-center overflow-hidden">
+              <button type="button" data-pick="${esc(t.id)}" class="text-left border-2 border-base-300 rounded-xl overflow-hidden bg-white hover:border-[#e55608] focus:border-[#e55608] focus:outline-none transition shadow-sm${String(t.id) === String(current||'') ? ' border-[#e55608] ring-2 ring-[#e55608]/30' : ''}">
+                <div class="h-[180px] bg-base-200 flex items-center justify-center overflow-hidden">
                   ${t.thumbnail_url
                     ? `<img src="${esc(t.thumbnail_url)}" alt="" loading="lazy" class="w-full h-full object-cover object-top">`
-                    : `<span class="text-[11px] text-base-content/40">No preview yet</span>`}
+                    : `<span class="text-xs text-base-content/40">No preview yet</span>`}
                 </div>
-                <div class="px-2 py-1.5">
-                  <div class="text-xs font-semibold text-[#133b49] truncate" title="${esc(t.name)}">${esc(t.name)}</div>
-                  <div class="text-[10px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || '&nbsp;'}</div>
+                <div class="px-3 py-2 border-t border-base-200">
+                  <div class="text-sm font-semibold text-[#133b49] truncate" title="${esc(t.name)}">${esc(t.name)}</div>
+                  <div class="text-[11px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || '&nbsp;'}</div>
                 </div>
               </button>`;
+
             ov.innerHTML =
-              `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Choose a CakeMail template" style="max-width:54rem">
-                 <div class="font-extrabold text-lg text-[#133b49]">Choose a CakeMail template</div>
-                 ${/* ONE ACCOUNT, THE SENDER'S. An account selector lived here briefly and was
-                       removed (Charles, 2026-10-12): whichever sender the blast goes out from is
-                       whose designs it should offer, so choosing an account separately was a
-                       second way to say the same thing and could disagree with the first.
-                       Changing the sender changes the library, which is the uniform flow.
-                       (No backticks in here: template literal.) */''}
-                 <div class="text-sm text-base-content/70 mb-2">Designs in <b>${esc(accountLabel)}</b>, the account this blast sends from. The design you pick becomes what it actually sends &mdash; the text in the body box stays as the record.</div>
-                 ${/* MORE TEMPLATES ARE MADE IN CAKEMAIL, NOT HERE. Their builder is the whole
-                       point of using their templates, and we cannot embed it (frame-ancestors
-                       'none'). So the honest offer is: go and build one there, come back, reload.
-                       The list is cached per account for the page, which is what makes a reload
-                       button necessary rather than merely convenient.
-                       (No backticks in here: template literal.) */''}
-                 <div class="flex items-center gap-3 mb-3 text-xs">
-                   <a class="link link-primary" target="_blank" rel="noopener noreferrer" data-newtpl>Build a new one in CakeMail &#8599;</a>
-                   <button class="link" data-reloadlist>Reload this list</button>
-                   <span class="text-base-content/45" data-listnote></span>
+              `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Choose a Playbook Mail template" style="max-width:68rem;width:94vw">
+                 <div class="font-extrabold text-lg text-[#133b49]">Choose a Playbook Mail template</div>
+                 <div class="text-sm text-base-content/70 mb-3">Designs in <b>${esc(accountLabel)}</b>, the account this blast sends from. The design you pick becomes what it actually sends &mdash; the text in the body box stays as the record.</div>
+
+                 <div class="flex items-center gap-3 mb-3 flex-wrap">
+                   ${/* SEARCH, because Josh expects organisations with a hundred of these. It
+                         filters what is already loaded rather than asking the server: the whole
+                         library is one request and is already here, so a round trip per keystroke
+                         would be slower and no more correct.
+                         (No backticks in here: template literal.) */''}
+                   <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100 grow max-w-xs">
+                     <span class="text-base-content/40">&#128269;</span>
+                     <input type="search" class="grow" placeholder="Search designs&hellip;" data-search autocomplete="off" aria-label="Search designs by name or tag">
+                   </label>
+                   <span class="text-xs text-base-content/45" data-count></span>
+                   <div class="ml-auto flex items-center gap-3 text-xs">
+                     <a class="link link-primary" target="_blank" rel="noopener noreferrer" data-newtpl>Build a new one &#8599;</a>
+                     <button class="link" data-reloadlist>Reload</button>
+                     <span class="text-base-content/45" data-listnote></span>
+                   </div>
                  </div>
-                 ${`<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 mb-3 max-h-[16rem] overflow-y-auto p-0.5" data-grid></div>
-                      <div class="border border-base-300 rounded-lg overflow-hidden bg-base-200/30 mb-3">
-                        <div class="px-3 py-1.5 border-b border-base-300 text-xs text-base-content/55 flex items-center gap-2">
-                          <span data-prevlabel>Pick a template to preview it.</span>
-                          <!-- OPENS CAKEMAIL IN A NEW TAB, because their app cannot be framed:
-                               app.cakemail.com answers X-Frame-Options: DENY and a
-                               Content-Security-Policy of frame-ancestors 'none', so an iframe
-                               of it renders nothing at all. Verified 2026-10-12.
-                               (No backticks in here: this comment lives inside a template
-                               literal, and one would end it early.) -->
-                          <a class="btn btn-ghost btn-xs ml-auto shrink-0 hidden" target="_blank" rel="noopener noreferrer" data-edit>Edit in CakeMail &#8599;</a>
-                        </div>
-                        <!-- THE RETURN LEG. Shown only after Edit was clicked. It exists because
-                             the row holds a COPY of the design (migration 120): saving in
-                             CakeMail changes nothing here until the template is pulled again. A
-                             dialog that just sat there would leave someone believing their edit
-                             had landed when it had not. -->
-                        <div class="hidden items-center gap-2 px-3 py-2 border-b border-base-300 bg-[#fdeee4] text-xs" data-backbar>
-                          ${/* THE ACCOUNT IS NAMED HERE, not only in a tooltip. NOT a permission
-                                problem — the parent token reads every sub-account's templates
-                                (verified 2026-10-12: account 1594688 lists 1761047, 1679383 and
-                                1679456 alike). It is that EVERY CakeMail call must name an
-                                account, and the editor route carries none, so their app uses
-                                whichever account the session is currently viewing. Sitting on
-                                the parent, it asks the parent for a template the parent does not
-                                hold and reports "Unable to fetch template", which reads like a
-                                broken link rather than the wrong context.
-                                (No backticks in here: template literal.) */''}
-                          <span class="text-[#133b49]">Editing in CakeMail in the other tab. Save it there, then come back.
-                            <br><span class="text-base-content/55">Says &ldquo;Unable to fetch template&rdquo;? CakeMail is viewing a different account &mdash;
-                            <a class="link" target="_blank" rel="noopener noreferrer" data-browse>open all templates</a> and pick <b data-tplname></b> from there.</span></span>
-                          <button class="btn btn-xs btn-primary ml-auto shrink-0" data-reload>I&rsquo;m done &mdash; pull my changes</button>
-                        </div>
-                        <iframe sandbox="" class="w-full h-[17rem] bg-white" title="Template preview" data-prevframe></iframe>
-                      </div>`}
+
+                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-3 max-h-[26rem] overflow-y-auto p-1" data-grid></div>
+
                  <div class="text-xs text-error mb-2 hidden" data-err></div>
                  <div class="flex items-center gap-2">
                    <span class="text-xs text-base-content/45" data-note></span>
                    <div class="ml-auto flex gap-2">
                      <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
+                     <button class="btn btn-sm btn-outline" data-preview disabled>Preview full screen</button>
                      <button class="btn btn-sm btn-primary" data-ok disabled>Use this design</button>
                    </div>
                  </div>
                </div>`;
             document.body.appendChild(ov);
+
             const grid = ov.querySelector('[data-grid]');
-            const acct = sendingAccountId;
-            let list = templates;
             const okBtn = ov.querySelector('[data-ok]');
+            const previewBtn = ov.querySelector('[data-preview]');
             const errEl = ov.querySelector('[data-err]');
             const noteEl = ov.querySelector('[data-note]');
-            const frame = ov.querySelector('[data-prevframe]');
-            const prevLabel = ov.querySelector('[data-prevlabel]');
-            const editLink = ov.querySelector('[data-edit]');
-            const backBar = ov.querySelector('[data-backbar]');
-            const reloadBtn = ov.querySelector('[data-reload]');
-            let chosen = null, previewSeq = 0;
+            const countEl = ov.querySelector('[data-count]');
+            const searchEl = ov.querySelector('[data-search]');
+            const acct = sendingAccountId;
+            let list = templates, chosen = null, filter = '';
 
-            // Re-rendered whenever the account changes, so an empty library is a message inside
-            // the grid rather than a missing grid — the selector has to be able to come back.
+            const matches = t => !filter
+              || String(t.name || '').toLowerCase().includes(filter)
+              || (t.tags || []).some(x => String(x).toLowerCase().includes(filter));
+
             function paintGrid(){
-              grid.innerHTML = list.length
-                ? list.map(tile).join('')
-                : `<div class="col-span-full border border-dashed border-base-300 rounded-lg p-5 text-sm text-base-content/55">
-                     No saved templates in this account. Build one in CakeMail and it will show up here.
+              const shown = list.filter(matches);
+              grid.innerHTML = shown.length
+                ? shown.map(tile).join('')
+                : `<div class="col-span-full border border-dashed border-base-300 rounded-lg p-6 text-sm text-base-content/55">
+                     ${list.length ? 'No design matches that search.' : 'No saved designs in this account yet. Build one in Playbook Mail and it will show up here.'}
                    </div>`;
               grid.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => onPick(b)));
-              if(noteEl) noteEl.textContent = list.length ? list.length + ' template' + (list.length === 1 ? '' : 's') : '';
+              if(countEl) countEl.textContent = list.length
+                ? (shown.length === list.length ? `${list.length} design${list.length === 1 ? '' : 's'}`
+                                                : `${shown.length} of ${list.length}`)
+                : '';
             }
 
+            function onPick(b){
+              grid.querySelectorAll('[data-pick]').forEach(x => x.classList.remove('border-[#e55608]','ring-2','ring-[#e55608]/30'));
+              b.classList.add('border-[#e55608]','ring-2','ring-[#e55608]/30');
+              chosen = list.find(t => String(t.id) === b.dataset.pick) || null;
+              okBtn.disabled = !chosen;
+              previewBtn.disabled = !chosen;
+              if(noteEl) noteEl.textContent = chosen ? chosen.name : '';
+            }
+
+            // FULL SCREEN, WITH THE WAY OUT ON IT. Josh asked for a preview someone can sit in
+            // and get comfortable with, carrying its own Edit and its own X — one extra step
+            // before committing, rather than a thumbnail and a leap of faith.
+            async function openFullPreview(){
+              if(!chosen) return;
+              const fs = document.createElement('div');
+              fs.className = 'pb-modal-overlay';
+              fs.style.zIndex = '70';
+              fs.innerHTML =
+                `<div class="pb-modal-card p-0 overflow-hidden" role="dialog" aria-modal="true" aria-label="Preview of ${esc(chosen.name)}" style="max-width:min(900px,96vw);width:96vw">
+                   <div class="flex items-center gap-2 px-4 py-2.5 border-b border-base-300 bg-base-200/50">
+                     <span class="font-semibold text-[#133b49] truncate">${esc(chosen.name)}</span>
+                     <span class="text-xs text-base-content/45 truncate">${esc(accountLabel)}</span>
+                     <button class="btn btn-sm btn-outline ml-auto shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
+                     <button class="btn btn-sm btn-ghost shrink-0" data-fsclose aria-label="Close preview">&#10005;</button>
+                   </div>
+                   <div class="bg-base-200/40" style="height:min(74vh,760px)">
+                     <iframe sandbox="" class="w-full h-full border-0 bg-white" title="Full preview" data-fsframe></iframe>
+                   </div>
+                 </div>`;
+              document.body.appendChild(fs);
+              const close = () => { fs.remove(); document.removeEventListener('keydown', onKeyFs); };
+              const onKeyFs = e => { if(e.key === 'Escape'){ e.stopPropagation(); close(); } };
+              document.addEventListener('keydown', onKeyFs);
+              fs.addEventListener('mousedown', e => { if(e.target === fs) close(); });
+              fs.querySelector('[data-fsclose]').addEventListener('click', close);
+              fs.querySelector('[data-fsedit]').addEventListener('click', async () => { if(await goEdit()) close(); });
+              const frame = fs.querySelector('[data-fsframe]');
+              try{
+                const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(acct)
+                                      + '&id=' + encodeURIComponent(chosen.id) + '&_=' + Date.now(),
+                                      { headers: await apiHeaders() });
+                const j = await r.json().catch(() => ({}));
+                if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                frame.srcdoc = j.html || '';
+              }catch(e){
+                frame.removeAttribute('srcdoc');
+                frame.insertAdjacentHTML('afterend', `<div class="p-4 text-sm text-error">Could not load the preview: ${esc((e && e.message) || String(e))}</div>`);
+              }
+            }
+
+            // LEAVING THE APP IS ANNOUNCED. Josh asked for this directly: a new tab opening onto
+            // another product, with a save-and-come-back step, is not something to spring on
+            // someone mid-task. It also names the account, which is the one thing that makes the
+            // difference between the editor opening and it saying "unable to fetch template".
+            async function goEdit(){
+              if(!chosen) return false;
+              const ok = await askConfirm({
+                title: 'Open this design in Playbook Mail?',
+                body: `A new tab opens on Playbook Mail with "${chosen.name}". Make sure it is viewing ${accountLabel}, `
+                    + `or it will say the template cannot be fetched.\n\nSave your changes there, come back to this tab, `
+                    + `and press Refresh on the blast to pull them in. Nothing here changes until you do.`,
+                okText: 'Open Playbook Mail',
+              });
+              if(!ok) return false;
+              window.open(cakemailEditUrl(chosen.id), '_blank', 'noopener');
+              return true;
+            }
 
             const close = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
             const onKey = e => { if(e.key === 'Escape') close(null); };
@@ -14091,73 +14146,9 @@ This removes its school and season dates. Venues in this market are not touched.
             ov.addEventListener('mousedown', e => { if(e.target === ov) close(null); });
             ov.querySelector('[data-cancel]').addEventListener('click', () => close(null));
             okBtn.addEventListener('click', () => { if(chosen) close(chosen); });
+            previewBtn.addEventListener('click', openFullPreview);
+            if(searchEl) searchEl.addEventListener('input', () => { filter = searchEl.value.trim().toLowerCase(); paintGrid(); });
 
-            // SEQUENCED, because clicking through four tiles starts four fetches and they can
-            // land out of order — the preview would settle on whichever was slowest, not on the
-            // one that is selected. Shared with the reload button, which is the same request.
-            async function showPreview(){
-              if(!chosen) return;
-              const seq = ++previewSeq;
-              prevLabel.textContent = 'Loading ' + chosen.name + '…';
-              errEl.classList.add('hidden');
-              try{
-                const r = await fetch('/api/cakemail-templates?account_id=' + encodeURIComponent(acct)
-                                      + '&id=' + encodeURIComponent(chosen.id)
-                                      // Cache-bust: after an edit in CakeMail this is the same URL
-                                      // with different content, and a 304 would show the old design
-                                      // back to someone who just changed it.
-                                      + '&_=' + Date.now(), { headers: await apiHeaders() });
-                const j = await r.json().catch(() => ({}));
-                if(seq !== previewSeq) return;
-                if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-                // srcdoc with sandbox="" — no scripts, no navigation, and every href has already
-                // been moved to data-href on the server.
-                frame.srcdoc = j.html || '';
-                prevLabel.textContent = chosen.name;
-              }catch(e){
-                if(seq !== previewSeq) return;
-                prevLabel.textContent = chosen.name;
-                errEl.textContent = 'Could not load the preview: ' + ((e && e.message) || e) + '. You can still attach it.';
-                errEl.classList.remove('hidden');
-              }
-            }
-
-            function onPick(b){
-              grid.querySelectorAll('[data-pick]').forEach(x => x.classList.remove('border-[#e55608]','ring-1','ring-[#e55608]'));
-              b.classList.add('border-[#e55608]','ring-1','ring-[#e55608]');
-              chosen = list.find(t => String(t.id) === b.dataset.pick) || null;
-              okBtn.disabled = !chosen;
-              if(editLink && chosen){
-                editLink.href = cakemailEditUrl(chosen.id);
-                editLink.classList.remove('hidden');
-              }
-              // Picking a different template drops the return bar: it belonged to the one that
-              // was being edited, and leaving it up would invite pulling changes into another.
-              if(backBar){ backBar.classList.add('hidden'); backBar.classList.remove('flex'); }
-              showPreview();
-            }
-
-            // Clicking Edit does not block the dialog — the tab opens and the return bar appears
-            // beneath the preview, so the way back is on screen the whole time they are away.
-            if(editLink) editLink.addEventListener('click', () => {
-              if(!backBar) return;
-              const br = backBar.querySelector('[data-browse]');
-              if(br) br.href = CAKEMAIL_BROWSE_URL;
-              const nm = backBar.querySelector('[data-tplname]');
-              if(nm) nm.textContent = chosen ? chosen.name : 'it';
-              backBar.classList.remove('hidden');
-              backBar.classList.add('flex');
-            });
-            if(reloadBtn) reloadBtn.addEventListener('click', async () => {
-              const old = reloadBtn.textContent;
-              reloadBtn.disabled = true; reloadBtn.textContent = 'Pulling…';
-              await showPreview();
-              reloadBtn.disabled = false; reloadBtn.textContent = old;
-              // The thumbnail is CakeMail's own screenshot service and lags an edit by minutes,
-              // so the tile is NOT refreshed here. Saying so beats showing a stale picture and
-              // letting it be read as "the edit did not save".
-              if(noteEl) noteEl.textContent = 'Preview updated. Tile thumbnails refresh on CakeMail’s side and may lag.';
-            });
             const newTpl = ov.querySelector('[data-newtpl]');
             if(newTpl) newTpl.href = CAKEMAIL_BROWSE_URL;
             const reloadList = ov.querySelector('[data-reloadlist]');
@@ -14166,18 +14157,21 @@ This removes its school and season dates. Venues in this market are not touched.
               const before = list.length;
               reloadList.disabled = true; reloadList.textContent = 'Reloading…';
               try{
-                list = await cmTemplates(acct, true);     // force: skip the page cache
+                list = await cmTemplates(acct, true);      // force: skip the page cache
                 paintGrid();
                 const added = list.length - before;
                 if(listNote) listNote.textContent = added > 0
-                  ? `${added} new template${added === 1 ? '' : 's'} found.`
-                  : 'No new templates. CakeMail only lists one once it has been saved.';
+                  ? `${added} new`
+                  : 'nothing new';
               }catch(e){
-                if(listNote) listNote.textContent = 'Could not reload: ' + ((e && e.message) || e);
+                if(listNote) listNote.textContent = 'could not reload';
+                errEl.textContent = 'Could not reload: ' + ((e && e.message) || e);
+                errEl.classList.remove('hidden');
               }
-              reloadList.disabled = false; reloadList.textContent = 'Reload this list';
+              reloadList.disabled = false; reloadList.textContent = 'Reload';
             });
             paintGrid();
+            if(searchEl) searchEl.focus();
           });
         }
 
@@ -14233,8 +14227,8 @@ This removes its school and season dates. Venues in this market are not touched.
             }
             const stale = tb.querySelector(`[data-cmstale="${CSS.escape(id)}"]`);
             if(stale && j.stale === true){
-              stale.textContent = 'UPDATED IN CAKEMAIL';
-              stale.title = 'This design has changed in CakeMail since it was attached. The blast will send the newer version — the tick pulls it automatically just before sending — and pressing Refresh now takes it immediately so the preview above matches.';
+              stale.textContent = 'UPDATED IN PLAYBOOK MAIL';
+              stale.title = 'This design has changed in Playbook Mail since it was attached. The blast will send the newer version — the tick pulls it automatically just before sending — and pressing Refresh now takes it immediately so the preview above matches.';
               stale.classList.remove('hidden');
             }
             // THREE OUTCOMES, NOT TWO. The fallback is the one that needs watching: the copy
@@ -14255,7 +14249,7 @@ This removes its school and season dates. Venues in this market are not touched.
                 kind.className = base + 'font-bold bg-[#fdeee4] text-[#e55608]';
                 kind.title = 'This design has no [BODY], so the copy was placed in its first paragraph — a guess. '
                   + (n ? `The design's other ${n} block${n === 1 ? '' : 's'} of text are unchanged and WILL be sent after your copy. Check the preview. ` : '')
-                  + 'Add [BODY] to the template in CakeMail where the words really belong, then press Refresh, and this becomes exact.';
+                  + 'Add [BODY] to the template in Playbook Mail where the words really belong, then press Refresh, and this becomes exact.';
               } else {
                 kind.textContent = 'replaces your copy';
                 kind.className = base + 'bg-base-200 text-base-content/60';
@@ -14390,7 +14384,7 @@ This removes its school and season dates. Venues in this market are not touched.
                   : plan.mode === 'first-paragraph'
                     ? `It has no [BODY], so your copy went into the design’s first paragraph — a guess.`
                       + (others ? ` The design’s other ${others} block${others === 1 ? '' : 's'} of text are unchanged and will be sent after it, so check the preview.` : '')
-                      + ' Add [BODY] in CakeMail where the words really belong, then press Refresh, and this becomes exact.'
+                      + ' Add [BODY] in Playbook Mail where the words really belong, then press Refresh, and this becomes exact.'
                     : 'It has no [BODY] and no paragraph to put the copy in, so it sends as-is and the drafted copy is NOT used.';
               toast({ type: gaps.length || j.unconfirmed || plan.mode !== 'token' ? 'warn' : 'ok',
                       title: `"${j.name}" is now what this blast sends`,
@@ -14400,7 +14394,7 @@ This removes its school and season dates. Venues in this market are not touched.
                           ? [`${gaps.join(' and ')} came out blank on this row, so the design has a gap where it expected one. Fill the game or date on the blast, then attach it again.`]
                           : []),
                         bodyLine,
-                        ...(j.foreign ? ['This design was taken from another CakeMail account. The blast still sends from its own sender — nothing is sent from that account.'] : []),
+                        ...(j.foreign ? ['This design was taken from another Playbook Mail account. The blast still sends from its own sender — nothing is sent from that account.'] : []),
                         ...(j.unconfirmed ? [UNCONFIRMED_NOTE] : []),
                       ] });
             } else {
