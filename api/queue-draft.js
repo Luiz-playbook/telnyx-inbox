@@ -33,7 +33,43 @@ import { openaiTarget } from '../lib/llm.js';
 // [GAME]/[DATE]/[SPORT] moved to lib/tokens.js so api/cakemail-templates.js fills an
 // attached CakeMail design exactly as this drafter fills a stored template. LEFTOVER below is
 // deliberately NOT shared: its job is to reject whatever that fill did not resolve.
-import { fillTokens, gameLabel, prettyDate } from '../lib/tokens.js';
+import { fillTokens as fillGameTokens, gameLabel, prettyDate } from '../lib/tokens.js';
+
+// The shared fill handles [GAME]/[DATE]/[SPORT]. This wraps it with the EVENT WAITLIST tokens
+// (migration 120): the sequence doc writes them in Title Case with spaces, and they resolve from
+// the PROPOSAL and the proposal's row for this market — not from a game, because there is none.
+// Only the ones we can answer are filled; the rest stay in the text so the LEFTOVER guard below
+// refuses the row and a person finishes it.
+function fillTokens(body, r, ctx) {
+  let out = fillGameTokens(body, r);
+  if (!ctx) return out;
+  const p = ctx.proposal || {}, m = ctx.market || {};
+  const rep = (name, value) => { if (value != null && String(value).trim() !== '') out = out.split(name).join(String(value)); };
+  rep('[State]', r.state_name || r.state_code);
+  rep('[Metro]', r.state_name || r.state_code);             // state-level to start; metro split later
+  rep('[Sport]', p.sport);
+  rep('[N]', p.states_count);
+  rep('[Sender Name]', p.sender_name);
+  rep('[Sender Title]', p.sender_title);
+  rep('[waitlist_link]', p.waitlist_url);
+  rep('[Comparable Market]', p.comparable_market);
+  rep('[Event Name]', m.event_name);
+  rep('[Event Date]', m.event_date ? prettyDate(m.event_date) : null);
+  rep('[Venue]', m.venue);
+  rep('[Price]', m.waitlist_price);
+  rep('[Public Price]', m.public_price);
+  rep('[Deadline]', m.deadline ? prettyDate(m.deadline) : null);
+  rep('[registration_link]', m.registration_url);
+  // Per-recipient tokens have no per-recipient fill on this path (one body per market), so they
+  // take the neutral form the SMS templates already use for a missing name.
+  rep('[First Name]', 'there');
+  rep('[Org Name]', 'your organization');
+  // A bracketed INSTRUCTION to the writer, not a token: "[Personalization hook: ...]". No system
+  // can fill it, so the whole line goes and the Queue shows a shorter email rather than a refused
+  // row. Email #2's proof point is NOT treated this way — it is the substance of that message.
+  out = out.replace(/^[ \t]*\[Personalization hook:[^\]]*\][ \t]*\n?/gim, '');
+  return out;
+}
 
 export const config = { maxDuration: 60 };
 
@@ -53,7 +89,11 @@ function pickVariant(r, isFollowup) {
   return 'initial';
 }
 
-const LEFTOVER = /\[[A-Z][A-Z_ ]{1,20}\]/;
+// Any bracketed token, any case (▲ 2026-10-13: the old pattern matched ALL-CAPS only, so
+// "[First Name]" sailed through and would have been sent to every inbox exactly as written —
+// migration 117 spells out the near miss). Letters first, then up to 60 of letters, digits,
+// spaces, punctuation. Nothing in Cole's real copy uses square brackets for anything else.
+const LEFTOVER = /\[[A-Za-z][A-Za-z0-9_ :'’,.-]{0,60}\]/;
 // 306 characters, not 480 — Marx, 2026-08-03, confirming Josh's cost rule.
 //
 // This is a BILLING boundary, not a technical one. Salesmsg bills per carrier segment: 1-160
@@ -193,10 +233,52 @@ export default async function handler(req, res) {
     // Templates. Only non-placeholder rows are usable — a placeholder body is an
     // instruction to go paste the real copy, not outreach.
     const tRes = await fetch(
-      `${supaUrl}/rest/v1/message_templates?select=slug,play,variant,channel,subject,body,is_placeholder,strategy,sort_order&is_placeholder=eq.false&order=sort_order.asc`,
+      `${supaUrl}/rest/v1/message_templates?select=slug,play,variant,channel,subject,body,is_placeholder,strategy,sort_order&order=sort_order.asc`,
       { headers: sh });
-    const templates = await tRes.json();
-    if (!tRes.ok || !Array.isArray(templates)) { res.status(502).json({ error: 'template fetch failed', detail: templates }); return; }
+    const allTemplates = await tRes.json();
+    if (!tRes.ok || !Array.isArray(allTemplates)) { res.status(502).json({ error: 'template fetch failed', detail: allTemplates }); return; }
+    // Placeholder rows are not sendable copy — EXCEPT on a waitlist step, where the eight rows
+    // from migrations 117/118 are the approved sequence and were flagged only because their
+    // tokens had no fill. They have one now (fillTokens ctx), and the LEFTOVER guard still
+    // refuses any token that did not resolve, so the guard does the flag's job.
+    const templates = allTemplates.filter(t => !t.is_placeholder);
+    const bySlug = Object.fromEntries(allTemplates.map(t => [t.slug, t]));
+
+    // EVENT WAITLIST (migration 120): which template each step of the sequence uses. Day 0 has
+    // an ICP and an SCP/non-ICP wording, chosen by the row's segment.
+    const WAITLIST_STEP = {
+      day0:   { email: seg => (seg === 'ICP' ? 'waitlist-email-icp' : 'waitlist-email-scp'), sms: null },
+      day3:   { email: null, sms: () => 'waitlist-sms' },
+      day10:  { email: () => 'waitlist-email-2', sms: null },
+      day45:  { email: () => 'waitlist-email-4', sms: null },
+      formal: { email: () => 'waitlist-email-3', sms: () => 'waitlist-sms-2' },
+    };
+    // The proposal and per-market row behind each waitlist target, read off the table because
+    // get_campaign_queue() does not carry proposal_id / proposal_step.
+    const waitCtx = new Map();
+    {
+      const wl = queue.filter(r => r.strategy === 'event_waitlist');
+      if (wl.length) {
+        const ids = wl.map(r => `"${r.id}"`).join(',');
+        const qr = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=id,proposal_id,proposal_step,state_code&id=in.(${ids})`, { headers: sh });
+        const qrows = qr.ok ? await qr.json() : [];
+        const pids = [...new Set(qrows.map(x => x.proposal_id).filter(Boolean))];
+        let props = [], pms = [];
+        if (pids.length) {
+          const pin = pids.map(x => `"${x}"`).join(',');
+          const [pr, mr] = await Promise.all([
+            fetch(`${supaUrl}/rest/v1/event_proposals?select=*&id=in.(${pin})`, { headers: sh }),
+            fetch(`${supaUrl}/rest/v1/proposal_markets?select=*&proposal_id=in.(${pin})`, { headers: sh }),
+          ]);
+          props = pr.ok ? await pr.json() : []; pms = mr.ok ? await mr.json() : [];
+        }
+        for (const x of qrows) {
+          const proposal = props.find(p => p.id === x.proposal_id) || null;
+          const market = pms.find(m => m.proposal_id === x.proposal_id && m.code === String(x.state_code || '').toUpperCase()) || null;
+          waitCtx.set(x.id, { step: x.proposal_step, proposal, market });
+        }
+      }
+    }
 
     // THE ROW'S STRATEGY CHOOSES THE LIBRARY (2026-10-09). This used to match play='Ticketblast'
     // only, so a Suites row got the ticket pitch and the Suite templates could never be
@@ -207,7 +289,11 @@ export default async function handler(req, res) {
     // A strategy with no non-placeholder template (Event Waitlist today - every row is still
     // flagged placeholder, see migration 118) gets NO template and the row is reported, not
     // drafted with someone else's copy.
-    const pick = (strategy, variant, channel) => {
+    const pick = (strategy, variant, channel, ctx) => {
+      if (strategy === 'event_waitlist' && ctx && ctx.step && WAITLIST_STEP[ctx.step]) {
+        const f = WAITLIST_STEP[ctx.step][channel];
+        return f ? (bySlug[f(ctx.segment)] || null) : null;
+      }
       if (strategy === 'ticket_blasts') {
         return templates.find(t => t.play === 'Ticketblast' && t.variant === variant && t.channel === channel) ||
                templates.find(t => t.play === 'Ticketblast' && t.variant === 'initial' && t.channel === channel) || null;
@@ -238,7 +324,9 @@ export default async function handler(req, res) {
       }
       const strategy = String(r.strategy || 'ticket_blasts');
       const variant = forcedVariant || pickVariant(r, blasted.has(String(r.state_code || '').toUpperCase()));
-      const tEmail = pick(strategy, variant, 'email'), tSms = pick(strategy, variant, 'sms');
+      const wctx = waitCtx.get(r.id) || null;
+      if (wctx) wctx.segment = r.segment || null;
+      const tEmail = pick(strategy, variant, 'email', wctx), tSms = pick(strategy, variant, 'sms', wctx);
       // Hand-written copy stands on its own — a missing template row is only fatal when the
       // template is what we were going to send.
       const cEmail = (custom && typeof custom.email === 'string' && custom.email.trim()) ? custom.email : null;
@@ -253,17 +341,23 @@ export default async function handler(req, res) {
       // Stage 1 — the deterministic fill. This is what gets written unless stage 2 beats it.
       // Custom copy substitutes for the template body per channel, then goes through exactly
       // the same fill as a template would.
+      // A waitlist step is ONE channel: Day 0 is email only, Day 3 is SMS only. The other box
+      // stays empty rather than borrowing the wrong channel's words (the ticket path's fallback).
+      const oneChannel = !!wctx;
       const base = {
-        email: fillTokens(cEmail || (tEmail ? tEmail.body : (tSms ? tSms.body : '')), r),
-        sms: fillTokens(cSms || (tSms ? tSms.body : (tEmail ? tEmail.body : '')), r),
+        email: fillTokens(cEmail || (tEmail ? tEmail.body : (oneChannel ? '' : (tSms ? tSms.body : ''))), r, wctx),
+        sms: fillTokens(cSms || (tSms ? tSms.body : (oneChannel ? '' : (tEmail ? tEmail.body : ''))), r, wctx),
       };
       // Either a bad template row or hand-written copy can leave a token here; never the
       // model, which has not run yet. Both are worth failing loudly on, because the thing
       // being prevented is a literal "[GAME]" arriving in every inbox in the market.
       if (LEFTOVER.test(base.email) || LEFTOVER.test(base.sms)) {
+        const left = [base.email, base.sms].map(t => (t.match(LEFTOVER) || [''])[0]).filter(Boolean).join(', ');
         errors.push({ id: r.id, title: r.title, error: (cEmail || cSms)
           ? 'your wording still has a [TOKEN] in it. Only [GAME], [DATE] and [SPORT] get filled in — anything else would be sent to every recipient exactly as written'
-          : `template ${variant} left an unresolved token — fix the template row` });
+          : wctx
+            ? `${left} has no value yet — fill it on the proposal (or edit the row by hand) before this step can send`
+            : `template ${variant} left an unresolved token — fix the template row` });
         continue;
       }
 
@@ -317,7 +411,7 @@ export default async function handler(req, res) {
         ? custom.subject
         : (tEmail && tEmail.subject ? tEmail.subject : null);
       if (subjSrc) {
-        const filled = fillTokens(subjSrc, r);
+        const filled = fillTokens(subjSrc, r, wctx);
         if (!LEFTOVER.test(filled) && filled.trim()) {
           subject = filled.trim();
           const s = await rpc('queue_set_email_subject', { p_id: r.id, p_subject: subject });

@@ -248,7 +248,7 @@ export default async function handler(req, res) {
     if (!bulkSmsConfigured()) return { checked: 0, updated: 0 };
     try {
       const since = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
-      const q = `${supaUrl}/rest/v1/campaign_queue?select=id,bulk_campaign_id,bulk_census,state_code,state_name,segment`
+      const q = `${supaUrl}/rest/v1/campaign_queue?select=id,bulk_campaign_id,bulk_census,state_code,state_name,segment,strategy`
         + `&bulk_campaign_id=not.is.null&sent_at=gte.${encodeURIComponent(since)}`;
       const rows = await (await fetch(q, { headers: sh })).json();
       if (!Array.isArray(rows) || !rows.length) return { checked: 0, updated: 0 };
@@ -270,6 +270,7 @@ export default async function handler(req, res) {
           const lr = await rpc('log_market_blast', {
             p_code: row.state_code, p_name: row.state_name || null,
             p_channel: 'SMS', p_queue_id: row.id, p_segment: row.segment || null,
+            p_strategy: row.strategy || 'ticket_blasts',
           });
           // rpc is a bare fetch: a failed log must not be recorded as logged. Leave it
           // 'deferred' so the next tick tries again.
@@ -799,6 +800,13 @@ export default async function handler(req, res) {
       }
 
       await rpc('queue_mark_sent', { p_id: r.id, p_recipients: summary });
+      // EVENT WAITLIST (migration 120). A waitlist row carries which step of the sequence it
+      // is; the stamp on proposal_markets is what makes the NEXT step appear on the board.
+      // Best effort and after mark_sent: a missed stamp shows as "Day 0 still due" and is
+      // fixable by hand; a missed mark_sent would send the row again.
+      if (r.strategy === 'event_waitlist') {
+        try { await rpc('proposal_step_sent', { p_queue_id: r.id }); } catch (_) { /* see above */ }
+      }
       // PARTLY SENT (migration 058). Reaching here means at least one channel delivered — the
       // all-failed case returned above with the row untouched. But `sent` and `failed` are not
       // exclusive: SMS can go out while CakeMail throws, and until now that was recorded as a
@@ -833,6 +841,9 @@ export default async function handler(req, res) {
           p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id,
           // Null for a whole-market row, which cools every segment (migration 049).
           p_segment: r.segment || null,
+          // Which PLAY cooled the market (migration 120). The waitlist board reads "last blast,
+          // any strategy" for its 25-day rule and "last waitlist blast" for its own.
+          p_strategy: r.strategy || 'ticket_blasts',
         });
         // Cooled here, so tell reconcile not to log it again. Best effort: a failure only risks
         // a second (harmless) log when the campaign is approved.
