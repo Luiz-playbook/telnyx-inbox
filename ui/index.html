@@ -1918,7 +1918,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <summary>
                     <span class="rn-who">Vhea</span>
                     <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
-                    <span class="rn-tally">7 areas &middot; 30 entries</span>
+                    <span class="rn-tally">8 areas &middot; 32 entries</span>
                     <span class="rn-caret" aria-hidden="true">&#9662;</span>
                   </summary>
                   <div class="rn-devbody">
@@ -2092,6 +2092,21 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                           sequential calls.</p></li>
                     </ul>
 
+                    <h2>Fixes</h2>
+                    <ul class="rn-items">
+                      <li><h3>One bad address no longer kills a market&rsquo;s whole email</h3>
+                        <p>Contacts are uploaded to CakeMail in a single call per market, so one address it refuses failed the
+                          email channel outright &mdash; while the SMS had already gone. <b>935 people missed an email</b> because of one
+                          contact whose address began with a dot. The filter now rejects what CakeMail rejects, checked against all
+                          80,058 addresses we hold: it drops 39, and every one is unsendable &mdash; around thirty Google Calendar ids
+                          scraped in as if they were people, an image filename, several truncated addresses. No real recipient is
+                          lost, and <b>sixteen markets</b> were carrying one of these. What is dropped is now written into the run
+                          notes instead of disappearing quietly.</p></li>
+                      <li><h3>The date filter stacked on top of itself</h3>
+                        <p>The from / to date range rendered as three boxes piled vertically and hanging off the right edge, on
+                          Offers, Queue, Market History and Ticket Prices alike.</p></li>
+                    </ul>
+
                   </div>
                 </details>
 
@@ -2099,7 +2114,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <summary>
                     <span class="rn-who">Luiz</span>
                     <span class="rn-role">setup &amp; messaging</span>
-                    <span class="rn-tally">6 entries</span>
+                    <span class="rn-tally">8 entries</span>
                     <span class="rn-caret" aria-hidden="true">&#9662;</span>
                   </summary>
                   <div class="rn-devbody">
@@ -2122,6 +2137,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                           queue, the offers and the send history. No send capability by design.</p></li>
                       <li><h3>An Admin menu for the setup screens</h3>
                         <p>The configuration tabs are grouped under Admin, separating what you set up from what you action daily.</p></li>
+                      <li><h3>Drafting follows the strategy you picked</h3>
+                        <p>Adding offers to the queue now asks which play it is &mdash; <b>Ticket Blasts, Suites or Event Waitlist</b> &mdash;
+                          ahead of channels and senders, and the copy is drafted from that play&rsquo;s templates. A Suites row never
+                          gets the ticket pitch. A play whose templates are all unapproved (Event Waitlist) is reported rather than
+                          quietly drafted with the wrong words, and the Follow-up picker offers Ticketblast variants only on a
+                          Ticket Blasts row.</p></li>
+                      <li><h3>Use template&hellip; on every queue row</h3>
+                        <p>Each email and SMS panel has a dropdown of that strategy&rsquo;s templates for that channel. Choosing one
+                          fills the editor with <b>[GAME]</b>, <b>[DATE]</b> and <b>[SPORT]</b> already resolved &mdash; the same three the
+                          drafter fills &mdash; and nothing is written until you press Save. Unapproved templates are listed but
+                          disabled and say so, so a row shows its eight placeholders rather than an empty list.</p></li>
                     </ul>
                   </div>
                 </details>
