@@ -38,6 +38,15 @@
   --green:#2b8a3e;
   --green-ink:#226e31;   /* --green is 3.9:1 on its own tint; this is the same hue at 5.5:1 */
   --gray:#98a2aa;
+  /* The one hue in this palette that is not a status. It marks a control that hands the work
+     to a model, which is worth telling apart at a glance from the controls that do exactly
+     what they say: the result of pressing it is written by something else and wants reading
+     before it is trusted. Violet because nothing else here is violet, and because it is the
+     colour the rest of the industry has settled on for the same thing.
+     #5b40c9 is 6.4:1 on white and 5.9:1 on its own tint. */
+  --violet:#5b40c9;
+  --violet-tint:#f4f1fd;
+  --violet-line:#d7cdf5;
 
   /* SEMANTIC LAYER, over the raw palette above. Brand token -> semantic token ->
      component, so a rule says what a colour is FOR rather than what it is:
@@ -69,6 +78,9 @@
   --color-warning:            var(--amber);
   --color-success:            var(--green);
   --color-neutral:            var(--gray);
+  --color-ai:                 var(--violet);
+  --color-ai-tint:            var(--violet-tint);
+  --color-ai-border:          var(--violet-line);
 
   /* Focus. Navy on light ground, a light ring where the ground is navy. */
   --color-ring:               var(--navy);
@@ -187,6 +199,20 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
 .btn-outline.btn-info, .btn-info { background: #fff; color: var(--navy); border-color: #cddbe2; }
 .btn-outline.btn-info:hover, .btn-info:hover { background: #f4f8fa; border-color: var(--navy); color: var(--navy); }
 .btn-disabled, .btn[disabled] { background: #fff !important; border-color: var(--line) !important; color: var(--gray) !important; }
+
+/* THE ONE CONTROL THAT HANDS THE WORK TO A MODEL. It sits inline with ordinary buttons --
+   "Use template...", "Choose Playbook Mail Template" -- that do precisely and only what they
+   say, and it does not: what comes back was written by something else and has to be read.
+   Tinted rather than filled, because it is still an ordinary action and not the primary one
+   on its row; the orange primary stays the thing that commits. */
+.btn-ai {
+  background: var(--color-ai-tint);
+  border-color: var(--color-ai-border);
+  color: var(--color-ai);
+  font-weight: 600;
+}
+.btn-ai:hover { background: #ebe5fb; border-color: var(--color-ai); color: var(--color-ai); }
+.btn-ai svg { color: var(--color-ai); }
 
 /* --------------------------------------------------------------------- fields */
 .input, .select, .textarea {
