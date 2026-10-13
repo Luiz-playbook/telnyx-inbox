@@ -14180,7 +14180,7 @@ This removes its school and season dates. Venues in this market are not touched.
                    </div>
                    <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3 shrink-0" data-fsaibar>
                      <div class="text-xs font-semibold text-[#133b49]">Edit this design with AI</div>
-                     <div class="text-[11px] text-base-content/60 mb-1.5">Changes the <b>words</b> and the <b>colours</b> &mdash; "shorter, and make the buttons our orange" works as one instruction. Images, fonts and layout are still changed in Playbook Mail. <b>Every change is picked up on its own</b>; the blast sends the design as it stands when it goes.</div>
+                     <div class="text-[11px] text-base-content/60 mb-1.5">Changes the <b>words</b>, <b>colours</b>, <b>sizes and spacing</b>, and the <b>alt text and links</b> on images &mdash; "shorter, buttons in our orange, and square them off" works as one instruction. Swapping the pictures themselves, and adding or reordering sections, are still done in Playbook Mail. <b>Every change is picked up on its own</b>; the blast sends the design as it stands when it goes.</div>
                      <div class="flex gap-2 items-start">
                        <textarea class="textarea textarea-bordered textarea-sm flex-1 text-xs" rows="2" data-fsai-what
                          placeholder="e.g. make the opening shorter and mention the cheapest seat" aria-label="What to change"></textarea>
@@ -14359,7 +14359,8 @@ This removes its school and season dates. Venues in this market are not touched.
                     body: JSON.stringify({ queue_id: rowId, instruction, target: 'template' }) });
                   const j = await r.json().catch(() => ({}));
                   if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-                  const n = (j.changed || []).length + (j.recoloured || []).length;
+                  const sum = aiSummary(j);
+                  const n = sum.n;
                   if(!n){
                     aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
                     aiNote.textContent = j.note || 'The model made no changes.';
@@ -14371,15 +14372,7 @@ This removes its school and season dates. Venues in this market are not touched.
                     // design just before it sends (api/queue-tick.js), so this is already what
                     // will go out. Refresh is only for making the Queue's own preview agree
                     // now, and saying otherwise taught people a step that does nothing.
-                    // WHAT CHANGED, IN ITS OWN TERMS. "4 blocks rewritten" says nothing about a
-                    // recolour, and a person who asked for orange buttons wants to read that
-                    // the buttons went orange — the preview above shows it, but the line under
-                    // the box is what they look at first.
-                    const nt = (j.changed || []).length, nc = (j.recoloured || []).length;
-                    const did = [];
-                    if(nt) did.push(`${nt} text block${nt === 1 ? '' : 's'} rewritten`);
-                    if(nc) did.push(`${nc} colour${nc === 1 ? '' : 's'} changed (${(j.recoloured || []).slice(0, 3).map(c => c.role).join(', ')}${nc > 3 ? `, +${nc - 3} more` : ''})`);
-                    aiNote.textContent = `${did.join(' and ')}, saved in Playbook Mail. `
+                    aiNote.textContent = `${sum.text}, saved in Playbook Mail. `
                       + (j.affected > 1 ? `All ${j.affected} blasts using this design will send the new version. ` : 'This blast will send the new version. ')
                       + 'No need to pull it in.';
                   }
@@ -14627,6 +14620,21 @@ This removes its school and season dates. Venues in this market are not touched.
         // the draft; editing the template with AI would be a more advanced thing you have to
         // ask for". The count of other affected blasts is fetched with the row, so the
         // template option can state its cost before it is chosen rather than after.
+        // WHAT AN AI EDIT ACTUALLY DID, in one sentence. Four dimensions come back now — text,
+        // colour, size/spacing/type, and image alt and links — and both places that report an
+        // edit need the same sentence. Written once: two copies drifted the first time a fifth
+        // thing was added, and the row said something different from the preview.
+        function aiSummary(j){
+          const t = (j.changed || []).length, c = (j.recoloured || []).length;
+          const z = (j.restyled || []).length, g = (j.relinked || []).length;
+          const bits = [];
+          if(t) bits.push(`${t} text block${t === 1 ? '' : 's'} rewritten`);
+          if(c) bits.push(`${c} colour${c === 1 ? '' : 's'} changed (${(j.recoloured || []).slice(0, 3).map(x => x.role).join(', ')}${c > 3 ? `, +${c - 3}` : ''})`);
+          if(z) bits.push(`${z} size or spacing change${z === 1 ? '' : 's'} (${(j.restyled || []).slice(0, 3).map(x => `${x.role} ${x.prop}`).join(', ')}${z > 3 ? `, +${z - 3}` : ''})`);
+          if(g) bits.push(`${g} image ${g === 1 ? 'detail' : 'details'} updated`);
+          return { n: t + c + z + g, text: bits.join(', ') };
+        }
+
         async function aiPanel(rowId, tpl){
           const row = QUEUE.find(x => x.id === rowId) || {};
           // Counted from the rows already in memory: every queued blast carries its template
@@ -14723,13 +14731,10 @@ This removes its school and season dates. Venues in this market are not touched.
                         lines:[ 'Only this blast changed. Undo in the row puts it back.' ] });
                 shut();
               } else {
-                const nt = (j.changed || []).length, nc = (j.recoloured || []).length, n = nt + nc;
-                if(!n){ out.textContent = j.note || 'The model made no changes.'; out.classList.remove('hidden'); return; }
-                const did = [];
-                if(nt) did.push(`${nt} text block${nt === 1 ? '' : 's'} changed`);
-                if(nc) did.push(`${nc} colour${nc === 1 ? '' : 's'} changed (${(j.recoloured || []).slice(0, 3).map(c => c.role).join(', ')}${nc > 3 ? `, +${nc - 3} more` : ''})`);
+                const sum = aiSummary(j);
+                if(!sum.n){ out.textContent = j.note || 'The model made no changes.'; out.classList.remove('hidden'); return; }
                 toast({ type:'ok', title:`"${j.name || 'The design'}" was edited in Playbook Mail`,
-                        lines:[ `${did.join(' and ')}.`
+                        lines:[ `${sum.text}.`
                                 + (choice === 'copy'
                                     ? ' It is this blast’s own copy, so nothing else was touched.'
                                     : ` This affects ${j.affected} blast${j.affected === 1 ? '' : 's'}.`),

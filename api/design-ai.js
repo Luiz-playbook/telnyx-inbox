@@ -30,6 +30,7 @@ import { cakemailGet, cakemailPatch, cakemailKey, cakemailKeyEnvName, parseCakem
 import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/beetext.js';
 import { beeColourSlots, applyBeeColours, beeColoursToPrompt, sameColour } from '../lib/beestyle.js';
 import { beeStyleSlots, applyBeeStyles, beeStylesToPrompt, fontChoices } from '../lib/beeshape.js';
+import { beeImageSlots, applyBeeImages, beeImagesToPrompt } from '../lib/beeimage.js';
 import { gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
@@ -132,9 +133,9 @@ const context = r => [
 // So "make the colours blue" comes back with all nineteen blocks unchanged and nothing is
 // written, which is correct and reads as broken. "The model made no changes" is true and
 // useless here; it is the one instruction people try first on a design they are looking at.
-const VISUAL = /\b(image|images|photo|picture|logo|icon|swap|replace the (image|photo|picture)|move|reorder|add a|remove the|delete the|new row|new section)\b/i;
+const VISUAL = /\b(swap|replace|different (image|photo|picture|logo)|new (image|photo|picture|logo)|upload|move|reorder|rearrange|add a|remove the|delete the|new row|new section|new block)\b/i;
 const noChangeNote = (instruction) => VISUAL.test(String(instruction || ''))
-  ? 'Nothing changed. This edits a design\u2019s words, colours, sizes, spacing and type. Swapping pictures and adding, removing or reordering sections are structural changes \u2014 open it in Playbook Mail for those. Whatever you change there is what the blast sends.'
+  ? 'Nothing changed. This edits a design\u2019s words, colours, sizes, spacing, type, and the alt text and links on its images. Swapping the pictures themselves, and adding, removing or reordering sections, are structural \u2014 open it in Playbook Mail for those. Whatever you change there is what the blast sends.'
   : 'The model made no changes.';
 
 const RULES = [
@@ -165,6 +166,13 @@ const SHAPE_RULES = [
   'Body text below 14px is hard to read on a phone. Do not go under it unless asked to.',
   'Never widen the design past 700px — email clients cut off what will not fit.',
   'A font-family must be copied character for character from the list of choices given.',
+];
+
+// IMAGES are the one place the honest answer is "most of this is not yours to change".
+const IMAGE_RULES = [
+  'You cannot change which picture is used. Only its alt text and the link it opens.',
+  'Alt text is what the recipient reads when the picture does not load, which in email is most of the time. Describe the picture in a few words; never write "image" or "photo".',
+  'A link must start http:// or https://, or be empty for no link. Leave it empty unless you are told where it should go.',
 ];
 
 export default async function handler(req, res) {
@@ -259,22 +267,27 @@ export default async function handler(req, res) {
       const palette = beeColoursToPrompt(detail.content.json);
       const styles = beeStyleSlots(detail.content.json);
       const sizing = beeStylesToPrompt(detail.content.json);
+      const images = beeImageSlots(detail.content.json);
       const out = await ask([
         { role: 'system', content: RULES.concat(
             slots.length ? COLOUR_RULES : [],
             styles.length ? SHAPE_RULES : [],
+            images.length ? IMAGE_RULES : [],
             `This design has ${nodes.length} text block${nodes.length === 1 ? '' : 's'}, numbered below.`,
             slots.length ? `It also has ${slots.length} colour${slots.length === 1 ? '' : 's'}, numbered separately.` : '',
             styles.length ? `And ${styles.length} size, spacing and type settings, numbered separately again.` : '',
-            `Return JSON: {"blocks": ["<new text for 1>", ...]${slots.length ? `, "colors": ["<hex for 1>", ...]` : ''}${styles.length ? `, "styles": ["<value for 1>", ...]` : ''}}`,
+            images.length ? `And ${images.length} image${images.length === 1 ? '' : 's'}, whose alt text and link you may change.` : '',
+            `Return JSON: {"blocks": ["<new text for 1>", ...]${slots.length ? `, "colors": ["<hex for 1>", ...]` : ''}${styles.length ? `, "styles": ["<value for 1>", ...]` : ''}${images.length ? `, "images": [{"alt": "...", "href": "..."}, ...]` : ''}}`,
             `"blocks" must have EXACTLY ${nodes.length} item${nodes.length === 1 ? '' : 's'}, in the same order.`,
             slots.length ? `"colors" must have EXACTLY ${slots.length} items, in the same order. Omit "colors" entirely if no colour should change.` : '',
             styles.length ? `"styles" must have EXACTLY ${styles.length} items, in the same order. Omit "styles" entirely if no size, spacing or type should change.` : '',
-            'Each item must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
+            images.length ? `"images" must have EXACTLY ${images.length} items, in the same order, each an object with "alt" and "href". Omit "images" entirely if no image should change.` : '',
+            'Every item in "blocks", "colors" and "styles" must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
           ).filter(Boolean).join('\n') },
         { role: 'user', content: `${context(row)}\n\nBlocks:\n${numbered}`
             + (slots.length ? `\n\nColours:\n${palette}` : '')
             + (styles.length ? `\n\nSizes, spacing and type:\n${sizing}\n\nFont stacks you may use:\n${fontChoices(detail.content.json).map(f => `  ${f}`).join('\n')}` : '')
+            + (images.length ? `\n\nImages (you may change alt and link, never the picture):\n${beeImagesToPrompt(detail.content.json)}` : '')
             + `\n\nWhat to change: ${instruction}` },
       ]);
       const blocks = out.blocks;
@@ -352,11 +365,35 @@ export default async function handler(req, res) {
         }
       }
 
-      if (!changed.length && !recoloured.length && !restyled.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], recoloured: [], restyled: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
+      // IMAGES come back as OBJECTS, not strings, so they are the one list asBlockText does not
+      // touch. applyBeeImages ignores a field that is absent or unchanged and throws on one it
+      // will not accept -- a javascript: link, say, which is the reason href is checked at all
+      // rather than written through.
+      const relinked = [];
+      const wantImages = Array.isArray(out.images) && out.images.length === images.length ? out.images : null;
+      if (wantImages) {
+        try {
+          json = applyBeeImages(json, wantImages);
+          images.forEach((img, i) => {
+            const got = wantImages[i] || {};
+            for (const field of ['alt', 'href']) {
+              const to = got[field] === null || got[field] === undefined ? null : String(got[field]).trim();
+              if (to !== null && to !== String(img[field] || '').trim()) {
+                relinked.push({ index: i + 1, file: img.file, field, before: img[field] || '', after: to });
+              }
+            }
+          });
+        } catch (e) {
+          res.status(502).json({ error: `${String((e && e.message) || e)} Nothing was changed.` });
+          return;
+        }
+      }
+
+      if (!changed.length && !recoloured.length && !restyled.length && !relinked.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], recoloured: [], restyled: [], relinked: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
 
       await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
         body: { content: { ...detail.content, json } } }));
-      res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, recoloured, restyled, affected: shared + 1 });
+      res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, recoloured, restyled, relinked, affected: shared + 1 });
       return;
     }
 
