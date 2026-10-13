@@ -29,7 +29,7 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { openaiTarget } from '../lib/llm.js';
+import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 // [GAME]/[DATE]/[SPORT] moved to lib/tokens.js so api/cakemail-templates.js fills an
 // attached CakeMail design exactly as this drafter fills a stored template. LEFTOVER below is
 // deliberately NOT shared: its job is to reject whatever that fill did not resolve.
@@ -226,7 +226,7 @@ export default async function handler(req, res) {
       queue.filter(r => r.status === 'sent').map(r => String(r.state_code || '').toUpperCase()).filter(Boolean));
 
     const model = (process.env.DRAFT_MODEL || '').trim();
-    const target = openaiTarget(model || (process.env.OPENAI_MODEL || 'gpt-4o').trim());
+    const target = openaiTarget(model || (process.env.OPENAI_MODEL || DEFAULT_MODEL).trim());
     const anthKey = (process.env.ANTHROPIC_API_KEY || '').trim();
 
     const written = [], skipped = [], errors = [];

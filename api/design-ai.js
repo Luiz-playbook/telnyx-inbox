@@ -25,14 +25,14 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { openaiTarget } from '../lib/llm.js';
+import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 import { cakemailGet, cakemailPatch, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { beeTextNodes, applyBeeText, designShape } from '../lib/beetext.js';
 import { gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
 
-const MODEL = (process.env.DESIGN_AI_MODEL || 'gpt-4o').trim();
+const MODEL = (process.env.DESIGN_AI_MODEL || DEFAULT_MODEL).trim();
 
 // Tags are stripped before the model sees anything and never asked for back. The model writes
 // words; this file decides where words go.
