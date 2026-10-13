@@ -133,10 +133,52 @@ const context = r => [
 // So "make the colours blue" comes back with all nineteen blocks unchanged and nothing is
 // written, which is correct and reads as broken. "The model made no changes" is true and
 // useless here; it is the one instruction people try first on a design they are looking at.
-const VISUAL = /\b(swap|replace|different (image|photo|picture|logo)|new (image|photo|picture|logo)|upload|move|reorder|rearrange|add a|remove the|delete the|new row|new section|new block)\b/i;
-const noChangeNote = (instruction) => VISUAL.test(String(instruction || ''))
-  ? 'Nothing changed. This edits a design\u2019s words, colours, sizes, spacing, type, and the alt text and links on its images. Swapping the pictures themselves, and adding, removing or reordering sections, are structural \u2014 open it in Playbook Mail for those. Whatever you change there is what the blast sends.'
-  : 'The model made no changes.';
+// WHY NOTHING CHANGED, said in terms of what was actually asked for.
+//
+// The first version of this matched on verbs — swap, replace, upload, "add a" — and missed
+// the obvious case the moment anyone wrote like a person: "Can you add kids in basketball summer
+// camp photo here?" matches none of them, so a request this cannot possibly satisfy came back as
+// the bare "The model made no changes." That is the least useful sentence available, because it
+// reads as the feature being broken rather than the request being outside it.
+//
+// So the test is on the NOUN. A request that mentions a picture, or a section of the design, has
+// a specific answer and should get it; everything else keeps the plain message.
+const PICTURE = /\b(photos?|images?|pictures?|logos?|icons?|graphics?|artwork|banner|headshot|screenshot)\b/i;
+const STRUCTURE = /\b(rows?|sections?|blocks?|columns?|modules?|dividers?|spacers?|footers?|headers?)\b/i;
+const ADDREMOVE = /\b(add|adding|insert|include|put|remove|removing|delete|drop|move|reorder|rearrange|duplicate|another|extra)\b/i;
+// The two things about an image this CAN do. Naming a picture is not on its own a request
+// this has to refuse: "write proper alt text for the images" is supported and works, so it
+// must not be answered with "a picture cannot be added".
+const IMAGE_FIELD = /\b(alt|alt-text|caption|describe|description|links?|urls?|hrefs?|point(s|ing)? to)\b/i;
+
+const CANNOT_PICTURE =
+  'Nothing changed — a picture cannot be added, swapped or resized from here. There is nowhere for '
+  + 'this to get an image from: Playbook Mail keeps no library this can read, and a made-up address would '
+  + 'arrive as a broken image in a sent email. A picture’s size is the file’s own and belongs to the builder '
+  + 'that places it. Add or change it in Playbook Mail, which has an uploader, then come back — the blast '
+  + 'picks the design up on its own, so there is nothing to pull in afterwards. What this CAN change about '
+  + 'an image is its alt text and the link it opens.';
+
+const CANNOT_STRUCTURE =
+  'Nothing changed — adding, removing or reordering parts of a design is structural, and this edits what is '
+  + 'already there rather than rebuilding it. Do it in Playbook Mail and the blast takes the new version on its '
+  + 'own. This can change the words, the colours, the sizes and spacing, and the alt text and links on images.';
+
+// Exported so it can be tested against real phrasing without standing up the whole endpoint;
+// the handler is the default export and an extra named one is inert.
+export const noChangeNote = (instruction) => {
+  const text = String(instruction || '');
+  // A picture is named: that is the answer, whether or not a verb came with it. "Make the photo
+  // bigger" is a sizing request this genuinely cannot do either, since an image's dimensions are
+  // the file's own — see lib/beeshape.js.
+  // ...unless what they named about it is one of the two things this does handle, in which
+  // case nothing changed for an ordinary reason and the plain message is the honest one.
+  if (PICTURE.test(text) && !IMAGE_FIELD.test(text)) return CANNOT_PICTURE;
+  // A part of the design is named AND something is being done to it. "Tighten the gaps between
+  // sections" names sections and is perfectly possible, so the verb has to be there too.
+  if (STRUCTURE.test(text) && ADDREMOVE.test(text)) return CANNOT_STRUCTURE;
+  return 'The model made no changes.';
+};
 
 const RULES = [
   'You are editing outreach email copy for Playbook Sports, a sports-organisation software company.',
