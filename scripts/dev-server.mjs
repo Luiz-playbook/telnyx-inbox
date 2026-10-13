@@ -214,6 +214,22 @@ const server = http.createServer(async (req, res) => {
 function watchLibsAndRestart() {
   const WATCHED = path.join(root, 'lib');
   if (!fs.existsSync(WATCHED)) return;
+
+  // .env TOO. Its server-side half needs a restart to be re-read, and its client-side half needs
+  // ui/config.js rewritten — one edit needs both, which is exactly the pair a person forgets.
+  // The rewrite happens on the NEW process's boot, which this file has always done.
+  const ENV = path.join(root, '.env');
+  if (fs.existsSync(ENV)) {
+    let envTimer = null;
+    fs.watch(ENV, () => {
+      clearTimeout(envTimer);
+      envTimer = setTimeout(() => {
+        if (!firstSeen) firstSeen = Date.now();
+        changed.add('.env');
+        restart();
+      }, 250);
+    });
+  }
   let timer = null, going = false, firstSeen = 0;
   const changed = new Set();
 

@@ -162,6 +162,34 @@ const server = http.createServer(async (req, res) => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// ui/config.js IS GENERATED, so regenerate it on boot.
+//
+// scripts/gen-config.js writes the browser's Supabase URL, anon key and webhook URLs out of the
+// environment. Vercel runs it as the build step; locally nothing did — in THIS file. The .mjs
+// twin has always regenerated on boot, which is the drift its own header warns about: change a
+// client-side value in .env, start the server you happen to run, and the browser quietly keeps
+// the config from whenever the file was last written by hand.
+//
+// A CHILD PROCESS, not require(). gen-config.js runs its work at import time and writes on load,
+// so require()ing it here would work exactly once per process and be invisible as a dependency.
+// Spawning it is honest about what it is — a build step — and inherits process.env, which
+// --env-file has already populated, so the child sees the same values without being told.
+//
+// SYNCHRONOUS, so the file is on disk before the first request can ask for it.
+function regenConfig(why) {
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'gen-config.js')], { stdio: 'pipe' });
+    console.log(`  ui/config.js   regenerated${why ? ' (' + why + ')' : ''}`);
+  } catch (e) {
+    // Never fatal. A stale config.js still serves the app; a dev server that refuses to start
+    // because of its build step does not.
+    console.warn('  gen-config failed:', (e.stderr ? String(e.stderr).trim() : e.message).slice(0, 200));
+  }
+}
+regenConfig();
+
+// ---------------------------------------------------------------------------------------------
 // AUTO-RESTART ON A lib/ EDIT.
 //
 // The check above is correct and stays, but it was only ever a refusal: Node has cached the old
@@ -185,6 +213,24 @@ const server = http.createServer(async (req, res) => {
 function watchLibsAndRestart() {
   const WATCHED = path.join(ROOT, 'lib');
   if (!fs.existsSync(WATCHED)) return;
+
+  // .env TOO. Its server-side half needs a restart to be re-read, and its client-side half needs
+  // config.js rewritten — so one edit needs both, which is exactly the pair a person forgets.
+  const ENV = path.join(ROOT, '.env');
+  if (fs.existsSync(ENV)) {
+    let envTimer = null;
+    fs.watch(ENV, () => {
+      clearTimeout(envTimer);
+      // firstSeen is what caps the in-flight wait. Without setting it the cap is measured from
+      // 0, the wait is skipped, and an .env edit would drop a request a lib/ edit would not.
+      envTimer = setTimeout(() => {
+        regenConfig('.env changed');
+        if (!firstSeen) firstSeen = Date.now();
+        changed.add('.env');
+        restart();
+      }, 250);
+    });
+  }
   let timer = null, going = false, firstSeen = 0;
   const changed = new Set();
 

@@ -14088,7 +14088,11 @@ This removes its school and season dates. Venues in this market are not touched.
               if(!chosen) return;
               const fs = document.createElement('div');
               fs.className = 'pb-modal-overlay';
-              fs.style.zIndex = '70';
+              // ABOVE THE PICKER, which is also a .pb-modal-overlay and therefore z-index 10000.
+              // This was 70 — a number that looks like a layer but is nowhere near the scale this
+              // app uses, so the full-screen preview opened UNDERNEATH the dialog that launched
+              // it and showed through around the edges.
+              fs.style.zIndex = '10010';
               fs.innerHTML =
                 `<div class="pb-modal-card p-0 overflow-hidden" role="dialog" aria-modal="true" aria-label="Preview of ${esc(chosen.name)}" style="max-width:min(900px,96vw);width:96vw">
                    <div class="flex items-center gap-2 px-4 py-2.5 border-b border-base-300 bg-base-200/50">
