@@ -39,6 +39,8 @@
 // Keep this in sync with EMAIL_SENDERS / cakemailSender in ui/index.html.
 
 import { sendCampaign, parseCakemailFrom, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
+import { injectBody } from '../lib/tokens.js';
+import { renderAttachedTemplate } from '../lib/design.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
 import { bulkSmsConfigured, bulkSmsStatus, listRoutes, smsPathFor, stageCampaign, findCampaignByKey, listCampaigns, campaignKeyFor, startsCooldown, draftHolds, heldByDraft, DRAFT_HOLD_DAYS } from '../lib/bulk-sms.js';
@@ -676,7 +678,59 @@ export default async function handler(req, res) {
         }
       }
       if (r.email && emails.length) {
-        const html = nl2br(r.email_copy || '');
+        // A CakeMail DESIGN wins over the plain-text body when one is attached (migration 120).
+        //
+        // email_html is already finished HTML — rendered from a CakeMail template by
+        // api/cakemail-templates.js with [GAME]/[DATE]/[SPORT] filled at the moment it was
+        // attached — so it is sent VERBATIM. Running it through nl2br would escape every tag
+        // and deliver the markup as visible text, which is exactly the thing that made pasting
+        // a design into email_copy impossible before 120.
+        //
+        // email_copy is NOT cleared when a design is attached and is still what the Queue shows
+        // and what the row reads as. It stops being what goes out, which is why the Queue puts
+        // a badge above the body box saying so — a body that reads one way and sends another,
+        // unlabelled, is the worst outcome available here.
+        let design = String(r.email_html || '').trim();
+
+        // TAKE THE LATEST DESIGN, BEST EFFORT. A template edited in CakeMail after the blast was
+        // set up would otherwise go out in its old form, and the operator who made that edit has
+        // no reason to suspect it. So the template is re-rendered here and the fresher version
+        // used when it differs.
+        //
+        // BEST EFFORT IS LOAD-BEARING. lib/cakemail.js is explicit that a send must not depend
+        // on a third-party read succeeding at the moment the cron fires; the whole reason the
+        // HTML is copied onto the row is so a blast can go out when CakeMail cannot be reached.
+        // So every failure here falls back to the snapshot and the blast still sends. The only
+        // thing an outage costs is the update.
+        //
+        // NOT FOR sent/partial — those never reach this branch (they are not due) and their copy
+        // is history either way.
+        //
+        // ⚠️ TODO(notifications): the operator should be TOLD when this swaps a confirmed
+        // blast's design, before it goes. The notification plumbing does not exist yet, so for
+        // now it is recorded in the run's notes and the Queue shows the same warning ahead of
+        // time. Wire this to a real notification when that lands — the warning in the Queue is
+        // seen only by someone who happens to open the row.
+        if (design && r.cakemail_template_id) {
+          try {
+            const fresh = await renderAttachedTemplate(r);
+            if (fresh && fresh.html !== design) {
+              design = fresh.html;
+              notes.push(`design refreshed from CakeMail before sending (${r.cakemail_template_name || r.cakemail_template_id})`);
+              // Written back so the Queue and Market History agree with what actually went out.
+              await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, {
+                method: 'POST', headers: { ...sh, 'content-type': 'application/json' },
+                body: JSON.stringify({ p_id: r.id, p_html: fresh.html, p_template_id: r.cakemail_template_id, p_template_name: r.cakemail_template_name }),
+              }).catch(() => {});
+            }
+          } catch { notes.push('could not check CakeMail for a newer design — sent the stored one'); }
+        }
+
+        // [BODY] in the design is filled HERE, not when it was attached, so an edit to the copy
+        // in the Queue is always what goes out. A design with no [BODY] stands alone and the
+        // copy is not used — see lib/tokens.js.
+        const html = design ? injectBody(design, r) : nl2br(r.email_copy || '');
+        if (design) notes.push(`design: ${r.cakemail_template_name || `CakeMail template ${r.cakemail_template_id || '?'}`}`);
         // The row's title is queue bookkeeping — "[TEST] angels — Anaheim" — and it used to
         // be sent as the subject line, so that string reached the recipient's inbox.
         // api/queue-draft.js now fills email_subject from the template ("Early access
@@ -734,6 +788,9 @@ export default async function handler(req, res) {
               emailDelivered = true;
               // The campaign id is the one provider reference that makes a logged recipient
               // checkable against the provider's own record later.
+              // Said out loud: these addresses are in the market and were NOT mailed, which is a
+              // data problem to fix at source rather than something to discover later.
+              if (out.skipped) notes.push(`${out.skipped} address${out.skipped === 1 ? '' : 'es'} skipped as unmailable (${out.skippedSample.join(', ')}${out.skipped > out.skippedSample.length ? ', …' : ''})`);
               logRecipients(emails, 'email', 'cakemail', {
                 sender: r.email_from || null, provider_id: String(out.campaignId || '') || null,
               });

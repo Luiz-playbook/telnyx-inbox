@@ -1,0 +1,90 @@
+-- Rollback for 120.
+--
+-- Puts get_campaign_queue() back to its 103 signature and drops the writer. THE COLUMNS ARE
+-- LEFT ON THE TABLE on purpose: dropping them would destroy the attached design on every row
+-- that has one, and a rollback is usually run because something ELSE is wrong. Once the
+-- function stops returning them the UI cannot see them, which is all that is needed to undo the
+-- behaviour; api/queue-tick.js reads email_html through this same function, so it falls back to
+-- nl2br(email_copy) the moment this runs.
+--
+-- To drop the data as well, after you are sure:
+--   alter table public.campaign_queue
+--     drop column email_html, drop column cakemail_template_id, drop column cakemail_template_name;
+
+drop function if exists public.queue_set_email_html(uuid, text, bigint, text);
+
+drop function if exists public.get_campaign_queue();
+
+create function public.get_campaign_queue()
+returns table(
+  id uuid, title text, state_code text, state_name text, event_id uuid,
+  email boolean, sms boolean, phone_count integer, sms_count integer, ticket_price numeric,
+  email_copy text, sms_copy text, scheduled_for timestamp with time zone, status text,
+  confirmed_at timestamp with time zone, snooze_count integer, sent_at timestamp with time zone,
+  is_placeholder boolean, created_at timestamp with time zone, email_from text, sms_from text,
+  email_count integer, team text, opponent text, event_date date, league text, sport text,
+  venue text, market_key text, country text, ticket_url text, email_subject text,
+  archived_at timestamp with time zone, segment text, rejected_at timestamp with time zone,
+  reject_note text, price_source text, priced_at timestamp with time zone, price_seats smallint,
+  price_currency text, segment_email_count integer, segment_phone_count integer,
+  send_failures text, trigger_instructions text, strategy text
+)
+language sql
+stable
+security definer
+set search_path to 'public'
+as $function$
+  select
+    q.id, q.title, q.state_code, q.state_name, q.event_id,
+    q.email, q.sms,
+    case when q.status in ('sent','partial') then q.phone_count
+         else coalesce(mc.phone_count::int, q.phone_count) end as phone_count,
+    case when q.status in ('sent','partial') then q.sms_count
+         else coalesce(mc.phone_count::int, q.sms_count) end   as sms_count,
+    coalesce(q.ticket_price, em.best_price) as ticket_price,
+    q.email_copy, q.sms_copy, q.scheduled_for, q.status, q.confirmed_at,
+    q.snooze_count, q.sent_at, q.is_placeholder, q.created_at,
+    q.email_from, q.sms_from,
+    case when q.status in ('sent','partial') then q.email_count
+         else coalesce(mc.email_count::int, q.email_count) end as email_count,
+    coalesce(em.team_full, initcap(nullif(btrim(q.team), '')), q.team)      as team,
+    coalesce(initcap(nullif(btrim(em.opponent), '')), q.opponent)           as opponent,
+    em.event_date,
+    upper(em.league) as league,
+    case lower(em.league)
+      when 'mlb' then 'Baseball'
+      when 'nba' then 'Basketball'
+      when 'nhl' then 'Ice Hockey'
+      when 'nfl' then 'Football'
+      when 'cfb' then 'Football'
+      when 'wnba' then 'Basketball'
+      else initcap(em.league)
+    end as sport,
+    em.venue,
+    em.market_code as market_key,
+    gr.country,
+    em.price_url as ticket_url,
+    q.email_subject,
+    q.archived_at,
+    q.segment,
+    q.rejected_at,
+    q.reject_note,
+    em.price_source,
+    em.priced_at,
+    em.price_seats,
+    em.price_currency,
+    case when q.status in ('sent','partial') then q.email_count else msc.email_count::int end as segment_email_count,
+    case when q.status in ('sent','partial') then q.phone_count else msc.phone_count::int end as segment_phone_count,
+    q.send_failures,
+    q.trigger_instructions,
+    q.strategy
+  from public.campaign_queue q
+  left join public.events_master em on em.id = q.event_id
+  left join public.market_counts mc on mc.code = q.state_code
+  left join public.market_segment_counts msc
+         on msc.code = q.state_code and msc.segment = q.segment
+  left join public.geo_region gr    on gr.code = q.state_code
+  order by q.scheduled_for asc, q.created_at asc;
+$function$;
+
+grant execute on function public.get_campaign_queue() to anon, authenticated, service_role, readonly_preview;

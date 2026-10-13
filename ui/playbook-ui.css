@@ -214,6 +214,16 @@ h1, h2, .font-extrabold { font-weight: 700; letter-spacing: -.01em; }
   border: 1px solid #c3cbd1; accent-color: var(--navy);
 }
 .checkbox:checked, .checkbox[aria-checked="true"] { background-color: var(--navy); border-color: var(--navy); }
+/* THE DATE-RANGE CONTROL STACKED VERTICALLY and hung off the right edge, on all four tabs that
+   use it: Offers, Queue, Market History and Ticket Prices. `.join` is DaisyUI's and is supposed
+   to be inline-flex, but this stylesheet loads AFTER DaisyUI and only ever styled the corners —
+   so wherever that rule did not win, the three items (from, "to", to) fell back to block layout
+   and stacked on top of each other.
+   Stated here explicitly rather than left to load order and specificity. nowrap because the
+   point of a join is one continuous control; if the toolbar is short of room the whole join
+   should wrap as a unit, which is what the toolbar's own flex-wrap already does. */
+.join { display: inline-flex; align-items: stretch; flex-wrap: nowrap; }
+.join > .join-item { flex: 0 0 auto; }
 .join .join-item { border-radius: 0; }
 .join > :first-child.join-item { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
 .join > :last-child.join-item  { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }

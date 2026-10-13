@@ -17,6 +17,11 @@ import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailKey, cakemailKeyEnvName } from '../lib/cakemail.js';
 import { hubspotToken } from '../lib/hubspot.js';
+// Shared with api/cakemail-templates.js — see the note in lib/defang.js for why there is
+// exactly one copy of this.
+import { defangHtml } from '../lib/defang.js';
+// Shared with api/cakemail-templates.js, which names the same accounts in its picker.
+import { accountLabels } from '../lib/cakemail.js';
 
 export const config = { maxDuration: 30 };
 
@@ -26,51 +31,6 @@ const num = v => (v == null || v === '' ? null : Number(v));
 // lib/cakemail.js does, so moving a sub-account is a deployment change and not a code change.
 // An unknown id falls back to the raw number rather than being hidden: an unlabelled account is
 // something to notice, not something to swallow.
-// Make a sent email safe to LOOK at.
-//
-// sandbox="" on the iframe stops scripts, forms and top-level navigation — but it does NOT stop
-// a click navigating the iframe itself. Every blast ends in a one-click Unsubscribe, and that
-// URL unsubscribes on GET: previewing a blast in the panel could quietly opt a real contact out
-// of a real list (Vhea, 2026-09-08). Every tracked link in the body has the same shape, so a
-// stray click could also register a click against the campaign and move the numbers this tab
-// reports.
-//
-// Defanged HERE rather than in the browser, so a live href never reaches the page at all. The
-// address is kept in data-href so it is still inspectable, and the anchors keep their styling —
-// the point of the preview is to see what was sent, underlines included.
-function defangHtml(html) {
-  const inert =
-    '<style>a{pointer-events:none!important;cursor:default!important}' +
-    'form{pointer-events:none!important}</style>';
-  const body = String(html)
-    // href on anchors -> data-href. Handles quoted and bare values.
-    .replace(/(<a\b[^>]*?)\shref\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '$1 data-href=$2')
-    // and the same for a form that would post somewhere
-    .replace(/(<form\b[^>]*?)\saction\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '$1 data-action=$2')
-    // <base> would re-point every relative URL; nothing in a preview needs one
-    .replace(/<base\b[^>]*>/gi, '');
-  return inert + body;
-}
-
-function accountLabels() {
-  // Seeded with the live ids so an account can still be NAMED on a deploy that is missing its
-  // environment — which is the deploy most likely to be raising an error about it. Built only
-  // from the *_ACCOUNT_ID vars, this map was empty in exactly the case it was needed for, and
-  // the error fell back to "account 1679383". These ids mirror FALLBACK_ACCOUNT_ENV in
-  // lib/cakemail.js, which resolves the same three the same way and for the same reason.
-  // Anything the environment declares still wins, so moving a sub-account is a deployment
-  // change and not a code change.
-  const map = {
-    '1679383': 'Playbook Sports - Cole',
-    '1761047': 'Playbook Sports - Josh',
-    '1679456': 'Test',
-  };
-  const put = (env, label) => { const id = (process.env[env] || '').trim(); if (id) map[id] = label; };
-  put('PBSPORTS_COLE_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Cole');
-  put('PBSPORTS_CAKEMAIL_ACCOUNT_ID', 'Playbook Sports - Josh');
-  put('PBTESTACCOUNT_CAKEMAIL_ACCOUNT_ID', 'Test');
-  return map;
-}
 
 // Said in the two places a missing PAT surfaces — the HTML preview and the recipient roster.
 // The account is NAMED rather than numbered, because the id is a lookup for the reader and the
@@ -398,10 +358,16 @@ export default async function handler(req, res) {
   // aggregate: filtering on it returns every bounce with its own subtype in the row's `type`
   // (bounce_hb, bounce_sb, …), so the nine subtypes never need nine requests.
   //
-  // NEEDS logs:read ON THAT ACCOUNT'S TOKEN. Cole's PAT has campaigns+reports but not logs or
-  // suppressions, so his campaigns answer 403 here while production works — the 403 is passed
-  // through with the scope named rather than being flattened into an empty roster, because
-  // "nobody opened this" and "we are not allowed to ask" must not look the same.
+  // NEEDS logs:read ON THAT ACCOUNT'S TOKEN, and a 403 is passed through with the scope named
+  // rather than flattened into an empty roster, because "nobody opened this" and "we are not
+  // allowed to ask" must not look the same.
+  //
+  // No longer true of any live token: this used to say Cole's PAT had campaigns+reports but
+  // neither logs nor suppressions, so his campaigns answered 403 here while production worked.
+  // Re-checked 2026-10-13 after the token was reissued — logs, reports, suppressions and
+  // templates all answer 200 on BOTH 1679383 and 1761047. The scope is granted when a PAT is
+  // created (POST /users/self/pats), so fixing one of these is self-service and does not involve
+  // CakeMail support. The guard stays because a future token can always be issued narrow again.
   const wantActivity = String(req.query?.activity || '').trim();
   if (wantActivity) {
     if (!/^[0-9]+$/.test(wantActivity)) { res.status(400).json({ error: 'activity must be a campaign id' }); return; }
