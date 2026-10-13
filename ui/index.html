@@ -4104,9 +4104,16 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     // every skeleton row stopped one column short and the loading state had a notch cut out of
     // its right-hand side. A number still works, for callers with no element to hand.
     window.__tableLoading = (cols, what, rows) => {
-      const table = cols && cols.closest && cols.closest('table');
+      // A tbody id is the safest thing to hand in: an ELEMENT has to be in scope at the call
+      // site, and the Queue's `tb` lives inside render() while its loadingRows() sits beside
+      // it -- which threw a ReferenceError on first paint and left the table on its skeleton
+      // for good. A string is looked up here, where there is nothing to get wrong.
+      const el2 = typeof cols === 'string' ? document.getElementById(cols) : cols;
+      const table = el2 && el2.closest && el2.closest('table');
+      // Falls back to a wide span rather than 1: a skeleton a column too wide is invisible,
+      // one column wide is a grey stripe down the left of an empty table.
       const n2 = typeof cols === 'number' ? cols
-               : (table ? table.querySelectorAll('thead th').length : 1);
+               : (table ? table.querySelectorAll('thead th').length : 10);
       const n = rows || 6;
       const head = '<tr class="border-0" aria-busy="true"><td colspan="' + n2 + '" class="py-2.5">'
         + '<span class="sr-only">Loading ' + what + '&hellip;</span>'
@@ -13102,7 +13109,7 @@ This removes its school and season dates. Venues in this market are not touched.
       // The queue had its own copy of this — a bar AND a caption AND skeleton rows, which was
       // where the doubling was most obvious. It uses the shared one now, so all four tables wait
       // the same way.
-      function loadingRows(){ return window.__tableLoading(tb, 'queue'); }
+      function loadingRows(){ return window.__tableLoading('q-rows', 'queue'); }
 
       function render(){
         const tb = el('q-rows');
@@ -15521,7 +15528,7 @@ This removes its school and season dates. Venues in this market are not touched.
         // every refresh look like a fresh page load (Vhea, 2026-09-08). Keep the current rows,
         // dim them, and let them be replaced when the new ones arrive.
         const firstLoad = !ROWS.length;
-        if(firstLoad) tb.innerHTML = window.__tableLoading(tb, 'ticket prices');
+        if(firstLoad) tb.innerHTML = window.__tableLoading('tp-rows', 'ticket prices');
         else tb.style.opacity = '.45';
         const settle = () => { tb.style.opacity = ''; };
         try {
