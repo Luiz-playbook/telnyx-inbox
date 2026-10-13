@@ -14180,7 +14180,7 @@ This removes its school and season dates. Venues in this market are not touched.
                    </div>
                    <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3 shrink-0" data-fsaibar>
                      <div class="text-xs font-semibold text-[#133b49]">Edit this design with AI</div>
-                     <div class="text-[11px] text-base-content/60 mb-1.5">Changes the <b>words</b> only. For colours, images or layout, edit the design in Playbook Mail. <b>Either kind of change is picked up on its own</b> &mdash; the blast always sends the design as it stands when it goes.</div>
+                     <div class="text-[11px] text-base-content/60 mb-1.5">Changes the <b>words</b> and the <b>colours</b> &mdash; "shorter, and make the buttons our orange" works as one instruction. Images, fonts and layout are still changed in Playbook Mail. <b>Every change is picked up on its own</b>; the blast sends the design as it stands when it goes.</div>
                      <div class="flex gap-2 items-start">
                        <textarea class="textarea textarea-bordered textarea-sm flex-1 text-xs" rows="2" data-fsai-what
                          placeholder="e.g. make the opening shorter and mention the cheapest seat" aria-label="What to change"></textarea>
@@ -14359,7 +14359,7 @@ This removes its school and season dates. Venues in this market are not touched.
                     body: JSON.stringify({ queue_id: rowId, instruction, target: 'template' }) });
                   const j = await r.json().catch(() => ({}));
                   if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-                  const n = (j.changed || []).length;
+                  const n = (j.changed || []).length + (j.recoloured || []).length;
                   if(!n){
                     aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
                     aiNote.textContent = j.note || 'The model made no changes.';
@@ -14371,7 +14371,15 @@ This removes its school and season dates. Venues in this market are not touched.
                     // design just before it sends (api/queue-tick.js), so this is already what
                     // will go out. Refresh is only for making the Queue's own preview agree
                     // now, and saying otherwise taught people a step that does nothing.
-                    aiNote.textContent = `${n} block${n === 1 ? '' : 's'} rewritten and saved in Playbook Mail. `
+                    // WHAT CHANGED, IN ITS OWN TERMS. "4 blocks rewritten" says nothing about a
+                    // recolour, and a person who asked for orange buttons wants to read that
+                    // the buttons went orange — the preview above shows it, but the line under
+                    // the box is what they look at first.
+                    const nt = (j.changed || []).length, nc = (j.recoloured || []).length;
+                    const did = [];
+                    if(nt) did.push(`${nt} text block${nt === 1 ? '' : 's'} rewritten`);
+                    if(nc) did.push(`${nc} colour${nc === 1 ? '' : 's'} changed (${(j.recoloured || []).slice(0, 3).map(c => c.role).join(', ')}${nc > 3 ? `, +${nc - 3} more` : ''})`);
+                    aiNote.textContent = `${did.join(' and ')}, saved in Playbook Mail. `
                       + (j.affected > 1 ? `All ${j.affected} blasts using this design will send the new version. ` : 'This blast will send the new version. ')
                       + 'No need to pull it in.';
                   }
@@ -14645,7 +14653,7 @@ This removes its school and season dates. Venues in this market are not touched.
                <div class="text-xs font-semibold text-[#133b49] mb-1">What should it change?</div>
                <label class="flex gap-2 items-start p-2 rounded border border-base-300 mb-1.5 cursor-pointer">
                  <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="draft" checked>
-                 <span class="text-xs"><b>Just this blast&rsquo;s words</b><br><span class="text-base-content/60">Rewrites the text held on this row. Nothing is saved to Playbook Mail and no other blast changes.</span></span>
+                 <span class="text-xs"><b>Just this blast&rsquo;s words</b><br><span class="text-base-content/60">Rewrites the text held on this row. There is no design to colour here &mdash; nothing is saved to Playbook Mail and no other blast changes.</span></span>
                </label>
                ${/* OFFERED ONLY WITH A DESIGN ON THE ROW. Both of these edit a template, and
                      with none attached there is nothing to edit — so they say why rather than
@@ -14715,10 +14723,13 @@ This removes its school and season dates. Venues in this market are not touched.
                         lines:[ 'Only this blast changed. Undo in the row puts it back.' ] });
                 shut();
               } else {
-                const n = (j.changed || []).length;
+                const nt = (j.changed || []).length, nc = (j.recoloured || []).length, n = nt + nc;
                 if(!n){ out.textContent = j.note || 'The model made no changes.'; out.classList.remove('hidden'); return; }
+                const did = [];
+                if(nt) did.push(`${nt} text block${nt === 1 ? '' : 's'} changed`);
+                if(nc) did.push(`${nc} colour${nc === 1 ? '' : 's'} changed (${(j.recoloured || []).slice(0, 3).map(c => c.role).join(', ')}${nc > 3 ? `, +${nc - 3} more` : ''})`);
                 toast({ type:'ok', title:`"${j.name || 'The design'}" was edited in Playbook Mail`,
-                        lines:[ `${n} text block${n === 1 ? '' : 's'} changed.`
+                        lines:[ `${did.join(' and ')}.`
                                 + (choice === 'copy'
                                     ? ' It is this blast’s own copy, so nothing else was touched.'
                                     : ` This affects ${j.affected} blast${j.affected === 1 ? '' : 's'}.`),

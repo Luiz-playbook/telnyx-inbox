@@ -27,7 +27,8 @@ import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
 import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 import { cakemailGet, cakemailPatch, cakemailKey, cakemailKeyEnvName, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
-import { beeTextNodes, applyBeeText, designShape } from '../lib/beetext.js';
+import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/beetext.js';
+import { beeColourSlots, applyBeeColours, beeColoursToPrompt, sameColour } from '../lib/beestyle.js';
 import { gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
@@ -130,9 +131,9 @@ const context = r => [
 // So "make the colours blue" comes back with all nineteen blocks unchanged and nothing is
 // written, which is correct and reads as broken. "The model made no changes" is true and
 // useless here; it is the one instruction people try first on a design they are looking at.
-const VISUAL = /\b(colou?rs?|background|backdrop|font|typeface|image|images|photo|picture|logo|layout|spacing|padding|margin|border|theme|styling|bolder|bigger|smaller|wider|align|alignment)\b/i;
+const VISUAL = /\b(image|images|photo|picture|logo|layout|spacing|padding|margin|font|typeface|bigger|smaller|wider|align|alignment|move|reorder)\b/i;
 const noChangeNote = (instruction) => VISUAL.test(String(instruction || ''))
-  ? 'Nothing changed, because this edits the WORDS in a design. Colours, images, fonts and layout belong to the design itself \u2014 open it in Playbook Mail to change those. Whatever you change there is what the blast sends.'
+  ? 'Nothing changed. This edits the words and the colours of a design; images, fonts, spacing and layout are part of the design itself \u2014 open it in Playbook Mail for those. Whatever you change there is what the blast sends.'
   : 'The model made no changes.';
 
 const RULES = [
@@ -141,6 +142,17 @@ const RULES = [
   'Never invent a fact — no prices, dates, fixtures, names or guarantees that are not given to you.',
   'Leave any [TOKEN] in square brackets exactly as it is; those are filled in later and a changed one breaks the send.',
   'Write plain text only. No HTML tags, no markdown.',
+];
+
+// COLOURS ARE A SEPARATE SKILL, so they get separate rules. The failure mode is not a bad
+// sentence, it is a design that renders wrong in an inbox nobody can preview — grey on grey,
+// a button whose label vanishes into it — and that goes out to a whole market.
+const COLOUR_RULES = [
+  'Every colour must be a hex value like #1d4ed8. Never answer with a colour name.',
+  'Return a colour unchanged if the instruction does not concern it. Changing a palette you were not asked about is an error.',
+  'Text must stay readable on what is behind it, and a button label readable on its button. Never set a text colour close to its background.',
+  'A colour is listed with what it is FOR. "Make the buttons blue" means the button slots, not every slot that happens to share their colour.',
+  'Keep greys grey unless asked otherwise: they are borders, rules and small print, not brand colour.',
 ];
 
 export default async function handler(req, res) {
@@ -227,13 +239,25 @@ export default async function handler(req, res) {
     if (shape.kind === 'bee') {
       const nodes = beeTextNodes(detail.content.json);
       const numbered = nodes.map((html, i) => `[${i + 1}] ${toText(html)}`).join('\n');
+      // THE PALETTE GOES IN THE SAME BREATH AS THE WORDS. One instruction, one call: a person
+      // looking at a design says "shorter, and make the buttons match our orange" as one
+      // thought, and splitting that into two features would mean two round trips and two
+      // chances for the second to contradict the first.
+      const slots = beeColourSlots(detail.content.json);
+      const palette = beeColoursToPrompt(detail.content.json);
       const out = await ask([
         { role: 'system', content: RULES.concat(
+            slots.length ? COLOUR_RULES : [],
             `This design has ${nodes.length} text block${nodes.length === 1 ? '' : 's'}, numbered below.`,
-            `Return JSON: {"blocks": ["<new text for 1>", "<new text for 2>", ...]} with EXACTLY ${nodes.length} item${nodes.length === 1 ? '' : 's'}, in the same order.`,
-            'Each item must be a PLAIN STRING, not an object. Return a block unchanged if the instruction does not concern it. Never merge, split, add or drop blocks.',
-          ).join('\n') },
-        { role: 'user', content: `${context(row)}\n\nBlocks:\n${numbered}\n\nWhat to change: ${instruction}` },
+            slots.length ? `It also has ${slots.length} colour${slots.length === 1 ? '' : 's'}, numbered separately.` : '',
+            `Return JSON: {"blocks": ["<new text for 1>", ...]${slots.length ? `, "colors": ["<hex for 1>", ...]` : ''}}`,
+            `"blocks" must have EXACTLY ${nodes.length} item${nodes.length === 1 ? '' : 's'}, in the same order.`,
+            slots.length ? `"colors" must have EXACTLY ${slots.length} items, in the same order. Omit "colors" entirely if no colour should change.` : '',
+            'Each item must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
+          ).filter(Boolean).join('\n') },
+        { role: 'user', content: `${context(row)}\n\nBlocks:\n${numbered}`
+            + (slots.length ? `\n\nColours:\n${palette}` : '')
+            + `\n\nWhat to change: ${instruction}` },
       ]);
       const blocks = out.blocks;
       if (!Array.isArray(blocks) || blocks.length !== nodes.length) {
@@ -257,13 +281,41 @@ export default async function handler(req, res) {
         const want = String(wants[i]).trim();
         if (!want || want === toText(orig)) return orig;
         changed.push({ index: i + 1, before: toText(orig), after: want });
-        return `<p>${toHtml(want)}</p>`;
+        // Keeps the original markup where the block is a single run of words -- a button label
+        // and its wrapper, a styled line -- and falls back to a plain paragraph only where
+        // there is no single run to put the new words into.
+        return setInnerText(orig, want) ?? `<p>${toHtml(want)}</p>`;
       });
-      if (!changed.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
+      // COLOURS, IF THE MODEL OFFERED ANY. Absent or the wrong length means "no colour change"
+      // rather than an error: a words-only instruction has no reason to produce a palette, and
+      // failing the whole edit because the model declined to answer a question it was not asked
+      // would make every text edit depend on a part of the answer nobody wanted.
+      //
+      // A WRONG VALUE IS DIFFERENT and does fail the edit — applyBeeColours throws on anything
+      // that is not a hex or rgb(). "dark blue" written into a style property renders as no
+      // colour at all, which looks like the design breaking by itself.
+      const recoloured = [];
+      let json = applyBeeText(detail.content.json, next);
+      const wantColours = Array.isArray(out.colors) && out.colors.length === slots.length
+        ? out.colors.map(asBlockText) : null;
+      if (wantColours && !wantColours.includes(null)) {
+        try {
+          json = applyBeeColours(json, wantColours);
+          slots.forEach((slot, i) => {
+            const to = String(wantColours[i] || '').trim();
+            if (to && !sameColour(to, slot.value)) recoloured.push({ index: i + 1, role: slot.role, before: slot.value, after: to, count: slot.count });
+          });
+        } catch (e) {
+          res.status(502).json({ error: `${String((e && e.message) || e)} Nothing was changed.` });
+          return;
+        }
+      }
+
+      if (!changed.length && !recoloured.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], recoloured: [], affected: shared + 1, note: noChangeNote(instruction) }); return; }
 
       await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
-        body: { content: { ...detail.content, json: applyBeeText(detail.content.json, next) } } }));
-      res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, affected: shared + 1 });
+        body: { content: { ...detail.content, json } } }));
+      res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, recoloured, affected: shared + 1 });
       return;
     }
 
