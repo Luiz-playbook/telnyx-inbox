@@ -67,26 +67,47 @@ const toHtml = t => String(t || '')
   .replace(/\n{2,}/g, '</p><p>')
   .replace(/\n/g, '<br>');
 
+// RETRIED ONCE, AND THE ERROR SAYS WHAT BROKE. A single socket failure on the way to the model
+// surfaced in the UI as the bare word "fetch failed" — undici's wording, with no hint whether it
+// was the model, Supabase or CakeMail that could not be reached, and no second attempt. One
+// retry costs a second and clears the common case; naming the step costs nothing and is the
+// difference between a report and a guess.
 async function ask(messages) {
   const target = openaiTarget(MODEL);
   if (!target.ok) throw new Error('No LLM configured — set OPENROUTER_OPENAI or OPENAI_API_KEY');
-  const r = await fetch(target.url, {
-    method: 'POST',
-    headers: target.headers,
-    body: JSON.stringify({
-      model: target.model,
-      messages,
-      temperature: 0.4,
-      response_format: { type: 'json_object' },
-      ...target.body,
-    }),
+  const body = JSON.stringify({
+    model: target.model, messages, temperature: 0.4,
+    response_format: { type: 'json_object' }, ...target.body,
   });
-  const j = await r.json().catch(() => null);
-  if (!r.ok) throw new Error(`${target.label} HTTP ${r.status}: ${(j && j.error && j.error.message) || ''}`.trim());
-  const text = j?.choices?.[0]?.message?.content;
-  if (!text) throw new Error(`${target.label} returned no content`);
-  try { return JSON.parse(text); } catch { throw new Error('The model did not return usable JSON'); }
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await fetch(target.url, { method: 'POST', headers: target.headers, body });
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(`${target.label} HTTP ${r.status}: ${(j && j.error && j.error.message) || ''}`.trim());
+      const text = j?.choices?.[0]?.message?.content;
+      if (!text) throw new Error(`${target.label} returned no content`);
+      try { return JSON.parse(text); } catch { throw new Error(`${target.label} did not return usable JSON`); }
+    } catch (e) {
+      lastErr = e;
+      // Only a transport failure is worth repeating. An HTTP error or unusable JSON is an
+      // answer, and asking the same question again will get the same answer.
+      const transport = /fetch failed|ECONNRESET|ETIMEDOUT|socket|network|aborted/i.test(String(e && e.message));
+      if (!transport || attempt === 2) break;
+      await new Promise(r => setTimeout(r, 600));
+    }
+  }
+  const msg = String((lastErr && lastErr.message) || lastErr);
+  throw new Error(/fetch failed/i.test(msg)
+    ? `Could not reach ${target.label} (${target.model}) — tried twice. The design was not changed.`
+    : msg);
 }
+
+// Everything else that leaves this process says which call it was, for the same reason.
+const step = (what, promise) => promise.catch(e => {
+  const m = String((e && e.message) || e);
+  throw new Error(/fetch failed/i.test(m) ? `Could not reach ${what}. The design was not changed.` : m);
+});
 
 // What the blast is about, so an edit can mention the fixture without being told it.
 const context = r => [
@@ -225,8 +246,8 @@ export default async function handler(req, res) {
       });
       if (!changed.length) { res.status(200).json({ ok: true, target: 'template', kind: 'bee', changed: [], affected: shared + 1, note: 'The model made no changes.' }); return; }
 
-      await cakemailPatch(`/templates/${templateId}`, { accountId: owner,
-        body: { content: { ...detail.content, json: applyBeeText(detail.content.json, next) } } });
+      await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
+        body: { content: { ...detail.content, json: applyBeeText(detail.content.json, next) } } }));
       res.status(200).json({ ok: true, target: 'template', kind: 'bee', name: detail.name, changed, affected: shared + 1 });
       return;
     }
@@ -241,8 +262,8 @@ export default async function handler(req, res) {
     ]);
     const after = String(asBlockText(out.copy) || '').trim();
     if (!after) { res.status(502).json({ error: 'The model did not return a usable body' }); return; }
-    await cakemailPatch(`/templates/${templateId}`, { accountId: owner,
-      body: { content: { ...detail.content, html: `<p>${toHtml(after)}</p>` } } });
+    await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
+      body: { content: { ...detail.content, html: `<p>${toHtml(after)}</p>` } } }));
     res.status(200).json({ ok: true, target: 'template', kind: 'html', name: detail.name,
       changed: [{ index: 1, before: toText(before), after }], affected: shared + 1 });
   } catch (e) {
