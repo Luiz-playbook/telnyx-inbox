@@ -26,12 +26,15 @@
 //
 // Runs from Vercel Cron (Authorization: Bearer CRON_SECRET) or on-demand
 // (x-send-secret: SEND_SECRET — server-only; the browser's public REPLY_SECRET is NOT accepted).
-// Reads the queue + recipients via anon RPCs; sends
-// through the same webhooks as the manual Queue "Confirm"; marks rows sent.
+// Reads the queue + recipients via anon RPCs; sends email through CakeMail or the Gmail mail
+// merge webhook, SMS through Salesmsg or the bulk sender; marks rows sent.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), optional CRON_SECRET / REPLY_SECRET,
-//      BULK_SEND_WEBHOOK_URL (SMS), EMAIL_SEND_WEBHOOK_URL (Gmail mail merge),
-//      CAKEMAIL_PAT (CakeMail — sent straight from here, no n8n).
+//      EMAIL_SEND_WEBHOOK_URL (Gmail mail merge),
+//      CAKEMAIL_PAT (CakeMail — sent straight from here, no n8n),
+//      BULK_SMS_API_URL / BULK_SMS_API_SECRET (Telnyx SMS, through the bulk sender — lib/bulk-sms.js).
+// ▲ 2026-10-14 (AI-965): BULK_SEND_WEBHOOK_URL (the n8n SMS webhook) is no longer read here. A
+// Telnyx blast sends only through the bulk sender's consent gate; see the SMS branch below.
 //
 // Email routing is decided by the row's email_from: a value shaped
 // 'cakemail:<account_id>:<sender_id>' goes straight to the CakeMail API via
@@ -43,7 +46,7 @@ import { injectBody } from '../lib/tokens.js';
 import { renderAttachedTemplate } from '../lib/design.js';
 import { replyAddressFor } from '../lib/reply-address.js';
 import { parseSalesmsgFrom, sendSmsBulk } from '../lib/salesmsg.js';
-import { bulkSmsConfigured, bulkSmsStatus, stageCampaign, findCampaignByKey, listCampaigns, campaignKeyFor, startsCooldown, draftHolds, heldByDraft, DRAFT_HOLD_DAYS } from '../lib/bulk-sms.js';
+import { bulkSmsConfigured, bulkSmsStatus, listRoutes, smsPathFor, stageCampaign, findCampaignByKey, listCampaigns, campaignKeyFor, startsCooldown, draftHolds, heldByDraft, DRAFT_HOLD_DAYS } from '../lib/bulk-sms.js';
 import { logOutboundSmsBatch, hubspotConfigured } from '../lib/hubspot.js';
 import { requireCaller } from '../lib/auth.js';
 import { supabaseKey } from '../lib/supabase.js';
@@ -65,6 +68,18 @@ import { supabaseKey } from '../lib/supabase.js';
 // runs out of time simply leaves the remaining rows untouched for the next hour — marking sent is
 // the last thing done per row, so a row is never recorded as sent when it was not.
 export const config = { maxDuration: 300 };
+
+// ▲ 2026-10-14 (AI-965). NO BULK STAGE NEAR THE END OF A RUN. If Vercel kills this function after
+// the bulk sender armed a campaign but before this row recorded its bulk_campaign_id, the row is
+// retried with no record of it. That is safe while its key is unchanged (a 409 adopts the
+// campaign), but if the row's title is edited in between, the retry gets a NEW key, a second
+// campaign is armed, and the same people are texted twice. So a bulk stage starts only while at
+// least BULK_STAGE_MIN_REMAINING_MS of the run's budget is left: the bulk sender's own
+// maxDuration is 240 s, so a stage begun 50 s in has finished, or been killed on that side, by
+// 290 s, leaving time to record it. Measured from tickStart, the first line of the handler.
+// Checked once per row, before any of its channels sends: out of time skips the whole row.
+const TICK_BUDGET_MS = config.maxDuration * 1000;
+const BULK_STAGE_MIN_REMAINING_MS = 250 * 1000;
 
 const normPhone = p => { let d=(p||'').replace(/[^\d+]/g,''); if(d&&d[0]!=='+'){ if(d.length===10)d='+1'+d; else if(d.length===11&&d[0]==='1')d='+'+d; } return d; };
 const validPhone = p => /^\+\d{10,15}$/.test(p||'');
@@ -98,6 +113,9 @@ const SENDING_PAUSED = false;   // lifted 2026-09-18
 const nl2br = s => (s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])).replace(/\n/g,'<br>');
 
 export default async function handler(req, res) {
+  // When this run started, for the bulk-stage deadline above. Taken before anything awaits:
+  // `now` (below) is read after the auth check, which can make a network call.
+  const tickStart = Date.now();
   const supaUrl = process.env.SUPABASE_URL, supaKey = supabaseKey();
   if (!supaUrl || !supaKey) { res.status(500).json({ error: 'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set' }); return; }
   const sh = { apikey: supaKey, Authorization: `Bearer ${supaKey}`, 'content-type': 'application/json' };
@@ -228,8 +246,11 @@ export default async function handler(req, res) {
   //
   // Two sources of truth for one URL, one of them silent about being empty. Setting the variable
   // fixes today; matching the default is what stops it coming back.
-  const smsHook = process.env.BULK_SEND_WEBHOOK_URL
-    || 'https://playbooksports.app.n8n.cloud/webhook/telnyx-bulk-send';
+  //
+  // ▲ 2026-10-14 (AI-965). There is no SMS webhook here any more. The n8n SMS webhook
+  // (BULK_SEND_WEBHOOK_URL) texted every number market_phones returned, and that list has no
+  // sms_opt_in filter (migration 050). After the routing change below nothing reached it, so it
+  // was removed rather than left as a branch that could start texting again.
   const emailHook = process.env.EMAIL_SEND_WEBHOOK_URL
     || 'https://playbooksports.app.n8n.cloud/webhook/gmail-bulk-send';
   const hookOk = u => u && !String(u).startsWith('<<');
@@ -426,6 +447,13 @@ export default async function handler(req, res) {
     }
 
     const results = [], held = [], errors = [];
+    // The bulk sender's numbers, asked for at most once a tick and only when a row needs them.
+    // A failed read is kept as the Error: smsPathFor reads it as 'unknown'. See lib/bulk-sms.js.
+    let bulkRoutes;
+    const bulkRoutesOnce = async () => {
+      if (bulkRoutes === undefined) bulkRoutes = await listRoutes().catch(e => e instanceof Error ? e : new Error(String(e)));
+      return bulkRoutes;
+    };
     for (const r of due) {
       const mkt = (r.state_code || '').toUpperCase();
       const cooling = isCooled(mkt, r.segment || null);
@@ -484,10 +512,13 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
-      // AI-965: bulkStaged = a draft now sits in the bulk sender awaiting approval (nothing sent);
+      // AI-965: bulkStaged = the bulk sender has this blast (sending, or a draft awaiting approval);
       // emailDelivered = an email channel really delivered. Together they decide who cools the
       // market: see the cooldown below.
-      let bulkStaged = false, emailDelivered = false, stagedCensus = null;
+      // ▲ 2026-10-14 (AI-965): bulkSending = the bulk sender ARMED it (running, paused or done, as
+      // startsCooldown reads it) — it sends with no approval step, so the market cools now, as a
+      // delivered email does.
+      let bulkStaged = false, bulkSending = false, emailDelivered = false, stagedCensus = null;
       // NOT `failed`. A note is something worth seeing that is not a send failure — and `failed`
       // is load-bearing: anything in it flips the row to status 'partial' (migration 058) and
       // shows up in Market History as a half-broken blast. A missing Mailhook return address
@@ -513,12 +544,40 @@ export default async function handler(req, res) {
           });
         }
       };
+      // ▲ 2026-10-14 (AI-965). OUT OF TIME SKIPS THE WHOLE ROW, before any channel sends. A row
+      // whose SMS goes to a Telnyx number (anything that is not a Salesmsg sender, the same test
+      // the SMS branch below uses) would start a bulk stage, and a bulk stage must not start once
+      // less than BULK_STAGE_MIN_REMAINING_MS of the run is left (see that constant). Failing only
+      // the SMS channel was wrong: on an SMS+email row the email still sent, the row was marked
+      // 'partial', the market cooled, and the SMS was never retried. So the row is left exactly
+      // as it was (nothing written, nothing sent) and the next run sends all of it.
+      //
+      // Checked here, after the audience is read and immediately before the first channel, so the
+      // check sits as close to the stage as it can: SMS is the first channel, and the only call
+      // between here and stageCampaign is the bulk sender's route list, read once per run. That is
+      // also why there is no second guard at the stage itself: one there could only fail the SMS
+      // channel, which is the bug this replaces. Email-only and Salesmsg rows are not affected.
+      if (r.sms && phones.length && !parseSalesmsgFrom(r.sms_from)
+          && TICK_BUDGET_MS - (Date.now() - tickStart) < BULK_STAGE_MIN_REMAINING_MS) {
+        held.push({ id: r.id, title: r.title, market: mkt, segment: r.segment || null,
+          reason: 'out of time in this run — the next run sends it' });
+        continue;
+      }
       if (r.sms && phones.length) {
         // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
         // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
-        // lib/salesmsg.js (OAuth, no API key); anything else is a Telnyx number and goes to
-        // the n8n bulk webhook. Keep in sync with SMS_SENDERS / salesmsgSender in ui/index.html.
+        // lib/salesmsg.js (OAuth, no API key); anything else is a Telnyx number. One of the bulk
+        // sender's own numbers goes to the bulk sender (AI-965, smsPathFor in lib/bulk-sms.js).
+        // ▲ 2026-10-14 (AI-965): any other Telnyx number, a blank sender, or a deployment where
+        // the bulk sender is not configured FAILS the channel. Those used to go to the n8n SMS
+        // webhook, which texted market_phones with no sms_opt_in check; a Telnyx blast now sends
+        // only through the bulk sender's consent gate.
+        // Keep in sync with SMS_SENDERS / salesmsgSender in ui/index.html.
         const sm = parseSalesmsgFrom(r.sms_from);
+        const configured = bulkSmsConfigured();
+        const smsPath = sm ? null : smsPathFor({
+          configured, from: r.sms_from, routes: configured ? await bulkRoutesOnce() : undefined,
+        });
         if (sm) {
           try {
             // Fan-out, not one call: Salesmsg broadcasts target saved contacts through a
@@ -536,14 +595,29 @@ export default async function handler(req, res) {
             })));
             // Same list, same reason: only what Salesmsg accepted. 'sent' rather than
             // 'handed_off' because Salesmsg answers per number, so this one IS a per-recipient
-            // acceptance — unlike the webhook path below.
+            // acceptance — unlike a webhook handoff.
             logRecipients(out.sentNumbers || [], 'sms', 'salesmsg', { sender: sm.phone, outcome: 'sent' });
           } catch (e) {
             failed.push(`Salesmsg failed: ${String((e && e.message) || e)}`);
           }
-        } else if (bulkSmsConfigured()) {
-          // AI-965, as built 2026-10-09. Stage a DRAFT in the bulk sender; a person approves it
-          // in the Operator App after reading the census. Nothing here arms. See lib/bulk-sms.js.
+        } else if (smsPath === 'unknown') {
+          // Not safe to guess: the bulk sender refuses every number that is not its own, and
+          // there is no other Telnyx path. A row with no other channel stays queued and the next
+          // tick asks again; one whose email went out is marked 'partial' with this text, as any
+          // half-failed blast is.
+          failed.push(`SMS not sent: could not read the bulk sender's numbers to tell whether ${r.sms_from} is one of them — ${String((bulkRoutes && bulkRoutes.message) || bulkRoutes)}`);
+        } else if (smsPath === 'webhook') {
+          // ▲ 2026-10-14 (AI-965). Not one of the bulk sender's numbers, no sender, or the bulk
+          // sender is not configured here. Nothing is sent: the only other Telnyx path was the n8n
+          // webhook, which skipped the consent gate. Fails like 'unknown' above.
+          failed.push(configured
+            ? `SMS not sent: ${String(r.sms_from || '').trim() || 'no sender'} is not one of the bulk sender's numbers — Telnyx blasts send only through the bulk sender's consent gate`
+            : `SMS not sent: the bulk sender is not configured here — Telnyx blasts send only through its consent gate`);
+        } else if (smsPath === 'bulk') {
+          // AI-965. Stage in the bulk sender. ▲ 2026-10-14: from production, at most 2,000
+          // eligible, the bulk sender arms it in the same request and it sends with no approval
+          // step; otherwise it is a draft a person approves in the Operator App after reading the
+          // census. Nothing here calls an arm route. See lib/bulk-sms.js.
           //
           // Crash-safe in the same order as before: stage (409 on a retried key) -> record the id.
           // campaignKeyFor is inside the try: a malformed row id becomes a failed channel,
@@ -586,29 +660,41 @@ export default async function handler(req, res) {
               campaignId = existing.id;
               staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.pending };
             }
-            // Approved already (running, paused or done): say so, rather than "awaiting approval".
-            const approved = ['running', 'paused', 'done'].includes(staged.status);
-            // The market cools when something is actually delivered. An SMS draft cools it when
-            // reconcileBulk sees it approved and sending; a delivered email on this row cools it
-            // at send time instead (and flips this to 'at_send' below). So always 'deferred' here.
+            // What the bulk sender actually did. ▲ 2026-10-14 (AI-965): from production, at most
+            // 2,000 eligible are armed in the same request — 'running', nobody approves. A draft
+            // (above the ceiling, a preview, a failed arm, or an adopted pre-10-14 draft) still
+            // waits in the Operator App. Read the status, never what we asked for.
+            const sending = ['running', 'paused', 'done'].includes(staged.status);
+            // The market cools when something is delivered. A campaign that is sending cools it
+            // this tick (bulkSending, below), but the row is ALWAYS written 'deferred' here: it
+            // becomes 'at_send' only once log_market_blast succeeded. If that log fails the row
+            // stays 'deferred' and reconcileBulk logs it next tick (it is running, so
+            // startsCooldown is true). A draft cools when reconcileBulk sees it approved and
+            // sending, or when a delivered email on this row flips it to 'at_send'.
             //
             // The PATCH is checked: fetch does not throw on an HTTP error, and a row without
             // bulk_campaign_id is invisible to reconcile, so its market would never cool. Throwing
             // fails the channel, leaves the row unmarked, and the next tick re-adopts via 409.
+            const cooldown = 'deferred';
             const rec = await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
               body: JSON.stringify({
                 bulk_campaign_id: String(campaignId),
-                bulk_census: { ...(staged.raw || {}), cooldown: 'deferred' },
+                bulk_census: { ...(staged.raw || {}), cooldown },
               }),
             });
             if (!rec.ok) throw new Error(`could not record the bulk campaign on this row (HTTP ${rec.status}) — will retry`);
             bulkStaged = true;
-            stagedCensus = { ...(staged.raw || {}), cooldown: 'deferred' };
-            sent.push(approved
-              ? `SMS already approved in the Operator App — campaign is ${staged.status} (${staged.fromInbox || r.sms_from || 'route'})`
-              : `SMS staged for ${staged.eligible != null ? staged.eligible : '?'} of ${phones.length} — awaiting approval in the Operator App`
-                + ` (${staged.fromInbox || r.sms_from || 'route'})`);
+            bulkSending = sending;
+            stagedCensus = { ...(staged.raw || {}), cooldown };
+            const via = staged.fromInbox || r.sms_from || 'route';
+            const of = `${staged.eligible != null ? staged.eligible : '?'} of ${phones.length}`;
+            sent.push(sending
+              ? (staged.duplicate
+                  ? `SMS already sending — campaign is ${staged.status} (${via})`
+                  : `SMS sending to ${of} (${via})`)
+              : `SMS staged for ${of} — awaiting approval in the Operator App`
+                + (staged.why ? ` (${staged.why})` : '') + ` (${via})`);
             if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length}: ${Object.entries(staged.byReason || {}).map(([k, v]) => `${k} ${v}`).join(', ')}`);
             if (staged.collapsedDuplicates) notes.push(`${staged.collapsedDuplicates} duplicate handsets collapsed`);
             // NO hubspotLog here, on purpose. The bulk sender writes the inbox copy itself
@@ -617,45 +703,9 @@ export default async function handler(req, res) {
           } catch (e) {
             failed.push(`Bulk sender failed: ${String((e && e.message) || e)}`);
           }
-        } else if (hookOk(smsHook)) {
-          const messages = phones.map(to => ({ from: r.sms_from || undefined, to, text: r.sms_copy || '' }));
-          const rr = await fetch(smsHook, { method: 'POST', headers: { 'content-type': 'application/json', 'x-inbox-secret': webhookSecret }, body: JSON.stringify({ from: r.sms_from || undefined, messages }) });
-          // HANDED OFF, NOT DELIVERED — and the wording matters. The n8n webhook answers
-          // `responseMode: onReceived`, so this 200 means n8n accepted the payload. It does not
-          // mean Telnyx accepted one message, and certainly not that a handset received one. The
-          // old string ("SMS 1200") read as a delivery count, and on the strength of it the row
-          // was marked sent and the market locked out for 14 days — a blast that Telnyx rejected
-          // in full looked identical to one that worked.
-          //
-          // The true outcome arrives later and out-of-band, as Telnyx delivery receipts
-          // (message.finalized -> telnyx_update_status via the inbound workflow). Those receipts
-          // were never arriving because the send request did not ask for them; it now carries an
-          // explicit webhook_url. Turning those receipts back into a per-blast delivered figure
-          // additionally needs telnyx_messages to carry the queue row id, which it does not yet —
-          // see GAPS.md. Until that exists, this string is a claim about OUR side only, and says so.
-          (rr.ok ? sent : failed).push(rr.ok
-            ? `SMS ${messages.length} handed off (delivery unconfirmed)`
-            : `SMS failed (HTTP ${rr.status})`);
-          // AI-976. Only on a successful handoff — a rejected webhook means nothing was queued to
-          // send, and logging it would be recording an interaction that did not happen.
-          //
-          // The outcome is recorded as "handed off", NOT "delivered", for the same reason the
-          // status string above says so: this 200 is n8n accepting the payload, not Telnyx
-          // accepting a message. A HubSpot timeline claiming delivery we cannot evidence would
-          // spread the very confusion GAPS.md gap 2 is about.
-          if (rr.ok) {
-            hubspotLog.push(...phones.map(to => ({
-              to, from: r.sms_from || undefined, body: r.sms_copy || '',
-              sentAt: new Date().toISOString(), outcome: 'handed off to Telnyx',
-            })));
-            // 'handed_off', NOT delivered, for exactly the reason the status string above says
-            // so: this 200 is n8n accepting the payload, not Telnyx accepting a message and
-            // certainly not a handset receiving one. A log claiming delivery we cannot evidence
-            // would spread the confusion GAPS.md gap 2 is about.
-            logRecipients(phones, 'sms', 'telnyx', { sender: r.sms_from || null });
-          }
         } else {
-          failed.push('No SMS route: the row has no Salesmsg sender and BULK_SEND_WEBHOOK_URL is unset');
+          // smsPathFor returns only 'bulk', 'webhook' or 'unknown'. Anything else sends nothing.
+          failed.push(`SMS not sent: unexpected SMS path ${String(smsPath)}`);
         }
       }
       if (r.email && emails.length) {
@@ -823,20 +873,33 @@ export default async function handler(req, res) {
       // ▲ 2026-10-09 (AI-965): the market cools when something was actually delivered. A bulk
       // SMS draft delivered nothing yet, so unless an email really went out on this row, the
       // cooldown waits for reconcileBulk to see the campaign approved and sending.
-      const deferCooldown = bulkStaged && !emailDelivered;
+      // ▲ 2026-10-14 (AI-965): a campaign the bulk sender is already sending cools the market now;
+      // only a draft waits for reconcileBulk.
+      const deferCooldown = bulkStaged && !bulkSending && !emailDelivered;
       // The draft just staged holds its market for the rest of this tick too: draftHoldList was
       // read before the loop, and a second due row for the same market|segment is next in it.
       if (deferCooldown && mkt) draftHoldList.push({ id: r.id, code: mkt, segment: r.segment || null });
       if (r.state_code && (phones.length || emails.length) && !deferCooldown) {
-        await rpc('log_market_blast', {
+        const blastLog = await rpc('log_market_blast', {
           p_code: r.state_code, p_name: r.state_name || null,
           p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id,
           // Null for a whole-market row, which cools every segment (migration 049).
           p_segment: r.segment || null,
         });
+        // ▲ 2026-10-14 (AI-965): `cooled` was read once before the loop. A campaign that is sending
+        // does not sit in draftHoldList, so a second due row for the same market|segment would
+        // stage and (in production) arm too, texting the same people twice. Keep the in-memory set
+        // as current as the database: same keys isCooled reads (a whole-market row cools every
+        // segment, migration 049).
+        if (mkt) {
+          if (r.segment) cooled.add(`${mkt}|${r.segment}`);
+          else for (const sg of SEGMENTS) cooled.add(`${mkt}|${sg}`);
+        }
         // Cooled here, so tell reconcile not to log it again. Best effort: a failure only risks
         // a second (harmless) log when the campaign is approved.
-        if (bulkStaged) {
+        // Only once the log succeeded: rpc is a bare fetch and does not throw on an HTTP error. A
+        // failed log leaves the row 'deferred' for reconcileBulk to log next tick.
+        if (bulkStaged && blastLog.ok) {
           try {
             await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
@@ -886,7 +949,7 @@ export default async function handler(req, res) {
         hubspot, recipients_logged });
     }
 
-    res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { sms: hookOk(smsHook), bulk_sms: bulkSmsStatus(), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS }, bulk_reconcile: bulkReconcile, awaiting_approval: awaitingApproval, census_merge: censusMerge });
+    res.status(200).json({ ok: true, manual: !!onlyId, checked: q.length, due: due.length, sent: results, held, errors, webhooks: { bulk_sms: bulkSmsStatus(), email: hookOk(emailHook), cakemail: CAKEMAIL_ACCOUNTS }, bulk_reconcile: bulkReconcile, awaiting_approval: awaitingApproval, census_merge: censusMerge });
   } catch (e) {
     res.status(500).json({ error: String((e && e.message) || e) });
   }
