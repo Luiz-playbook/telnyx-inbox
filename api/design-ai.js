@@ -31,6 +31,7 @@ import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/be
 import { beeColourSlots, applyBeeColours, beeColoursToPrompt, sameColour } from '../lib/beestyle.js';
 import { beeStyleSlots, applyBeeStyles, beeStylesToPrompt, fontChoices } from '../lib/beeshape.js';
 import { beeImageSlots, applyBeeImages, beeImagesToPrompt } from '../lib/beeimage.js';
+import { htmlTextSlots, htmlTextNodes, applyHtmlText, htmlTextToPrompt } from '../lib/htmledit.js';
 import { gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
@@ -229,7 +230,20 @@ export default async function handler(req, res) {
   const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
   const queueId = String(body.queue_id || '').trim();
   const instruction = String(body.instruction || '').trim();
-  const target = body.target === 'template' ? 'template' : 'draft';
+  // THREE THINGS AN EDIT CAN LAND ON, and they differ in what EXISTS afterwards:
+  //
+  //   draft     the row's plain-text record. Nothing leaves this system, and it only reaches a
+  //             recipient through [BODY] or the first-paragraph fallback (lib/tokens.js).
+  //   send      the design THIS BLAST SENDS, and nothing else. The rendered HTML already on the
+  //             row is edited in place and the template link is dropped, so the row carries its
+  //             own one-off design. Playbook Mail is not touched and gains nothing.
+  //   template  the template itself, in Playbook Mail, for every blast using it.
+  //
+  // 'send' is the one AI-1125 asks to be the default, and it was the one missing: 'draft'
+  // rewrites the text RECORD, which is a different thing from "the design this blast sends"
+  // whenever the design does not carry [BODY].
+  const TARGETS = ['draft', 'send', 'template'];
+  const target = TARGETS.includes(body.target) ? body.target : 'draft';
   if (!/^[0-9a-f-]{36}$/i.test(queueId)) { res.status(400).json({ error: 'queue_id must be a row id' }); return; }
   if (!instruction) { res.status(400).json({ error: 'Say what you would like changed' }); return; }
 
@@ -271,6 +285,76 @@ export default async function handler(req, res) {
       if (!w.ok) { res.status(502).json({ error: `queue_set_copy failed (HTTP ${w.status})` }); return; }
 
       res.status(200).json({ ok: true, target: 'draft', before, after, affected: 1 });
+      return;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // SEND — this blast's own copy of the design. Playbook Mail is not touched at all.
+    //
+    // WHY THIS EDITS HTML AND NOT THE BEE BLOB. Editing the blob is the better edit, but a blob
+    // is not something anyone can look at: it has to go back to CakeMail and be rendered. That
+    // is fine for the two edits that END with a template in Playbook Mail, and impossible for
+    // the one whose whole point is that nothing is created there. So this edits what the row
+    // already holds — the rendered, token-filled HTML the tick is going to send — using
+    // lib/htmledit.js, and the result is stored straight back on the row.
+    //
+    // THE TEMPLATE LINK IS DROPPED, deliberately. api/queue-tick.js re-renders an attached
+    // design from CakeMail immediately before sending, so a locally edited row that still
+    // pointed at a template would have its edit silently replaced by the template's version at
+    // the worst possible moment. Without the link, the tick sends the stored HTML verbatim —
+    // which is exactly what "only for this send" means. Migration 120's queue_set_email_html
+    // already clears the id and name whenever a null template id is written, so this needs no
+    // schema change.
+    // ---------------------------------------------------------------------------------------
+    if (target === 'send') {
+      const html = String(row.email_html || '');
+      if (!html.trim()) {
+        res.status(400).json({ error: 'This blast has no design on it yet. Attach one from Playbook Mail first, then this can change it for this send only.' });
+        return;
+      }
+      const runs = htmlTextNodes(html);
+      if (!runs.length) { res.status(400).json({ error: 'This design has no editable text — nothing for the model to change.' }); return; }
+
+      const numbered = htmlTextToPrompt(html);
+      const out = await ask([
+        { role: 'system', content: RULES.concat(
+            `This design has ${runs.length} pieces of text, numbered below.`,
+            `Return JSON: {"blocks": ["<new text for 1>", ...]} with EXACTLY ${runs.length} items, in the same order.`,
+            'Each item must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
+          ).join('\n') },
+        { role: 'user', content: `${context(row)}\n\nText:\n${numbered}\n\nWhat to change: ${instruction}` },
+      ]);
+
+      const blocks = out.blocks;
+      if (!Array.isArray(blocks) || blocks.length !== runs.length) {
+        res.status(502).json({ error: `The model returned ${Array.isArray(blocks) ? blocks.length : 'no'} items for a design with ${runs.length}. Nothing was changed.` });
+        return;
+      }
+      // Same refusal as the template path: one unreadable item fails the whole edit rather than
+      // writing part of it. See asBlockText.
+      const wants = blocks.map(asBlockText);
+      const badAt = wants.findIndex(w => w === null);
+      if (badAt >= 0) {
+        res.status(502).json({ error: `The model returned item ${badAt + 1} in a form this cannot read (${typeof blocks[badAt]}). Nothing was changed.` });
+        return;
+      }
+      const flat = t => String(t || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
+      const changed = [];
+      const next = runs.map((orig, i) => {
+        const want = String(wants[i]).trim();
+        if (!want || want === flat(orig)) return null;      // null leaves the run exactly as it is
+        changed.push({ index: i + 1, before: flat(orig), after: want });
+        return want;
+      });
+      if (!changed.length) { res.status(200).json({ ok: true, target: 'send', changed: [], affected: 1, note: noChangeNote(instruction) }); return; }
+
+      const edited = applyHtmlText(html, next);
+      const keptName = row.cakemail_template_name || null;
+      const w = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, { method: 'POST', headers: h,
+        body: JSON.stringify({ p_id: queueId, p_html: edited, p_template_id: null, p_template_name: null }) });
+      if (!w.ok) { res.status(502).json({ error: `queue_set_email_html failed (HTTP ${w.status}). Nothing was changed.` }); return; }
+
+      res.status(200).json({ ok: true, target: 'send', changed, affected: 1, detached_from: keptName });
       return;
     }
 

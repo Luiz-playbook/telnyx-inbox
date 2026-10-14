@@ -14282,10 +14282,20 @@ This removes its school and season dates. Venues in this market are not touched.
                          <button class="btn btn-xs btn-ghost" data-fsai-cancel>Cancel</button>
                        </div>
                      </div>
-                     <label class="flex items-center gap-2 mt-2 text-[11px] text-[#133b49] cursor-pointer" data-fsai-dupwrap>
-                       <input type="checkbox" class="checkbox checkbox-xs" data-fsai-dup>
-                       <span>Copy this design first, so the change only affects this blast <span class="text-base-content/55" data-fsai-shared></span></span>
-                     </label>
+                    ${/* WHERE THE CHANGE LANDS, as a choice rather than a tick box. The tick
+                          box only offered "copy first or not", which hid the option most people
+                          actually want: change what THIS blast sends and leave the Playbook Mail
+                          library alone entirely. Three outcomes, so three options.
+                          (No backticks in here: template literal.) */''}
+                    <div class="flex items-center gap-2 mt-2 text-[11px] text-[#133b49] flex-wrap" data-fsai-dupwrap>
+                      <span class="shrink-0">Apply to</span>
+                      <select class="select select-bordered select-xs" data-fsai-where aria-label="Where the change should apply">
+                        <option value="send">this blast only &mdash; nothing saved to Playbook Mail</option>
+                        <option value="copy">a new copy of this design in Playbook Mail</option>
+                        <option value="template">this template itself, everywhere it is used</option>
+                      </select>
+                      <span class="text-base-content/55" data-fsai-shared></span>
+                    </div>
                      <div class="text-[11px] mt-1.5" data-fsai-note></div>
                    </div>
                    <div class="bg-base-200/40 flex-1 min-h-0 relative">
@@ -14356,9 +14366,23 @@ This removes its school and season dates. Venues in this market are not touched.
               };
 
               const spinner = fs.querySelector('[data-fsload]');
+              // WHAT THIS FRAME IS SHOWING. It starts as the template, and a "this blast only"
+              // edit moves it to the row: after that edit the template is deliberately unchanged,
+              // so a frame still pointed at the template would show nothing different and read
+              // as the edit having failed — the exact trap this preview was built to close.
+              let source = 'template';
               async function loadPreview(){
                 if(spinner) spinner.classList.remove('hidden');
                 try{
+                  if(source === 'row'){
+                    const rr = await fetch('/api/cakemail-templates?queue_id=' + encodeURIComponent(rowId) + '&_=' + Date.now(),
+                                           { headers: await apiHeaders() });
+                    const rj = await rr.json().catch(() => ({}));
+                    if(!rr.ok || rj.error) throw new Error(rj.error || ('HTTP ' + rr.status));
+                    html = rj.html || '';
+                    frame.srcdoc = html;
+                    return;
+                  }
                   // account_id is where the server looks FIRST, not the only place it looks: a
                   // design attached to this row may live in another Playbook Mail account, and
                   // pinning the lookup to the sending account turned that into a bare
@@ -14398,10 +14422,8 @@ This removes its school and season dates. Venues in this market are not touched.
                 show(aiBar);
                 aiNote.textContent = '';
                 const n = Math.max(0, sharedCount());
-                const dup = fs.querySelector('[data-fsai-dup]');
                 fs.querySelector('[data-fsai-shared]').textContent = n
-                  ? `— it is currently used by ${n + 1} blasts` : '— it is only used by this blast';
-                dup.checked = n > 0;
+                  ? `This design is used by ${n + 1} blasts.` : 'This design is only used by this blast.';
                 fs.querySelector('[data-fsai-dupwrap]').classList.toggle('hidden', false);
                 fs.querySelector('[data-fsai-what]').focus();
               });
@@ -14430,26 +14452,25 @@ This removes its school and season dates. Venues in this market are not touched.
                 const instruction = whatEl.value.trim();
                 if(!instruction){ aiNote.className = 'text-[11px] mt-1.5 text-error'; aiNote.textContent = 'Say what you would like changed.'; whatEl.focus(); return; }
                 const btn = e.currentTarget, label = btn.textContent;
+                const where = (fs.querySelector('[data-fsai-where]') || {}).value || 'send';
                 btn.disabled = true; btn.textContent = 'Thinking…';
                 aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
-                aiNote.textContent = 'Editing the design in Playbook Mail…';
+                aiNote.textContent = where === 'send'
+                  ? 'Changing the design this blast sends…' : 'Editing the design in Playbook Mail…';
                 try{
-                  // COPY FIRST, IF ASKED. Duplicating before the edit is what makes "change this
-                  // for my blast only" possible without a second concept: after it, the design
-                  // genuinely is this blast's own, and the edit that follows is unremarkable.
-                  if(fs.querySelector('[data-fsai-dup]').checked){
+                  // COPY FIRST, IF ASKED. Duplicating before the edit is what makes "a new copy
+                  // in Playbook Mail" possible without a second concept: after it, the design
+                  // genuinely is this blast's own template, and the edit that follows is the
+                  // ordinary template edit.
+                  if(where === 'copy'){
                     aiNote.textContent = 'Making a copy first…';
                     const made = await duplicateInto(rowId, chosen.id);
                     chosen = { id: made.template_id, name: made.name, tags: [], thumbnail_url: null };
                     fs.querySelector('[data-fsname]').textContent = made.name;
-                    fs.querySelector('[data-fsai-dup]').checked = false;
                     aiNote.textContent = 'Copy made. Editing it…';
                   }
-                  // ALWAYS the template. You are looking at the design, so the design is what
-                  // this edits — the per-blast option is on the row's own button, where the
-                  // blast is what is on screen.
                   const r = await fetch('/api/design-ai', { method:'POST', headers: await apiHeaders(),
-                    body: JSON.stringify({ queue_id: rowId, instruction, target: 'template' }) });
+                    body: JSON.stringify({ queue_id: rowId, instruction, target: where === 'copy' ? 'template' : where }) });
                   const j = await r.json().catch(() => ({}));
                   if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
                   const sum = aiSummary(j);
@@ -14458,16 +14479,36 @@ This removes its school and season dates. Venues in this market are not touched.
                     aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
                     aiNote.textContent = j.note || 'The model made no changes.';
                   } else {
+                    if(where === 'send'){
+                      // The row holds its own design now and no longer follows a template, so
+                      // this frame has to follow it there — the template is deliberately
+                      // unchanged and would show nothing different.
+                      source = 'row';
+                      const q = QUEUE.find(x => x.id === rowId);
+                      if(q){ q.cakemail_template_id = null; q.cakemail_template_name = null; }
+                      const nameEl = fs.querySelector('[data-fsname]');
+                      if(nameEl) nameEl.textContent = `This blast's own version of ${chosen.name}`;
+                      const whereEl = fs.querySelector('[data-fsai-where]');
+                      // Its template options no longer apply: there is no template behind this
+                      // row to copy or overwrite any more.
+                      if(whereEl){ whereEl.innerHTML = `<option value="send">this blast only</option>`; whereEl.disabled = true; }
+                      const sharedEl = fs.querySelector('[data-fsai-shared]');
+                      if(sharedEl) sharedEl.textContent = 'Playbook Mail is untouched.';
+                      render();
+                    }
                     await loadPreview();          // the whole point: show what changed
                     whatEl.value = '';
                     aiNote.className = 'text-[11px] mt-1.5 text-[#1b7a44]';
-                    // SAVED, AND THAT IS THE WHOLE OF IT. The tick re-renders an attached
-                    // design just before it sends (api/queue-tick.js), so this is already what
-                    // will go out. Refresh is only for making the Queue's own preview agree
-                    // now, and saying otherwise taught people a step that does nothing.
-                    aiNote.textContent = `${sum.text}, saved in Playbook Mail. `
-                      + (j.affected > 1 ? `All ${j.affected} blasts using this design will send the new version. ` : 'This blast will send the new version. ')
-                      + 'No need to pull it in.';
+                    // SAVED, AND THAT IS THE WHOLE OF IT. The tick re-renders an ATTACHED design
+                    // just before it sends (api/queue-tick.js), so a template edit is already
+                    // what will go out. A "this blast only" edit is not attached to anything, so
+                    // the stored HTML is sent verbatim. Either way there is nothing to pull in.
+                    aiNote.textContent = where === 'send'
+                      ? `${sum.text}, for this blast only. Nothing was saved to Playbook Mail`
+                        + (j.detached_from ? ` — "${j.detached_from}" is untouched.` : '.')
+                      : `${sum.text}, saved in Playbook Mail. `
+                        + (j.affected > 1 ? `All ${j.affected} blasts using this design will send the new version. ` : 'This blast will send the new version. ')
+                        + 'No need to pull it in.';
                   }
                 }catch(err){
                   aiNote.className = 'text-[11px] mt-1.5 text-error';
@@ -14773,16 +14814,21 @@ This removes its school and season dates. Venues in this market are not touched.
                <div class="text-sm text-base-content/70 mb-3">Say what you want changed, in your own words.</div>
                <textarea class="textarea textarea-bordered w-full text-sm mb-3" rows="3" data-ai-what
                  placeholder="e.g. make it shorter and mention the cheapest seat" aria-label="What to change"></textarea>
-               ${/* THREE THINGS A CHANGE CAN LAND ON, said out loud rather than left to be
-                     worked out. They are genuinely different acts — one touches nothing
-                     outside this row, one rewrites a shared asset in another product, one
-                     creates a new asset there — and which one happened is not something
-                     anybody should have to discover afterwards.
+               ${/* FOUR THINGS A CHANGE CAN LAND ON, in order of how far it reaches, because
+                     that is the only ordering anybody can reason about under time pressure.
+                     They are genuinely different acts: the first two leave Playbook Mail
+                     untouched, the third creates an asset there, the fourth rewrites one that
+                     other blasts are already using. Which one happened is not something anybody
+                     should have to discover afterwards.
                      (No backticks in here: template literal.) */''}
                <div class="text-xs font-semibold text-[#133b49] mb-1">What should it change?</div>
+               <label class="flex gap-2 items-start p-2 rounded border border-base-300 mb-1.5 cursor-pointer${tpl ? '' : ' opacity-40 pointer-events-none'}">
+                 <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="send"${tpl ? ' checked' : ' disabled'}>
+                 <span class="text-xs"><b>The design, for this blast only</b>${tpl ? '' : ' &mdash; no design attached'}<br><span class="text-base-content/60">Changes the design <b>this blast sends</b> and nothing else. Playbook Mail is not touched and gains no new template. This blast stops following <b>${esc(tpl ? (tpl.name || 'the template') : 'the template')}</b> and keeps its own version.</span></span>
+               </label>
                <label class="flex gap-2 items-start p-2 rounded border border-base-300 mb-1.5 cursor-pointer">
-                 <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="draft" checked>
-                 <span class="text-xs"><b>Just this blast&rsquo;s words</b><br><span class="text-base-content/60">Rewrites the text held on this row. There is no design to colour here &mdash; nothing is saved to Playbook Mail and no other blast changes.</span></span>
+                 <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="draft"${tpl ? '' : ' checked'}>
+                 <span class="text-xs"><b>Just this blast&rsquo;s words</b><br><span class="text-base-content/60">Rewrites the plain text held on this row${tpl ? ', which reaches the recipient only where the design has [BODY] to put it in' : ''}. Nothing is saved to Playbook Mail.</span></span>
                </label>
                ${/* OFFERED ONLY WITH A DESIGN ON THE ROW. Both of these edit a template, and
                      with none attached there is nothing to edit — so they say why rather than
@@ -14791,11 +14837,11 @@ This removes its school and season dates. Venues in this market are not touched.
                      (No backticks in here: template literal.) */''}
                <label class="flex gap-2 items-start p-2 rounded border border-base-300 mb-1.5 cursor-pointer${tpl ? '' : ' opacity-40 pointer-events-none'}">
                  <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="copy"${tpl ? '' : ' disabled'}>
-                 <span class="text-xs"><b>The design &mdash; as a copy for this blast only</b>${tpl ? '' : ' &mdash; no design attached'}<br><span class="text-base-content/60">Copies the design in Playbook Mail first, attaches the copy here, then changes the copy. The original is left exactly as it is${shared ? ` for the ${shared} other blast${shared === 1 ? '' : 's'} using it` : ''}.</span></span>
+                 <span class="text-xs"><b>A new copy in Playbook Mail</b>${tpl ? '' : ' &mdash; no design attached'}<br><span class="text-base-content/60">Copies the design into Playbook Mail as a new template, attaches it here, then changes the copy. The original is left exactly as it is${shared ? ` for the ${shared} other blast${shared === 1 ? '' : 's'} using it` : ''}.</span></span>
                </label>
                <label class="flex gap-2 items-start p-2 rounded border border-base-300 cursor-pointer${tpl ? '' : ' opacity-40 pointer-events-none'}">
                  <input type="radio" name="ai-target" class="radio radio-xs mt-0.5" value="template"${tpl ? '' : ' disabled'}>
-                 <span class="text-xs"><b>The design itself</b>${tpl ? '' : ' &mdash; no design attached'}<br><span class="text-base-content/60">Edits the template in Playbook Mail in place${shared ? `, which changes this blast <b>and ${shared} other${shared === 1 ? '' : 's'}</b>` : ''}.</span></span>
+                 <span class="text-xs"><b>The template itself, in Playbook Mail</b>${tpl ? '' : ' &mdash; no design attached'}<br><span class="text-base-content/60">Overwrites it where it lives${shared ? `, which changes this blast <b>and ${shared} other${shared === 1 ? '' : 's'}</b>` : ''}.</span></span>
                </label>
                <div class="text-xs text-error mt-2 hidden" data-ai-err></div>
                <div class="text-xs text-base-content/60 mt-2 hidden" data-ai-out></div>
@@ -14823,7 +14869,7 @@ This removes its school and season dates. Venues in this market are not touched.
             const instruction = what.value.trim();
             if(!instruction){ err.textContent = 'Say what you would like changed.'; err.classList.remove('hidden'); what.focus(); return; }
             const choice = p.querySelector('input[name="ai-target"]:checked').value;
-            // "copy" is not a third kind of edit as far as the server is concerned: it is a
+            // "copy" is not a separate kind of edit as far as the server is concerned: it is a
             // duplicate followed by the ordinary template edit. Doing the copy here, in the
             // client, keeps /api/design-ai with one job, and means the copy is created and
             // attached to the row even if the edit that follows it fails.
@@ -14842,7 +14888,19 @@ This removes its school and season dates. Venues in this market are not touched.
                 body: JSON.stringify({ queue_id: rowId, instruction, target }) });
               const j = await r.json().catch(() => ({}));
               if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-              if(target === 'draft'){
+              if(target === 'send'){
+                // The row now carries its own design and no longer follows a template, which is
+                // what the server just did. Mirrored here so the badge drops Refresh and the
+                // shared-with count immediately, rather than at the next full reload.
+                const q = QUEUE.find(x => x.id === rowId);
+                if(q){ q.cakemail_template_id = null; q.cakemail_template_name = null; }
+                render();
+                const n = (j.changed || []).length;
+                toast({ type:'ok', title:'Changed for this blast only',
+                        lines:[ `${n} piece${n === 1 ? '' : 's'} of text rewritten in the design this blast sends.`,
+                                j.detached_from ? `Nothing was saved to Playbook Mail — "${j.detached_from}" is untouched, and this blast no longer follows it.` : 'Nothing was saved to Playbook Mail.' ] });
+                shut();
+              } else if(target === 'draft'){
                 // The row holds the new words; the Queue is repainted from it rather than
                 // reloaded, so the open panel and the expanded row stay where they were.
                 const q = QUEUE.find(x => x.id === rowId);
