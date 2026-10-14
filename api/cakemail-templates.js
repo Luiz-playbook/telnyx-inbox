@@ -51,7 +51,13 @@ const slim = t => ({
   // in their editor, which the picker renders as a name-only tile rather than a broken image.
   thumbnail_url: t.thumbnail_url || null,
   // Epoch SECONDS, like every other CakeMail timestamp (see the note in lib/cakemail.js).
+  //
+  // BOTH DATES, SEPARATELY. They were folded into one field, which was fine while the picker
+  // only sorted by it -- and wrong the moment the picker had to offer "newest first" and "last
+  // edited" as different orders, because a template built in January and tweaked yesterday
+  // belongs in a different place in each.
   updated_on: t.updated_on || t.created_on || null,
+  created_on: t.created_on || t.updated_on || null,
 });
 
 // WHICH ACCOUNT OWNS THIS TEMPLATE. A design does not have to live in the account the blast
@@ -336,13 +342,30 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Newest edit first, which is the order someone who just built a template expects to find
-    // it in. 100 per page: these libraries are small — the live accounts hold single digits —
-    // and a picker that paged would be more machinery than the thing it is picking from.
-    const q = new URLSearchParams({ page: '1', per_page: '100', with_count: 'true', sort: '-updated_on' });
-    const j = await cakemailGet(`/templates?${q}`, { accountId });
-    const templates = rowsOf(j).map(slim);
-    res.status(200).json({ ok: true, account_id: accountId, count: templates.length, templates });
+    // NEWEST FIRST, BY CREATION. Someone who has just built a template looks for it at the top,
+    // and "top" has to mean the same thing every time they open this -- an edit-ordered list
+    // reshuffles itself whenever anybody touches anything, including this app's own AI edits.
+    // The picker can re-sort by last edited; this is only where it starts.
+    //
+    // EVERY PAGE, not the first hundred. The live accounts hold single digits and the first
+    // version read one page on that basis, which silently becomes "your library is the hundred
+    // CakeMail happened to return first" for an org that grows. The cap is there so a runaway
+    // account cannot hold a request open indefinitely; it is reported rather than hidden,
+    // because a truncated library that says it is complete is the bad outcome here.
+    const PER = 100, MAX_PAGES = 20;
+    const templates = [];
+    let total = null, truncated = false;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const q = new URLSearchParams({ page: String(page), per_page: String(PER), with_count: 'true', sort: '-created_on' });
+      const j = await cakemailGet(`/templates?${q}`, { accountId });
+      const rows = rowsOf(j);
+      if (total === null) total = Number(j && j.pagination && j.pagination.count);
+      templates.push(...rows.map(slim));
+      if (rows.length < PER) break;
+      if (page === MAX_PAGES) truncated = true;
+    }
+    res.status(200).json({ ok: true, account_id: accountId, count: templates.length,
+                           total: Number.isFinite(total) ? total : templates.length, truncated, templates });
   } catch (e) {
     // The message from lib/cakemail.js is already specific ("CakeMail GET /templates -> 401:
     // Invalid token") and is passed through rather than flattened into an empty library: a

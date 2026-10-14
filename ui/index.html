@@ -13380,7 +13380,7 @@ This removes its school and season dates. Venues in this market are not touched.
                          CakeMail changes NOTHING here until it is pulled again. Refresh is that
                          pull — it re-renders the template and re-copies it onto the row. Without
                          it, an edit made in CakeMail would look applied and never be sent. */''}
-                   ${row.cakemail_template_id ? `<button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmedit="${esc(row.id)}" aria-label="Open this design" title="Open this design — see it full size, rewrite its words with AI, give this blast its own copy of it, or open it in Playbook Mail."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+                   ${row.cakemail_template_id ? `<button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmedit="${esc(row.id)}" aria-label="Preview this design full screen" title="Preview — see this design full size, where you can edit its words with AI, make this blast its own copy, or open it in Playbook Mail."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
                       <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmrefresh="${esc(row.id)}" aria-label="Pull the latest design from CakeMail" title="Refresh — pull this design again from Playbook Mail so the preview below matches it. The blast takes the latest version by itself when it sends, so this is for what you see here, not for what goes out."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>` : ''}
                    <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmdetach="${esc(row.id)}" aria-label="Detach this design" title="Detach — go back to sending the plain-text body below."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                  </span>`}
@@ -14043,9 +14043,13 @@ This removes its school and season dates. Venues in this market are not touched.
                     <div class="text-[11px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || '&nbsp;'}</div>
                   </div>
                 </button>
+                ${/* LABELLED, not a bare icon. The compact-icon rule is for repeating rows in a
+                      dense table, where five word-buttons per row eat the column they sit in. A
+                      tile is a card with room, this is the one control on it, and "Preview" is
+                      what the person was told to look for.
+                      (No backticks in here: template literal.) */''}
                 <button type="button" data-zoom="${esc(t.id)}" aria-label="Preview ${esc(t.name)} full screen"
-                  title="Preview full screen"
-                  class="absolute top-2 right-2 btn btn-xs btn-circle bg-white/90 border-base-300 hover:bg-white shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+                  class="absolute top-2 right-2 btn btn-xs gap-1 bg-white/95 border-base-300 hover:bg-white shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Preview</button>
               </div>`;
 
             ov.innerHTML =
@@ -14053,16 +14057,36 @@ This removes its school and season dates. Venues in this market are not touched.
                  <div class="font-extrabold text-lg text-[#133b49]">Choose a Playbook Mail template</div>
                  <div class="text-sm text-base-content/70 mb-3">Designs in <b>${esc(accountLabel)}</b>, the account this blast sends from. The design you pick becomes what it actually sends &mdash; the text in the body box stays as the record.</div>
 
-                 <div class="flex items-center gap-3 mb-3 flex-wrap">
-                   ${/* SEARCH, because Josh expects organisations with a hundred of these. It
-                         filters what is already loaded rather than asking the server: the whole
-                         library is one request and is already here, so a round trip per keystroke
-                         would be slower and no more correct.
+                 <div class="flex items-center gap-2 mb-3 flex-wrap">
+                   ${/* SEARCH, SORT AND FILTER ALL WORK ON THE LOADED LIST. The whole library
+                         arrives in one request, so a round trip per keystroke would be slower and
+                         no more correct. They combine: a search inside a date filter inside a
+                         sort order is three narrowings of one array, not three modes.
                          (No backticks in here: template literal.) */''}
-                   <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100 grow max-w-xs">
+                   <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100 grow max-w-[16rem]">
                      <span class="text-base-content/40">&#128269;</span>
                      <input type="search" class="grow" placeholder="Search designs&hellip;" data-search autocomplete="off" aria-label="Search designs by name or tag">
                    </label>
+                   ${/* THE FILTER IS ON A DATE, and on which date depends on what you are looking
+                         for. "Built recently" finds the one you made this morning; "touched
+                         recently" finds the one somebody changed under you — including the ones
+                         this app's own AI edits touch. Both are useful and they are not the same
+                         question, so the sort picks the field and the filter follows it.
+                         PROPOSED, NOT SETTLED: AI-1124 asks for these to be confirmed with Marx.
+                         (No backticks in here: template literal.) */''}
+                   <select class="select select-bordered select-sm" data-sort aria-label="Sort designs">
+                     <option value="created">Newest first</option>
+                     <option value="updated">Last edited</option>
+                     <option value="name">Name A&ndash;Z</option>
+                   </select>
+                   <select class="select select-bordered select-sm" data-within aria-label="Filter designs by date">
+                     <option value="0">Any time</option>
+                     <option value="7">Last 7 days</option>
+                     <option value="30">Last 30 days</option>
+                     <option value="90">Last 90 days</option>
+                   </select>
+                   <select class="select select-bordered select-sm hidden" data-tag aria-label="Filter designs by tag"></select>
+                   <button class="btn btn-sm btn-ghost hidden" data-clear>Clear</button>
                    <span class="text-xs text-base-content/45" data-count></span>
                    <div class="ml-auto flex items-center gap-3 text-xs">
                      <a class="link link-primary" target="_blank" rel="noopener noreferrer" data-newtpl>Build a new one &#8599;</a>
@@ -14071,7 +14095,18 @@ This removes its school and season dates. Venues in this market are not touched.
                    </div>
                  </div>
 
-                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-3 max-h-[26rem] overflow-y-auto p-1" data-grid></div>
+                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-2 min-h-[20rem] p-1" data-grid></div>
+
+                 ${/* PAGED RATHER THAN SCROLLED. A scrolling well of a hundred tiles loads a
+                       hundred thumbnails and loses your place the moment you preview one; a page
+                       of twelve loads twelve. Hidden entirely at one page, because a pager that
+                       says "Page 1 of 1" is furniture.
+                       (No backticks in here: template literal.) */''}
+                 <div class="flex items-center gap-2 mb-3 hidden" data-pager>
+                   <button class="btn btn-xs btn-ghost" data-prev>&laquo; Prev</button>
+                   <span class="text-xs text-base-content/55" data-pageinfo></span>
+                   <button class="btn btn-xs btn-ghost" data-next>Next &raquo;</button>
+                 </div>
 
                  <div class="text-xs text-error mb-2 hidden" data-err></div>
                  <div class="flex items-center gap-2">
@@ -14090,19 +14125,58 @@ This removes its school and season dates. Venues in this market are not touched.
             const noteEl = ov.querySelector('[data-note]');
             const countEl = ov.querySelector('[data-count]');
             const searchEl = ov.querySelector('[data-search]');
+            const sortEl = ov.querySelector('[data-sort]');
+            const withinEl = ov.querySelector('[data-within]');
+            const tagEl = ov.querySelector('[data-tag]');
+            const clearEl = ov.querySelector('[data-clear]');
+            const pagerEl = ov.querySelector('[data-pager]');
+            const pageInfoEl = ov.querySelector('[data-pageinfo]');
             const acct = sendingAccountId;
-            let list = templates, chosen = null, filter = '';
+            // Twelve is three rows of the four-column grid, so a page is always a whole block of
+            // tiles rather than a row and a half of orphans.
+            const PER_PAGE = 12;
+            let list = templates, chosen = null, filter = '', sortBy = 'created', within = 0, tag = '', page = 1;
 
-            const matches = t => !filter
-              || String(t.name || '').toLowerCase().includes(filter)
+            const nameOf = t => String(t.name || '').toLowerCase();
+            const matches = t => !filter || nameOf(t).includes(filter)
               || (t.tags || []).some(x => String(x).toLowerCase().includes(filter));
 
+            // THE FILTER FOLLOWS THE SORT. Filtering on "created" while sorted by "last edited"
+            // produces a list ordered by one date and cut by another, which is the kind of thing
+            // nobody can explain to themselves when a template they expected is not in it.
+            const dateOf = t => Number((sortBy === 'updated' ? t.updated_on : t.created_on) || t.updated_on || t.created_on || 0);
+            const inWindow = t => {
+              if (!within) return true;
+              const at = dateOf(t);                       // epoch SECONDS, as CakeMail sends them
+              return at > 0 && (Date.now() / 1000 - at) <= within * 86400;
+            };
+            const hasTag = t => !tag || (t.tags || []).some(x => String(x) === tag);
+
+            const visible = () => list.filter(t => matches(t) && inWindow(t) && hasTag(t))
+              .sort((a, b) => sortBy === 'name' ? nameOf(a).localeCompare(nameOf(b)) : dateOf(b) - dateOf(a));
+
+            // Tag filtering only appears where tags exist. An always-present select holding one
+            // option reads as a feature that is broken rather than one that does not apply.
+            function paintTags(){
+              const all = [...new Set(list.flatMap(t => (t.tags || []).map(String)))].sort();
+              if(!tagEl) return;
+              tagEl.classList.toggle('hidden', !all.length);
+              if(!all.length){ tag = ''; return; }
+              tagEl.innerHTML = `<option value="">All tags</option>` + all.map(x => `<option value="${esc(x)}"${x === tag ? ' selected' : ''}>${esc(x)}</option>`).join('');
+            }
+
             function paintGrid(){
-              const shown = list.filter(matches);
-              grid.innerHTML = shown.length
-                ? shown.map(tile).join('')
+              const shown = visible();
+              const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
+              if(page > pages) page = pages;
+              const slice = shown.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+              const narrowed = filter || within || tag;
+              grid.innerHTML = slice.length
+                ? slice.map(tile).join('')
                 : `<div class="col-span-full border border-dashed border-base-300 rounded-lg p-6 text-sm text-base-content/55">
-                     ${list.length ? 'No design matches that search.' : 'No saved designs in this account yet. Build one in Playbook Mail and it will show up here.'}
+                     ${list.length
+                        ? (narrowed ? 'No design matches that search or filter.' : 'No design matches that search.')
+                        : 'No templates yet. Templates added to your Playbook Mail account will show up here.'}
                    </div>`;
               grid.querySelectorAll('[data-pick]').forEach(b => b.addEventListener('click', () => onPick(b)));
               grid.querySelectorAll('[data-zoom]').forEach(b => b.addEventListener('click', (e) => {
@@ -14110,11 +14184,22 @@ This removes its school and season dates. Venues in this market are not touched.
                 const t = list.find(x => String(x.id) === b.dataset.zoom);
                 if(t) openFullPreview(t);
               }));
-              if(countEl) countEl.textContent = list.length
-                ? (shown.length === list.length ? `${list.length} design${list.length === 1 ? '' : 's'}`
-                                                : `${shown.length} of ${list.length}`)
-                : '';
+              if(countEl) countEl.textContent = !list.length ? ''
+                : (shown.length === list.length ? `${list.length} design${list.length === 1 ? '' : 's'}`
+                                                : `${shown.length} of ${list.length}`);
+              if(clearEl) clearEl.classList.toggle('hidden', !narrowed);
+              if(pagerEl){
+                pagerEl.classList.toggle('hidden', pages < 2);
+                if(pageInfoEl) pageInfoEl.textContent = `Page ${page} of ${pages}`;
+                const prev = ov.querySelector('[data-prev]'), next = ov.querySelector('[data-next]');
+                if(prev) prev.disabled = page <= 1;
+                if(next) next.disabled = page >= pages;
+              }
             }
+
+            // Any narrowing puts you back on page one. Staying on page 4 of a list that is now
+            // two pages long shows an empty grid and reads as "the filter found nothing".
+            const renarrow = () => { page = 1; paintGrid(); };
 
             function onPick(b){
               grid.querySelectorAll('[data-pick]').forEach(x => x.classList.remove('border-[#e55608]','ring-2','ring-[#e55608]/30'));
@@ -14170,11 +14255,19 @@ This removes its school and season dates. Venues in this market are not touched.
                          instead of in a dialog that has to be dismissed first.
                          (No backticks in here: template literal.) */''}
                    <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3 text-xs shrink-0" data-fsedbar>
-                     <div class="text-[#133b49] mb-2">This opens <b>Playbook Mail</b> in a new tab, on the design
-                       <b>${esc(chosen ? chosen.name : '')}</b>. Make sure it is viewing <b>${esc(accountLabel)}</b> there, or it will say the
-                       template cannot be fetched. Save your changes there and the blast sends them — it takes the latest version of the design when it goes. Press <b>Refresh</b> here only if you want this preview to catch up now.</div>
+                     <div class="text-[#133b49] mb-2">This opens <b>Playbook Mail</b> in a new tab. Save your changes there,
+                       then come back here and click <b>Refresh</b> to see them.
+                       ${/* THE ACCOUNT LINE STAYS, under the ticket's sentence rather than instead
+                             of it. It is the difference between the editor opening and it saying
+                             the template cannot be fetched, and it is not guessable: the URL
+                             carries no account, so Playbook Mail opens it against whichever one
+                             that tab happens to be viewing.
+                             (No backticks in here: template literal.) */''}
+                       <span class="block mt-1 text-base-content/70">Make sure Playbook Mail is viewing <b>${esc(accountLabel)}</b>,
+                       or it will say the template cannot be fetched. Refresh is only for this preview &mdash; the blast sends
+                       the latest version of the design either way.</span></div>
                      <div class="flex gap-2">
-                       <a class="btn btn-sm btn-primary" target="_blank" rel="noopener noreferrer" data-fsed-go>Open Playbook Mail &#8599;</a>
+                       <a class="btn btn-sm btn-primary" target="_blank" rel="noopener noreferrer" data-fsed-go>Continue &#8599;</a>
                        <button class="btn btn-sm btn-ghost" data-fsed-cancel>Cancel</button>
                      </div>
                    </div>
@@ -14414,7 +14507,20 @@ This removes its school and season dates. Venues in this market are not touched.
             ov.addEventListener('mousedown', e => { if(e.target === ov) close(null); });
             ov.querySelector('[data-cancel]').addEventListener('click', () => close(null));
             okBtn.addEventListener('click', () => { if(chosen) close(chosen); });
-            if(searchEl) searchEl.addEventListener('input', () => { filter = searchEl.value.trim().toLowerCase(); paintGrid(); });
+            if(searchEl) searchEl.addEventListener('input', () => { filter = searchEl.value.trim().toLowerCase(); renarrow(); });
+            if(sortEl) sortEl.addEventListener('change', () => { sortBy = sortEl.value; renarrow(); });
+            if(withinEl) withinEl.addEventListener('change', () => { within = Number(withinEl.value) || 0; renarrow(); });
+            if(tagEl) tagEl.addEventListener('change', () => { tag = tagEl.value; renarrow(); });
+            if(clearEl) clearEl.addEventListener('click', () => {
+              filter = ''; within = 0; tag = '';
+              if(searchEl) searchEl.value = '';
+              if(withinEl) withinEl.value = '0';
+              if(tagEl) tagEl.value = '';
+              renarrow();
+            });
+            const prevBtn = ov.querySelector('[data-prev]'), nextBtn = ov.querySelector('[data-next]');
+            if(prevBtn) prevBtn.addEventListener('click', () => { if(page > 1){ page--; paintGrid(); } });
+            if(nextBtn) nextBtn.addEventListener('click', () => { page++; paintGrid(); });
 
             const newTpl = ov.querySelector('[data-newtpl]');
             if(newTpl) newTpl.href = CAKEMAIL_BROWSE_URL;
@@ -14425,7 +14531,8 @@ This removes its school and season dates. Venues in this market are not touched.
               reloadList.disabled = true; reloadList.textContent = 'Reloading…';
               try{
                 list = await cmTemplates(acct, true);      // force: skip the page cache
-                paintGrid();
+                paintTags();
+                renarrow();
                 const added = list.length - before;
                 if(listNote) listNote.textContent = added > 0
                   ? `${added} new`
@@ -14437,6 +14544,7 @@ This removes its school and season dates. Venues in this market are not touched.
               }
               reloadList.disabled = false; reloadList.textContent = 'Reload';
             });
+            paintTags();
             paintGrid();
 
             // STRAIGHT ONTO ONE DESIGN. The row's own icon comes in this way: what it wants is
@@ -14504,7 +14612,20 @@ This removes its school and season dates. Venues in this market are not touched.
           pickForRow(row.id, btn, { id: row.cakemail_template_id, name: row.cakemail_template_name });
         }));
 
-        tb.querySelectorAll('[data-cmdetach]').forEach(btn => btn.addEventListener('click', () => cmAttach(btn.dataset.cmdetach, null, btn)));
+        // DETACH PUTS YOU BACK IN THE LIBRARY. Detaching is almost never the end of a thought
+        // -- it is "not this one", and the next thing anybody wants is the other designs. Ending
+        // on a plain-text box with no way back except finding the button again made it read as
+        // destructive. The picker opens on the row's account with nothing selected.
+        //
+        // AFTER the detach, not alongside it: cmAttach re-renders the table, so opening the
+        // dialog first would leave it sitting over rows that are about to be replaced.
+        tb.querySelectorAll('[data-cmdetach]').forEach(btn => btn.addEventListener('click', async () => {
+          const id = btn.dataset.cmdetach;
+          await cmAttach(id, null, btn);
+          // btn belongs to the table cmAttach has just rebuilt, so it is not passed on.
+          const row = QUEUE.find(x => x.id === id);
+          if(row && !row.cakemail_template_id) pickForRow(id, null, null);
+        }));
         // AI from the row itself. The picker's copy of this button exists for the moment of
         // choosing; this one is for the blast you already have open, which is the common case.
         tb.querySelectorAll('[data-cmai]').forEach(btn => btn.addEventListener('click', () => {
