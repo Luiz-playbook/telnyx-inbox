@@ -207,3 +207,28 @@ test('smsPathFor: routes unknown means unknown — never a guess either way', ()
   assert.equal(m.smsPathFor({ configured: true, from: '+13159988112', routes: new Error('down') }), 'unknown');
   assert.equal(m.smsPathFor({ configured: true, from: '+16158050766', routes: undefined }), 'unknown');
 });
+
+test('auto-send is asked for from SendBlaster production only — never a preview, even with ALLOW_NONPROD (Review Focus 4)', () => {
+  assert.equal(m.autoSendRequested({ VERCEL_ENV: 'production' }), true);
+  assert.equal(m.autoSendRequested({ VERCEL_ENV: 'preview', BULK_SMS_ALLOW_NONPROD: '1' }), false);
+  assert.equal(m.autoSendRequested({ BULK_SMS_ALLOW_NONPROD: '1' }), false);
+  assert.equal(m.autoSendRequested({}), false);
+});
+
+test('stageCampaign sends auto_send, and reports what the bulk sender actually did', async () => {
+  const calls = answer(200, { campaign: { id: 'c1', status: 'running' }, eligible: 3, auto_armed: true });
+  const r = await m.stageCampaign({ key: 'k', name: 'n', body: 'b', fromNumber: '+1', phones: ['+16175550100'] });
+  // The test process sets ALLOW_NONPROD and no VERCEL_ENV, so it must not ask.
+  assert.equal(JSON.parse(calls[0].init.body).auto_send, false);
+  assert.equal(r.status, 'running');
+  assert.equal(r.autoArmed, true);
+  assert.equal(r.why, null);
+});
+
+test('a draft reply is a draft, with the reason it was not sent', async () => {
+  answer(200, { campaign: { id: 'c1', status: 'draft' }, eligible: 2_400, auto_armed: false, why: 'above ceiling' });
+  const r = await m.stageCampaign({ key: 'k', name: 'n', body: 'b', fromNumber: '+1', phones: ['+16175550100'] });
+  assert.equal(r.status, 'draft');
+  assert.equal(r.autoArmed, false);
+  assert.equal(r.why, 'above ceiling');
+});
