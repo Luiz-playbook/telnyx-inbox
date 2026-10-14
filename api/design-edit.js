@@ -23,8 +23,11 @@
 //
 //   send      the design THIS BLAST SENDS. Edits the rendered HTML already on the row
 //             (lib/htmledit.js) and drops the template link, so queue-tick cannot overwrite it.
-//             Text only: the finished email is the only thing being changed, and colours and
-//             sizing live in the design it was rendered from.
+//             Words, colours, sizes and images, the same as the other two: every colour in a
+//             rendered email is in an inline style="" attribute, because mail clients strip
+//             stylesheets, so the slot discipline works directly on the document. This started
+//             out words-only, which showed a Words section and nothing else and read as a
+//             half-built feature rather than a deliberate limit.
 //   template  saves into the template itself, for every blast using it.
 //
 // "Make a copy and edit that" is not a third target here. It is the existing duplicate route in
@@ -33,17 +36,48 @@
 // code deciding which account the copy lands in and what it is called, and the two would drift.
 
 import { supabaseKey } from '../lib/supabase.js';
+import { defangHtml } from '../lib/defang.js';
 import { gate } from '../lib/auth.js';
 import { cakemailGet, cakemailPatch, cakemailKey, parseCakemailFrom, cakemailAccounts } from '../lib/cakemail.js';
 import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/beetext.js';
 import { beeColourSlots, applyBeeColours } from '../lib/beestyle.js';
 import { beeStyleSlots, applyBeeStyles, fontChoices } from '../lib/beeshape.js';
 import { beeImageSlots, applyBeeImages } from '../lib/beeimage.js';
-import { htmlTextNodes, applyHtmlText } from '../lib/htmledit.js';
+import { htmlTextSlots, htmlTextNodes, applyHtmlText, htmlColourSlots, applyHtmlColours,
+         htmlStyleSlots, applyHtmlStyles, htmlImageSlots, applyHtmlImages } from '../lib/htmledit.js';
 
 export const config = { maxDuration: 30 };
 
 const TARGETS = ['send', 'template'];
+
+// SHOWING SOMEBODY WHICH BLOCK "TEXT 20" IS.
+//
+// A list of numbered boxes is unusable on a design with thirty of them: the number says nothing
+// about where the words are, and scrolling a preview hunting for them is worse than opening the
+// builder. So the preview can be asked to come back with one run marked, and the browser is
+// pointed at the marker's anchor, which scrolls it into view without any script running inside
+// the frame — the frame is sandboxed with scripts off and must stay that way, because what is in
+// it is a third party's HTML.
+//
+// MATCHED BY TEXT, NOT BY INDEX, when the preview is a template render. A bee blob's 20 text
+// nodes become 28 runs in the rendered HTML — the render adds structure — so run N and node N
+// are not the same thing and lining them up by position would point at the wrong paragraph.
+// Matching on the words themselves is right when they are unique and harmless when they are not:
+// the worst case is marking the first of two identical lines.
+function markRun(html, { index, text }) {
+  const slots = htmlTextSlots(html);
+  let hit = -1;
+  if (text) {
+    const want = flat(text);
+    hit = slots.findIndex(s => flat(s.text) === want);
+    if (hit < 0) hit = slots.findIndex(s => flat(s.text).includes(want) && want.length > 8);
+  }
+  if (hit < 0 && Number.isInteger(index) && index >= 1 && index <= slots.length) hit = index - 1;
+  if (hit < 0) return { html, found: false };
+  const s0 = slots[hit];
+  const open = '<a id="pb-here" name="pb-here" style="background:#ffe08a;outline:3px solid #e8590c;outline-offset:2px;border-radius:3px;text-decoration:none;color:inherit">';
+  return { html: html.slice(0, s0.start) + open + html.slice(s0.start, s0.end) + '</a>' + html.slice(s0.end), found: true };
+}
 const flat = t => String(t || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
 
 // Plain text to the markup a design expects, for a block that has no single run to write into.
@@ -93,41 +127,100 @@ export default async function handler(req, res) {
 
   const target = TARGETS.includes(body.target || req.query?.target) ? (body.target || req.query.target) : 'send';
 
+  // ?highlight=<n> — the preview HTML with that run marked, for "show me where this is".
+  // Read-only, and defanged exactly like every other preview: see lib/defang.js.
+  const highlight = req.method !== 'POST' ? String(req.query?.highlight || '').trim() : '';
+  if (highlight) {
+    const wantText = String(req.query?.text || '');
+    let source = String(row.email_html || '');
+    if (target !== 'send' && row.cakemail_template_id) {
+      try {
+        const { owner: o } = await ownerOf(row.cakemail_template_id, (parseCakemailFrom(row.email_from) || {}).accountId);
+        const raw = await cakemailGet(`/templates/${row.cakemail_template_id}/render`, { accountId: o, raw: true });
+        source = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || source;
+      } catch { /* fall back to the row's own copy, which is the same design */ }
+    }
+    if (!source.trim()) { res.status(400).json({ error: 'nothing to preview' }); return; }
+    const marked = markRun(source, { index: Number(highlight), text: wantText });
+    res.status(200).json({ ok: true, html: defangHtml(marked.html), found: marked.found });
+    return;
+  }
+
   // ---------------------------------------------------------------------------------- SEND
   // The finished email, edited in place. No template is involved, so there is nothing to read
   // colours or sizes out of — those belong to the design this was rendered from.
   if (target === 'send') {
-    const html = String(row.email_html || '');
-    if (!html.trim()) { res.status(400).json({ error: 'This blast has no design on it yet.' }); return; }
-    const runs = htmlTextNodes(html);
+    const html0 = String(row.email_html || '');
+    if (!html0.trim()) { res.status(400).json({ error: 'This blast has no design on it yet.' }); return; }
+    const runs = htmlTextNodes(html0);
 
     if (req.method !== 'POST') {
-      res.status(200).json({ ok: true, target: 'send', name: row.cakemail_template_name || null,
+      res.status(200).json({ ok: true, target: 'send', kind: 'rendered', name: row.cakemail_template_name || null, shared: 0,
         text: runs.map((t, i) => ({ index: i + 1, value: flat(t) })),
-        colours: [], styles: [], images: [], fonts: [], shared: 0,
-        note: 'Editing just this blast works on the finished email, so it covers the words. Colours and sizing belong to the design itself — switch to a copy, or to the template, for those.' });
+        colours: htmlColourSlots(html0).map((c, i) => ({ index: i + 1, ...c })),
+        styles: htmlStyleSlots(html0).map((c, i) => ({ index: i + 1, ...c })),
+        images: htmlImageSlots(html0).map((c, i) => ({ index: i + 1, ...c })),
+        fonts: [],
+        note: 'Changes here apply to this blast only. Nothing is saved to Playbook Mail, and this blast stops following the template.' });
       return;
     }
 
-    const want = Array.isArray(body.text) ? body.text : null;
-    if (!want || want.length !== runs.length) {
-      res.status(400).json({ error: `Expected ${runs.length} text values, got ${want ? want.length : 'none'}. Nothing was changed.` });
+    const changed = { text: [], colours: [], styles: [], images: [] };
+    let html = html0;
+    try {
+      if (Array.isArray(body.text)) {
+        if (body.text.length !== runs.length) throw new Error(`Expected ${runs.length} text values, got ${body.text.length}.`);
+        const next = runs.map((orig, i) => {
+          const v = body.text[i] == null ? null : String(body.text[i]);
+          if (v === null || !v.trim() || v === flat(orig)) return null;
+          changed.text.push({ index: i + 1, before: flat(orig), after: v });
+          return v;
+        });
+        html = applyHtmlText(html, next);
+      }
+      if (Array.isArray(body.colours)) {
+        const slots = htmlColourSlots(html);
+        if (body.colours.length !== slots.length) throw new Error(`Expected ${slots.length} colours, got ${body.colours.length}.`);
+        html = applyHtmlColours(html, body.colours);
+        slots.forEach((c, i) => {
+          const v = body.colours[i] == null ? null : String(body.colours[i]).trim();
+          if (v && v.toLowerCase() !== c.value.toLowerCase()) changed.colours.push({ index: i + 1, role: c.role, before: c.value, after: v, count: c.count });
+        });
+      }
+      if (Array.isArray(body.styles)) {
+        const slots = htmlStyleSlots(html);
+        if (body.styles.length !== slots.length) throw new Error(`Expected ${slots.length} style values, got ${body.styles.length}.`);
+        html = applyHtmlStyles(html, body.styles);
+        slots.forEach((c, i) => {
+          const v = body.styles[i] == null ? null : String(body.styles[i]).trim();
+          if (v && v.toLowerCase() !== c.value.toLowerCase()) changed.styles.push({ index: i + 1, role: c.role, prop: c.prop, before: c.value, after: v, count: c.count });
+        });
+      }
+      if (Array.isArray(body.images)) {
+        const slots = htmlImageSlots(html);
+        if (body.images.length !== slots.length) throw new Error(`Expected ${slots.length} images, got ${body.images.length}.`);
+        html = applyHtmlImages(html, body.images);
+        slots.forEach((im, i) => {
+          const g = body.images[i] || {};
+          for (const f of ['alt', 'href']) {
+            const v = g[f] == null ? null : String(g[f]).trim();
+            if (v !== null && v !== String(im[f] || '').trim()) changed.images.push({ index: i + 1, file: im.file, field: f, before: im[f] || '', after: v });
+          }
+        });
+      }
+    } catch (e) {
+      res.status(400).json({ error: `${String((e && e.message) || e)} Nothing was changed.` });
       return;
     }
-    const changed = [];
-    const next = runs.map((orig, i) => {
-      const v = want[i] === null || want[i] === undefined ? null : String(want[i]);
-      if (v === null || !v.trim() || v === flat(orig)) return null;
-      changed.push({ index: i + 1, before: flat(orig), after: v });
-      return v;
-    });
-    if (!changed.length) { res.status(200).json({ ok: true, target: 'send', changed: [], affected: 1 }); return; }
+
+    const total = changed.text.length + changed.colours.length + changed.styles.length + changed.images.length;
+    if (!total) { res.status(200).json({ ok: true, target: 'send', changed, total: 0, affected: 1 }); return; }
 
     const keptName = row.cakemail_template_name || null;
     const w = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, { method: 'POST', headers: h,
-      body: JSON.stringify({ p_id: queueId, p_html: applyHtmlText(html, next), p_template_id: null, p_template_name: null }) });
+      body: JSON.stringify({ p_id: queueId, p_html: html, p_template_id: null, p_template_name: null }) });
     if (!w.ok) { res.status(502).json({ error: `queue_set_email_html failed (HTTP ${w.status}). Nothing was changed.` }); return; }
-    res.status(200).json({ ok: true, target: 'send', changed, affected: 1, detached_from: keptName });
+    res.status(200).json({ ok: true, target: 'send', changed, total, affected: 1, detached_from: keptName });
     return;
   }
 

@@ -14558,6 +14558,53 @@ This removes its school and season dates. Venues in this market are not touched.
               // structural, and structure is what the real builder is for.
               const edPanel = fs.querySelector('[data-edpanel]');
               let edSlots = null, edTarget = 'send';
+              // WHAT THE DESIGN SAID WHEN IT WAS LOADED. Reset needs something to go back TO, and
+              // it has to be the loaded values rather than the live inputs, which is the whole
+              // point of keeping a second copy.
+              let edBase = null;
+              // The payloads that were in force before each save, newest last. Undo re-sends the
+              // top one. Session-only: a refresh is not an undo, and pretending otherwise would
+              // promise a history we do not store anywhere.
+              let edUndo = [];
+              let edTimer = null, edSaving = false, edDirty = false;
+
+              const edSay = (msg, kind) => {
+                const n = edPanel.querySelector('[data-ednote]');
+                if(!n) return;
+                n.className = 'text-[10px] basis-full ' + (kind === 'err' ? 'text-error' : kind === 'ok' ? 'text-[#1b7a44]' : 'text-base-content/60');
+                n.textContent = msg;
+              };
+
+              // WHICH FIELDS ARE NO LONGER WHAT THEY WERE. Drives the per-field undo arrow: a
+              // reset button on a field nobody has touched is noise, and worse, it invites a
+              // click that does nothing.
+              const edValue = (kind, i) => {
+                const el = edPanel.querySelector(`[data-ed="${kind}"][data-i="${i}"]`);
+                return el ? el.value : null;
+              };
+              function edMark(){
+                if(!edBase) return;
+                let dirty = 0;
+                edPanel.querySelectorAll('[data-edreset]').forEach(b => {
+                  const kind = b.dataset.edreset, i = Number(b.dataset.i);
+                  const now = edValue(kind, i), was = (edBase[kind] || [])[i - 1];
+                  const changed = now !== null && was !== undefined && String(now) !== String(was);
+                  b.classList.toggle('hidden', !changed);
+                  if(changed) dirty++;
+                });
+                edDirty = dirty > 0;
+              }
+
+              // AUTOSAVE, BUT ONLY WHERE A SAVE IS LOCAL. See the note by the Save button.
+              function edQueue(){
+                if(edTarget !== 'send') return;
+                clearTimeout(edTimer);
+                edSay('Saving…', 'muted');
+                // Long enough to finish a sentence, short enough that leaving the panel does not
+                // lose it. A save that is already running is left to finish; the next pause
+                // schedules another, so nothing is dropped.
+                edTimer = setTimeout(() => { if(!edSaving) edSave(); }, 1200);
+              }
 
               const edField = (label, control, hint) =>
                 `<label class="block mb-2"><span class="block text-[11px] font-semibold text-[#133b49] mb-0.5">${esc(label)}</span>${control}`
@@ -14572,8 +14619,19 @@ This removes its school and season dates. Venues in this market are not touched.
               function edPaint(){
                 if(!edSlots){ edPanel.innerHTML = `<div class="p-4 text-xs text-base-content/55">Loading the design&hellip;</div>`; return; }
                 const d = edSlots;
+                // THE NUMBER IS NOT A NAME. "Text 20" tells nobody which block it is, so each
+                // one is labelled with its own first few words and carries a locate button that
+                // marks it in the preview beside you. Vhea: "sometimes idk what is text 20".
+                const snip = v => { const x = String(v).replace(/\s+/g, ' ').trim(); return x.length > 34 ? x.slice(0, 34) + '…' : (x || '(empty)'); };
                 const text = d.text.map(t =>
-                  edField(`Text ${t.index}`, `<textarea class="textarea textarea-bordered textarea-xs w-full text-xs" rows="2" data-ed="text" data-i="${t.index}">${esc(t.value)}</textarea>`)).join('');
+                  `<div class="mb-2">
+                     <div class="flex items-center gap-1 mb-0.5">
+                       <span class="text-[11px] font-semibold text-[#133b49] truncate grow" title="${esc(t.value)}">${t.index}. ${esc(snip(t.value))}</span>
+                       <button class="btn btn-ghost btn-xs px-1 shrink-0" data-edfind="${t.index}" aria-label="Show me where this is" title="Show me where this is in the design"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
+                       <button class="btn btn-ghost btn-xs px-1 shrink-0 hidden" data-edreset="text" data-i="${t.index}" aria-label="Undo this field" title="Put this back to what it was"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 3v6h6"/></svg></button>
+                     </div>
+                     <textarea class="textarea textarea-bordered textarea-xs w-full text-xs" rows="2" data-ed="text" data-i="${t.index}">${esc(t.value)}</textarea>
+                   </div>`).join('');
 
                 // COLOURS KEEP THEIR OWN SWATCH AND THEIR HEX SIDE BY SIDE. A picker alone cannot
                 // be typed into when somebody has a brand hex in their hand, and a text box alone
@@ -14622,10 +14680,19 @@ This removes its school and season dates. Venues in this market are not touched.
                      ${styles ? edGroup(`Size, spacing and type (${d.styles.length})`, styles, false) : ''}
                      ${images ? edGroup(`Images (${d.images.length})`, images, false) : ''}
                      <div class="text-[10px] text-base-content/50 mb-2">Adding, removing or moving blocks, and swapping a picture, are done in Playbook Mail.</div>
-                     <div class="flex gap-2 items-center">
-                       <button class="btn btn-xs btn-primary" data-edsave>Save</button>
+                     ${/* AUTOSAVE ONLY WHERE A SAVE IS CHEAP AND LOCAL. "This blast only" writes
+                           one row in our own database and is undoable, so it saves itself a
+                           moment after typing stops. The other two write to Playbook Mail and
+                           change an asset other blasts may be using; those keep a deliberate
+                           Save, because autosaving a shared template on every pause is not a
+                           convenience, it is a series of surprises for whoever else uses it.
+                           (No backticks in here: template literal.) */''}
+                     <div class="flex gap-2 items-center flex-wrap sticky bottom-0 bg-base-100 pt-2 border-t border-base-200">
+                       <button class="btn btn-xs btn-primary${edTarget === 'send' ? ' hidden' : ''}" data-edsave>Save</button>
+                       <button class="btn btn-xs btn-ghost" data-edundo${edUndo.length ? '' : ' disabled'}>Undo last change</button>
+                       <button class="btn btn-xs btn-ghost" data-edresetall>Reset all</button>
                        <button class="btn btn-xs btn-ghost" data-edclose>Close</button>
-                       <span class="text-[10px]" data-ednote></span>
+                       <span class="text-[10px] basis-full" data-ednote>${edTarget === 'send' ? 'Saves by itself a moment after you stop typing.' : 'Press Save to write this to Playbook Mail.'}</span>
                      </div>
                    </div>`;
 
@@ -14633,9 +14700,55 @@ This removes its school and season dates. Venues in this market are not touched.
                   const box = edPanel.querySelector(`[data-ed="colours"][data-i="${sw.dataset.edswatch}"]`);
                   if(box) box.value = sw.value;
                 }));
-                edPanel.querySelector('[data-edtarget]').addEventListener('change', (e) => { edTarget = e.currentTarget.value; edLoad(); });
+                edPanel.querySelector('[data-edtarget]').addEventListener('change', (e) => { edTarget = e.currentTarget.value; edUndo = []; edLoad(); });
                 edPanel.querySelector('[data-edclose]').addEventListener('click', () => edPanel.classList.add('hidden'));
-                edPanel.querySelector('[data-edsave]').addEventListener('click', edSave);
+                const saveBtn = edPanel.querySelector('[data-edsave]');
+                if(saveBtn) saveBtn.addEventListener('click', edSave);
+
+                // SHOW ME WHERE THIS IS. The server marks the run and hands back the preview; the
+                // frame is pointed at the marker's anchor so the browser scrolls to it by itself.
+                // No script runs inside the frame — it is sandboxed with scripts off and stays
+                // that way, because what is in it is somebody else's HTML.
+                edPanel.querySelectorAll('[data-edfind]').forEach(b => b.addEventListener('click', async () => {
+                  const i = b.dataset.edfind;
+                  const box = edPanel.querySelector(`[data-ed="text"][data-i="${i}"]`);
+                  b.disabled = true;
+                  try{
+                    const r = await fetch('/api/design-edit?queue_id=' + encodeURIComponent(rowId)
+                      + '&target=' + encodeURIComponent(edTarget === 'copy' ? 'template' : edTarget)
+                      + '&highlight=' + encodeURIComponent(i)
+                      + '&text=' + encodeURIComponent(box ? box.value : '') + '&_=' + Date.now(),
+                      { headers: await apiHeaders() });
+                    const j = await r.json().catch(() => ({}));
+                    if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                    if(blobUrl) URL.revokeObjectURL(blobUrl);
+                    // A blob URL rather than srcdoc, because only a real URL can carry #pb-here
+                    // and make the browser scroll to it.
+                    blobUrl = URL.createObjectURL(new Blob([j.html], { type: 'text/html' }));
+                    frame.removeAttribute('srcdoc');
+                    frame.src = blobUrl + '#pb-here';
+                    edSay(j.found ? '' : 'Could not find that one in the preview.', j.found ? 'muted' : 'err');
+                  }catch(e){ edSay(String((e && e.message) || e), 'err'); }
+                  finally{ b.disabled = false; }
+                }));
+
+                // PUT THIS ONE BACK. Per field, because "Reset all" is too blunt when one line
+                // out of thirty went wrong.
+                edPanel.querySelectorAll('[data-edreset]').forEach(b => b.addEventListener('click', () => {
+                  const kind = b.dataset.edreset, i = Number(b.dataset.i);
+                  const el = edPanel.querySelector(`[data-ed="${kind}"][data-i="${i}"]`);
+                  const was = (edBase[kind] || [])[i - 1];
+                  if(el && was !== undefined){ el.value = was; edMark(); edQueue(); }
+                }));
+                edPanel.querySelector('[data-edresetall]').addEventListener('click', () => { edPaint(); edQueue(); });
+                const undoBtn = edPanel.querySelector('[data-edundo]');
+                if(undoBtn) undoBtn.addEventListener('click', edUndoLast);
+
+                // Typing marks the field as changed and, where saving is local, schedules one.
+                edPanel.querySelectorAll('[data-ed]').forEach(el => {
+                  el.addEventListener('input', () => { edMark(); edQueue(); });
+                });
+                edMark();
               }
 
               async function edLoad(){
@@ -14645,7 +14758,14 @@ This removes its school and season dates. Venues in this market are not touched.
                                         { headers: await apiHeaders() });
                   const j = await r.json().catch(() => ({}));
                   if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
-                  edSlots = j; edPaint();
+                  edSlots = j;
+                  // The baseline every Reset goes back to, captured before anybody types.
+                  edBase = {
+                    text: (j.text || []).map(x => x.value),
+                    colours: (j.colours || []).map(x => x.value),
+                    styles: (j.styles || []).map(x => x.value),
+                  };
+                  edPaint();
                 }catch(e){
                   edPanel.innerHTML = `<div class="p-4 text-xs text-error">Could not load the design for editing: ${esc((e && e.message) || String(e))}</div>`;
                 }
@@ -14659,11 +14779,14 @@ This removes its school and season dates. Venues in this market are not touched.
                 return el ? el.value : null;
               });
 
+              // Called from the Save button AND from the autosave timer, so the event is optional.
               async function edSave(e){
-                const btn = e.currentTarget, label = btn.textContent;
-                const note = edPanel.querySelector('[data-ednote]');
-                btn.disabled = true; btn.textContent = 'Saving…';
-                note.className = 'text-[10px] text-base-content/60'; note.textContent = '';
+                if(edSaving) return;
+                edSaving = true;
+                const btn = e && e.currentTarget ? e.currentTarget : null;
+                const label = btn ? btn.textContent : '';
+                if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+                edSay('Saving…', 'muted');
                 try{
                   let target = edTarget;
                   if(target === 'copy'){
@@ -14681,13 +14804,15 @@ This removes its school and season dates. Venues in this market are not touched.
                     alt: (edPanel.querySelector(`[data-ed="img-alt"][data-i="${k + 1}"]`) || {}).value ?? null,
                     href: (edPanel.querySelector(`[data-ed="img-href"][data-i="${k + 1}"]`) || {}).value ?? null,
                   }));
+                  // The state BEFORE this save, so Undo has something to put back.
+                  edUndo.push({ target, text: (edBase.text || []).slice(), colours: (edBase.colours || []).slice(), styles: (edBase.styles || []).slice() });
+                  if(edUndo.length > 20) edUndo.shift();
                   const r = await fetch('/api/design-edit', { method:'POST', headers: await apiHeaders(), body: JSON.stringify(payload) });
                   const j = await r.json().catch(() => ({}));
                   if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
 
-                  const c = j.changed || {};
                   const n = (j.total !== undefined) ? j.total : (j.changed || []).length;
-                  if(!n){ note.textContent = 'Nothing was different.'; return; }
+                  if(!n){ edUndo.pop(); edSay('Nothing was different.', 'muted'); return; }
 
                   if(target === 'send' || j.target === 'send'){
                     source = 'row';
@@ -14697,16 +14822,39 @@ This removes its school and season dates. Venues in this market are not touched.
                   }
                   await loadPreview();
                   await edLoad();                       // re-read: the saved values are the new baseline
-                  note.className = 'text-[10px] text-[#1b7a44]';
-                  note.textContent = (j.target === 'send')
-                    ? `Saved for this blast only. Playbook Mail untouched.`
-                    : `Saved to Playbook Mail. ${j.affected > 1 ? `${j.affected} blasts use this design.` : ''}`;
+                  edSay((j.target === 'send')
+                    ? 'Saved for this blast only. Playbook Mail untouched.'
+                    : `Saved to Playbook Mail.${j.affected > 1 ? ` ${j.affected} blasts use this design.` : ''}`, 'ok');
                 }catch(err){
-                  note.className = 'text-[10px] text-error';
-                  note.textContent = String((err && err.message) || err);
+                  edUndo.pop();                         // it did not happen, so it is not undoable
+                  edSay(String((err && err.message) || err), 'err');
                 }finally{
-                  btn.disabled = false; btn.textContent = label;
+                  edSaving = false;
+                  if(btn){ btn.disabled = false; btn.textContent = label; }
                 }
+              }
+
+              // UNDO PUTS THE PREVIOUS VALUES BACK AND SAVES THEM. It is a new save rather than
+              // a rollback, because there is no version history behind any of this — what it can
+              // honestly offer is "set it to what it was a moment ago", which is what people
+              // mean by undo here.
+              async function edUndoLast(){
+                const prev = edUndo.pop();
+                if(!prev){ edSay('Nothing to undo in this session.', 'muted'); return; }
+                if(prev.target !== edTarget){
+                  edSay('That change was made somewhere else — switch "Save to" back to undo it.', 'err');
+                  edUndo.push(prev);
+                  return;
+                }
+                for(const kind of ['text','colours','styles']){
+                  (prev[kind] || []).forEach((v, k) => {
+                    const el = edPanel.querySelector(`[data-ed="${kind}"][data-i="${k + 1}"]`);
+                    if(el) el.value = v;
+                  });
+                }
+                edMark();
+                await edSave();
+                edSay('Put back.', 'ok');
               }
 
               fs.querySelector('[data-fsedit-here]').addEventListener('click', () => {
