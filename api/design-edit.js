@@ -361,11 +361,22 @@ export default async function handler(req, res) {
       return;
     }
     if (shape.kind === 'html') {
-      const runs = htmlTextNodes(detail.content.html);
+      // AN HTML TEMPLATE IS NOT A SECOND-CLASS DESIGN. It offered words only, on the grounds
+      // that it is "plain HTML rather than a builder document" -- which is true and is not a
+      // reason: every colour in a mail-ready email is in an inline style attribute, because
+      // clients strip stylesheets, so the slots come straight off it like any other. The
+      // templates "Save as a template" creates are this kind, so this is now an ordinary case
+      // rather than a rare one.
+      const h0 = String(detail.content.html || '');
+      const runs = htmlTextNodes(h0);
+      const br = bodyRunOf(h0);
       res.status(200).json({ ok: true, target, kind: 'html', name: detail.name, owner, shared,
-        text: runs.map((t, i) => ({ index: i + 1, value: flat(t) })),
-        colours: [], styles: [], images: [], fonts: [],
-        note: 'This design is plain HTML rather than a builder document, so its words are editable here and its styling is not.' });
+        body_run: br ? br.index : null, body_mode: br ? br.mode : null,
+        text: runs.map((t, i) => ({ index: i + 1, value: flat(t), is_body: !!(br && br.index === i + 1) })),
+        colours: htmlColourSlots(h0).map((c, i) => ({ index: i + 1, ...c })),
+        styles: htmlStyleSlots(h0).map((c, i) => ({ index: i + 1, ...c })),
+        images: htmlImageSlots(h0).map((c, i) => ({ index: i + 1, ...c })),
+        fonts: [] });
       return;
     }
     res.status(400).json({ error: 'This design has nothing editable in it.' });
@@ -425,15 +436,49 @@ export default async function handler(req, res) {
       }
     } else {
       const runs = htmlTextNodes(html);
+      const brH = bodyRunOf(html);
       if (Array.isArray(body.text)) {
         if (body.text.length !== runs.length) throw new Error(`Expected ${runs.length} text values, got ${body.text.length}.`);
         const next = runs.map((orig, i) => {
+          // The [BODY] token, or the paragraph the fill lands on, is not the template's to have
+          // rewritten here -- the same rule the row's own design follows.
+          if (brH && brH.index === i + 1) return null;
           const v = body.text[i] == null ? null : String(body.text[i]);
           if (v === null || !v.trim() || v === flat(orig)) return null;
           changed.text.push({ index: i + 1, before: flat(orig), after: v });
           return v;
         });
         html = applyHtmlText(html, next);
+      }
+      if (Array.isArray(body.colours)) {
+        const slots = htmlColourSlots(html);
+        if (body.colours.length !== slots.length) throw new Error(`Expected ${slots.length} colours, got ${body.colours.length}.`);
+        html = applyHtmlColours(html, body.colours);
+        slots.forEach((c, i) => {
+          const v = body.colours[i] == null ? null : String(body.colours[i]).trim();
+          if (v && v.toLowerCase() !== c.value.toLowerCase()) changed.colours.push({ index: i + 1, role: c.role, before: c.value, after: v, count: c.count });
+        });
+      }
+      if (Array.isArray(body.styles)) {
+        const slots = htmlStyleSlots(html);
+        if (body.styles.length !== slots.length) throw new Error(`Expected ${slots.length} style values, got ${body.styles.length}.`);
+        html = applyHtmlStyles(html, body.styles);
+        slots.forEach((c, i) => {
+          const v = body.styles[i] == null ? null : String(body.styles[i]).trim();
+          if (v && v.toLowerCase() !== c.value.toLowerCase()) changed.styles.push({ index: i + 1, role: c.role, prop: c.prop, before: c.value, after: v, count: c.count });
+        });
+      }
+      if (Array.isArray(body.images)) {
+        const slots = htmlImageSlots(html);
+        if (body.images.length !== slots.length) throw new Error(`Expected ${slots.length} images, got ${body.images.length}.`);
+        html = applyHtmlImages(html, body.images);
+        slots.forEach((im, i) => {
+          const g = body.images[i] || {};
+          for (const f of ['alt', 'href']) {
+            const v = g[f] == null ? null : String(g[f]).trim();
+            if (v !== null && v !== String(im[f] || '').trim()) changed.images.push({ index: i + 1, file: im.file, field: f, before: im[f] || '', after: v });
+          }
+        });
       }
     }
   } catch (e) {

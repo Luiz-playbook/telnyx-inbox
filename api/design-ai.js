@@ -223,6 +223,109 @@ const IMAGE_RULES = [
   'A link must start http:// or https://, or be empty for no link. Leave it empty unless you are told where it should go.',
 ];
 
+// EDITING A FINISHED HTML DOCUMENT, wherever it came from.
+//
+// Two things in this file are an HTML document rather than a builder blob: the design a row
+// sends ("this blast only"), and an html-kind template. They were handled separately, and the
+// second one was handled badly — it stripped every tag, asked the model for prose, and wrote
+// back `<p>the prose</p>`, which replaces the whole design with a single paragraph. Tables,
+// images, colours and buttons all gone.
+//
+// That branch was effectively unreachable while every template in the account was a bee
+// document. "Save as a template" creates type:'html' templates, so it stopped being
+// unreachable, and an AI edit on one would have destroyed it.
+//
+// So both go through here. The slots come straight off the document: every colour in a
+// mail-ready email is in an inline style attribute, because clients strip stylesheets.
+//
+// `skipRun` is a text run the caller does not want touched — the paragraph a blast's own copy
+// overwrites at send time, which is obeyed and then overruled if it is edited here.
+async function editRenderedHtml(html, { row, instruction, skipRun }) {
+  const runs = htmlTextNodes(html);
+  const cols = htmlColourSlots(html);
+  const stys = htmlStyleSlots(html);
+  const imgs = htmlImageSlots(html);
+  if (!runs.length && !cols.length && !stys.length) {
+    const e = new Error('This design has nothing editable in it.'); e.status = 400; throw e;
+  }
+
+  const out = await ask([
+    { role: 'system', content: RULES.concat(
+        cols.length ? COLOUR_RULES : [],
+        stys.length ? SHAPE_RULES : [],
+        imgs.length ? IMAGE_RULES : [],
+        `This design has ${runs.length} pieces of text, numbered below.`,
+        cols.length ? `It also has ${cols.length} colour${cols.length === 1 ? '' : 's'}, numbered separately.` : '',
+        stys.length ? `And ${stys.length} size, spacing and type settings, numbered separately again.` : '',
+        imgs.length ? `And ${imgs.length} image${imgs.length === 1 ? '' : 's'}, whose alt text and link you may change.` : '',
+        `Return JSON: {"blocks": ["<new text for 1>", ...]${cols.length ? `, "colors": ["<hex for 1>", ...]` : ''}${stys.length ? `, "styles": ["<value for 1>", ...]` : ''}${imgs.length ? `, "images": [{"alt": "...", "href": "..."}, ...]` : ''}}`,
+        `"blocks" must have EXACTLY ${runs.length} items, in the same order.`,
+        cols.length ? `"colors" must have EXACTLY ${cols.length} items, in the same order. Omit "colors" entirely if no colour should change.` : '',
+        stys.length ? `"styles" must have EXACTLY ${stys.length} items, in the same order. Omit "styles" entirely if no size, spacing or type should change.` : '',
+        imgs.length ? `"images" must have EXACTLY ${imgs.length} items, in the same order, each an object with "alt" and "href". Omit "images" entirely if no image should change.` : '',
+        'Every item in "blocks", "colors" and "styles" must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
+      ).filter(Boolean).join('\n') },
+    { role: 'user', content: `${context(row)}\n\nText:\n${htmlTextToPrompt(html)}`
+        + (cols.length ? `\n\nColours:\n${htmlColoursToPrompt(html)}` : '')
+        + (stys.length ? `\n\nSizes, spacing and type:\n${htmlStylesToPrompt(html)}` : '')
+        + (imgs.length ? `\n\nImages (you may change alt and link, never the picture):\n${htmlImagesToPrompt(html)}` : '')
+        + `\n\nWhat to change: ${instruction}` },
+  ]);
+
+  const blocks = out.blocks;
+  if (!Array.isArray(blocks) || blocks.length !== runs.length) {
+    const e = new Error(`The model returned ${Array.isArray(blocks) ? blocks.length : 'no'} items for a design with ${runs.length}. Nothing was changed.`);
+    e.status = 502; throw e;
+  }
+  const wants = blocks.map(asBlockText);
+  const badAt = wants.findIndex(w => w === null);
+  if (badAt >= 0) {
+    const e = new Error(`The model returned item ${badAt + 1} in a form this cannot read (${typeof blocks[badAt]}). Nothing was changed.`);
+    e.status = 502; throw e;
+  }
+
+  const flat = t => String(t || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
+  const changed = [], recoloured = [], restyled = [], relinked = [];
+  const next = runs.map((orig, i) => {
+    if (skipRun === i + 1) return null;
+    const want = String(wants[i]).trim();
+    if (!want || want === flat(orig)) return null;
+    changed.push({ index: i + 1, before: flat(orig), after: want });
+    return want;
+  });
+
+  let edited = applyHtmlText(html, next);
+  const wantCols = Array.isArray(out.colors) && out.colors.length === cols.length ? out.colors.map(asBlockText) : null;
+  if (wantCols && !wantCols.includes(null)) {
+    edited = applyHtmlColours(edited, wantCols);
+    cols.forEach((c, i) => {
+      const v = String(wantCols[i] || '').trim();
+      if (v && v.toLowerCase() !== c.value.toLowerCase()) recoloured.push({ index: i + 1, role: c.role, before: c.value, after: v, count: c.count });
+    });
+  }
+  const wantStys = Array.isArray(out.styles) && out.styles.length === stys.length ? out.styles.map(asBlockText) : null;
+  if (wantStys && !wantStys.includes(null)) {
+    edited = applyHtmlStyles(edited, wantStys);
+    stys.forEach((c, i) => {
+      const v = String(wantStys[i] || '').trim();
+      if (v && v.toLowerCase() !== c.value.toLowerCase()) restyled.push({ index: i + 1, role: c.role, prop: c.prop, before: c.value, after: v, count: c.count });
+    });
+  }
+  if (Array.isArray(out.images) && out.images.length === imgs.length) {
+    edited = applyHtmlImages(edited, out.images);
+    imgs.forEach((im, i) => {
+      const g = out.images[i] || {};
+      for (const f of ['alt', 'href']) {
+        const v = g[f] == null ? null : String(g[f]).trim();
+        if (v !== null && v !== String(im[f] || '').trim()) relinked.push({ index: i + 1, file: im.file, field: f, before: im[f] || '', after: v });
+      }
+    });
+  }
+
+  return { edited, changed, recoloured, restyled, relinked,
+           total: changed.length + recoloured.length + restyled.length + relinked.length };
+}
+
 export default async function handler(req, res) {
   if (!await gate(req, res)) return;
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST' }); return; }
@@ -317,109 +420,23 @@ export default async function handler(req, res) {
         res.status(400).json({ error: 'This blast has no design on it yet. Attach one from Playbook Mail first, then this can change it for this send only.' });
         return;
       }
-      const runs = htmlTextNodes(html);
-      if (!runs.length) { res.status(400).json({ error: 'This design has no editable text — nothing for the model to change.' }); return; }
-
-      // THE SAME FOUR DIMENSIONS AS THE TEMPLATE PATH. This asked for words alone, which made
-      // "make the buttons pink" come back as "the model made no changes" — true, and only
-      // because it had never been offered the colours. The hand editor had been given them for
-      // this path already; the AI had not, so one dialog answered the same question two ways
-      // depending on which button you pressed.
-      //
-      // Every colour in a rendered email sits in an inline style attribute, because mail clients
-      // strip stylesheets, so the slots come straight off the document — see lib/htmledit.js.
-      const cols = htmlColourSlots(html);
-      const stys = htmlStyleSlots(html);
-      const imgs = htmlImageSlots(html);
-      const numbered = htmlTextToPrompt(html);
-      const out = await ask([
-        { role: 'system', content: RULES.concat(
-            cols.length ? COLOUR_RULES : [],
-            stys.length ? SHAPE_RULES : [],
-            imgs.length ? IMAGE_RULES : [],
-            `This design has ${runs.length} pieces of text, numbered below.`,
-            cols.length ? `It also has ${cols.length} colour${cols.length === 1 ? '' : 's'}, numbered separately.` : '',
-            stys.length ? `And ${stys.length} size, spacing and type settings, numbered separately again.` : '',
-            imgs.length ? `And ${imgs.length} image${imgs.length === 1 ? '' : 's'}, whose alt text and link you may change.` : '',
-            `Return JSON: {"blocks": ["<new text for 1>", ...]${cols.length ? `, "colors": ["<hex for 1>", ...]` : ''}${stys.length ? `, "styles": ["<value for 1>", ...]` : ''}${imgs.length ? `, "images": [{"alt": "...", "href": "..."}, ...]` : ''}}`,
-            `"blocks" must have EXACTLY ${runs.length} items, in the same order.`,
-            cols.length ? `"colors" must have EXACTLY ${cols.length} items, in the same order. Omit "colors" entirely if no colour should change.` : '',
-            stys.length ? `"styles" must have EXACTLY ${stys.length} items, in the same order. Omit "styles" entirely if no size, spacing or type should change.` : '',
-            imgs.length ? `"images" must have EXACTLY ${imgs.length} items, in the same order, each an object with "alt" and "href". Omit "images" entirely if no image should change.` : '',
-            'Every item in "blocks", "colors" and "styles" must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
-          ).filter(Boolean).join('\n') },
-        { role: 'user', content: `${context(row)}\n\nText:\n${numbered}`
-            + (cols.length ? `\n\nColours:\n${htmlColoursToPrompt(html)}` : '')
-            + (stys.length ? `\n\nSizes, spacing and type:\n${htmlStylesToPrompt(html)}` : '')
-            + (imgs.length ? `\n\nImages (you may change alt and link, never the picture):\n${htmlImagesToPrompt(html)}` : '')
-            + `\n\nWhat to change: ${instruction}` },
-      ]);
-
-      const blocks = out.blocks;
-      if (!Array.isArray(blocks) || blocks.length !== runs.length) {
-        res.status(502).json({ error: `The model returned ${Array.isArray(blocks) ? blocks.length : 'no'} items for a design with ${runs.length}. Nothing was changed.` });
-        return;
-      }
-      // Same refusal as the template path: one unreadable item fails the whole edit rather than
-      // writing part of it. See asBlockText.
-      const wants = blocks.map(asBlockText);
-      const badAt = wants.findIndex(w => w === null);
-      if (badAt >= 0) {
-        res.status(502).json({ error: `The model returned item ${badAt + 1} in a form this cannot read (${typeof blocks[badAt]}). Nothing was changed.` });
-        return;
-      }
-      const flat = t => String(t || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
-      // The run the blast's own copy overwrites at send time is not the design's to rewrite --
-      // the same rule the hand editor follows. Left alone here rather than edited and then lost.
-      const bodyRun = bodyRunIndex(html, bodyPlan(html).mode);
-      const changed = [];
-      const next = runs.map((orig, i) => {
-        if (bodyRun === i + 1) return null;
-        const want = String(wants[i]).trim();
-        if (!want || want === flat(orig)) return null;      // null leaves the run exactly as it is
-        changed.push({ index: i + 1, before: flat(orig), after: want });
-        return want;
-      });
-
-      let edited = applyHtmlText(html, next);
-
-      const recoloured = [], restyled = [], relinked = [];
+      // Shares editRenderedHtml with the html-template path: one routine, so a dimension
+      // cannot be added to one and forgotten in the other, which is exactly how this path came
+      // to offer words only.
+      let r;
       try {
-        const wantCols = Array.isArray(out.colors) && out.colors.length === cols.length ? out.colors.map(asBlockText) : null;
-        if (wantCols && !wantCols.includes(null)) {
-          edited = applyHtmlColours(edited, wantCols);
-          cols.forEach((c, i) => {
-            const v = String(wantCols[i] || '').trim();
-            if (v && v.toLowerCase() !== c.value.toLowerCase()) recoloured.push({ index: i + 1, role: c.role, before: c.value, after: v, count: c.count });
-          });
-        }
-        const wantStys = Array.isArray(out.styles) && out.styles.length === stys.length ? out.styles.map(asBlockText) : null;
-        if (wantStys && !wantStys.includes(null)) {
-          edited = applyHtmlStyles(edited, wantStys);
-          stys.forEach((c, i) => {
-            const v = String(wantStys[i] || '').trim();
-            if (v && v.toLowerCase() !== c.value.toLowerCase()) restyled.push({ index: i + 1, role: c.role, prop: c.prop, before: c.value, after: v, count: c.count });
-          });
-        }
-        if (Array.isArray(out.images) && out.images.length === imgs.length) {
-          edited = applyHtmlImages(edited, out.images);
-          imgs.forEach((im, i) => {
-            const g = out.images[i] || {};
-            for (const f of ['alt', 'href']) {
-              const v = g[f] == null ? null : String(g[f]).trim();
-              if (v !== null && v !== String(im[f] || '').trim()) relinked.push({ index: i + 1, file: im.file, field: f, before: im[f] || '', after: v });
-            }
-          });
-        }
+        r = await editRenderedHtml(html, { row, instruction,
+          skipRun: bodyRunIndex(html, bodyPlan(html).mode) });
       } catch (e) {
-        res.status(502).json({ error: `${String((e && e.message) || e)} Nothing was changed.` });
+        res.status(e.status || 502).json({ error: String((e && e.message) || e) });
         return;
       }
-
-      if (!changed.length && !recoloured.length && !restyled.length && !relinked.length) {
+      const { edited, changed, recoloured, restyled, relinked } = r;
+      if (!r.total) {
         res.status(200).json({ ok: true, target: 'send', changed: [], recoloured: [], restyled: [], relinked: [], affected: 1, note: noChangeNote(instruction) });
         return;
       }
+
       const keptName = row.cakemail_template_name || null;
       const w = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, { method: 'POST', headers: h,
         body: JSON.stringify({ p_id: queueId, p_html: edited, p_template_id: null, p_template_name: null }) });
@@ -594,20 +611,34 @@ export default async function handler(req, res) {
       return;
     }
 
-    // html / custom: one body, edited whole.
+    // AN HTML TEMPLATE IS A DOCUMENT, NOT A PARAGRAPH.
+    //
+    // This used to strip every tag, ask the model for prose, and write back `<p>the prose</p>`,
+    // which replaced the whole design with one paragraph -- tables, images, colours, buttons all
+    // gone. It was unreachable while every template in the account was a bee document, and
+    // "Save as a template" creates type:'html' templates, so it stopped being unreachable.
+    //
+    // It is edited slot by slot now, exactly like the design a row sends.
     const before = String(detail.content.html || '');
-    const out = await ask([
-      { role: 'system', content: RULES.concat(
-          'Return JSON: {"copy": "<the full rewritten body text>"}.',
-        ).join('\n') },
-      { role: 'user', content: `${context(row)}\n\nCurrent copy:\n"""\n${toText(before)}\n"""\n\nWhat to change: ${instruction}` },
-    ]);
-    const after = String(asBlockText(out.copy) || '').trim();
-    if (!after) { res.status(502).json({ error: 'The model did not return a usable body' }); return; }
+    let rh;
+    try {
+      // [BODY] is protected here too: rewriting the token would break the fill outright.
+      rh = await editRenderedHtml(before, { row, instruction,
+        skipRun: bodyRunIndex(before, bodyPlan(before).mode) });
+    } catch (e) {
+      res.status(e.status || 502).json({ error: String((e && e.message) || e) });
+      return;
+    }
+    if (!rh.total) {
+      res.status(200).json({ ok: true, target: 'template', kind: 'html', name: detail.name,
+        changed: [], recoloured: [], restyled: [], relinked: [], affected: shared + 1, note: noChangeNote(instruction) });
+      return;
+    }
     await step('Playbook Mail to save the design', cakemailPatch(`/templates/${templateId}`, { accountId: owner,
-      body: { content: { ...detail.content, html: `<p>${toHtml(after)}</p>` } } }));
+      body: { content: { ...detail.content, html: rh.edited } } }));
     res.status(200).json({ ok: true, target: 'template', kind: 'html', name: detail.name,
-      changed: [{ index: 1, before: toText(before), after }], affected: shared + 1 });
+      changed: rh.changed, recoloured: rh.recoloured, restyled: rh.restyled, relinked: rh.relinked,
+      affected: shared + 1 });
   } catch (e) {
     res.status(502).json({ error: String((e && e.message) || e) });
   }
