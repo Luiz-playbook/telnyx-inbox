@@ -14066,6 +14066,43 @@ This removes its school and season dates. Venues in this market are not touched.
                   class="absolute top-2 right-2 btn btn-xs gap-1 bg-white/95 border-base-300 hover:bg-white shadow-sm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Preview</button>
               </div>`;
 
+            // A LIST IS THE RIGHT SHAPE FOR SOME OF THIS. A tile answers "which one looks right",
+            // which is the question most of the time — and a list answers "which one is called
+            // what, and when was it touched", which is the question once a library has more
+            // designs than fit on a screen. Both, with the choice remembered, rather than one of
+            // them chosen on everybody's behalf.
+            //
+            // THE SAME DATA, THE SAME ACTIONS. A row carries the thumbnail small, the name, the
+            // tags, the date in the order being sorted by, and the same Preview. Nothing is only
+            // available in one view.
+            const when = t => {
+              const at = Number((sortBy === 'updated' ? t.updated_on : t.created_on) || t.updated_on || t.created_on || 0);
+              if(!at) return '';
+              const d = new Date(at * 1000);
+              const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+              return days === 0 ? 'today' : days === 1 ? 'yesterday'
+                   : days < 30 ? `${days} days ago`
+                   : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+            };
+
+            const listRow = t => `
+              <div class="flex items-center gap-3 border-b border-base-200 px-2 py-2 hover:bg-base-200/40 transition${String(t.id) === String(current||'') ? ' bg-[#fdeee4]' : ''}" data-card="${esc(t.id)}">
+                <button type="button" data-pick="${esc(t.id)}" class="flex items-center gap-3 grow min-w-0 text-left focus:outline-none">
+                  <span class="w-[64px] h-[44px] shrink-0 bg-base-200 rounded overflow-hidden flex items-center justify-center">
+                    ${t.thumbnail_url
+                      ? `<img src="${esc(t.thumbnail_url)}" alt="" loading="lazy" class="w-full h-full object-cover object-top">`
+                      : `<span class="text-[9px] text-base-content/40">none</span>`}
+                  </span>
+                  <span class="min-w-0 grow">
+                    <span class="block text-sm font-semibold text-[#133b49] truncate" title="${esc(t.name)}">${esc(t.name)}</span>
+                    <span class="block text-[11px] text-base-content/45 truncate">${esc((t.tags||[]).join(' · ')) || 'No tags'}</span>
+                  </span>
+                  <span class="text-[11px] text-base-content/45 shrink-0 hidden sm:inline">${esc(when(t))}</span>
+                </button>
+                <button type="button" data-zoom="${esc(t.id)}" aria-label="Preview ${esc(t.name)} full screen"
+                  class="btn btn-xs gap-1 shrink-0 border-base-300"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>Preview</button>
+              </div>`;
+
             ov.innerHTML =
               `<div class="pb-modal-card" role="dialog" aria-modal="true" aria-label="Choose a Playbook Mail template" style="max-width:68rem;width:94vw">
                  <div class="font-extrabold text-lg text-[#133b49]">Choose a Playbook Mail template</div>
@@ -14101,6 +14138,10 @@ This removes its school and season dates. Venues in this market are not touched.
                    </select>
                    <select class="select select-bordered select-sm hidden" data-tag aria-label="Filter designs by tag"></select>
                    <button class="btn btn-sm btn-ghost hidden" data-clear>Clear</button>
+                   <div class="join" role="group" aria-label="How to show the designs">
+                     <button class="btn btn-sm join-item" data-view="cards" aria-pressed="true" title="Show the designs as cards"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="w-3.5 h-3.5" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+                     <button class="btn btn-sm join-item" data-view="list" aria-pressed="false" title="Show the designs as a list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></button>
+                   </div>
                    <span class="text-xs text-base-content/45" data-count></span>
                    <div class="ml-auto flex items-center gap-3 text-xs">
                      <a class="link link-primary" target="_blank" rel="noopener noreferrer" data-newtpl>Build a new one &#8599;</a>
@@ -14146,10 +14187,15 @@ This removes its school and season dates. Venues in this market are not touched.
             const pagerEl = ov.querySelector('[data-pager]');
             const pageInfoEl = ov.querySelector('[data-pageinfo]');
             const acct = sendingAccountId;
-            // Twelve is three rows of the four-column grid, so a page is always a whole block of
-            // tiles rather than a row and a half of orphans.
-            const PER_PAGE = 12;
             let list = templates, chosen = null, filter = '', sortBy = 'created', within = 0, tag = '', page = 1;
+            // Remembered per browser, because it is a preference about reading and not about the
+            // data: somebody who prefers a list prefers it every time they open this. Wrapped
+            // because storage throws in a private window, and a picker that will not open is a
+            // far worse outcome than a picker that forgot which view you liked.
+            let view = 'cards';
+            try { const v = localStorage.getItem('pb-tplview'); if(v === 'list' || v === 'cards') view = v; } catch {}
+            // A list row is a third the height of a tile, so more of them fit the same space.
+            const perPage = () => view === 'list' ? 24 : 12;
 
             const nameOf = t => String(t.name || '').toLowerCase();
             const matches = t => !filter || nameOf(t).includes(filter)
@@ -14181,12 +14227,21 @@ This removes its school and season dates. Venues in this market are not touched.
 
             function paintGrid(){
               const shown = visible();
-              const pages = Math.max(1, Math.ceil(shown.length / PER_PAGE));
+              const PP = perPage();
+              const pages = Math.max(1, Math.ceil(shown.length / PP));
               if(page > pages) page = pages;
-              const slice = shown.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+              const slice = shown.slice((page - 1) * PP, page * PP);
+              grid.className = view === 'list'
+                ? 'border border-base-300 rounded-lg mb-2 min-h-[20rem] overflow-hidden'
+                : 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-2 min-h-[20rem] p-1';
+              ov.querySelectorAll('[data-view]').forEach(b => {
+                const on = b.dataset.view === view;
+                b.setAttribute('aria-pressed', on ? 'true' : 'false');
+                b.classList.toggle('btn-primary', on);
+              });
               const narrowed = filter || within || tag;
               grid.innerHTML = slice.length
-                ? slice.map(tile).join('')
+                ? slice.map(view === 'list' ? listRow : tile).join('')
                 : `<div class="col-span-full border border-dashed border-base-300 rounded-lg p-6 text-sm text-base-content/55">
                      ${list.length
                         ? (narrowed ? 'No design matches that search or filter.' : 'No design matches that search.')
@@ -14242,23 +14297,36 @@ This removes its school and season dates. Venues in this market are not touched.
               fs.style.zIndex = '10010';
               fs.innerHTML =
                 `<div class="pb-modal-card p-0 overflow-hidden flex flex-col" role="dialog" aria-modal="true" aria-label="Preview of ${esc(chosen.name)}" style="width:min(900px,96vw);max-width:96vw;height:min(760px,86vh);max-height:90vh">
-                   <div class="flex items-center gap-2 px-4 py-2.5 border-b border-base-300 bg-base-200/50 shrink-0 flex-wrap">
-                     <span class="font-semibold text-[#133b49] truncate" data-fsname>${esc(chosen.name)}</span>
-                     <span class="text-xs text-base-content/45 truncate">${esc(accountLabel)}</span>
-                     <button class="btn btn-sm btn-outline ml-auto shrink-0 gap-1" data-fsedit-here title="Edit this design here, without going to Playbook Mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit here</button>
+                   ${/* SEVEN WORD-BUTTONS IN A ROW DO NOT FIT, and the first thing to go wrong was
+                         the close: everything wrapped to a second line and carried the X down with
+                       it, so the one control every dialog is expected to have ended up in the
+                       middle of the furniture. The two actions people came for stay out here;
+                         the rest go behind More, which is the same call as dropdowns-over-chip-rows
+                         elsewhere in this app. The X is pinned last and never wraps.
+                         (No backticks in here: template literal.) */''}
+                   <div class="flex items-center gap-2 px-4 py-2.5 border-b border-base-300 bg-base-200/50 shrink-0">
+                     <span class="font-semibold text-[#133b49] truncate min-w-0" data-fsname>${esc(chosen.name)}</span>
+                     <span class="text-xs text-base-content/45 truncate hidden sm:inline min-w-0">${esc(accountLabel)}</span>
+                     <span class="ml-auto"></span>
+                     <button class="btn btn-sm btn-outline shrink-0 gap-1" data-fsedit-here title="Edit this design here, without going to Playbook Mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit here</button>
                      <button class="btn btn-sm btn-ai shrink-0 gap-1" data-fsai><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M15 4V2M15 10V8M12.5 6h-2M19.5 6h-2M18 13v-2M18 19v-2M15.5 16h-2M20.5 16h-2"/><path d="M11.5 7.5 3 16l5 5 8.5-8.5z"/></svg> Edit with AI</button>
-                     <button class="btn btn-sm btn-ghost shrink-0" data-fsbig title="Make the preview taller or shorter">Enlarge</button>
+                     <details class="dropdown dropdown-end shrink-0" data-fsmore>
+                       <summary class="btn btn-sm btn-ghost">More</summary>
+                       <ul class="dropdown-content menu menu-sm z-[1] mt-1 w-64 rounded-lg border border-base-300 bg-base-100 p-1 shadow-lg">
+                         <li><button class="justify-start" data-fsbig title="Make the preview taller or shorter">Enlarge</button></li>
                      ${/* A REAL TAB, not another overlay. The preview is fetched with the
                            operator's session, so there is no URL that could simply be opened —
                            the HTML is turned into a blob URL instead, which also means the tab
                            shows exactly the bytes that were previewed rather than re-fetching
                            and possibly differing.
                            (No backticks in here: template literal.) */''}
-                     <button class="btn btn-sm btn-ghost shrink-0" data-fstab title="Open this preview in its own browser tab">Open in tab &#8599;</button>
-                     <button class="btn btn-sm btn-ghost shrink-0" data-fsdup title="Make a copy of this design that only this blast uses, so editing it changes nothing else">Make a copy</button>
-                     <button class="btn btn-sm btn-outline shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
-                     <button class="btn btn-sm btn-outline shrink-0 hidden" data-fssave title="Keep this design in Playbook Mail as a template, so other blasts can use it">Save as a template</button>
-                     <button class="btn btn-sm btn-outline shrink-0 hidden" data-fsback title="This blast has its own design and no longer follows a Playbook Mail template. Pick one again to get the Playbook Mail editor back.">Use a Playbook Mail design&hellip;</button>
+                         <li><button class="justify-start" data-fstab title="Open this preview in its own browser tab">Open in tab &#8599;</button></li>
+                         <li><button class="justify-start" data-fsdup title="Make a copy of this design that only this blast uses, so editing it changes nothing else">Make a copy</button></li>
+                         <li><button class="justify-start" data-fsedit>Edit in Playbook Mail &#8599;</button></li>
+                         <li class="hidden"><button class="justify-start" data-fssave title="Keep this design in Playbook Mail as a template, so other blasts can use it">Save as a template</button></li>
+                         <li class="hidden"><button class="justify-start" data-fsback title="This blast has its own design and no longer follows a Playbook Mail template. Pick one again to get the Playbook Mail editor back.">Use a Playbook Mail design&hellip;</button></li>
+                       </ul>
+                     </details>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsclose aria-label="Close preview">&#10005;</button>
                    </div>
                    ${/* INLINE, NOT A MODAL ON A MODAL. The first version opened a third overlay
@@ -14379,6 +14447,10 @@ This removes its school and season dates. Venues in this market are not touched.
               const onKeyFs = e => { if(e.key === 'Escape'){ e.stopPropagation(); close(); } };
               document.addEventListener('keydown', onKeyFs);
               fs.addEventListener('mousedown', e => { if(e.target === fs) close(); });
+              // A <details> dropdown stays open after a click, which leaves the menu covering the
+              // thing the click just did.
+              const more = fs.querySelector('[data-fsmore]');
+              if(more) more.addEventListener('click', (e) => { if(e.target.closest('li')) more.removeAttribute('open'); });
               fs.querySelector('[data-fsclose]').addEventListener('click', close);
               fs.querySelector('[data-fsback]').addEventListener('click', () => { close(); pickForRow(rowId, null, null); });
 
@@ -14460,17 +14532,20 @@ This removes its school and season dates. Venues in this market are not touched.
               // and explains nothing, where its absence matches the row, which has no Refresh
               // either.
               function lockToThisBlast(label){
+                // The menu items are <li> wrappers now, so hiding the button alone would leave
+                // an empty row in the list.
+                const item = sel => { const el = fs.querySelector(sel); return el && (el.closest('li') || el); };
                 for(const sel of ['[data-fsdup]', '[data-fsedit]']){
-                  const el = fs.querySelector(sel);
+                  const el = item(sel);
                   if(el) el.classList.add('hidden');
                 }
                 // THERE IS STILL A WAY TO PLAYBOOK MAIL. "Edit in Playbook Mail" goes because
                 // there is no template behind this row to open — but leaving nothing at all
                 // reads as the door having been taken away. Picking a design again is the honest
                 // route back, and it is one click.
-                const back = fs.querySelector('[data-fsback]');
+                const back = item('[data-fsback]');
                 if(back) back.classList.remove('hidden');
-                const save = fs.querySelector('[data-fssave]');
+                const save = item('[data-fssave]');
                 if(save) save.classList.remove('hidden');
                 const nameEl = fs.querySelector('[data-fsname]');
                 if(nameEl && label) nameEl.textContent = label;
@@ -15039,6 +15114,11 @@ This removes its school and season dates. Venues in this market are not touched.
               if(tagEl) tagEl.value = '';
               renarrow();
             });
+            ov.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => {
+              view = b.dataset.view;
+              try { localStorage.setItem('pb-tplview', view); } catch {}
+              renarrow();
+            }));
             const prevBtn = ov.querySelector('[data-prev]'), nextBtn = ov.querySelector('[data-next]');
             if(prevBtn) prevBtn.addEventListener('click', () => { if(page > 1){ page--; paintGrid(); } });
             if(nextBtn) nextBtn.addEventListener('click', () => { page++; paintGrid(); });
