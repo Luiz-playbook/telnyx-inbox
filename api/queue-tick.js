@@ -491,10 +491,12 @@ export default async function handler(req, res) {
       // market went on a 14-day cooldown, and the blast could never be retried — all for an
       // email nobody received. Nothing is recorded now unless at least one channel succeeded.
       const sent = [], failed = [];
-      // AI-965: bulkStaged = a draft now sits in the bulk sender awaiting approval (nothing sent);
+      // AI-965: bulkStaged = the bulk sender has this blast (sending, or a draft awaiting approval);
       // emailDelivered = an email channel really delivered. Together they decide who cools the
       // market: see the cooldown below.
-      let bulkStaged = false, emailDelivered = false, stagedCensus = null;
+      // ▲ 2026-10-14: bulkSending = the bulk sender ARMED it (status running) — it sends with no
+      // approval step, so the market cools now, as a delivered email does.
+      let bulkStaged = false, bulkSending = false, emailDelivered = false, stagedCensus = null;
       // NOT `failed`. A note is something worth seeing that is not a send failure — and `failed`
       // is load-bearing: anything in it flips the row to status 'partial' (migration 058) and
       // shows up in Market History as a half-broken blast. A missing Mailhook return address
@@ -605,29 +607,38 @@ export default async function handler(req, res) {
               campaignId = existing.id;
               staged = { ...staged, status: existing.status, fromInbox: existing.from_inbox, eligible: existing.pending };
             }
-            // Approved already (running, paused or done): say so, rather than "awaiting approval".
-            const approved = ['running', 'paused', 'done'].includes(staged.status);
-            // The market cools when something is actually delivered. An SMS draft cools it when
-            // reconcileBulk sees it approved and sending; a delivered email on this row cools it
-            // at send time instead (and flips this to 'at_send' below). So always 'deferred' here.
+            // What the bulk sender actually did. ▲ 2026-10-14 (AI-965): from production, at most
+            // 2,000 eligible are armed in the same request — 'running', nobody approves. A draft
+            // (above the ceiling, a preview, a failed arm, or an adopted pre-10-14 draft) still
+            // waits in the Operator App. Read the status, never what we asked for.
+            const sending = ['running', 'paused', 'done'].includes(staged.status);
+            // The market cools when something is delivered. A campaign that is sending cools it
+            // now (cooldown 'at_send', below); a draft cools when reconcileBulk sees it approved
+            // and sending, or when a delivered email on this row flips it to 'at_send'.
             //
             // The PATCH is checked: fetch does not throw on an HTTP error, and a row without
             // bulk_campaign_id is invisible to reconcile, so its market would never cool. Throwing
             // fails the channel, leaves the row unmarked, and the next tick re-adopts via 409.
+            const cooldown = sending ? 'at_send' : 'deferred';
             const rec = await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
               body: JSON.stringify({
                 bulk_campaign_id: String(campaignId),
-                bulk_census: { ...(staged.raw || {}), cooldown: 'deferred' },
+                bulk_census: { ...(staged.raw || {}), cooldown },
               }),
             });
             if (!rec.ok) throw new Error(`could not record the bulk campaign on this row (HTTP ${rec.status}) — will retry`);
             bulkStaged = true;
-            stagedCensus = { ...(staged.raw || {}), cooldown: 'deferred' };
-            sent.push(approved
-              ? `SMS already approved in the Operator App — campaign is ${staged.status} (${staged.fromInbox || r.sms_from || 'route'})`
-              : `SMS staged for ${staged.eligible != null ? staged.eligible : '?'} of ${phones.length} — awaiting approval in the Operator App`
-                + ` (${staged.fromInbox || r.sms_from || 'route'})`);
+            bulkSending = sending;
+            stagedCensus = { ...(staged.raw || {}), cooldown };
+            const via = staged.fromInbox || r.sms_from || 'route';
+            const of = `${staged.eligible != null ? staged.eligible : '?'} of ${phones.length}`;
+            sent.push(sending
+              ? (staged.duplicate
+                  ? `SMS already sending — campaign is ${staged.status} (${via})`
+                  : `SMS sending to ${of} (${via})`)
+              : `SMS staged for ${of} — awaiting approval in the Operator App`
+                + (staged.why ? ` (${staged.why})` : '') + ` (${via})`);
             if (staged.blocked) notes.push(`Bulk sender held back ${staged.blocked} of ${phones.length}: ${Object.entries(staged.byReason || {}).map(([k, v]) => `${k} ${v}`).join(', ')}`);
             if (staged.collapsedDuplicates) notes.push(`${staged.collapsedDuplicates} duplicate handsets collapsed`);
             // NO hubspotLog here, on purpose. The bulk sender writes the inbox copy itself
@@ -842,7 +853,9 @@ export default async function handler(req, res) {
       // ▲ 2026-10-09 (AI-965): the market cools when something was actually delivered. A bulk
       // SMS draft delivered nothing yet, so unless an email really went out on this row, the
       // cooldown waits for reconcileBulk to see the campaign approved and sending.
-      const deferCooldown = bulkStaged && !emailDelivered;
+      // ▲ 2026-10-14: a campaign the bulk sender is already sending cools the market now; only a
+      // draft waits for reconcileBulk.
+      const deferCooldown = bulkStaged && !bulkSending && !emailDelivered;
       // The draft just staged holds its market for the rest of this tick too: draftHoldList was
       // read before the loop, and a second due row for the same market|segment is next in it.
       if (deferCooldown && mkt) draftHoldList.push({ id: r.id, code: mkt, segment: r.segment || null });
