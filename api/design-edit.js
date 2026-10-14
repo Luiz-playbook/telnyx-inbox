@@ -43,12 +43,50 @@ import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/be
 import { beeColourSlots, applyBeeColours } from '../lib/beestyle.js';
 import { beeStyleSlots, applyBeeStyles, fontChoices } from '../lib/beeshape.js';
 import { beeImageSlots, applyBeeImages } from '../lib/beeimage.js';
+import { bodyPlan } from '../lib/tokens.js';
 import { htmlTextSlots, htmlTextNodes, applyHtmlText, htmlColourSlots, applyHtmlColours,
-         htmlStyleSlots, applyHtmlStyles, htmlImageSlots, applyHtmlImages } from '../lib/htmledit.js';
+         htmlStyleSlots, applyHtmlStyles, htmlImageSlots, applyHtmlImages,
+         walkHtmlTags } from '../lib/htmledit.js';
 
 export const config = { maxDuration: 30 };
 
 const TARGETS = ['send', 'template'];
+
+// WHICH RUN THE BLAST'S OWN COPY WILL OVERWRITE.
+//
+// A design with no [BODY] has the row's copy dropped into its FIRST NON-EMPTY PARAGRAPH when it
+// sends — lib/tokens.js injectBody(), and the row's badge says so. The preview does the same.
+//
+// That silently defeated the editor. Vhea edited the first block, it saved correctly into
+// email_html, and both the preview and the send then replaced it with the row's copy: the field
+// looked broken when it was in fact being obeyed and then overruled. Measured on the live row —
+// stored run 1 was "vhea here", the preview showed "Hey there,…", and the send would have gone
+// out with the latter.
+//
+// So that one run is not the design's to edit. It is the blast's own words, shown where they
+// will actually land, and writing to it writes email_copy. Everything either side of it is
+// still the design's.
+//
+// Same for a [BODY] token: it is a text run too, and rewriting it would break the fill outright.
+function bodyRunOf(html) {
+  const plan = bodyPlan(html);
+  const slots = htmlTextSlots(html);
+  if (plan.mode === 'token') {
+    const i = slots.findIndex(s => s.text.includes('[BODY]'));
+    return i < 0 ? null : { index: i + 1, mode: 'token' };
+  }
+  if (plan.mode !== 'first-paragraph') return null;
+  const strip = x => String(x).replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim();
+  const re = /(<p\b[^>]*>)([\s\S]*?)(<\/p>)/gi;
+  let m;
+  while ((m = re.exec(html))) {
+    if (strip(m[2]) === '') continue;
+    const start = m.index, end = m.index + m[0].length;
+    const i = slots.findIndex(x => x.start >= start && x.end <= end);
+    return i < 0 ? null : { index: i + 1, mode: 'first-paragraph' };
+  }
+  return null;
+}
 
 // SHOWING SOMEBODY WHICH BLOCK "TEXT 20" IS.
 //
@@ -64,6 +102,59 @@ const TARGETS = ['send', 'template'];
 // are not the same thing and lining them up by position would point at the wrong paragraph.
 // Matching on the words themselves is right when they are unique and harmless when they are not:
 // the worst case is marking the first of two identical lines.
+// POINTING AT AN ELEMENT, for the colour, size and image slots. A text run can be wrapped; a
+// colour cannot — it belongs to a tag. So the first tag carrying that exact declaration gets an
+// id to scroll to and an outline to see, appended to whatever style it already had so nothing
+// it was already doing is lost.
+function markElement(html, test) {
+  let at = null;
+  walkHtmlTags(html, (tag, start, end) => {
+    if (at) return;
+    const name = (/^<\s*([a-z0-9]+)/i.exec(tag) || [, ''])[1].toLowerCase();
+    const style = (/\sstyle\s*=\s*"([^"]*)"/i.exec(tag) || [, ''])[1];
+    if (test(name, style, tag)) at = { tag, start, end };
+  });
+  if (!at) return { html, found: false };
+  const OUTLINE = 'outline:3px solid #e8590c;outline-offset:2px';
+  const withStyle = /\sstyle\s*=\s*"/i.test(at.tag)
+    ? at.tag.replace(/(\sstyle\s*=\s*")/i, ' id="pb-here"$1' + OUTLINE + ';')
+    : at.tag.replace(/^<\s*([a-z0-9]+)/i, '<$1 id="pb-here" style="' + OUTLINE + '"');
+  return { html: html.slice(0, at.start) + withStyle + html.slice(at.end), found: true };
+}
+
+const normHex = v => {
+  let x = String(v || '').trim().toLowerCase();
+  if (/^#[0-9a-f]{3}$/.test(x)) x = '#' + x[1] + x[1] + x[2] + x[2] + x[3] + x[3];
+  return x.replace(/\s+/g, '');
+};
+
+// One entry point for all four kinds, so the browser only has to say which list and which row.
+function markSlot(html, { kind, index, text }) {
+  const i = Number(index);
+  if (kind === 'colour') {
+    const slot = htmlColourSlots(html)[i - 1];
+    if (!slot) return { html, found: false };
+    const tag = slot.role.split(' ')[0];
+    return markElement(html, (name, style) => name === tag && style.split(';').some(d => {
+      const c = d.indexOf(':');
+      return c > 0 && d.slice(0, c).trim().toLowerCase() === slot.prop && normHex(d.slice(c + 1)) === normHex(slot.value);
+    }));
+  }
+  if (kind === 'style') {
+    const slot = htmlStyleSlots(html)[i - 1];
+    if (!slot) return { html, found: false };
+    return markElement(html, (name, style) => name === slot.role && style.split(';').some(d => {
+      const c = d.indexOf(':');
+      return c > 0 && d.slice(0, c).trim().toLowerCase() === slot.prop && d.slice(c + 1).trim().toLowerCase() === slot.value.toLowerCase();
+    }));
+  }
+  if (kind === 'image') {
+    let n = 0;
+    return markElement(html, (name) => name === 'img' && ++n === i);
+  }
+  return markRun(html, { index: i, text });
+}
+
 function markRun(html, { index, text }) {
   const slots = htmlTextSlots(html);
   let hit = -1;
@@ -141,7 +232,7 @@ export default async function handler(req, res) {
       } catch { /* fall back to the row's own copy, which is the same design */ }
     }
     if (!source.trim()) { res.status(400).json({ error: 'nothing to preview' }); return; }
-    const marked = markRun(source, { index: Number(highlight), text: wantText });
+    const marked = markSlot(source, { kind: String(req.query?.kind || 'text'), index: Number(highlight), text: wantText });
     res.status(200).json({ ok: true, html: defangHtml(marked.html), found: marked.found });
     return;
   }
@@ -155,8 +246,13 @@ export default async function handler(req, res) {
     const runs = htmlTextNodes(html0);
 
     if (req.method !== 'POST') {
+      const br = bodyRunOf(html0);
       res.status(200).json({ ok: true, target: 'send', kind: 'rendered', name: row.cakemail_template_name || null, shared: 0,
-        text: runs.map((t, i) => ({ index: i + 1, value: flat(t) })),
+        body_run: br ? br.index : null, body_mode: br ? br.mode : null,
+        text: runs.map((t, i) => ({ index: i + 1,
+          // The body slot shows the blast's OWN words, because that is what will be there.
+          value: br && br.index === i + 1 ? String(row.email_copy || '') : flat(t),
+          is_body: !!(br && br.index === i + 1) })),
         colours: htmlColourSlots(html0).map((c, i) => ({ index: i + 1, ...c })),
         styles: htmlStyleSlots(html0).map((c, i) => ({ index: i + 1, ...c })),
         images: htmlImageSlots(html0).map((c, i) => ({ index: i + 1, ...c })),
@@ -166,12 +262,22 @@ export default async function handler(req, res) {
     }
 
     const changed = { text: [], colours: [], styles: [], images: [] };
-    let html = html0;
+    const br = bodyRunOf(html0);
+    let html = html0, newCopy = null;
     try {
       if (Array.isArray(body.text)) {
         if (body.text.length !== runs.length) throw new Error(`Expected ${runs.length} text values, got ${body.text.length}.`);
         const next = runs.map((orig, i) => {
           const v = body.text[i] == null ? null : String(body.text[i]);
+          // The body slot is the row's copy, not the design's markup. Left out of the HTML edit
+          // entirely: writing it there would be overwritten by the fill a moment later.
+          if (br && br.index === i + 1) {
+            if (v !== null && v.trim() && v !== String(row.email_copy || '')) {
+              newCopy = v;
+              changed.text.push({ index: i + 1, before: String(row.email_copy || ''), after: v, body: true });
+            }
+            return null;
+          }
           if (v === null || !v.trim() || v === flat(orig)) return null;
           changed.text.push({ index: i + 1, before: flat(orig), after: v });
           return v;
@@ -216,11 +322,26 @@ export default async function handler(req, res) {
     const total = changed.text.length + changed.colours.length + changed.styles.length + changed.images.length;
     if (!total) { res.status(200).json({ ok: true, target: 'send', changed, total: 0, affected: 1 }); return; }
 
+    // THE SMS IS PASSED THROUGH AS IT IS STORED, NOT AS NULL — queue_set_copy writes both
+    // columns, and sending null here would silently erase the row's text message. Same trap the
+    // Queue's own Save guards against; see the note in api/design-ai.js.
+    if (newCopy !== null) {
+      const c = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_copy`, { method: 'POST', headers: h,
+        body: JSON.stringify({ p_id: queueId, p_email: newCopy, p_sms: row.sms_copy ?? null }) });
+      if (!c.ok) { res.status(502).json({ error: `queue_set_copy failed (HTTP ${c.status}). Nothing was changed.` }); return; }
+    }
+
     const keptName = row.cakemail_template_name || null;
-    const w = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, { method: 'POST', headers: h,
-      body: JSON.stringify({ p_id: queueId, p_html: html, p_template_id: null, p_template_name: null }) });
-    if (!w.ok) { res.status(502).json({ error: `queue_set_email_html failed (HTTP ${w.status}). Nothing was changed.` }); return; }
-    res.status(200).json({ ok: true, target: 'send', changed, total, affected: 1, detached_from: keptName });
+    // Only when the design itself moved. A body-copy-only edit must not detach the row from its
+    // template: the words it changed were never the template's.
+    const designMoved = html !== html0;
+    if (designMoved) {
+      const w = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, { method: 'POST', headers: h,
+        body: JSON.stringify({ p_id: queueId, p_html: html, p_template_id: null, p_template_name: null }) });
+      if (!w.ok) { res.status(502).json({ error: `queue_set_email_html failed (HTTP ${w.status}). Nothing was changed.` }); return; }
+    }
+    res.status(200).json({ ok: true, target: 'send', changed, total, affected: 1,
+                           detached: designMoved, detached_from: designMoved ? keptName : null });
     return;
   }
 

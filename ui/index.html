@@ -14257,6 +14257,7 @@ This removes its school and season dates. Venues in this market are not touched.
                      <button class="btn btn-sm btn-ghost shrink-0" data-fstab title="Open this preview in its own browser tab">Open in tab &#8599;</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsdup title="Make a copy of this design that only this blast uses, so editing it changes nothing else">Make a copy</button>
                      <button class="btn btn-sm btn-outline shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
+                     <button class="btn btn-sm btn-outline shrink-0 hidden" data-fsback title="This blast has its own design and no longer follows a Playbook Mail template. Pick one again to get the Playbook Mail editor back.">Use a Playbook Mail design&hellip;</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsclose aria-label="Close preview">&#10005;</button>
                    </div>
                    ${/* INLINE, NOT A MODAL ON A MODAL. The first version opened a third overlay
@@ -14357,6 +14358,7 @@ This removes its school and season dates. Venues in this market are not touched.
               document.addEventListener('keydown', onKeyFs);
               fs.addEventListener('mousedown', e => { if(e.target === fs) close(); });
               fs.querySelector('[data-fsclose]').addEventListener('click', close);
+              fs.querySelector('[data-fsback]').addEventListener('click', () => { close(); pickForRow(rowId, null, null); });
               fs.querySelector('[data-fsedit]').addEventListener('click', () => goEdit());
               const frame = fs.querySelector('[data-fsframe]');
               const shell = fs.querySelector('.pb-modal-card');
@@ -14403,6 +14405,12 @@ This removes its school and season dates. Venues in this market are not touched.
                   const el = fs.querySelector(sel);
                   if(el) el.classList.add('hidden');
                 }
+                // THERE IS STILL A WAY TO PLAYBOOK MAIL. "Edit in Playbook Mail" goes because
+                // there is no template behind this row to open — but leaving nothing at all
+                // reads as the door having been taken away. Picking a design again is the honest
+                // route back, and it is one click.
+                const back = fs.querySelector('[data-fsback]');
+                if(back) back.classList.remove('hidden');
                 const nameEl = fs.querySelector('[data-fsname]');
                 if(nameEl && label) nameEl.textContent = label;
                 const whereEl = fs.querySelector('[data-fsai-where]');
@@ -14661,14 +14669,25 @@ This removes its school and season dates. Venues in this market are not touched.
                 // one is labelled with its own first few words and carries a locate button that
                 // marks it in the preview beside you. Vhea: "sometimes idk what is text 20".
                 const snip = v => { const x = String(v).replace(/\s+/g, ' ').trim(); return x.length > 34 ? x.slice(0, 34) + '…' : (x || '(empty)'); };
+                // ONE LOCATE BUTTON, FOUR LISTS. A colour or a size is no easier to find in a
+                // design than a sentence is — arguably harder, since "div color (15 places)"
+                // names nothing a person can see. The kind travels with the index so the server
+                // knows which list to look in.
+                const FIND = (i, kind) => `<button class="btn btn-ghost btn-xs px-1 shrink-0" data-edfind="${i}" data-kind="${kind}" aria-label="Show me where this is" title="Show me where this is in the design"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>`;
                 const text = d.text.map(t =>
-                  `<div class="mb-2">
+                  `<div class="mb-2${t.is_body ? ' border-l-2 border-[#e55608] pl-2' : ''}">
                      <div class="flex items-center gap-1 mb-0.5">
-                       <span class="text-[11px] font-semibold text-[#133b49] truncate grow" title="${esc(t.value)}">${t.index}. ${esc(snip(t.value))}</span>
-                       <button class="btn btn-ghost btn-xs px-1 shrink-0" data-edfind="${t.index}" aria-label="Show me where this is" title="Show me where this is in the design"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
+                       ${/* THE ONE SLOT THAT IS NOT THE DESIGN'S. With no [BODY] in it, the blast's
+                             own copy replaces the first paragraph when it sends — so editing the
+                             design there is overwritten a moment later, which is exactly what
+                             happened on the first real use. This field IS that copy.
+                             (No backticks in here: template literal.) */''}
+                       <span class="text-[11px] font-semibold ${t.is_body ? 'text-[#b8460a]' : 'text-[#133b49]'} truncate grow" title="${esc(t.value)}">${t.is_body ? 'This blast’s own words' : `${t.index}. ${esc(snip(t.value))}`}</span>
+                       <button class="btn btn-ghost btn-xs px-1 shrink-0${t.is_body ? ' hidden' : ''}" data-edfind="${t.index}" data-kind="text" aria-label="Show me where this is" title="Show me where this is in the design"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
                        <button class="btn btn-ghost btn-xs px-1 shrink-0 hidden" data-edreset="text" data-i="${t.index}" aria-label="Undo this field" title="Put this back to what it was"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 3v6h6"/></svg></button>
                      </div>
-                     <textarea class="textarea textarea-bordered textarea-xs w-full text-xs" rows="2" data-ed="text" data-i="${t.index}">${esc(t.value)}</textarea>
+                     <textarea class="textarea textarea-bordered textarea-xs w-full text-xs" rows="${t.is_body ? 4 : 2}" data-ed="text" data-i="${t.index}">${esc(t.value)}</textarea>
+                     ${t.is_body ? `<div class="text-[10px] text-base-content/55 mt-0.5">${d.body_mode === 'token' ? 'The design has [BODY] in it; these words go there when the blast sends.' : 'The design has no [BODY], so these words replace its first paragraph when the blast sends. Editing the design there instead would be overwritten.'}</div>` : ''}
                    </div>`).join('');
 
                 // COLOURS KEEP THEIR OWN SWATCH AND THEIR HEX SIDE BY SIDE. A picker alone cannot
@@ -14677,6 +14696,7 @@ This removes its school and season dates. Venues in this market are not touched.
                 const colours = d.colours.map(c =>
                   edField(`${c.role}${c.count > 1 ? ` (${c.count} places)` : ''}`,
                     `<span class="flex gap-1.5 items-center">
+                       ${FIND(c.index, 'colour')}
                        <input type="color" class="w-8 h-7 rounded border border-base-300 p-0 bg-base-100 shrink-0" value="${esc(/^#[0-9a-f]{6}$/i.test(c.value) ? c.value : '#000000')}" data-edswatch="${c.index}">
                        <input type="text" class="input input-bordered input-xs grow font-mono" value="${esc(c.value)}" data-ed="colours" data-i="${c.index}">
                      </span>`)).join('');
@@ -14687,22 +14707,31 @@ This removes its school and season dates. Venues in this market are not touched.
                 for(const st of d.styles) (byRole[st.role] = byRole[st.role] || []).push(st);
                 const styles = Object.keys(byRole).map(role => edGroup(role,
                   byRole[role].map(st => edField(`${st.prop}${st.count > 1 ? ` (${st.count})` : ''}`,
-                    st.prop === 'font-family'
+                    FIND(st.index, 'style') + (st.prop === 'font-family'
                       ? `<select class="select select-bordered select-xs w-full" data-ed="styles" data-i="${st.index}">${
                           (d.fonts || []).map(f => `<option value="${esc(f)}"${f === st.value ? ' selected' : ''}>${esc(String(f).split(',')[0].replace(/['"]/g,''))}</option>`).join('')
                         }</select>`
-                      : `<input type="text" class="input input-bordered input-xs w-full font-mono" value="${esc(st.value)}" data-ed="styles" data-i="${st.index}">`)).join(''))).join('');
+                      : `<input type="text" class="input input-bordered input-xs w-full font-mono" value="${esc(st.value)}" data-ed="styles" data-i="${st.index}">`))).join(''))).join('');
 
                 const images = d.images.map(im =>
                   `<div class="border border-base-300 rounded-lg p-2 mb-2">
-                     <div class="text-[11px] font-semibold text-[#133b49] truncate mb-1" title="${esc(im.file)}">${esc(im.file)}</div>
+                     <div class="flex items-center gap-1 mb-1">
+                       <span class="text-[11px] font-semibold text-[#133b49] truncate grow" title="${esc(im.file)}">${esc(im.file)}</span>
+                       ${FIND(im.index, 'image')}
+                     </div>
                      ${edField('Alt text', `<input type="text" class="input input-bordered input-xs w-full" value="${esc(im.alt || '')}" data-ed="img-alt" data-i="${im.index}">`, 'What a recipient reads when the picture does not load, which in email is most of the time.')}
                      ${edField('Links to', `<input type="text" class="input input-bordered input-xs w-full" value="${esc(im.href || '')}" placeholder="https://&hellip;" data-ed="img-href" data-i="${im.index}">`)}
                      <div class="text-[10px] text-base-content/45">The picture itself is changed in Playbook Mail.</div>
                    </div>`).join('');
 
+                // FIXED HEADER, SCROLLING MIDDLE, FIXED FOOTER. The footer was `sticky bottom-0`
+                // inside the scrolling column, which floats it over the list — the controls ended
+                // up sitting in the middle of the colours with content running underneath them.
+                // A three-part column puts the buttons below the list rather than on top of it.
+                edPanel.classList.add('flex', 'flex-col');
+                edPanel.classList.remove('overflow-y-auto');
                 edPanel.innerHTML =
-                  `<div class="p-3">
+                  `<div class="p-3 flex flex-col min-h-0 h-full">
                      <div class="text-xs font-semibold text-[#133b49] mb-1">Edit this design</div>
                      <label class="block mb-2">
                        <span class="block text-[11px] text-base-content/60 mb-0.5">Save to</span>
@@ -14713,11 +14742,13 @@ This removes its school and season dates. Venues in this market are not touched.
                        </select>
                      </label>
                      ${d.note ? `<div class="text-[10px] text-base-content/55 mb-2">${esc(d.note)}</div>` : ''}
-                     ${edGroup(`Words (${d.text.length})`, text, true)}
-                     ${edGroup(`Colours (${d.colours.length})`, colours, false)}
-                     ${styles ? edGroup(`Size, spacing and type (${d.styles.length})`, styles, false) : ''}
-                     ${images ? edGroup(`Images (${d.images.length})`, images, false) : ''}
-                     <div class="text-[10px] text-base-content/50 mb-2">Adding, removing or moving blocks, and swapping a picture, are done in Playbook Mail.</div>
+                     <div class="grow min-h-0 overflow-y-auto -mx-3 px-3">
+                       ${edGroup(`Words (${d.text.length})`, text, true)}
+                       ${edGroup(`Colours (${d.colours.length})`, colours, false)}
+                       ${styles ? edGroup(`Size, spacing and type (${d.styles.length})`, styles, false) : ''}
+                       ${images ? edGroup(`Images (${d.images.length})`, images, false) : ''}
+                       <div class="text-[10px] text-base-content/50 mb-2">Adding, removing or moving blocks, and swapping a picture, are done in Playbook Mail.</div>
+                     </div>
                      ${/* AUTOSAVE ONLY WHERE A SAVE IS CHEAP AND LOCAL. "This blast only" writes
                            one row in our own database and is undoable, so it saves itself a
                            moment after typing stops. The other two write to Playbook Mail and
@@ -14725,7 +14756,7 @@ This removes its school and season dates. Venues in this market are not touched.
                            Save, because autosaving a shared template on every pause is not a
                            convenience, it is a series of surprises for whoever else uses it.
                            (No backticks in here: template literal.) */''}
-                     <div class="flex gap-2 items-center flex-wrap sticky bottom-0 bg-base-100 pt-2 border-t border-base-200">
+                     <div class="flex gap-2 items-center flex-wrap shrink-0 bg-base-100 pt-2 mt-1 border-t border-base-200">
                        <button class="btn btn-xs btn-primary${edTarget === 'send' ? ' hidden' : ''}" data-edsave>Save</button>
                        <button class="btn btn-xs btn-ghost" data-edundo${edUndo.length ? '' : ' disabled'}>Undo last change</button>
                        <button class="btn btn-xs btn-ghost" data-edresetall>Reset all</button>
@@ -14736,7 +14767,13 @@ This removes its school and season dates. Venues in this market are not touched.
 
                 edPanel.querySelectorAll('[data-edswatch]').forEach(sw => sw.addEventListener('input', () => {
                   const box = edPanel.querySelector(`[data-ed="colours"][data-i="${sw.dataset.edswatch}"]`);
-                  if(box) box.value = sw.value;
+                  if(!box) return;
+                  box.value = sw.value;
+                  // SETTING .value IN SCRIPT FIRES NOTHING. The listener that marks the field as
+                  // changed and schedules the autosave is on the text box's own input event, so
+                  // picking a colour from the swatch looked like it did nothing at all: the
+                  // hex changed on screen and was never saved.
+                  box.dispatchEvent(new Event('input', { bubbles: true }));
                 }));
                 edPanel.querySelector('[data-edtarget]').addEventListener('change', (e) => { edTarget = e.currentTarget.value; edUndo = []; edLoad(); });
                 edPanel.querySelector('[data-edclose]').addEventListener('click', () => edPanel.classList.add('hidden'));
@@ -14749,12 +14786,14 @@ This removes its school and season dates. Venues in this market are not touched.
                 // that way, because what is in it is somebody else's HTML.
                 edPanel.querySelectorAll('[data-edfind]').forEach(b => b.addEventListener('click', async () => {
                   const i = b.dataset.edfind;
-                  const box = edPanel.querySelector(`[data-ed="text"][data-i="${i}"]`);
+                  // Only a text slot has words to match on; the others are found by index.
+                  const box = b.dataset.kind === 'text' ? edPanel.querySelector(`[data-ed="text"][data-i="${i}"]`) : null;
                   b.disabled = true;
                   try{
                     const r = await fetch('/api/design-edit?queue_id=' + encodeURIComponent(rowId)
                       + '&target=' + encodeURIComponent(edTarget === 'copy' ? 'template' : edTarget)
                       + '&highlight=' + encodeURIComponent(i)
+                      + '&kind=' + encodeURIComponent(b.dataset.kind || 'text')
                       + '&text=' + encodeURIComponent(box ? box.value : '') + '&_=' + Date.now(),
                       { headers: await apiHeaders() });
                     const j = await r.json().catch(() => ({}));
