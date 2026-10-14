@@ -1918,7 +1918,7 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <summary>
                     <span class="rn-who">Vhea</span>
                     <span class="rn-role">ticket prices, catalog, reports, market history, contacts, notifications</span>
-                    <span class="rn-tally">8 areas &middot; 32 entries</span>
+                    <span class="rn-tally">9 areas &middot; 40 entries</span>
                     <span class="rn-caret" aria-hidden="true">&#9662;</span>
                   </summary>
                   <div class="rn-devbody">
@@ -2055,9 +2055,9 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                           producing them.</p></li>
                     </ul>
 
-                    <h2>Email designs from CakeMail</h2>
+                    <h2>Email designs from Playbook Mail <span class="rn-count">AI-1124, AI-1125</span></h2>
                     <p class="rn-areanote">A blast could only ever send the plain-text body typed into the Queue. It can now
-                      send a designed template built in CakeMail &mdash; with the drafted copy placed inside it.</p>
+                      send a designed template &mdash; and that design can now be changed without leaving SendBlaster, by hand or by asking.</p>
                     <ul class="rn-items">
                       <li><h3>Choose a CakeMail template, from the Queue</h3>
                         <p>Expand a blast and the email panel has <b>Choose Playbook Mail Template</b> beside the existing
@@ -2090,6 +2090,36 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                         <p><b>Send now</b> used to spin a button inside a menu that closes as soon as the table redraws. The row
                           itself now reads <b>Sending&hellip;</b> for as long as the send is in flight, which for CakeMail is five
                           sequential calls.</p></li>
+
+                    <li><h3>The library, for an account with more than a handful</h3>
+                    <p>The picker opens on tiles big enough to judge a design from, with <b>search</b> by name or tag, a <b>date
+                    filter</b> over whichever date you are sorting by, and <b>pagination</b> &mdash; the server walks every page of the
+                    library rather than reading the first hundred and calling that the library. <b>Cards or a list</b>, remembered per
+                    browser: a tile answers &ldquo;which one looks right&rdquo;, a list answers &ldquo;which one is called what, and when
+                    was it last touched&rdquo;. Newest first by creation, so the one built this morning is at the top and stays
+                    there.</p></li>
+                    <li><h3>Edit the design here, without going to Playbook Mail</h3>
+                    <p>A design&rsquo;s preview now has <b>Edit here</b>, which puts a panel beside it holding the design&rsquo;s own
+                    parts as fields: every block of <b>words</b>, every <b>colour</b> (swatch and hex together), its <b>sizes, spacing
+                    and type</b> grouped by what they belong to, and each image&rsquo;s <b>alt text and link</b>. Every field has a
+                    <b>find</b> button that marks that exact thing in the preview and scrolls to it, because &ldquo;text 20&rdquo; and
+                    &ldquo;div color (15 places)&rdquo; name nothing a person can see. Changes meant for one blast save themselves;
+                    changes that reach Playbook Mail wait for <b>Save</b>.</p></li>
+                    <li><h3>Or describe the change and let AI make it</h3>
+                    <p><b>Edit with AI</b> takes one instruction &mdash; &ldquo;shorter opening, buttons in our orange, and square them
+                    off&rdquo; &mdash; and applies it across the words, the colours and the sizing in a single pass. It changes only what
+                    was asked about: on a design where the same green is both the buttons and fifteen links, &ldquo;make the buttons
+                    blue&rdquo; moves the buttons and leaves the links alone. A colour it cannot read as a colour, or a length with no
+                    unit, fails the whole edit rather than writing something the design would silently ignore.</p></li>
+                    <li><h3>Three places a change can land, asked once</h3>
+                    <p>Above both editors: <b>this blast only</b>, <b>a new copy in Playbook Mail</b>, or <b>this template itself</b>
+                    &mdash; which says how many blasts that would change. &ldquo;This blast only&rdquo; writes nothing to Playbook Mail
+                    at all and the blast stops following the template, so the hourly re-render cannot overwrite it. If the result turns
+                    out to be worth keeping, <b>Save as a template</b> puts it in Playbook Mail for everything else to use.</p></li>
+                    <li><h3>What it cannot do, said on the screen</h3>
+                    <p>Adding, removing or moving blocks, and swapping one picture for another, are structural and still belong in
+                    Playbook Mail&rsquo;s own builder. Asking for one of those says so, and says where to do it, instead of reporting
+                    that nothing changed.</p></li>
                     </ul>
 
                     <h2>Fixes</h2>
@@ -2105,6 +2135,17 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                       <li><h3>The date filter stacked on top of itself</h3>
                         <p>The from / to date range rendered as three boxes piled vertically and hanging off the right edge, on
                           Offers, Queue, Market History and Ticket Prices alike.</p></li>
+                    <li><h3>A design borrowed from another account would not open</h3>
+                    <p>A template lives in one Playbook Mail account and a blast may send from another. Attaching worked; opening the
+                    same design full size answered <b>400 Forbidden</b>, because that path assumed the sending account owned it. Both
+                    now look in the sending account first and fall back to the others.</p></li>
+                    <li><h3>Edits to a design&rsquo;s first paragraph were being overwritten</h3>
+                    <p>A design with no <b>[BODY]</b> has the blast&rsquo;s own copy dropped into its first paragraph when it sends.
+                    Editing that paragraph saved correctly and was then replaced &mdash; in the preview and at send. That field is now
+                    the blast&rsquo;s own words, shown where they will actually land, and says so.</p></li>
+                    <li><h3>The Queue&rsquo;s loading rows stopped a column short</h3>
+                    <p>The skeleton spanned nine columns of a ten-column table, leaving a notch down the right-hand side. The count
+                    now comes from the table itself, so it cannot drift again.</p></li>
                     </ul>
 
                   </div>
@@ -2113,12 +2154,34 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                 <details class="rn-dev">
                   <summary>
                     <span class="rn-who">Luiz</span>
-                    <span class="rn-role">setup &amp; messaging</span>
-                    <span class="rn-tally">8 entries</span>
+                    <span class="rn-role">bulk SMS, the sending tick, setup &amp; messaging</span>
+                    <span class="rn-tally">13 entries</span>
                     <span class="rn-caret" aria-hidden="true">&#9662;</span>
                   </summary>
                   <div class="rn-devbody">
-                    <h2>Setup &amp; messaging</h2>
+                                      <h2>Bulk SMS &amp; the sending tick <span class="rn-count">AI-965</span></h2>
+                  <p class="rn-areanote">A market&rsquo;s text messages can now be handed to the bulk sender, and the tick that sends
+                  them was made safe to interrupt.</p>
+                  <ul class="rn-items">
+                    <li><h3>Ask the bulk sender to send, from production only</h3>
+                    <p>A market&rsquo;s SMS can be staged to the bulk sender and sent from there. Only the production deployment may
+                    ask for it &mdash; a preview build never will, whatever its settings say, so a branch deploy cannot text a real
+                    audience.</p></li>
+                    <li><h3>Only the bulk sender&rsquo;s own numbers go to it</h3>
+                    <p>Routes are matched to the sender that owns them, so a number belonging to one path is never handed to
+                    another.</p></li>
+                    <li><h3>A market that is sending holds the rest of the tick</h3>
+                    <p>A blast already going out cools its market immediately, and the cool-down is recorded only once the send is
+                    logged &mdash; so a second blast to the same people cannot start while the first is still in flight.</p></li>
+                    <li><h3>Running out of time skips the whole row</h3>
+                    <p>The tick has a time budget. It used to stop between a row&rsquo;s email and its SMS, which sent the email and
+                    silently dropped the text. It now leaves the entire row for the next run.</p></li>
+                    <li><h3>SMS goes only through the consent gate</h3>
+                    <p>Every text sent through the bulk sender passes its consent check, with nothing staged at the end of a run
+                    where it would not be checked.</p></li>
+                  </ul>
+                  
+                  <h2>Setup &amp; messaging</h2>
                     <p class="rn-areanote">Shipping in the same build, listed here so the release is complete.</p>
                     <ul class="rn-items">
                       <li><h3>Inbox for Cole&rsquo;s demo bookings</h3>
