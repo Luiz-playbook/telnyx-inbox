@@ -494,8 +494,9 @@ export default async function handler(req, res) {
       // AI-965: bulkStaged = the bulk sender has this blast (sending, or a draft awaiting approval);
       // emailDelivered = an email channel really delivered. Together they decide who cools the
       // market: see the cooldown below.
-      // ▲ 2026-10-14: bulkSending = the bulk sender ARMED it (status running) — it sends with no
-      // approval step, so the market cools now, as a delivered email does.
+      // ▲ 2026-10-14 (AI-965): bulkSending = the bulk sender ARMED it (running, paused or done, as
+      // startsCooldown reads it) — it sends with no approval step, so the market cools now, as a
+      // delivered email does.
       let bulkStaged = false, bulkSending = false, emailDelivered = false, stagedCensus = null;
       // NOT `failed`. A note is something worth seeing that is not a send failure — and `failed`
       // is load-bearing: anything in it flips the row to status 'partial' (migration 058) and
@@ -613,13 +614,16 @@ export default async function handler(req, res) {
             // waits in the Operator App. Read the status, never what we asked for.
             const sending = ['running', 'paused', 'done'].includes(staged.status);
             // The market cools when something is delivered. A campaign that is sending cools it
-            // now (cooldown 'at_send', below); a draft cools when reconcileBulk sees it approved
-            // and sending, or when a delivered email on this row flips it to 'at_send'.
+            // this tick (bulkSending, below), but the row is ALWAYS written 'deferred' here: it
+            // becomes 'at_send' only once log_market_blast succeeded. If that log fails the row
+            // stays 'deferred' and reconcileBulk logs it next tick (it is running, so
+            // startsCooldown is true). A draft cools when reconcileBulk sees it approved and
+            // sending, or when a delivered email on this row flips it to 'at_send'.
             //
             // The PATCH is checked: fetch does not throw on an HTTP error, and a row without
             // bulk_campaign_id is invisible to reconcile, so its market would never cool. Throwing
             // fails the channel, leaves the row unmarked, and the next tick re-adopts via 409.
-            const cooldown = sending ? 'at_send' : 'deferred';
+            const cooldown = 'deferred';
             const rec = await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
               body: JSON.stringify({
@@ -853,22 +857,33 @@ export default async function handler(req, res) {
       // ▲ 2026-10-09 (AI-965): the market cools when something was actually delivered. A bulk
       // SMS draft delivered nothing yet, so unless an email really went out on this row, the
       // cooldown waits for reconcileBulk to see the campaign approved and sending.
-      // ▲ 2026-10-14: a campaign the bulk sender is already sending cools the market now; only a
-      // draft waits for reconcileBulk.
+      // ▲ 2026-10-14 (AI-965): a campaign the bulk sender is already sending cools the market now;
+      // only a draft waits for reconcileBulk.
       const deferCooldown = bulkStaged && !bulkSending && !emailDelivered;
       // The draft just staged holds its market for the rest of this tick too: draftHoldList was
       // read before the loop, and a second due row for the same market|segment is next in it.
       if (deferCooldown && mkt) draftHoldList.push({ id: r.id, code: mkt, segment: r.segment || null });
       if (r.state_code && (phones.length || emails.length) && !deferCooldown) {
-        await rpc('log_market_blast', {
+        const blastLog = await rpc('log_market_blast', {
           p_code: r.state_code, p_name: r.state_name || null,
           p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id,
           // Null for a whole-market row, which cools every segment (migration 049).
           p_segment: r.segment || null,
         });
+        // ▲ 2026-10-14 (AI-965): `cooled` was read once before the loop. A campaign that is sending
+        // does not sit in draftHoldList, so a second due row for the same market|segment would
+        // stage and (in production) arm too, texting the same people twice. Keep the in-memory set
+        // as current as the database: same keys isCooled reads (a whole-market row cools every
+        // segment, migration 049).
+        if (mkt) {
+          if (r.segment) cooled.add(`${mkt}|${r.segment}`);
+          else for (const sg of SEGMENTS) cooled.add(`${mkt}|${sg}`);
+        }
         // Cooled here, so tell reconcile not to log it again. Best effort: a failure only risks
         // a second (harmless) log when the campaign is approved.
-        if (bulkStaged) {
+        // Only once the log succeeded: rpc is a bare fetch and does not throw on an HTTP error. A
+        // failed log leaves the row 'deferred' for reconcileBulk to log next tick.
+        if (bulkStaged && blastLog.ok) {
           try {
             await fetch(`${supaUrl}/rest/v1/campaign_queue?id=eq.${encodeURIComponent(r.id)}`, {
               method: 'PATCH', headers: { ...sh, Prefer: 'return=minimal' },
