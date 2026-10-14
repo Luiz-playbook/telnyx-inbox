@@ -14227,7 +14227,8 @@ This removes its school and season dates. Venues in this market are not touched.
                    <div class="flex items-center gap-2 px-4 py-2.5 border-b border-base-300 bg-base-200/50 shrink-0 flex-wrap">
                      <span class="font-semibold text-[#133b49] truncate" data-fsname>${esc(chosen.name)}</span>
                      <span class="text-xs text-base-content/45 truncate">${esc(accountLabel)}</span>
-                     <button class="btn btn-sm btn-ai ml-auto shrink-0 gap-1" data-fsai><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M15 4V2M15 10V8M12.5 6h-2M19.5 6h-2M18 13v-2M18 19v-2M15.5 16h-2M20.5 16h-2"/><path d="M11.5 7.5 3 16l5 5 8.5-8.5z"/></svg> Edit with AI</button>
+                     <button class="btn btn-sm btn-outline ml-auto shrink-0 gap-1" data-fsedit-here title="Edit this design here, without going to Playbook Mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit here</button>
+                     <button class="btn btn-sm btn-ai shrink-0 gap-1" data-fsai><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M15 4V2M15 10V8M12.5 6h-2M19.5 6h-2M18 13v-2M18 19v-2M15.5 16h-2M20.5 16h-2"/><path d="M11.5 7.5 3 16l5 5 8.5-8.5z"/></svg> Edit with AI</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsbig title="Make the preview taller or shorter">Enlarge</button>
                      ${/* A REAL TAB, not another overlay. The preview is fetched with the
                            operator's session, so there is no URL that could simply be opened —
@@ -14298,6 +14299,13 @@ This removes its school and season dates. Venues in this market are not touched.
                     </div>
                      <div class="text-[11px] mt-1.5" data-fsai-note></div>
                    </div>
+                   <div class="flex-1 min-h-0 flex">
+                   ${/* THE EDITOR SITS BESIDE THE DESIGN, not over it. Every version of this that
+                         covered the preview made people edit blind and then look — which is the
+                         thing the preview exists to prevent. It scrolls on its own so a design
+                         with fifty settings does not push the Save button off the bottom.
+                         (No backticks in here: template literal.) */''}
+                   <aside class="hidden w-[23rem] shrink-0 border-r border-base-300 bg-base-100 overflow-y-auto" data-edpanel></aside>
                    <div class="bg-base-200/40 flex-1 min-h-0 relative">
                      <iframe sandbox="" class="w-full h-full border-0 bg-white" title="Full preview" data-fsframe></iframe>
                      ${/* OVER THE FRAME, not in place of it, so the frame keeps its size and the
@@ -14310,6 +14318,7 @@ This removes its school and season dates. Venues in this market are not touched.
                        <span class="loading loading-spinner text-[#e55608]"></span>
                        <span class="text-xs text-base-content/50">Loading the design from Playbook Mail&hellip;</span>
                      </div>
+                   </div>
                    </div>
                  </div>`;
               document.body.appendChild(fs);
@@ -14534,6 +14543,177 @@ This removes its school and season dates. Venues in this market are not touched.
                 show(edBar);
                 return false;
               }
+
+
+              // ===================================================================== EDIT HERE
+              //
+              // THE DESIGN'S OWN PARTS, AS FORM CONTROLS. CakeMail's editor cannot be embedded —
+              // app.cakemail.com sends X-Frame-Options: DENY and frame-ancestors 'none', so a
+              // browser will not render it on our origin — and their builder is Beefree, whose
+              // SDK is a commercial product. This is the third way: every slot the AI editor can
+              // change by being asked, somebody can change by typing it, with the design beside
+              // them. /api/design-edit serves the slots and takes them back.
+              //
+              // WHAT IT DOES NOT DO: add, remove or move blocks, or swap a picture. Those are
+              // structural, and structure is what the real builder is for.
+              const edPanel = fs.querySelector('[data-edpanel]');
+              let edSlots = null, edTarget = 'send';
+
+              const edField = (label, control, hint) =>
+                `<label class="block mb-2"><span class="block text-[11px] font-semibold text-[#133b49] mb-0.5">${esc(label)}</span>${control}`
+                + (hint ? `<span class="block text-[10px] text-base-content/50 mt-0.5">${esc(hint)}</span>` : '') + `</label>`;
+
+              const edGroup = (title, inner, open) => !inner ? '' :
+                `<details class="border border-base-300 rounded-lg mb-2"${open ? ' open' : ''}>
+                   <summary class="px-2.5 py-1.5 text-xs font-semibold text-[#133b49] cursor-pointer select-none">${esc(title)}</summary>
+                   <div class="px-2.5 pb-2.5 pt-1">${inner}</div>
+                 </details>`;
+
+              function edPaint(){
+                if(!edSlots){ edPanel.innerHTML = `<div class="p-4 text-xs text-base-content/55">Loading the design&hellip;</div>`; return; }
+                const d = edSlots;
+                const text = d.text.map(t =>
+                  edField(`Text ${t.index}`, `<textarea class="textarea textarea-bordered textarea-xs w-full text-xs" rows="2" data-ed="text" data-i="${t.index}">${esc(t.value)}</textarea>`)).join('');
+
+                // COLOURS KEEP THEIR OWN SWATCH AND THEIR HEX SIDE BY SIDE. A picker alone cannot
+                // be typed into when somebody has a brand hex in their hand, and a text box alone
+                // cannot be browsed.
+                const colours = d.colours.map(c =>
+                  edField(`${c.role}${c.count > 1 ? ` (${c.count} places)` : ''}`,
+                    `<span class="flex gap-1.5 items-center">
+                       <input type="color" class="w-8 h-7 rounded border border-base-300 p-0 bg-base-100 shrink-0" value="${esc(/^#[0-9a-f]{6}$/i.test(c.value) ? c.value : '#000000')}" data-edswatch="${c.index}">
+                       <input type="text" class="input input-bordered input-xs grow font-mono" value="${esc(c.value)}" data-ed="colours" data-i="${c.index}">
+                     </span>`)).join('');
+
+                // Grouped by what the setting belongs to, because fifty-four flat inputs is a
+                // wall. Collapsed by default for the same reason.
+                const byRole = {};
+                for(const st of d.styles) (byRole[st.role] = byRole[st.role] || []).push(st);
+                const styles = Object.keys(byRole).map(role => edGroup(role,
+                  byRole[role].map(st => edField(`${st.prop}${st.count > 1 ? ` (${st.count})` : ''}`,
+                    st.prop === 'font-family'
+                      ? `<select class="select select-bordered select-xs w-full" data-ed="styles" data-i="${st.index}">${
+                          (d.fonts || []).map(f => `<option value="${esc(f)}"${f === st.value ? ' selected' : ''}>${esc(String(f).split(',')[0].replace(/['"]/g,''))}</option>`).join('')
+                        }</select>`
+                      : `<input type="text" class="input input-bordered input-xs w-full font-mono" value="${esc(st.value)}" data-ed="styles" data-i="${st.index}">`)).join(''))).join('');
+
+                const images = d.images.map(im =>
+                  `<div class="border border-base-300 rounded-lg p-2 mb-2">
+                     <div class="text-[11px] font-semibold text-[#133b49] truncate mb-1" title="${esc(im.file)}">${esc(im.file)}</div>
+                     ${edField('Alt text', `<input type="text" class="input input-bordered input-xs w-full" value="${esc(im.alt || '')}" data-ed="img-alt" data-i="${im.index}">`, 'What a recipient reads when the picture does not load, which in email is most of the time.')}
+                     ${edField('Links to', `<input type="text" class="input input-bordered input-xs w-full" value="${esc(im.href || '')}" placeholder="https://&hellip;" data-ed="img-href" data-i="${im.index}">`)}
+                     <div class="text-[10px] text-base-content/45">The picture itself is changed in Playbook Mail.</div>
+                   </div>`).join('');
+
+                edPanel.innerHTML =
+                  `<div class="p-3">
+                     <div class="text-xs font-semibold text-[#133b49] mb-1">Edit this design</div>
+                     <label class="block mb-2">
+                       <span class="block text-[11px] text-base-content/60 mb-0.5">Save to</span>
+                       <select class="select select-bordered select-xs w-full" data-edtarget>
+                         <option value="send"${edTarget === 'send' ? ' selected' : ''}>This blast only &mdash; nothing saved to Playbook Mail</option>
+                         <option value="copy"${edTarget === 'copy' ? ' selected' : ''}>A new copy in Playbook Mail</option>
+                         <option value="template"${edTarget === 'template' ? ' selected' : ''}>This template itself${d.shared ? ` &mdash; ${d.shared + 1} blasts` : ''}</option>
+                       </select>
+                     </label>
+                     ${d.note ? `<div class="text-[10px] text-base-content/55 mb-2">${esc(d.note)}</div>` : ''}
+                     ${edGroup(`Words (${d.text.length})`, text, true)}
+                     ${edGroup(`Colours (${d.colours.length})`, colours, false)}
+                     ${styles ? edGroup(`Size, spacing and type (${d.styles.length})`, styles, false) : ''}
+                     ${images ? edGroup(`Images (${d.images.length})`, images, false) : ''}
+                     <div class="text-[10px] text-base-content/50 mb-2">Adding, removing or moving blocks, and swapping a picture, are done in Playbook Mail.</div>
+                     <div class="flex gap-2 items-center">
+                       <button class="btn btn-xs btn-primary" data-edsave>Save</button>
+                       <button class="btn btn-xs btn-ghost" data-edclose>Close</button>
+                       <span class="text-[10px]" data-ednote></span>
+                     </div>
+                   </div>`;
+
+                edPanel.querySelectorAll('[data-edswatch]').forEach(sw => sw.addEventListener('input', () => {
+                  const box = edPanel.querySelector(`[data-ed="colours"][data-i="${sw.dataset.edswatch}"]`);
+                  if(box) box.value = sw.value;
+                }));
+                edPanel.querySelector('[data-edtarget]').addEventListener('change', (e) => { edTarget = e.currentTarget.value; edLoad(); });
+                edPanel.querySelector('[data-edclose]').addEventListener('click', () => edPanel.classList.add('hidden'));
+                edPanel.querySelector('[data-edsave]').addEventListener('click', edSave);
+              }
+
+              async function edLoad(){
+                edSlots = null; edPaint();
+                try{
+                  const r = await fetch('/api/design-edit?queue_id=' + encodeURIComponent(rowId) + '&target=' + encodeURIComponent(edTarget) + '&_=' + Date.now(),
+                                        { headers: await apiHeaders() });
+                  const j = await r.json().catch(() => ({}));
+                  if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                  edSlots = j; edPaint();
+                }catch(e){
+                  edPanel.innerHTML = `<div class="p-4 text-xs text-error">Could not load the design for editing: ${esc((e && e.message) || String(e))}</div>`;
+                }
+              }
+
+              // READ BACK EVERY SLOT, not only the ones that look touched. The server compares
+              // against what it holds and ignores anything unchanged, so sending the whole set is
+              // both simpler and safer than deciding here what counts as an edit.
+              const edRead = (kind, n) => Array.from({ length: n }, (_, k) => {
+                const el = edPanel.querySelector(`[data-ed="${kind}"][data-i="${k + 1}"]`);
+                return el ? el.value : null;
+              });
+
+              async function edSave(e){
+                const btn = e.currentTarget, label = btn.textContent;
+                const note = edPanel.querySelector('[data-ednote]');
+                btn.disabled = true; btn.textContent = 'Saving…';
+                note.className = 'text-[10px] text-base-content/60'; note.textContent = '';
+                try{
+                  let target = edTarget;
+                  if(target === 'copy'){
+                    note.textContent = 'Making a copy first…';
+                    const made = await duplicateInto(rowId, chosen.id);
+                    chosen = { id: made.template_id, name: made.name, tags: [], thumbnail_url: null };
+                    const nameEl = fs.querySelector('[data-fsname]');
+                    if(nameEl) nameEl.textContent = made.name;
+                    target = 'template';
+                  }
+                  const payload = { queue_id: rowId, target, text: edRead('text', edSlots.text.length) };
+                  if(edSlots.colours.length) payload.colours = edRead('colours', edSlots.colours.length);
+                  if(edSlots.styles.length) payload.styles = edRead('styles', edSlots.styles.length);
+                  if(edSlots.images.length) payload.images = edSlots.images.map((_, k) => ({
+                    alt: (edPanel.querySelector(`[data-ed="img-alt"][data-i="${k + 1}"]`) || {}).value ?? null,
+                    href: (edPanel.querySelector(`[data-ed="img-href"][data-i="${k + 1}"]`) || {}).value ?? null,
+                  }));
+                  const r = await fetch('/api/design-edit', { method:'POST', headers: await apiHeaders(), body: JSON.stringify(payload) });
+                  const j = await r.json().catch(() => ({}));
+                  if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+
+                  const c = j.changed || {};
+                  const n = (j.total !== undefined) ? j.total : (j.changed || []).length;
+                  if(!n){ note.textContent = 'Nothing was different.'; return; }
+
+                  if(target === 'send' || j.target === 'send'){
+                    source = 'row';
+                    const q = QUEUE.find(x => x.id === rowId);
+                    if(q){ q.cakemail_template_id = null; q.cakemail_template_name = null; }
+                    render();
+                  }
+                  await loadPreview();
+                  await edLoad();                       // re-read: the saved values are the new baseline
+                  note.className = 'text-[10px] text-[#1b7a44]';
+                  note.textContent = (j.target === 'send')
+                    ? `Saved for this blast only. Playbook Mail untouched.`
+                    : `Saved to Playbook Mail. ${j.affected > 1 ? `${j.affected} blasts use this design.` : ''}`;
+                }catch(err){
+                  note.className = 'text-[10px] text-error';
+                  note.textContent = String((err && err.message) || err);
+                }finally{
+                  btn.disabled = false; btn.textContent = label;
+                }
+              }
+
+              fs.querySelector('[data-fsedit-here]').addEventListener('click', () => {
+                const open = !edPanel.classList.contains('hidden');
+                edPanel.classList.toggle('hidden', open);
+                if(!open && !edSlots) edLoad();
+              });
 
               await loadPreview();
             }
