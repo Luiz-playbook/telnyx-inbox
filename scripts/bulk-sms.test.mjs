@@ -232,3 +232,20 @@ test('a draft reply is a draft, with the reason it was not sent', async () => {
   assert.equal(r.autoArmed, false);
   assert.equal(r.why, 'above ceiling');
 });
+
+// ▲ 2026-10-14 (AI-965 final review). The test above runs without VERCEL_ENV, so it only proves
+// the "do not ask" half. This proves stageCampaign really asks from production. fetch is stubbed
+// by answer(), so nothing leaves the process; VERCEL_ENV is restored whatever happens.
+test('stageCampaign asks for auto_send from production', async () => {
+  const before = process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV = 'production';
+  try {
+    const calls = answer(200, { campaign: { id: 'c1', status: 'running' }, eligible: 1, auto_armed: true });
+    await m.stageCampaign({ key: 'k', name: 'n', body: 'b', fromNumber: '+1', phones: ['+16175550100'] });
+    assert.equal(calls.length, 1);
+    assert.equal(JSON.parse(calls[0].init.body).auto_send, true);
+  } finally {
+    if (before === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = before;
+  }
+});
