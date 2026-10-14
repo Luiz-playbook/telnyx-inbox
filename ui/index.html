@@ -1740,6 +1740,23 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                table in a plain rounded panel. The queue-only parts stay — rows are banded by send
                day and every row keeps its blast identifier. -->
           <div data-view id="view-queue" class="hidden space-y-5">
+            <!-- SOURCE (migration 120). The same two cards as the Offers tab, for the same reason:
+                 a waitlist row is a different shape of send (a proposal, a state, a step of a
+                 sequence; no game, no price) and reads badly in a table built around fixtures.
+                 Each card shows only its own strategy's rows and relabels the two columns that
+                 mean nothing to the other. -->
+            <div role="tablist" id="q-source" class="cbs-src">
+              <button role="tab" class="cbs-src-btn on" data-source="ticket_blasts" aria-selected="true">
+                <span class="cbs-src-ico" aria-hidden="true">&#127915;</span>
+                <span class="cbs-src-text"><span class="cbs-src-name">Ticket Blasts</span>
+                  <span class="cbs-src-sub">Queued game offers: price, sport, market</span></span>
+              </button>
+              <button role="tab" class="cbs-src-btn" data-source="event_waitlist" aria-selected="false">
+                <span class="cbs-src-ico" aria-hidden="true">&#9995;</span>
+                <span class="cbs-src-text"><span class="cbs-src-name">Event Waitlist</span>
+                  <span class="cbs-src-sub">Queued sequence steps: proposal, state, step</span></span>
+              </button>
+            </div>
             <!-- Heading removed, count kept beside the search — see the note on Campaigns. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
@@ -1761,20 +1778,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="rejected">Rejected</option>
                   <option value="archived">Archived</option>
                 </select>
-                <!-- STRATEGY (AI-1075). Same control and same position as the Offers tab's,
-                     because a queue row IS an offer that was taken. -->
-                <div id="q-strategy"></div>
+                <!-- The strategy filter that sat here (AI-1075) is gone: the source cards above
+                     the toolbar are the strategy now. -->
                 <select id="q-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
                   <option value="SCP">SCP</option>
                   <option value="Other">Other</option>
                 </select>
-                <select aria-label="Filter queue by sport" id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select aria-label="Filter queue by sport" id="q-sport" class="q-tix select select-bordered select-sm"><option value="">All sports</option></select>
                 <!-- NFL and CFB share the sport "Football" on purpose; league is what separates
                      them. Added with college football (877 games) so the Queue can be read one
                      competition at a time. -->
-                <select id="q-league" class="select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
+                <select id="q-league" class="q-tix select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
                 <select aria-label="Filter queue by state" id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
                 <select id="q-channel" class="select select-bordered select-sm" title="Channel">
                   <option value="">All channels</option>
@@ -1864,8 +1880,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Blast</th>
                     <!-- Per Josh: between the blast name and the price. -->
                     <th class="col-tight w-[52px]">Actions</th>
-                    <th>Cheapest</th>
-                    <th>Sport</th>
+                    <th id="q-th-price">Cheapest</th>
+                    <th id="q-th-sport">Sport</th>
                     <!-- Market is one metro word ("Chicago") over its state/country code, so it
                          is sized for that and nothing else — it was taking the width of a long
                          sentence to render two short ones. -->
@@ -12551,6 +12567,36 @@ This removes its school and season dates. Venues in this market are not touched.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
       // AI-1075. Reads get_campaign_queue()'s new strategy column (migration 103).
       let qStratF = [], qStratCtl = null;
+      // SOURCE (migration 120). Which strategy's rows this tab shows; the cards above the filters
+      // switch it. WL_META carries what get_campaign_queue() does not: the proposal's name and
+      // the step a waitlist row is, read off the table once per refresh.
+      let qSource = 'ticket_blasts';
+      let WL_META = {};
+      const WL_STEP = { day0: 'Day 0 · Email #1', day3: 'Day 3 · SMS #1', day10: 'Day 10 · Email #2', day45: 'Day 45 · Email #4', formal: 'Announce · Email #3 + SMS #2' };
+      function setQueueSource(src){
+        qSource = src;
+        document.querySelectorAll('#q-source [data-source]').forEach(b => {
+          const on = b.dataset.source === src;
+          b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        const wl = src === 'event_waitlist';
+        document.querySelectorAll('#view-queue .q-tix').forEach(n => n.classList.toggle('hidden', wl));
+        const thP = el('q-th-price'), thS = el('q-th-sport');
+        if(thP) thP.textContent = wl ? 'Step' : 'Cheapest';
+        if(thS) thS.textContent = wl ? 'Proposal' : 'Sport';
+        try { localStorage.setItem('q-source', src); } catch(_){}
+        page = 1; picked.clear(); render();
+      }
+      async function loadWaitlistMeta(){
+        WL_META = {};
+        if(!QUEUE.some(r => r.strategy === 'event_waitlist') || !sb) return;
+        const [q, p] = await Promise.all([
+          sb.from('campaign_queue').select('id,proposal_id,proposal_step').eq('strategy', 'event_waitlist'),
+          sb.from('event_proposals').select('id,name'),
+        ]);
+        const names = Object.fromEntries(((p && p.data) || []).map(x => [x.id, x.name]));
+        ((q && q.data) || []).forEach(x => { WL_META[x.id] = { step: x.proposal_step, proposal: names[x.proposal_id] || null }; });
+      }
       // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
       //
       // WHY THIS ONE IS DIFFERENT. Every other filter answers "what am I looking for right now",
@@ -13376,6 +13422,10 @@ This removes its school and season dates. Venues in this market are not touched.
       // the numbers in the dropdown mean "what I would get if I picked this", rather than a
       // fixed tally that disagrees with the rows on screen.
       function matchesRest(r){
+        // The source cards decide which strategy is on screen; a waitlist row never shows under
+        // Ticket Blasts and vice versa. Rows with no strategy are ticket rows (migration 102).
+        const isWl = (r.strategy || 'ticket_blasts') === 'event_waitlist';
+        if(qSource === 'event_waitlist' ? !isWl : isWl) return false;
         if(segF    && (r.segment||'') !== segF)   return false;
         if(!passesStrategy(r, qStratF)) return false;
         if(sportF  && (r.sport||'')  !== sportF)  return false;
@@ -13594,9 +13644,15 @@ This removes its school and season dates. Venues in this market are not touched.
           const priceCell = r.ticket_price!=null
             ? `${window.__priceLink ? window.__priceLink(r) : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__staleTag?.(r)||''}${window.__priceManualBadge?.(r)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             : `<span class="text-base-content/40">—</span>`;
-          const sportCell = r.sport
+          const sportCellTix = r.sport
             ? `<span class="sport-pill">${esc(r.sport)}</span>${r.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(r.league)}</div>`:''}`
             : '<span class="text-base-content/40">—</span>';
+          // A waitlist row has no price and no sport. The two columns carry what it has instead:
+          // which step of the sequence it is, and which proposed event it belongs to.
+          const wlm = r.strategy === 'event_waitlist' ? (WL_META[r.id] || {}) : null;
+          const sportCell = wlm
+            ? (wlm.proposal ? `<span class="font-semibold text-[#133b49]">${esc(wlm.proposal)}</span>` : '<span class="text-base-content/40">—</span>')
+            : sportCellTix;
           // WHAT THIS COLUMN ACTUALLY HOLDS. state_name is NOT a state on a queued row — the
           // decider writes the market label into it (`state_name: p.market_label`), so it reads
           // "Chicago", "Tampa Bay", "Test Market". state_code IS the state/province ("IL", "ON"),
@@ -13624,7 +13680,7 @@ This removes its school and season dates. Venues in this market are not touched.
             </div></td>
             <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td class="col-tight">${actionsMenu(r, { sent, rejected, archived })}</td>
-            <td>${priceCell}</td>
+            <td>${wlm ? (wlm.step ? `<span class="badge badge-sm bg-[#fdeee4] text-[#9a3d05] border-0 whitespace-nowrap">${esc(WL_STEP[wlm.step] || wlm.step)}</span>` : '<span class="text-base-content/40">—</span>') : priceCell}</td>
             <td>${sportCell}</td>
             <td class="col-tight">${marketCell}</td>
             <td>${blockedRow ? blockedReachCell(r.email, reachOf(r,'email')) : reachCell(r.email, reachOf(r,'email'))}</td>
@@ -14956,9 +15012,10 @@ This removes its school and season dates. Venues in this market are not touched.
       el('q-clear')?.addEventListener('click', clearQueueFilters);
       el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; syncDateClear(); render(); });
-      loadStrategies().then(() => { qStratCtl = mountStrategyFilter('q-strategy', picked => {
-        qStratF = picked; page = 1; syncDateClear(); render();
-      }); });
+      // The strategy filter is no longer mounted here; the source cards replaced it (migration
+      // 120). qStratF stays empty, which passesStrategy reads as "every strategy".
+      document.querySelectorAll('#q-source [data-source]').forEach(b => b.addEventListener('click', () => setQueueSource(b.dataset.source)));
+      try { if(localStorage.getItem('q-source') === 'event_waitlist') setQueueSource('event_waitlist'); } catch(_){}
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
@@ -15077,6 +15134,7 @@ This removes its school and season dates. Venues in this market are not touched.
         if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         LOADED = true;
+        await loadWaitlistMeta();
         // Make the stored sender match the one the row is shown with — for a retired value
         // (the old SalesMessage placeholder, the moved Josh CakeMail sender) and equally for
         // NO value at all.
