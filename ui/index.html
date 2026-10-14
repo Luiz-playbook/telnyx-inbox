@@ -13350,7 +13350,13 @@ This removes its school and season dates. Venues in this market are not touched.
           const designBadge = (row, isSent) => !row.email_html ? '' : `
             <div class="shrink-0 flex items-center gap-2 px-3.5 py-2 border-b border-base-300 bg-[#fdeee4] text-xs">
               <span class="font-bold text-[#e55608] uppercase tracking-wide">Design</span>
-              <span class="font-semibold text-[#133b49] truncate" title="${esc(row.cakemail_template_name || '')}">${esc(row.cakemail_template_name || ('CakeMail template ' + (row.cakemail_template_id || '?')))}</span>
+              ${/* A DESIGN WITHOUT A TEMPLATE IS NOT A BROKEN ONE. After a "this blast only"
+                    edit the row deliberately stops following a template, so there is no id and
+                    no name — and the fallback printed "CakeMail template ?", which reads as data
+                    loss rather than as the thing the person just chose to do. It says what it is
+                    instead, in the name the team uses.
+                    (No backticks in here: template literal.) */''}
+              <span class="font-semibold text-[#133b49] truncate" title="${esc(row.cakemail_template_name || (row.cakemail_template_id ? ('Playbook Mail template ' + row.cakemail_template_id) : 'Edited here, for this blast only. It no longer follows a Playbook Mail template.'))}">${esc(row.cakemail_template_name || (row.cakemail_template_id ? ('Playbook Mail template ' + row.cakemail_template_id) : 'This blast’s own design'))}</span>
               <span class="text-base-content/55">${isSent ? 'is what went out.' : 'is what sends.'}</span>
               ${/* TWO KINDS OF DESIGN, and conflating them is how copy goes missing. One has
                     [BODY] and wraps this blast's words; the other stands alone and the text box
@@ -13380,8 +13386,16 @@ This removes its school and season dates. Venues in this market are not touched.
                          CakeMail changes NOTHING here until it is pulled again. Refresh is that
                          pull — it re-renders the template and re-copies it onto the row. Without
                          it, an edit made in CakeMail would look applied and never be sent. */''}
-                   ${row.cakemail_template_id ? `<button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmedit="${esc(row.id)}" aria-label="Preview this design full screen" title="Preview — see this design full size, where you can edit its words with AI, make this blast its own copy, or open it in Playbook Mail."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
-                      <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmrefresh="${esc(row.id)}" aria-label="Pull the latest design from CakeMail" title="Refresh — pull this design again from Playbook Mail so the preview below matches it. The blast takes the latest version by itself when it sends, so this is for what you see here, not for what goes out."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>` : ''}
+                   ${/* PREVIEW IS NOT CONDITIONAL ON A TEMPLATE. It was inside the same test as
+                         Refresh, so a row that had been edited for this blast only — which
+                         deliberately drops the template link — lost the one control that opens
+                         the preview, and with it the editor and the AI. The design was still
+                         right there in the panel and there was no way to work on it.
+                         Refresh DOES stay conditional: with nothing to follow, there is nothing
+                         to pull.
+                         (No backticks in here: template literal.) */''}
+                   <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmedit="${esc(row.id)}" aria-label="Preview this design full screen" title="Preview — see this design full size, where you can edit it by hand or with AI${row.cakemail_template_id ? ', make this blast its own copy, or open it in Playbook Mail' : ''}."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+                   ${row.cakemail_template_id ? `<button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmrefresh="${esc(row.id)}" aria-label="Pull the latest design from CakeMail" title="Refresh — pull this design again from Playbook Mail so the preview below matches it. The blast takes the latest version by itself when it sends, so this is for what you see here, not for what goes out."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg></button>` : ''}
                    <button class="btn btn-ghost btn-xs px-1 shrink-0" data-cmdetach="${esc(row.id)}" aria-label="Detach this design" title="Detach — go back to sending the plain-text body below."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
                  </span>`}
             </div>`;
@@ -14013,7 +14027,7 @@ This removes its school and season dates. Venues in this market are not touched.
         // review), and the name a person reads should be the name they use. The code, the API
         // calls and the comments still say CakeMail, because that is what the service is called
         // and renaming those would make the error messages lie.
-        function cmPickerDialog({ templates, accountLabel, current, sendingAccountId, rowId, previewId, previewName }){
+        function cmPickerDialog({ templates, accountLabel, current, sendingAccountId, rowId, previewId, previewName, previewRowOnly }){
           return new Promise(resolve => {
             const ov = document.createElement('div');
             ov.className = 'pb-modal-overlay';
@@ -14215,6 +14229,10 @@ This removes its school and season dates. Venues in this market are not touched.
             async function openFullPreview(chosen, opts){
               if(!chosen) return;
               const exits = !!(opts && opts.exits);
+              // NO TEMPLATE BEHIND THIS ROW. Either it never had one, or a "this blast only" edit
+              // deliberately dropped the link. The design is still here and still editable; what
+              // is gone is everything that needs a template to point at.
+              const rowOnly = !!(opts && opts.rowOnly) || !chosen.id;
               const fs = document.createElement('div');
               fs.className = 'pb-modal-overlay';
               // ABOVE THE PICKER, which is also a .pb-modal-overlay and therefore z-index 10000.
@@ -14374,12 +14392,39 @@ This removes its school and season dates. Venues in this market are not touched.
                 for(const b of [aiBar, edBar]) b.classList.toggle('hidden', b !== bar);
               };
 
+              // EVERYTHING THAT NEEDS A TEMPLATE, TAKEN AWAY TOGETHER. Called when the preview
+              // opens on a row that has no template, and again the moment a "this blast only"
+              // edit drops the link — the same state, reached two ways, so it is described once.
+              // Hidden rather than disabled: a greyed-out "Edit in Playbook Mail" invites a click
+              // and explains nothing, where its absence matches the row, which has no Refresh
+              // either.
+              function lockToThisBlast(label){
+                for(const sel of ['[data-fsdup]', '[data-fsedit]']){
+                  const el = fs.querySelector(sel);
+                  if(el) el.classList.add('hidden');
+                }
+                const nameEl = fs.querySelector('[data-fsname]');
+                if(nameEl && label) nameEl.textContent = label;
+                const whereEl = fs.querySelector('[data-fsai-where]');
+                if(whereEl){
+                  whereEl.innerHTML = `<option value="send">this blast only</option>`;
+                  whereEl.value = 'send';
+                  whereEl.disabled = true;
+                }
+                const sharedEl = fs.querySelector('[data-fsai-shared]');
+                if(sharedEl) sharedEl.textContent = 'Playbook Mail is untouched.';
+                // The editor saves to the same one place, and says so instead of offering three.
+                edTarget = 'send';
+                const t = edPanel && edPanel.querySelector('[data-edtarget]');
+                if(t){ t.innerHTML = `<option value="send">This blast only</option>`; t.disabled = true; }
+              }
+
               const spinner = fs.querySelector('[data-fsload]');
               // WHAT THIS FRAME IS SHOWING. It starts as the template, and a "this blast only"
               // edit moves it to the row: after that edit the template is deliberately unchanged,
               // so a frame still pointed at the template would show nothing different and read
               // as the edit having failed — the exact trap this preview was built to close.
-              let source = 'template';
+              let source = rowOnly ? 'row' : 'template';
               async function loadPreview(){
                 if(spinner) spinner.classList.remove('hidden');
                 try{
@@ -14495,14 +14540,7 @@ This removes its school and season dates. Venues in this market are not touched.
                       source = 'row';
                       const q = QUEUE.find(x => x.id === rowId);
                       if(q){ q.cakemail_template_id = null; q.cakemail_template_name = null; }
-                      const nameEl = fs.querySelector('[data-fsname]');
-                      if(nameEl) nameEl.textContent = `This blast's own version of ${chosen.name}`;
-                      const whereEl = fs.querySelector('[data-fsai-where]');
-                      // Its template options no longer apply: there is no template behind this
-                      // row to copy or overwrite any more.
-                      if(whereEl){ whereEl.innerHTML = `<option value="send">this blast only</option>`; whereEl.disabled = true; }
-                      const sharedEl = fs.querySelector('[data-fsai-shared]');
-                      if(sharedEl) sharedEl.textContent = 'Playbook Mail is untouched.';
+                      lockToThisBlast(`This blast's own version of ${chosen.name}`);
                       render();
                     }
                     await loadPreview();          // the whole point: show what changed
@@ -14817,7 +14855,10 @@ This removes its school and season dates. Venues in this market are not touched.
                   if(target === 'send' || j.target === 'send'){
                     source = 'row';
                     const q = QUEUE.find(x => x.id === rowId);
-                    if(q){ q.cakemail_template_id = null; q.cakemail_template_name = null; }
+                    if(q && q.cakemail_template_id){
+                      q.cakemail_template_id = null; q.cakemail_template_name = null;
+                      lockToThisBlast(`This blast's own version of ${chosen.name}`);
+                    }
                     render();
                   }
                   await loadPreview();
@@ -14862,6 +14903,10 @@ This removes its school and season dates. Venues in this market are not touched.
                 edPanel.classList.toggle('hidden', open);
                 if(!open && !edSlots) edLoad();
               });
+
+              // Applied here, not at the top: it touches edPanel and edTarget, which the editor
+              // block above declares. Calling it earlier would reach them before they exist.
+              if(rowOnly) lockToThisBlast();
 
               await loadPreview();
             }
@@ -14926,9 +14971,11 @@ This removes its school and season dates. Venues in this market are not touched.
             // load and says so, which is the correct thing for someone to find out.
             if(previewId){
               openFullPreview(
-                list.find(x => String(x.id) === String(previewId))
-                  || { id: previewId, name: previewName || ('Design ' + previewId), tags: [], thumbnail_url: null },
-                { exits: true });
+                previewRowOnly
+                  ? { id: null, name: previewName || 'This blast’s own design', tags: [], thumbnail_url: null }
+                  : (list.find(x => String(x.id) === String(previewId))
+                     || { id: previewId, name: previewName || ('Design ' + previewId), tags: [], thumbnail_url: null }),
+                { exits: true, rowOnly: !!previewRowOnly });
             }
             if(searchEl) searchEl.focus();
           });
@@ -14962,8 +15009,9 @@ This removes its school and season dates. Venues in this market are not touched.
           done();
           const picked = await cmPickerDialog({ templates, accountLabel: label, current: row.cakemail_template_id,
                                                 sendingAccountId: cm.accountId, rowId: id,
-                                                previewId: preview ? preview.id : null,
-                                                previewName: preview ? preview.name : null });
+                                                previewId: preview ? (preview.id || (preview.rowOnly ? 'row' : null)) : null,
+                                                previewName: preview ? preview.name : null,
+                                                previewRowOnly: !!(preview && preview.rowOnly) });
           if(!picked) return;
           await cmAttach(id, picked.id, btn);
         }
@@ -14977,8 +15025,12 @@ This removes its school and season dates. Venues in this market are not touched.
         // instead — where Edit in Playbook Mail is one labelled button, with that warning on it.
         tb.querySelectorAll('[data-cmedit]').forEach(btn => btn.addEventListener('click', () => {
           const row = QUEUE.find(x => x.id === btn.dataset.cmedit);
-          if(!row || !row.cakemail_template_id) return;
-          pickForRow(row.id, btn, { id: row.cakemail_template_id, name: row.cakemail_template_name });
+          if(!row || !row.email_html) return;
+          // No template to point at: the preview opens on the row's OWN design instead, with the
+          // controls that need a template hidden rather than present and broken.
+          pickForRow(row.id, btn, row.cakemail_template_id
+            ? { id: row.cakemail_template_id, name: row.cakemail_template_name }
+            : { id: null, name: 'This blast’s own design', rowOnly: true });
         }));
 
         // DETACH PUTS YOU BACK IN THE LIBRARY. Detaching is almost never the end of a thought
