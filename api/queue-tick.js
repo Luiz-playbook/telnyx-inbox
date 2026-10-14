@@ -77,6 +77,7 @@ export const config = { maxDuration: 300 };
 // least BULK_STAGE_MIN_REMAINING_MS of the run's budget is left: the bulk sender's own
 // maxDuration is 240 s, so a stage begun 50 s in has finished, or been killed on that side, by
 // 290 s, leaving time to record it. Measured from tickStart, the first line of the handler.
+// Checked once per row, before any of its channels sends: out of time skips the whole row.
 const TICK_BUDGET_MS = config.maxDuration * 1000;
 const BULK_STAGE_MIN_REMAINING_MS = 250 * 1000;
 
@@ -543,6 +544,25 @@ export default async function handler(req, res) {
           });
         }
       };
+      // ▲ 2026-10-14 (AI-965). OUT OF TIME SKIPS THE WHOLE ROW, before any channel sends. A row
+      // whose SMS goes to a Telnyx number (anything that is not a Salesmsg sender, the same test
+      // the SMS branch below uses) would start a bulk stage, and a bulk stage must not start once
+      // less than BULK_STAGE_MIN_REMAINING_MS of the run is left (see that constant). Failing only
+      // the SMS channel was wrong: on an SMS+email row the email still sent, the row was marked
+      // 'partial', the market cooled, and the SMS was never retried. So the row is left exactly
+      // as it was (nothing written, nothing sent) and the next run sends all of it.
+      //
+      // Checked here, after the audience is read and immediately before the first channel, so the
+      // check sits as close to the stage as it can: SMS is the first channel, and the only call
+      // between here and stageCampaign is the bulk sender's route list, read once per run. That is
+      // also why there is no second guard at the stage itself: one there could only fail the SMS
+      // channel, which is the bug this replaces. Email-only and Salesmsg rows are not affected.
+      if (r.sms && phones.length && !parseSalesmsgFrom(r.sms_from)
+          && TICK_BUDGET_MS - (Date.now() - tickStart) < BULK_STAGE_MIN_REMAINING_MS) {
+        held.push({ id: r.id, title: r.title, market: mkt, segment: r.segment || null,
+          reason: 'out of time in this run — the next run sends it' });
+        continue;
+      }
       if (r.sms && phones.length) {
         // SMS routing mirrors the email side: the row's sms_from decides the carrier. A value
         // shaped 'salesmsg:<team_id>:<phone>' goes straight to the Salesmsg API via
@@ -593,11 +613,6 @@ export default async function handler(req, res) {
           failed.push(configured
             ? `SMS not sent: ${String(r.sms_from || '').trim() || 'no sender'} is not one of the bulk sender's numbers — Telnyx blasts send only through the bulk sender's consent gate`
             : `SMS not sent: the bulk sender is not configured here — Telnyx blasts send only through its consent gate`);
-        } else if (smsPath === 'bulk' && TICK_BUDGET_MS - (Date.now() - tickStart) < BULK_STAGE_MIN_REMAINING_MS) {
-          // ▲ 2026-10-14 (AI-965). smsPath is 'bulk', but too little of this run is left to stage
-          // and record it safely (see BULK_STAGE_MIN_REMAINING_MS). Nothing was asked of the bulk
-          // sender; a row with no other channel stays unmarked and the next run stages it.
-          failed.push('SMS not staged: out of time in this run — the next run stages it');
         } else if (smsPath === 'bulk') {
           // AI-965. Stage in the bulk sender. ▲ 2026-10-14: from production, at most 2,000
           // eligible, the bulk sender arms it in the same request and it sends with no approval
