@@ -156,6 +156,48 @@ export default async function handler(req, res) {
     // THE COPY LANDS IN THE SENDING ACCOUNT, not the account it came from. That is the point for
     // a design borrowed from elsewhere — afterwards the blast owns its design outright, in the
     // account it sends from, and the loan is over.
+    // SAVE THIS BLAST'S OWN DESIGN BACK INTO PLAYBOOK MAIL, as a template.
+    //
+    // A "this blast only" edit deliberately leaves the row with a design and no template, which
+    // is right while it is a one-off and wrong the moment somebody likes it: there was no way to
+    // promote it, because every other route here copies an EXISTING template and this row has
+    // none. Vhea asked for the button, and it closes the loop — edit freely on one blast, then
+    // keep the result for everything else.
+    //
+    // CREATED FROM THE RENDERED HTML, since that is all the row has. CakeMail takes it as
+    // content {type:'html'} — verified against the live API on 2026-10-14 by creating one,
+    // reading it back as type "html", rendering it, and deleting it again. It will open in
+    // Playbook Mail's HTML editor rather than the drag-and-drop builder, because it is HTML and
+    // not a builder document; the response says so and the UI repeats it, since finding that
+    // out by opening it would be an unpleasant surprise.
+    if (body.save_as_template) {
+      const cmSave = parseCakemailFrom(row.email_from);
+      if (!cmSave) { res.status(400).json({ error: 'this blast does not send through CakeMail' }); return; }
+      if (!cakemailKey(cmSave.accountId)) { res.status(502).json({ error: missingKey(cmSave.accountId) }); return; }
+      const html = String(row.email_html || '').trim();
+      if (!html) { res.status(400).json({ error: 'This blast has no design to save.' }); return; }
+
+      const label = String(row.title || '').replace(/^\s*\[TEST\]\s*/i, '').trim().slice(0, 60);
+      const name = String(body.name || '').trim().slice(0, 120) || `${label || 'Blast'} — saved from SendBlaster`;
+      try {
+        const made = await cakemailPost('/templates', {
+          accountId: cmSave.accountId,
+          body: {
+            name,
+            description: `Saved from the blast "${label}" in SendBlaster. Built from the design that blast was sending.`,
+            content: { type: 'html', subject: String(row.email_subject || '').slice(0, 200), html },
+          },
+        });
+        const newId = made && (made.id || (made.data && made.data.id));
+        if (!newId) throw new Error('CakeMail returned no id for the new template');
+        res.status(200).json({ ok: true, saved: true, template_id: Number(newId), name,
+                               account_id: cmSave.accountId, kind: 'html' });
+      } catch (e) {
+        res.status(502).json({ error: String((e && e.message) || e) });
+      }
+      return;
+    }
+
     if (body.duplicate) {
       const srcId = String(body.template_id || row.cakemail_template_id || '').trim();
       if (!/^[0-9]+$/.test(srcId)) { res.status(400).json({ error: 'template_id is required to duplicate' }); return; }

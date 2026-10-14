@@ -14257,6 +14257,7 @@ This removes its school and season dates. Venues in this market are not touched.
                      <button class="btn btn-sm btn-ghost shrink-0" data-fstab title="Open this preview in its own browser tab">Open in tab &#8599;</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsdup title="Make a copy of this design that only this blast uses, so editing it changes nothing else">Make a copy</button>
                      <button class="btn btn-sm btn-outline shrink-0" data-fsedit>Edit in Playbook Mail &#8599;</button>
+                     <button class="btn btn-sm btn-outline shrink-0 hidden" data-fssave title="Keep this design in Playbook Mail as a template, so other blasts can use it">Save as a template</button>
                      <button class="btn btn-sm btn-outline shrink-0 hidden" data-fsback title="This blast has its own design and no longer follows a Playbook Mail template. Pick one again to get the Playbook Mail editor back.">Use a Playbook Mail design&hellip;</button>
                      <button class="btn btn-sm btn-ghost shrink-0" data-fsclose aria-label="Close preview">&#10005;</button>
                    </div>
@@ -14274,6 +14275,38 @@ This removes its school and season dates. Venues in this market are not touched.
                          actually clicks is never blocked, and it carries Josh's warning with it
                          instead of in a dialog that has to be dismissed first.
                          (No backticks in here: template literal.) */''}
+                   ${/* WHERE A CHANGE LANDS IS ONE DECISION, ASKED ONCE. It used to be asked
+                         twice — a select inside the AI strip and another inside the editor panel
+                         — which is not only a repetition: they were separate variables, so the
+                         panel could be set to "this template" while the AI was set to "this
+                         blast only", and one dialog would then do two different things depending
+                         on which button you pressed. Editing by hand and editing by asking are
+                         two ways of making the same change; the destination belongs above both.
+                         (No backticks in here: template literal.) */''}
+                   <div class="flex items-center gap-2 px-4 py-2 border-b border-base-300 bg-base-200/30 text-xs shrink-0 flex-wrap" data-fstargetbar>
+                     <span class="text-base-content/70 shrink-0">Changes go to</span>
+                     <select class="select select-bordered select-xs" data-fstarget aria-label="Where changes to this design are saved">
+                       <option value="send">this blast only &mdash; nothing saved to Playbook Mail</option>
+                       <option value="copy">a new copy of this design in Playbook Mail</option>
+                       <option value="template">this template itself, everywhere it is used</option>
+                     </select>
+                     <span class="text-base-content/55" data-fstargetnote></span>
+                   </div>
+                   ${/* NAMED BEFORE IT IS CREATED. This is the one control here that puts a new
+                         thing in somebody's Playbook Mail library, and a library fills up with
+                         "Untitled Template" faster than anybody expects. The default is the
+                         blast's own name, which is almost always what it should be called.
+                         (No backticks in here: template literal.) */''}
+                   <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3 text-xs shrink-0" data-fssavebar>
+                     <div class="text-[#133b49] mb-2">Keep this design in <b>Playbook Mail</b> as a template, so other blasts can use it.
+                       It is saved as HTML, so it opens in Playbook Mail&rsquo;s HTML editor rather than the drag-and-drop builder.</div>
+                     <div class="flex gap-2 items-center flex-wrap">
+                       <input type="text" class="input input-bordered input-sm grow max-w-md text-xs" data-fssave-name placeholder="Name this template" aria-label="Name for the new template">
+                       <button class="btn btn-sm btn-primary" data-fssave-go>Save to Playbook Mail</button>
+                       <button class="btn btn-sm btn-ghost" data-fssave-cancel>Cancel</button>
+                       <span class="text-[11px]" data-fssave-note></span>
+                     </div>
+                   </div>
                    <div class="hidden border-b border-base-300 bg-[#fdeee4] px-4 py-3 text-xs shrink-0" data-fsedbar>
                      <div class="text-[#133b49] mb-2">This opens <b>Playbook Mail</b> in a new tab. Save your changes there,
                        then come back here and click <b>Refresh</b> to see them.
@@ -14302,19 +14335,8 @@ This removes its school and season dates. Venues in this market are not touched.
                          <button class="btn btn-xs btn-ghost" data-fsai-cancel>Cancel</button>
                        </div>
                      </div>
-                    ${/* WHERE THE CHANGE LANDS, as a choice rather than a tick box. The tick
-                          box only offered "copy first or not", which hid the option most people
-                          actually want: change what THIS blast sends and leave the Playbook Mail
-                          library alone entirely. Three outcomes, so three options.
-                          (No backticks in here: template literal.) */''}
-                    <div class="flex items-center gap-2 mt-2 text-[11px] text-[#133b49] flex-wrap" data-fsai-dupwrap>
-                      <span class="shrink-0">Apply to</span>
-                      <select class="select select-bordered select-xs" data-fsai-where aria-label="Where the change should apply">
-                        <option value="send">this blast only &mdash; nothing saved to Playbook Mail</option>
-                        <option value="copy">a new copy of this design in Playbook Mail</option>
-                        <option value="template">this template itself, everywhere it is used</option>
-                      </select>
-                      <span class="text-base-content/55" data-fsai-shared></span>
+                    <div class="flex items-center gap-2 mt-2 text-[11px] text-base-content/55 flex-wrap" data-fsai-dupwrap>
+                      <span data-fsai-shared></span>
                     </div>
                      <div class="text-[11px] mt-1.5" data-fsai-note></div>
                    </div>
@@ -14359,6 +14381,42 @@ This removes its school and season dates. Venues in this market are not touched.
               fs.addEventListener('mousedown', e => { if(e.target === fs) close(); });
               fs.querySelector('[data-fsclose]').addEventListener('click', close);
               fs.querySelector('[data-fsback]').addEventListener('click', () => { close(); pickForRow(rowId, null, null); });
+
+              fs.querySelector('[data-fssave]').addEventListener('click', () => {
+                const row = QUEUE.find(x => x.id === rowId);
+                const nameEl = fs.querySelector('[data-fssave-name]');
+                if(nameEl && !nameEl.value) nameEl.value = `${String((row && row.title) || 'Blast').replace(/^\s*\[TEST\]\s*/i, '').trim().slice(0, 60)} — saved from SendBlaster`;
+                show(saveBar);
+                if(nameEl) nameEl.focus();
+              });
+              fs.querySelector('[data-fssave-cancel]').addEventListener('click', () => show(null));
+
+              fs.querySelector('[data-fssave-go]').addEventListener('click', async (e) => {
+                const btn = e.currentTarget, label = btn.textContent;
+                const note = fs.querySelector('[data-fssave-note]');
+                const nameEl = fs.querySelector('[data-fssave-name]');
+                btn.disabled = true; btn.textContent = 'Saving…';
+                note.className = 'text-[11px] text-base-content/60'; note.textContent = '';
+                try{
+                  const r = await fetch('/api/cakemail-templates', { method:'POST', headers: await apiHeaders(),
+                    body: JSON.stringify({ queue_id: rowId, save_as_template: true, name: (nameEl && nameEl.value) || '' }) });
+                  const j = await r.json().catch(() => ({}));
+                  if(!r.ok || j.error) throw new Error(j.error || ('HTTP ' + r.status));
+                  // ATTACHED STRAIGHT AFTER, through the ordinary route, so the row follows the
+                  // template it just created: Refresh comes back, so does the Playbook Mail
+                  // editor link, and the design is no longer a dead end on one blast.
+                  await cmAttach(rowId, j.template_id, null);
+                  close();
+                  toast({ type:'ok', title:`"${j.name}" is now a Playbook Mail template`,
+                          lines:[ 'This blast follows it, and any other blast can pick it from the library.',
+                                  'It was saved as HTML, so Playbook Mail opens it in the HTML editor rather than the drag-and-drop builder.' ] });
+                }catch(err){
+                  note.className = 'text-[11px] text-error';
+                  note.textContent = String((err && err.message) || err);
+                }finally{
+                  btn.disabled = false; btn.textContent = label;
+                }
+              });
               fs.querySelector('[data-fsedit]').addEventListener('click', () => goEdit());
               const frame = fs.querySelector('[data-fsframe]');
               const shell = fs.querySelector('.pb-modal-card');
@@ -14390,8 +14448,9 @@ This removes its school and season dates. Venues in this market are not touched.
               const aiBar = fs.querySelector('[data-fsaibar]');
               const edBar = fs.querySelector('[data-fsedbar]');
               const aiNote = fs.querySelector('[data-fsai-note]');
+              const saveBar = fs.querySelector('[data-fssavebar]');
               const show = (bar) => {
-                for(const b of [aiBar, edBar]) b.classList.toggle('hidden', b !== bar);
+                for(const b of [aiBar, edBar, saveBar]) b.classList.toggle('hidden', b !== bar);
               };
 
               // EVERYTHING THAT NEEDS A TEMPLATE, TAKEN AWAY TOGETHER. Called when the preview
@@ -14411,20 +14470,20 @@ This removes its school and season dates. Venues in this market are not touched.
                 // route back, and it is one click.
                 const back = fs.querySelector('[data-fsback]');
                 if(back) back.classList.remove('hidden');
+                const save = fs.querySelector('[data-fssave]');
+                if(save) save.classList.remove('hidden');
                 const nameEl = fs.querySelector('[data-fsname]');
                 if(nameEl && label) nameEl.textContent = label;
-                const whereEl = fs.querySelector('[data-fsai-where]');
-                if(whereEl){
-                  whereEl.innerHTML = `<option value="send">this blast only</option>`;
-                  whereEl.value = 'send';
-                  whereEl.disabled = true;
-                }
                 const sharedEl = fs.querySelector('[data-fsai-shared]');
                 if(sharedEl) sharedEl.textContent = 'Playbook Mail is untouched.';
-                // The editor saves to the same one place, and says so instead of offering three.
+                // Both editors save to the same one place, and the strip says so instead of
+                // offering three.
                 edTarget = 'send';
-                const t = edPanel && edPanel.querySelector('[data-edtarget]');
-                if(t){ t.innerHTML = `<option value="send">This blast only</option>`; t.disabled = true; }
+                if(targetEl){
+                  targetEl.innerHTML = `<option value="send">this blast only &mdash; it has no Playbook Mail template</option>`;
+                  targetEl.value = 'send';
+                  targetEl.disabled = true;
+                }
               }
 
               const spinner = fs.querySelector('[data-fsload]');
@@ -14514,7 +14573,7 @@ This removes its school and season dates. Venues in this market are not touched.
                 const instruction = whatEl.value.trim();
                 if(!instruction){ aiNote.className = 'text-[11px] mt-1.5 text-error'; aiNote.textContent = 'Say what you would like changed.'; whatEl.focus(); return; }
                 const btn = e.currentTarget, label = btn.textContent;
-                const where = (fs.querySelector('[data-fsai-where]') || {}).value || 'send';
+                const where = edTarget;
                 btn.disabled = true; btn.textContent = 'Thinking…';
                 aiNote.className = 'text-[11px] mt-1.5 text-base-content/60';
                 aiNote.textContent = where === 'send'
@@ -14549,6 +14608,7 @@ This removes its school and season dates. Venues in this market are not touched.
                       const q = QUEUE.find(x => x.id === rowId);
                       if(q){ q.cakemail_template_id = null; q.cakemail_template_name = null; }
                       lockToThisBlast(`This blast's own version of ${chosen.name}`);
+                      if(edSlots) edLoad();      // the panel's slots come from a different place now
                       render();
                     }
                     await loadPreview();          // the whole point: show what changed
@@ -14603,6 +14663,8 @@ This removes its school and season dates. Venues in this market are not touched.
               // WHAT IT DOES NOT DO: add, remove or move blocks, or swap a picture. Those are
               // structural, and structure is what the real builder is for.
               const edPanel = fs.querySelector('[data-edpanel]');
+              const targetEl = fs.querySelector('[data-fstarget]');
+              // THE ONE DESTINATION. Both editors read it; neither owns it.
               let edSlots = null, edTarget = 'send';
               // WHAT THE DESIGN SAID WHEN IT WAS LOADED. Reset needs something to go back TO, and
               // it has to be the loaded values rather than the live inputs, which is the whole
@@ -14733,14 +14795,6 @@ This removes its school and season dates. Venues in this market are not touched.
                 edPanel.innerHTML =
                   `<div class="p-3 flex flex-col min-h-0 h-full">
                      <div class="text-xs font-semibold text-[#133b49] mb-1">Edit this design</div>
-                     <label class="block mb-2">
-                       <span class="block text-[11px] text-base-content/60 mb-0.5">Save to</span>
-                       <select class="select select-bordered select-xs w-full" data-edtarget>
-                         <option value="send"${edTarget === 'send' ? ' selected' : ''}>This blast only &mdash; nothing saved to Playbook Mail</option>
-                         <option value="copy"${edTarget === 'copy' ? ' selected' : ''}>A new copy in Playbook Mail</option>
-                         <option value="template"${edTarget === 'template' ? ' selected' : ''}>This template itself${d.shared ? ` &mdash; ${d.shared + 1} blasts` : ''}</option>
-                       </select>
-                     </label>
                      ${d.note ? `<div class="text-[10px] text-base-content/55 mb-2">${esc(d.note)}</div>` : ''}
                      <div class="grow min-h-0 overflow-y-auto -mx-3 px-3">
                        ${edGroup(`Words (${d.text.length})`, text, true)}
@@ -14775,7 +14829,6 @@ This removes its school and season dates. Venues in this market are not touched.
                   // hex changed on screen and was never saved.
                   box.dispatchEvent(new Event('input', { bubbles: true }));
                 }));
-                edPanel.querySelector('[data-edtarget]').addEventListener('change', (e) => { edTarget = e.currentTarget.value; edUndo = []; edLoad(); });
                 edPanel.querySelector('[data-edclose]').addEventListener('click', () => edPanel.classList.add('hidden'));
                 const saveBtn = edPanel.querySelector('[data-edsave]');
                 if(saveBtn) saveBtn.addEventListener('click', edSave);
@@ -14941,6 +14994,21 @@ This removes its school and season dates. Venues in this market are not touched.
                 const open = !edPanel.classList.contains('hidden');
                 edPanel.classList.toggle('hidden', open);
                 if(!open && !edSlots) edLoad();
+              });
+
+              // CHANGING THE DESTINATION CHANGES WHAT IS EDITABLE, so the panel is re-read: a
+              // template offers its builder's own text nodes and font list, a row offers the runs
+              // of the finished email. Undo history is dropped with it, because it describes
+              // values in the place you have just left.
+              if(targetEl) targetEl.addEventListener('change', () => {
+                edTarget = targetEl.value;
+                edUndo = [];
+                const n = Math.max(0, sharedCount());
+                const note = fs.querySelector('[data-fstargetnote]');
+                if(note) note.textContent = edTarget === 'template' && n
+                  ? `${n + 1} blasts use this design.`
+                  : edTarget === 'send' ? 'This blast stops following the template.' : '';
+                if(edSlots) edLoad();
               });
 
               // Applied here, not at the top: it touches edPanel and edTarget, which the editor
