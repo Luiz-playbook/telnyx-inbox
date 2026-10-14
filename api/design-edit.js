@@ -46,7 +46,7 @@ import { beeImageSlots, applyBeeImages } from '../lib/beeimage.js';
 import { bodyPlan } from '../lib/tokens.js';
 import { htmlTextSlots, htmlTextNodes, applyHtmlText, htmlColourSlots, applyHtmlColours,
          htmlStyleSlots, applyHtmlStyles, htmlImageSlots, applyHtmlImages,
-         walkHtmlTags } from '../lib/htmledit.js';
+         walkHtmlTags, bodyRunIndex } from '../lib/htmledit.js';
 
 export const config = { maxDuration: 30 };
 
@@ -68,24 +68,13 @@ const TARGETS = ['send', 'template'];
 // still the design's.
 //
 // Same for a [BODY] token: it is a text run too, and rewriting it would break the fill outright.
+// Delegates to lib/htmledit.js so the AI editor and this one cannot disagree about which run
+// the blast's copy lands on. Both used to work it out separately, which is how one question
+// grows two answers.
 function bodyRunOf(html) {
-  const plan = bodyPlan(html);
-  const slots = htmlTextSlots(html);
-  if (plan.mode === 'token') {
-    const i = slots.findIndex(s => s.text.includes('[BODY]'));
-    return i < 0 ? null : { index: i + 1, mode: 'token' };
-  }
-  if (plan.mode !== 'first-paragraph') return null;
-  const strip = x => String(x).replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim();
-  const re = /(<p\b[^>]*>)([\s\S]*?)(<\/p>)/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    if (strip(m[2]) === '') continue;
-    const start = m.index, end = m.index + m[0].length;
-    const i = slots.findIndex(x => x.start >= start && x.end <= end);
-    return i < 0 ? null : { index: i + 1, mode: 'first-paragraph' };
-  }
-  return null;
+  const mode = bodyPlan(html).mode;
+  const index = bodyRunIndex(html, mode);
+  return index ? { index, mode } : null;
 }
 
 // SHOWING SOMEBODY WHICH BLOCK "TEXT 20" IS.

@@ -31,7 +31,12 @@ import { beeTextNodes, applyBeeText, designShape, setInnerText } from '../lib/be
 import { beeColourSlots, applyBeeColours, beeColoursToPrompt, sameColour } from '../lib/beestyle.js';
 import { beeStyleSlots, applyBeeStyles, beeStylesToPrompt, fontChoices } from '../lib/beeshape.js';
 import { beeImageSlots, applyBeeImages, beeImagesToPrompt } from '../lib/beeimage.js';
-import { htmlTextSlots, htmlTextNodes, applyHtmlText, htmlTextToPrompt } from '../lib/htmledit.js';
+import { htmlTextSlots, htmlTextNodes, applyHtmlText, htmlTextToPrompt,
+         htmlColourSlots, applyHtmlColours, htmlColoursToPrompt,
+         htmlStyleSlots, applyHtmlStyles, htmlStylesToPrompt,
+         htmlImageSlots, applyHtmlImages, htmlImagesToPrompt,
+         bodyRunIndex } from '../lib/htmledit.js';
+import { bodyPlan } from '../lib/tokens.js';
 import { gameLabel, prettyDate } from '../lib/tokens.js';
 
 export const config = { maxDuration: 60 };
@@ -315,14 +320,39 @@ export default async function handler(req, res) {
       const runs = htmlTextNodes(html);
       if (!runs.length) { res.status(400).json({ error: 'This design has no editable text — nothing for the model to change.' }); return; }
 
+      // THE SAME FOUR DIMENSIONS AS THE TEMPLATE PATH. This asked for words alone, which made
+      // "make the buttons pink" come back as "the model made no changes" — true, and only
+      // because it had never been offered the colours. The hand editor had been given them for
+      // this path already; the AI had not, so one dialog answered the same question two ways
+      // depending on which button you pressed.
+      //
+      // Every colour in a rendered email sits in an inline style attribute, because mail clients
+      // strip stylesheets, so the slots come straight off the document — see lib/htmledit.js.
+      const cols = htmlColourSlots(html);
+      const stys = htmlStyleSlots(html);
+      const imgs = htmlImageSlots(html);
       const numbered = htmlTextToPrompt(html);
       const out = await ask([
         { role: 'system', content: RULES.concat(
+            cols.length ? COLOUR_RULES : [],
+            stys.length ? SHAPE_RULES : [],
+            imgs.length ? IMAGE_RULES : [],
             `This design has ${runs.length} pieces of text, numbered below.`,
-            `Return JSON: {"blocks": ["<new text for 1>", ...]} with EXACTLY ${runs.length} items, in the same order.`,
-            'Each item must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
-          ).join('\n') },
-        { role: 'user', content: `${context(row)}\n\nText:\n${numbered}\n\nWhat to change: ${instruction}` },
+            cols.length ? `It also has ${cols.length} colour${cols.length === 1 ? '' : 's'}, numbered separately.` : '',
+            stys.length ? `And ${stys.length} size, spacing and type settings, numbered separately again.` : '',
+            imgs.length ? `And ${imgs.length} image${imgs.length === 1 ? '' : 's'}, whose alt text and link you may change.` : '',
+            `Return JSON: {"blocks": ["<new text for 1>", ...]${cols.length ? `, "colors": ["<hex for 1>", ...]` : ''}${stys.length ? `, "styles": ["<value for 1>", ...]` : ''}${imgs.length ? `, "images": [{"alt": "...", "href": "..."}, ...]` : ''}}`,
+            `"blocks" must have EXACTLY ${runs.length} items, in the same order.`,
+            cols.length ? `"colors" must have EXACTLY ${cols.length} items, in the same order. Omit "colors" entirely if no colour should change.` : '',
+            stys.length ? `"styles" must have EXACTLY ${stys.length} items, in the same order. Omit "styles" entirely if no size, spacing or type should change.` : '',
+            imgs.length ? `"images" must have EXACTLY ${imgs.length} items, in the same order, each an object with "alt" and "href". Omit "images" entirely if no image should change.` : '',
+            'Every item in "blocks", "colors" and "styles" must be a PLAIN STRING, not an object. Return an item unchanged if the instruction does not concern it. Never merge, split, add or drop items.',
+          ).filter(Boolean).join('\n') },
+        { role: 'user', content: `${context(row)}\n\nText:\n${numbered}`
+            + (cols.length ? `\n\nColours:\n${htmlColoursToPrompt(html)}` : '')
+            + (stys.length ? `\n\nSizes, spacing and type:\n${htmlStylesToPrompt(html)}` : '')
+            + (imgs.length ? `\n\nImages (you may change alt and link, never the picture):\n${htmlImagesToPrompt(html)}` : '')
+            + `\n\nWhat to change: ${instruction}` },
       ]);
 
       const blocks = out.blocks;
@@ -339,22 +369,63 @@ export default async function handler(req, res) {
         return;
       }
       const flat = t => String(t || '').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/\s+/g, ' ').trim();
+      // The run the blast's own copy overwrites at send time is not the design's to rewrite --
+      // the same rule the hand editor follows. Left alone here rather than edited and then lost.
+      const bodyRun = bodyRunIndex(html, bodyPlan(html).mode);
       const changed = [];
       const next = runs.map((orig, i) => {
+        if (bodyRun === i + 1) return null;
         const want = String(wants[i]).trim();
         if (!want || want === flat(orig)) return null;      // null leaves the run exactly as it is
         changed.push({ index: i + 1, before: flat(orig), after: want });
         return want;
       });
-      if (!changed.length) { res.status(200).json({ ok: true, target: 'send', changed: [], affected: 1, note: noChangeNote(instruction) }); return; }
 
-      const edited = applyHtmlText(html, next);
+      let edited = applyHtmlText(html, next);
+
+      const recoloured = [], restyled = [], relinked = [];
+      try {
+        const wantCols = Array.isArray(out.colors) && out.colors.length === cols.length ? out.colors.map(asBlockText) : null;
+        if (wantCols && !wantCols.includes(null)) {
+          edited = applyHtmlColours(edited, wantCols);
+          cols.forEach((c, i) => {
+            const v = String(wantCols[i] || '').trim();
+            if (v && v.toLowerCase() !== c.value.toLowerCase()) recoloured.push({ index: i + 1, role: c.role, before: c.value, after: v, count: c.count });
+          });
+        }
+        const wantStys = Array.isArray(out.styles) && out.styles.length === stys.length ? out.styles.map(asBlockText) : null;
+        if (wantStys && !wantStys.includes(null)) {
+          edited = applyHtmlStyles(edited, wantStys);
+          stys.forEach((c, i) => {
+            const v = String(wantStys[i] || '').trim();
+            if (v && v.toLowerCase() !== c.value.toLowerCase()) restyled.push({ index: i + 1, role: c.role, prop: c.prop, before: c.value, after: v, count: c.count });
+          });
+        }
+        if (Array.isArray(out.images) && out.images.length === imgs.length) {
+          edited = applyHtmlImages(edited, out.images);
+          imgs.forEach((im, i) => {
+            const g = out.images[i] || {};
+            for (const f of ['alt', 'href']) {
+              const v = g[f] == null ? null : String(g[f]).trim();
+              if (v !== null && v !== String(im[f] || '').trim()) relinked.push({ index: i + 1, file: im.file, field: f, before: im[f] || '', after: v });
+            }
+          });
+        }
+      } catch (e) {
+        res.status(502).json({ error: `${String((e && e.message) || e)} Nothing was changed.` });
+        return;
+      }
+
+      if (!changed.length && !recoloured.length && !restyled.length && !relinked.length) {
+        res.status(200).json({ ok: true, target: 'send', changed: [], recoloured: [], restyled: [], relinked: [], affected: 1, note: noChangeNote(instruction) });
+        return;
+      }
       const keptName = row.cakemail_template_name || null;
       const w = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, { method: 'POST', headers: h,
         body: JSON.stringify({ p_id: queueId, p_html: edited, p_template_id: null, p_template_name: null }) });
       if (!w.ok) { res.status(502).json({ error: `queue_set_email_html failed (HTTP ${w.status}). Nothing was changed.` }); return; }
 
-      res.status(200).json({ ok: true, target: 'send', changed, affected: 1, detached_from: keptName });
+      res.status(200).json({ ok: true, target: 'send', changed, recoloured, restyled, relinked, affected: 1, detached_from: keptName });
       return;
     }
 
