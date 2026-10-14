@@ -867,20 +867,25 @@
        They were loose rows under the prose and read as more body copy; the panel makes the
        part you can change look different from the part you can only read. */
     .pbw-panel{ border:1px solid #e8edf1; background:#fafcfd; border-radius:12px; padding:12px 14px; }
-    /* OFFERS SOURCE SWITCH (migration 120). Two cards, not two tabs: this picks which generator
-       fills the board, and that is a bigger decision than any filter below it. The active one
-       is filled in the house navy so there is never a question of which list is on screen. */
-    .cbs-src{ display:grid; grid-template-columns:repeat(2, minmax(0, 22rem)); gap:12px; }
-    .cbs-src-btn{ display:flex; align-items:center; gap:12px; text-align:left; padding:12px 16px; border-radius:12px;
-                  border:2px solid #d9e1e8; background:#fff; color:#133b49; cursor:pointer; transition:border-color .12s, background .12s; }
-    .cbs-src-btn:hover{ border-color:#133b49; }
-    .cbs-src-btn:focus-visible{ outline:3px solid #e55608; outline-offset:2px; }
-    .cbs-src-btn.on{ background:#133b49; border-color:#133b49; color:#fff; }
-    .cbs-src-ico{ font-size:1.6rem; line-height:1; flex:0 0 auto; }
-    .cbs-src-text{ display:grid; gap:2px; min-width:0; }
-    .cbs-src-name{ font-weight:800; font-size:1rem; letter-spacing:.01em; }
-    .cbs-src-sub{ font-size:.75rem; opacity:.75; line-height:1.3; }
-    @media (max-width:640px){ .cbs-src{ grid-template-columns:1fr; } }
+    /* SOURCE SWITCH (migration 120), Offers and Queue. A segmented control rather than cards:
+       it picks which strategy's rows are on screen, so it sits with the toolbar and reads like
+       the rest of the app's controls (line icons, navy text, the ember accent only on what is
+       selected) instead of competing with the table for attention. */
+    .src-bar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .src-seg{ display:inline-flex; gap:2px; padding:3px; background:#eef2f6; border:1px solid #dde4ec; border-radius:9px; }
+    .src-seg button{ display:inline-flex; align-items:center; gap:7px; padding:6px 14px; border:0; border-radius:7px;
+      background:transparent; color:#5e6e82; font-weight:700; font-size:13px; line-height:1.2; cursor:pointer;
+      transition:background .12s, color .12s, box-shadow .12s; }
+    .src-seg button:hover{ color:#133b49; }
+    .src-seg button.on{ background:#fff; color:#133b49; box-shadow:0 0 0 1px #d8e2ef, 0 1px 2px rgba(19,59,73,.10); }
+    .src-seg button:focus-visible{ outline:2px solid #e55608; outline-offset:1px; }
+    .src-seg svg{ width:15px; height:15px; flex:0 0 auto; opacity:.7; }
+    .src-seg button.on svg{ opacity:1; color:#e55608; }
+    .src-seg .n{ min-width:20px; padding:1px 6px; border-radius:999px; background:#e3e9f0; color:#5e6e82;
+      font-size:11px; font-weight:700; text-align:center; font-variant-numeric:tabular-nums; }
+    .src-seg .n:empty{ display:none; }
+    .src-seg button.on .n{ background:#fdeee4; color:#c94d07; }
+    .src-note{ font-size:12px; color:#7a8899; }
     .pbw-row{ display:flex; align-items:center; gap:8px; }
     .pbw-label{ font-size:13px; font-weight:700; color:#133b49; }
     .pbw-rule{ height:1px; background:#e8edf1; margin:11px 0; }
@@ -1363,17 +1368,12 @@
                  over one list: Ticket Blasts reads the league calendars, Event Waitlist reads a
                  proposed event and the markets it is shopped to. The switch decides which
                  generator's rows are on screen; everything below it belongs to one or the other. -->
-            <div role="tablist" id="cbs-source" class="cbs-src">
-              <button role="tab" class="cbs-src-btn on" data-source="ticket_blasts" aria-selected="true">
-                <span class="cbs-src-ico" aria-hidden="true">&#127915;</span>
-                <span class="cbs-src-text"><span class="cbs-src-name">Ticket Blasts</span>
-                  <span class="cbs-src-sub">Games on the league calendars, and who we can reach for each</span></span>
-              </button>
-              <button role="tab" class="cbs-src-btn" data-source="event_waitlist" aria-selected="false">
-                <span class="cbs-src-ico" aria-hidden="true">&#9995;</span>
-                <span class="cbs-src-text"><span class="cbs-src-name">Event Waitlist</span>
-                  <span class="cbs-src-sub">A proposed event, shopped to markets we have never run one in</span></span>
-              </button>
+            <div class="src-bar">
+              <div role="tablist" id="cbs-source" class="src-seg" aria-label="Strategy">
+                <button role="tab" class="on" data-source="ticket_blasts" aria-selected="true" data-desc="Games on the league calendars, and who we can reach for each."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 11v2M13 17v2"/></svg><span>Ticket Blasts</span><span class="n"></span></button>
+                <button role="tab" data-source="event_waitlist" aria-selected="false" data-desc="Proposed events, pitched to the states that have never hosted one."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg><span>Event Waitlist</span><span class="n"></span></button>
+              </div>
+              <span class="src-note">Games on the league calendars, and who we can reach for each.</span>
             </div>
             <div class="cbs-games flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
@@ -1745,17 +1745,12 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                  sequence; no game, no price) and reads badly in a table built around fixtures.
                  Each card shows only its own strategy's rows and relabels the two columns that
                  mean nothing to the other. -->
-            <div role="tablist" id="q-source" class="cbs-src">
-              <button role="tab" class="cbs-src-btn on" data-source="ticket_blasts" aria-selected="true">
-                <span class="cbs-src-ico" aria-hidden="true">&#127915;</span>
-                <span class="cbs-src-text"><span class="cbs-src-name">Ticket Blasts</span>
-                  <span class="cbs-src-sub">Queued game offers: price, sport, market</span></span>
-              </button>
-              <button role="tab" class="cbs-src-btn" data-source="event_waitlist" aria-selected="false">
-                <span class="cbs-src-ico" aria-hidden="true">&#9995;</span>
-                <span class="cbs-src-text"><span class="cbs-src-name">Event Waitlist</span>
-                  <span class="cbs-src-sub">Queued sequence steps: proposal, state, step</span></span>
-              </button>
+            <div class="src-bar">
+              <div role="tablist" id="q-source" class="src-seg" aria-label="Strategy">
+                <button role="tab" class="on" data-source="ticket_blasts" aria-selected="true" data-desc="Queued game offers."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 11v2M13 17v2"/></svg><span>Ticket Blasts</span><span class="n" id="q-src-n-tix"></span></button>
+                <button role="tab" data-source="event_waitlist" aria-selected="false" data-desc="Queued steps of a waitlist sequence."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg><span>Event Waitlist</span><span class="n" id="q-src-n-wl"></span></button>
+              </div>
+              <span class="src-note">Queued game offers.</span>
             </div>
             <!-- Heading removed, count kept beside the search — see the note on Campaigns. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
@@ -3925,6 +3920,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // The one line beside a source switch says what the selected source lists.
+    function srcNote(id){
+      const seg = document.getElementById(id); if(!seg) return;
+      const on = seg.querySelector('button.on'); const note = seg.parentElement && seg.parentElement.querySelector('.src-note');
+      if(on && note) note.textContent = on.dataset.desc || '';
+    }
 
     // ===== READER DRAWER (Replies + Inbox) =====
     //
@@ -10349,6 +10351,7 @@ This removes its school and season dates. Venues in this market are not touched.
             const on = b.dataset.source === src;
             b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
           });
+          srcNote('cbs-source');
           try { localStorage.setItem('cbs-source', src); } catch(_){}
           if(src === 'event_waitlist') loadProposals();
         }
@@ -12579,6 +12582,7 @@ This removes its school and season dates. Venues in this market are not touched.
           const on = b.dataset.source === src;
           b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
         });
+        srcNote('q-source');
         const wl = src === 'event_waitlist';
         document.querySelectorAll('#view-queue .q-tix').forEach(n => n.classList.toggle('hidden', wl));
         const thP = el('q-th-price'), thS = el('q-th-sport');
@@ -13499,6 +13503,12 @@ This removes its school and season dates. Venues in this market are not touched.
         // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
         // keeps advertising counts from the last load.
         paintStatusCounts();
+        {
+          const live = QUEUE.filter(r => !r.archived_at);
+          const wl = live.filter(r => r.strategy === 'event_waitlist').length;
+          if(el('q-src-n-tix')) el('q-src-n-tix').textContent = live.length - wl;
+          if(el('q-src-n-wl'))  el('q-src-n-wl').textContent  = wl || '';
+        }
         if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
         const rows = visibleRows();
         // PRUNE TO WHAT THE FILTERS LEAVE. Without this you could tick six rows, change the
