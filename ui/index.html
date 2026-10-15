@@ -14151,6 +14151,12 @@ This removes its school and season dates. Venues in this market are not touched.
                      template, a Playbook Mail design, or a rewrite. It is on EVERY email row, not
                      only ones with a design attached, because rewriting this blast's own copy has
                      nothing to do with whether a design is on it.
+                     AI-1125 asks for the opposite -- "plain-text emails don't show the Edit with
+                     AI button". Vhea confirmed on 2026-10-15 that keeping it is right: the panel
+                     it opens already disables every option that needs a design and says "no
+                     design attached" on each one, leaving only the option that does apply.
+                     Written down so the divergence reads as a decision somebody made rather
+                     than as an oversight nobody caught.
                      (No backticks in here: template literal.) */''}
                ${which === 'email'
                  ? `<button class="btn btn-xs btn-ai gap-1" data-cmai="${esc(id)}" title="Edit with AI — rewrite this blast's own words, or the design itself."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"><path d="M15 4V2M15 10V8M12.5 6h-2M19.5 6h-2M18 13v-2M18 19v-2M15.5 16h-2M20.5 16h-2"/><path d="M11.5 7.5 3 16l5 5 8.5-8.5z"/></svg> Edit with AI</button>`
@@ -15132,7 +15138,7 @@ This removes its school and season dates. Venues in this market are not touched.
                      <div class="text-[11px] text-base-content/60 mb-1.5">Changes the <b>words</b>, <b>colours</b>, <b>sizes and spacing</b>, and the <b>alt text and links</b> on images &mdash; "shorter, buttons in our orange, and square them off" works as one instruction. Swapping the pictures themselves, and adding or reordering sections, are still done in Playbook Mail. <b>Every change is picked up on its own</b>; the blast sends the design as it stands when it goes.</div>
                      <div class="flex gap-2 items-start">
                        <textarea class="textarea textarea-bordered textarea-sm flex-1 text-xs" rows="2" data-fsai-what
-                         placeholder="e.g. make the opening shorter and mention the cheapest seat" aria-label="What to change"></textarea>
+                         placeholder="Describe the change, e.g. make the opening shorter and mention the cheapest seat" aria-label="What to change"></textarea>
                        <div class="flex flex-col gap-1.5 shrink-0">
                          <button class="btn btn-sm btn-primary" data-fsai-go>Make the change</button>
                          <button class="btn btn-xs btn-ghost" data-fsai-cancel>Cancel</button>
@@ -15436,8 +15442,12 @@ This removes its school and season dates. Venues in this market are not touched.
                         + 'No need to pull it in.';
                   }
                 }catch(err){
+                  // PLAIN ENGLISH FIRST, THEN THE REASON. AI-1125 asks for "Couldn't apply that
+                  // change. Try rewording it." -- which says what to do next and nothing about
+                  // what went wrong. The raw message alone did the reverse, and "OpenRouter HTTP
+                  // 402" is not a rewording problem. Both, in that order.
                   aiNote.className = 'text-[11px] mt-1.5 text-error';
-                  aiNote.textContent = String((err && err.message) || err);
+                  aiNote.textContent = `Couldn’t apply that change. Try rewording it. — ${String((err && err.message) || err)}`;
                 }finally{
                   btn.disabled = false; btn.textContent = label;
                 }
@@ -16115,7 +16125,7 @@ This removes its school and season dates. Venues in this market are not touched.
                <div class="font-extrabold text-lg text-[#133b49] mb-1 flex items-center gap-2"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 shrink-0 text-[#5b40c9]" aria-hidden="true"><path d="M15 4V2M15 10V8M12.5 6h-2M19.5 6h-2M18 13v-2M18 19v-2M15.5 16h-2M20.5 16h-2"/><path d="M11.5 7.5 3 16l5 5 8.5-8.5z"/></svg>Edit with AI</div>
                <div class="text-sm text-base-content/70 mb-3">Say what you want changed, in your own words.</div>
                <textarea class="textarea textarea-bordered w-full text-sm mb-3" rows="3" data-ai-what
-                 placeholder="e.g. make it shorter and mention the cheapest seat" aria-label="What to change"></textarea>
+                 placeholder="Describe the change, e.g. make it shorter and put the cheapest seat in the first line" aria-label="What to change"></textarea>
                ${/* FOUR THINGS A CHANGE CAN LAND ON, in order of how far it reaches, because
                      that is the only ordering anybody can reason about under time pressure.
                      They are genuinely different acts: the first two leave Playbook Mail
@@ -16223,7 +16233,7 @@ This removes its school and season dates. Venues in this market are not touched.
                 shut();
               }
             }catch(e){
-              err.textContent = String((e && e.message) || e);
+              err.textContent = `Couldn’t apply that change. Try rewording it. — ${String((e && e.message) || e)}`;
               err.classList.remove('hidden');
             }finally{
               go.disabled = false; go.textContent = 'Make the change';
