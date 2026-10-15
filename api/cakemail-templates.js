@@ -51,8 +51,48 @@ const slim = t => ({
   // in their editor, which the picker renders as a name-only tile rather than a broken image.
   thumbnail_url: t.thumbnail_url || null,
   // Epoch SECONDS, like every other CakeMail timestamp (see the note in lib/cakemail.js).
+  //
+  // BOTH DATES, SEPARATELY. They were folded into one field, which was fine while the picker
+  // only sorted by it -- and wrong the moment the picker had to offer "newest first" and "last
+  // edited" as different orders, because a template built in January and tweaked yesterday
+  // belongs in a different place in each.
   updated_on: t.updated_on || t.created_on || null,
+  created_on: t.created_on || t.updated_on || null,
 });
+
+// WHICH ACCOUNT OWNS THIS TEMPLATE. A design does not have to live in the account the blast
+// sends from -- we copy the rendered HTML onto the row, and the row still sends from its own
+// sender -- so a template id arriving here may belong to any account we hold a key for.
+//
+// Every CakeMail call must NAME an account, and naming the wrong one is a 400 Forbidden rather
+// than a 404: the API will not tell you a template exists elsewhere. So the owner is found by
+// trying, starting with the account most likely to be right and falling back to the others.
+// Resolved rather than stored, because Refresh re-attaches by id alone days later from a fresh
+// page load, and a stored owner would be a fourth column and a second migration to carry
+// something the API can simply be asked.
+//
+// Used by BOTH the attach path and the preview. The preview used to pin itself to the account
+// in the query string, which made opening a foreign design from the row fail with the raw
+// "400: Forbidden" while attaching that same design worked.
+async function renderFromAnyAccount(templateId, firstAccountId) {
+  const first = String(firstAccountId || '');
+  const candidates = [first, ...cakemailAccounts().map(a => String(a.id)).filter(id => id !== first)]
+    .filter(id => id && cakemailKey(id));
+  let lastErr = null;
+  for (const accountId of candidates) {
+    try {
+      // Name first, so a wrong id fails BEFORE anything is written or rendered. The render is
+      // the expensive call of the two.
+      const detail = await cakemailGet(`/templates/${templateId}`, { accountId });
+      const name = (detail && detail.data && detail.data.name) || `Template ${templateId}`;
+      const raw = await cakemailGet(`/templates/${templateId}/render`, { accountId, raw: true });
+      const html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
+      return { owner: accountId, name, html, foreign: accountId !== first };
+    } catch (e) { lastErr = e; }
+  }
+  const tried = candidates.length;
+  throw new Error(`CakeMail could not read template ${templateId} from ${tried === 1 ? 'that account' : `any of the ${tried} accounts`} we hold a key for. ${String((lastErr && lastErr.message) || '')}`.trim());
+}
 
 export default async function handler(req, res) {
   if (!await gate(req, res)) return;
@@ -116,6 +156,48 @@ export default async function handler(req, res) {
     // THE COPY LANDS IN THE SENDING ACCOUNT, not the account it came from. That is the point for
     // a design borrowed from elsewhere — afterwards the blast owns its design outright, in the
     // account it sends from, and the loan is over.
+    // SAVE THIS BLAST'S OWN DESIGN BACK INTO PLAYBOOK MAIL, as a template.
+    //
+    // A "this blast only" edit deliberately leaves the row with a design and no template, which
+    // is right while it is a one-off and wrong the moment somebody likes it: there was no way to
+    // promote it, because every other route here copies an EXISTING template and this row has
+    // none. Vhea asked for the button, and it closes the loop — edit freely on one blast, then
+    // keep the result for everything else.
+    //
+    // CREATED FROM THE RENDERED HTML, since that is all the row has. CakeMail takes it as
+    // content {type:'html'} — verified against the live API on 2026-10-14 by creating one,
+    // reading it back as type "html", rendering it, and deleting it again. It will open in
+    // Playbook Mail's HTML editor rather than the drag-and-drop builder, because it is HTML and
+    // not a builder document; the response says so and the UI repeats it, since finding that
+    // out by opening it would be an unpleasant surprise.
+    if (body.save_as_template) {
+      const cmSave = parseCakemailFrom(row.email_from);
+      if (!cmSave) { res.status(400).json({ error: 'this blast does not send through CakeMail' }); return; }
+      if (!cakemailKey(cmSave.accountId)) { res.status(502).json({ error: missingKey(cmSave.accountId) }); return; }
+      const html = String(row.email_html || '').trim();
+      if (!html) { res.status(400).json({ error: 'This blast has no design to save.' }); return; }
+
+      const label = String(row.title || '').replace(/^\s*\[TEST\]\s*/i, '').trim().slice(0, 60);
+      const name = String(body.name || '').trim().slice(0, 120) || `${label || 'Blast'} — saved from SendBlaster`;
+      try {
+        const made = await cakemailPost('/templates', {
+          accountId: cmSave.accountId,
+          body: {
+            name,
+            description: `Saved from the blast "${label}" in SendBlaster. Built from the design that blast was sending.`,
+            content: { type: 'html', subject: String(row.email_subject || '').slice(0, 200), html },
+          },
+        });
+        const newId = made && (made.id || (made.data && made.data.id));
+        if (!newId) throw new Error('CakeMail returned no id for the new template');
+        res.status(200).json({ ok: true, saved: true, template_id: Number(newId), name,
+                               account_id: cmSave.accountId, kind: 'html' });
+      } catch (e) {
+        res.status(502).json({ error: String((e && e.message) || e) });
+      }
+      return;
+    }
+
     if (body.duplicate) {
       const srcId = String(body.template_id || row.cakemail_template_id || '').trim();
       if (!/^[0-9]+$/.test(srcId)) { res.status(400).json({ error: 'template_id is required to duplicate' }); return; }
@@ -159,34 +241,13 @@ export default async function handler(req, res) {
     if (!cm) { res.status(400).json({ error: 'this blast does not send through CakeMail, so a CakeMail template cannot be attached to it' }); return; }
     if (!cakemailKey(cm.accountId)) { res.status(502).json({ error: missingKey(cm.accountId) }); return; }
 
-    // WHICH ACCOUNT OWNS THIS TEMPLATE — resolved, not assumed.
-    //
-    // The design does not have to live in the sending account: the picker can browse any account
-    // we hold a key for, because the HTML is copied onto the row and still goes out from the
-    // row's own sender. So the template id here may belong to a different account than cm.
-    //
-    // RESOLVED RATHER THAN PASSED IN, and that is the point. Passing it would mean storing it
-    // too — otherwise Refresh, which re-attaches by id alone and may run days later from a
-    // fresh page load, would look in the row's account and not find it. That would be a fourth
-    // column and a second migration to carry something the API can simply be asked. Template ids
-    // are account-scoped at the URL but globally unique in practice, so the owner is found by
-    // trying the row's own account first and the rest only if that misses.
-    const candidates = [cm.accountId, ...cakemailAccounts().map(a => a.id).filter(id => id !== cm.accountId)];
-    let name = null, html = '', owner = null, lastErr = null;
-    for (const candidate of candidates) {
-      try {
-        // Name first, so a wrong id fails BEFORE anything is written. The render is the
-        // expensive call of the two.
-        const detail = await cakemailGet(`/templates/${templateId}`, { accountId: candidate });
-        name = (detail && detail.data && detail.data.name) || `Template ${templateId}`;
-        const raw = await cakemailGet(`/templates/${templateId}/render`, { accountId: candidate, raw: true });
-        html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
-        owner = candidate;
-        break;
-      } catch (e) { lastErr = e; }
-    }
-    if (!owner) {
-      res.status(502).json({ error: `CakeMail could not read template ${templateId} from any account we hold a key for. ${String((lastErr && lastErr.message) || '')}`.trim() });
+    // WHICH ACCOUNT OWNS THIS TEMPLATE — resolved, not assumed, and not stored. See
+    // renderFromAnyAccount above for why. The row's own account is tried first.
+    let name = null, html = '', owner = null;
+    try {
+      ({ name, html, owner } = await renderFromAnyAccount(templateId, cm.accountId));
+    } catch (e) {
+      res.status(502).json({ error: String((e && e.message) || e) });
       return;
     }
     if (!html.trim()) { res.status(502).json({ error: `CakeMail returned no HTML for template ${templateId}. A template that has never been saved in the editor renders empty.` }); return; }
@@ -307,24 +368,46 @@ export default async function handler(req, res) {
   if (wantId) {
     if (!/^[0-9]+$/.test(wantId)) { res.status(400).json({ error: 'id must be a CakeMail template id' }); return; }
     try {
-      const raw = await cakemailGet(`/templates/${wantId}/render`, { accountId, raw: true });
-      const html = typeof raw === 'string' ? raw : (raw && (raw.data || raw.html)) || '';
-      if (!html) { res.status(502).json({ error: 'CakeMail returned no rendered HTML for this template' }); return; }
+      // account_id is where to LOOK FIRST, not the only place to look — see
+      // renderFromAnyAccount. The picker always passes the account it listed from, so that
+      // first try is the hit in the ordinary case and nothing extra is called.
+      const { html, name, owner, foreign } = await renderFromAnyAccount(wantId, accountId);
+      if (!html.trim()) { res.status(502).json({ error: `CakeMail returned no HTML for template ${wantId}. A template that has never been saved in the editor renders empty.` }); return; }
       // DEFANGED. This is the only HTML that reaches the browser, and it reaches it with every
       // href moved to data-href — see lib/defang.js.
-      res.status(200).json({ ok: true, id: Number(wantId), html: defangHtml(html) });
+      // The name comes back too: the preview can be opened on a design that is attached to a
+      // row but no longer in the account's listing, and a real name beats "Design 955831".
+      res.status(200).json({ ok: true, id: Number(wantId), name, html: defangHtml(html),
+                             source_account_id: owner, foreign });
     } catch (e) { res.status(502).json({ error: String((e && e.message) || e) }); }
     return;
   }
 
   try {
-    // Newest edit first, which is the order someone who just built a template expects to find
-    // it in. 100 per page: these libraries are small — the live accounts hold single digits —
-    // and a picker that paged would be more machinery than the thing it is picking from.
-    const q = new URLSearchParams({ page: '1', per_page: '100', with_count: 'true', sort: '-updated_on' });
-    const j = await cakemailGet(`/templates?${q}`, { accountId });
-    const templates = rowsOf(j).map(slim);
-    res.status(200).json({ ok: true, account_id: accountId, count: templates.length, templates });
+    // NEWEST FIRST, BY CREATION. Someone who has just built a template looks for it at the top,
+    // and "top" has to mean the same thing every time they open this -- an edit-ordered list
+    // reshuffles itself whenever anybody touches anything, including this app's own AI edits.
+    // The picker can re-sort by last edited; this is only where it starts.
+    //
+    // EVERY PAGE, not the first hundred. The live accounts hold single digits and the first
+    // version read one page on that basis, which silently becomes "your library is the hundred
+    // CakeMail happened to return first" for an org that grows. The cap is there so a runaway
+    // account cannot hold a request open indefinitely; it is reported rather than hidden,
+    // because a truncated library that says it is complete is the bad outcome here.
+    const PER = 100, MAX_PAGES = 20;
+    const templates = [];
+    let total = null, truncated = false;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const q = new URLSearchParams({ page: String(page), per_page: String(PER), with_count: 'true', sort: '-created_on' });
+      const j = await cakemailGet(`/templates?${q}`, { accountId });
+      const rows = rowsOf(j);
+      if (total === null) total = Number(j && j.pagination && j.pagination.count);
+      templates.push(...rows.map(slim));
+      if (rows.length < PER) break;
+      if (page === MAX_PAGES) truncated = true;
+    }
+    res.status(200).json({ ok: true, account_id: accountId, count: templates.length,
+                           total: Number.isFinite(total) ? total : templates.length, truncated, templates });
   } catch (e) {
     // The message from lib/cakemail.js is already specific ("CakeMail GET /templates -> 401:
     // Invalid token") and is passed through rather than flattened into an empty library: a

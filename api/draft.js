@@ -17,7 +17,7 @@
 //                                       set. Dormant today (the key is commented out in
 //                                       .env) but still a live branch, so unsetting the
 //                                       OpenAI-side vars routes here rather than erroring.
-//   OPENAI_MODEL       optional, defaults to gpt-4o (same var api/chat.js uses)
+//   OPENAI_MODEL       optional, defaults to DEFAULT_MODEL in lib/llm.js (same var api/chat.js uses)
 //   DRAFT_MODEL        optional, overrides OPENAI_MODEL for this endpoint only
 // Auth: lib/auth.js — Bearer CRON_SECRET or a signed-in user's Supabase token. It used to be
 // REPLY_SECRET, which ui/config.js publishes to every visitor.
@@ -29,7 +29,7 @@
 // worth changing the deploy shape.
 
 import { gate } from '../lib/auth.js';
-import { openaiTarget } from '../lib/llm.js';
+import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 
 const SYSTEM_PROMPT = `You are the campaign copy agent for Playbook Sports' Marketing Blaster.
 
@@ -123,7 +123,7 @@ export default async function handler(req, res) {
   if (!await gate(req, res)) return;
 
   const draftModel = (process.env.DRAFT_MODEL || '').trim();
-  const target = openaiTarget(draftModel || (process.env.OPENAI_MODEL || 'gpt-4o').trim());
+  const target = openaiTarget(draftModel || (process.env.OPENAI_MODEL || DEFAULT_MODEL).trim());
   const anthropicKey = (process.env.ANTHROPIC_API_KEY || '').trim();
   if (!target.ok && !anthropicKey) {
     res.status(500).json({ error: 'No model key on the server — set OPENROUTER_OPENAI, OPENAI_API_KEY or ANTHROPIC_API_KEY' });

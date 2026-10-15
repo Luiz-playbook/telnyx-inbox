@@ -11,12 +11,12 @@
 //      SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY (see lib/supabase.js), GEMINI_API_KEY.
 
 import { priceRoute, callPrices } from '../lib/price.js';
-import { openaiTarget } from '../lib/llm.js';
+import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 import { supabaseKey } from '../lib/supabase.js';
 
 export const config = { maxDuration: 30 };
 
-const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
+const MODEL = (process.env.OPENAI_MODEL || DEFAULT_MODEL).trim();
 const PRICE_STALE_HOURS = 72;
 
 const SYSTEM = [

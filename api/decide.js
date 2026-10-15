@@ -15,11 +15,11 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { openaiTarget } from '../lib/llm.js';
+import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 
 export const config = { maxDuration: 60 };
 
-const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
+const MODEL = (process.env.OPENAI_MODEL || DEFAULT_MODEL).trim();
 
 const SYSTEM = [
   'You write one-sentence rationales for a ticket-marketing send decider. The decision (send/skip/hold) and the chosen email template are ALREADY made from historical performance data and the configured "Cole Rules" — do not second-guess or change them. For each event you are given the market, whether a blast has run there before, the historical open rate and click-through rate, the best-performing template, the best send weekday, the event fill % WHERE ONE IS GIVEN (an absent filled_pct means occupancy is unknown, not that the game is empty — never cite or imply a fill figure for those), days until the game, days since the last send, warning flags, and a reason code. Write a crisp, specific one-sentence justification a sales lead would trust. Cite the concrete numbers you were given (e.g. "18% open / 8% CTR across prior Boston blasts"). If a warning flag is set (opt-out running hot, or recent-send fatigue), mention it. Never invent numbers. reason codes: ok = good to send; nearly_full = skip, already ~full; no_history = skip, no comparable market blast to learn from; too_early = hold, game is beyond the forward-looking window; cooldown = hold, market was sent to inside the cooldown floor.',

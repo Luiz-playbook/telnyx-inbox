@@ -23,11 +23,11 @@
 
 import { supabaseKey } from '../lib/supabase.js';
 import { gate } from '../lib/auth.js';
-import { openaiTarget } from '../lib/llm.js';
+import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 
 export const config = { maxDuration: 30 };
 
-const MODEL = (process.env.OPENAI_MODEL || 'gpt-4o').trim();
+const MODEL = (process.env.OPENAI_MODEL || DEFAULT_MODEL).trim();
 
 const SYSTEM = [
   'You are the send-decider for Playbook\'s ticket-marketing blasts. You are given a list of markets that have ALREADY passed every hard rule (cooldown, forward-looking window, fill %, opt-out health, has prior history) — so every candidate is safe to send. Your job is to choose which ones to actually blast right now, and in what order, to maximize return.',
