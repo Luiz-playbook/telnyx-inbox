@@ -867,6 +867,25 @@
        They were loose rows under the prose and read as more body copy; the panel makes the
        part you can change look different from the part you can only read. */
     .pbw-panel{ border:1px solid #e8edf1; background:#fafcfd; border-radius:12px; padding:12px 14px; }
+    /* SOURCE SWITCH (migration 120), Offers and Queue. A segmented control rather than cards:
+       it picks which strategy's rows are on screen, so it sits with the toolbar and reads like
+       the rest of the app's controls (line icons, navy text, the ember accent only on what is
+       selected) instead of competing with the table for attention. */
+    .src-bar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+    .src-seg{ display:inline-flex; gap:2px; padding:3px; background:#eef2f6; border:1px solid #dde4ec; border-radius:9px; }
+    .src-seg button{ display:inline-flex; align-items:center; gap:7px; padding:6px 14px; border:0; border-radius:7px;
+      background:transparent; color:#5e6e82; font-weight:700; font-size:13px; line-height:1.2; cursor:pointer;
+      transition:background .12s, color .12s, box-shadow .12s; }
+    .src-seg button:hover{ color:#133b49; }
+    .src-seg button.on{ background:#fff; color:#133b49; box-shadow:0 0 0 1px #d8e2ef, 0 1px 2px rgba(19,59,73,.10); }
+    .src-seg button:focus-visible{ outline:2px solid #e55608; outline-offset:1px; }
+    .src-seg svg{ width:15px; height:15px; flex:0 0 auto; opacity:.7; }
+    .src-seg button.on svg{ opacity:1; color:#e55608; }
+    .src-seg .n{ min-width:20px; padding:1px 6px; border-radius:999px; background:#e3e9f0; color:#5e6e82;
+      font-size:11px; font-weight:700; text-align:center; font-variant-numeric:tabular-nums; }
+    .src-seg .n:empty{ display:none; }
+    .src-seg button.on .n{ background:#fdeee4; color:#c94d07; }
+    .src-note{ font-size:12px; color:#7a8899; }
     .pbw-row{ display:flex; align-items:center; gap:8px; }
     .pbw-label{ font-size:13px; font-weight:700; color:#133b49; }
     .pbw-rule{ height:1px; background:#e8edf1; margin:11px 0; }
@@ -1345,7 +1364,19 @@
                  a second answer to a question nobody was asking, costing ~60px of the vertical
                  space the table wants. The COUNT is kept — it is live data, not decoration —
                  and moved next to the search box. -->
-            <div class="flex items-center justify-between flex-wrap gap-3">
+            <!-- SOURCE (migration 120). A strategy is a way of GENERATING this board, not a filter
+                 over one list: Ticket Blasts reads the league calendars, Event Waitlist reads a
+                 proposed event and the markets it is shopped to. The switch decides which
+                 generator's rows are on screen; everything below it belongs to one or the other. -->
+            <div class="src-bar">
+              <div role="tablist" id="cbs-source" class="src-seg" aria-label="Strategy">
+                <button role="tab" class="on" data-source="ticket_blasts" aria-selected="true" data-desc="Games on the league calendars, and who we can reach for each."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 11v2M13 17v2"/></svg><span>Ticket Blasts</span><span class="n"></span></button>
+                <button role="tab" data-source="event_waitlist" aria-selected="false" data-desc="Proposed events, pitched to the states that have never hosted one."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg><span>Event Waitlist</span><span class="n"></span></button>
+                <button role="tab" data-source="teammate" aria-selected="false" data-desc="Teammate AI: a 15-minute feedback call, pitched to one sport's organisations in a market. No event, no date."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Teammate</span><span class="n"></span></button>
+              </div>
+              <span class="src-note">Games on the league calendars, and who we can reach for each.</span>
+            </div>
+            <div class="cbs-games flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
                 <span class="text-base-content/40">&#128269;</span>
                 <input id="cbs-search" type="text" class="grow w-64" placeholder="Search event or state…" autocomplete="off" />
@@ -1394,10 +1425,9 @@
                   <input id="cbs-date-to" type="date" class="input input-bordered input-sm join-item w-[9.5rem]" aria-label="Games to">
                   <button id="cbs-date-clear" class="btn btn-sm join-item hidden" title="Clear the date filter">&times;</button>
                 </div>
-                <!-- STRATEGY (AI-1075). First in the row because it is the broadest cut: it
-                     says which KIND of offer you are looking at, and every filter after it
-                     narrows within that. -->
-                <div id="cbs-strategy"></div>
+                <!-- The strategy filter that sat here (AI-1075) is gone: the source switch above
+                     the toolbar is the strategy now, and every row on this board is a ticket
+                     offer by construction. -->
                 <select id="cbs-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
@@ -1416,7 +1446,7 @@
             <!-- Toolbar row 2 — the actions, directly above the table. Multi-day, additive:
                  fill the queue with N markets/day through a date.
                  -->
-            <div class="flex items-end justify-between flex-wrap gap-3">
+            <div class="cbs-games flex items-end justify-between flex-wrap gap-3">
               <!-- AI-960. Markets/day and Through used to sit here, in xs inputs beside the
                    button. Josh's complaint was that the two settings that decide the whole run
                    were the least visible thing on the row — you pressed Trigger Blast and only
@@ -1453,7 +1483,7 @@
                 </span>
               </div>
             </div>
-            <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+            <div class="cbs-games bg-base-100 border border-base-300 rounded-xl overflow-hidden">
               <!-- BULK BAR (AI-964). Same shell, same classes and the same rules as the Queue's
                    #q-bulk: hidden until something is ticked, inside the panel and above the
                    scroll box so it cannot scroll away from the checkboxes it describes. Copied
@@ -1517,6 +1547,96 @@
                     <button id="cbs-next" class="btn btn-xs join-item">Next &raquo;</button>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <!-- EVENT WAITLIST BOARD (migration 120). One proposed event at a time; every US
+                 market underneath it with reach, cooldown, how far through the sequence it is
+                 and which message is due next. Dan's never-hosted list is a flag, not the list. -->
+            <div id="cbs-waitlist" class="hidden space-y-4">
+              <div class="flex items-center gap-3 flex-wrap">
+                <select id="wl-proposal" class="select select-bordered select-sm w-72" aria-label="Proposed event"></select>
+                <button id="wl-new" class="btn btn-sm btn-outline">+ New proposal</button>
+                <button id="wl-edit" class="btn btn-sm btn-ghost">Edit</button>
+                <span id="wl-summary" class="text-xs text-base-content/60"></span>
+                <label class="ml-auto label cursor-pointer gap-2 text-sm"><input id="wl-untouched" type="checkbox" class="checkbox checkbox-xs" checked> <span>Only never-hosted states</span></label>
+                <input id="wl-search" type="search" placeholder="Find a state…" class="input input-bordered input-sm w-44" aria-label="Find a state">
+                <button id="wl-reload" class="btn btn-ghost btn-sm">&#8635;</button>
+              </div>
+              <!-- THE THRESHOLD ALERT (migration 123). Every market on any open proposal that has
+                   enough hand-raisers and no date yet. Nothing is sent from here: it is Dan's call,
+                   and this is how it reaches him and Cole without anyone counting rows. -->
+              <div id="wl-alerts" class="hidden rounded-xl border border-[#1f7a4d]/30 bg-[#e3f3ea] px-4 py-3 text-sm text-[#133b49]" role="status"></div>
+              <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+                <div id="wl-bulk" class="hidden items-center gap-3 flex-wrap px-4 py-2.5 border-b border-base-300 bg-[#fdeee4]">
+                  <span class="text-sm font-bold text-[#133b49]"><span id="wl-bulk-n">0</span> selected</span>
+                  <span id="wl-bulk-note" class="text-xs text-base-content/60"></span>
+                  <div class="ml-auto flex items-center gap-2">
+                    <button id="wl-bulk-clear" class="btn btn-xs btn-ghost">Clear</button>
+                    <button id="wl-bulk-add" class="btn btn-xs btn-warning text-white hover:text-white">Add to Queue</button>
+                  </div>
+                </div>
+                <div class="overflow-auto max-h-[calc(100vh-300px)]">
+                  <table class="camp-table w-full min-w-[1100px]">
+                    <thead class="sticky top-0 z-10">
+                      <tr class="border-b border-base-300 bg-base-100">
+                        <th class="w-8"><input type="checkbox" id="wl-all" class="checkbox checkbox-xs align-middle" aria-label="Select every market with a step due"></th>
+                        <th>Market</th>
+                        <th title="Ideal customer profile: emails · phones">ICP</th>
+                        <th title="Secondary profile: emails · phones">SCP</th>
+                        <th title="Everyone else: emails · phones">Other</th>
+                        <th title="Where this market ranks: ICP + SCP reach, organisations, Dan's warm flag, and distance to the nearest state we have hosted in. The weights live in waitlist_settings.">Rank</th>
+                        <th title="Days since the last blast to this market, any strategy. Only the Day 0 ask waits out the cooldown; follow-ups do not.">Last contact</th>
+                        <th>Stage</th>
+                        <th>Next step</th>
+                        <th title="Organisations that said yes, against this proposal's threshold">Hand-raisers</th>
+                        <th class="w-40"></th>
+                      </tr>
+                    </thead>
+                    <tbody id="wl-rows"><tr><td colspan="11" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr></tbody>
+                  </table>
+                </div>
+                <div class="px-4 py-2 border-t border-base-300 text-xs text-base-content/50" id="wl-foot"></div>
+              </div>
+            </div>
+
+            <!-- TEAMMATE BOARD (migration 122, AI-1129). One sport at a time; every market with
+                 anybody who plays it, reach per segment for that sport only, and which segments are
+                 cooling from ANY Playbook blast. Cole's Will / James templates fill [SPORT]. -->
+            <div id="cbs-teammate" class="hidden space-y-4">
+              <div class="flex items-center gap-3 flex-wrap">
+                <label class="text-sm text-base-content/60" for="tm-sport">Sport</label>
+                <select id="tm-sport" class="select select-bordered select-sm w-56" aria-label="Sport"></select>
+                <span id="tm-summary" class="text-xs text-base-content/60"></span>
+                <input id="tm-search" type="search" placeholder="Find a state…" class="ml-auto input input-bordered input-sm w-44" aria-label="Find a state">
+                <button id="tm-reload" class="btn btn-ghost btn-sm" aria-label="Reload">&#8635;</button>
+              </div>
+              <div class="bg-base-100 border border-base-300 rounded-xl overflow-hidden">
+                <div id="tm-bulk" class="hidden items-center gap-3 flex-wrap px-4 py-2.5 border-b border-base-300 bg-[#fdeee4]">
+                  <span class="text-sm font-bold text-[#133b49]"><span id="tm-bulk-n">0</span> selected</span>
+                  <span id="tm-bulk-note" class="text-xs text-base-content/60"></span>
+                  <div class="ml-auto flex items-center gap-2">
+                    <button id="tm-bulk-clear" class="btn btn-xs btn-ghost">Clear</button>
+                    <button id="tm-bulk-add" class="btn btn-xs btn-warning text-white hover:text-white">Add to Queue</button>
+                  </div>
+                </div>
+                <div class="overflow-auto max-h-[calc(100vh-300px)]">
+                  <table class="camp-table w-full min-w-[900px]">
+                    <thead class="sticky top-0 z-10">
+                      <tr class="border-b border-base-300 bg-base-100">
+                        <th class="w-8"><input type="checkbox" id="tm-all" class="checkbox checkbox-xs align-middle" aria-label="Select every market that can be sent to"></th>
+                        <th>Market</th>
+                        <th title="Ideal customer profile who play this sport: emails · phones. Email and SMS.">ICP</th>
+                        <th title="Secondary profile who play this sport: emails · phones. Email and SMS.">SCP</th>
+                        <th title="Everyone else who plays this sport: emails. Email only.">Other</th>
+                        <th title="Days since the last blast to this market, any strategy, and the last Teammate blast">Last contact</th>
+                        <th title="Segments held by the market cooldown, from any blast. They are left out when you queue.">Cooling</th>
+                      </tr>
+                    </thead>
+                    <tbody id="tm-rows"><tr><td colspan="7" class="text-center text-base-content/50 py-8">Loading&hellip;</td></tr></tbody>
+                  </table>
+                </div>
+                <div class="px-4 py-2 border-t border-base-300 text-xs text-base-content/50" id="tm-foot"></div>
               </div>
             </div>
 
@@ -1666,6 +1786,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                table in a plain rounded panel. The queue-only parts stay — rows are banded by send
                day and every row keeps its blast identifier. -->
           <div data-view id="view-queue" class="hidden space-y-5">
+            <!-- SOURCE (migration 120). The same two cards as the Offers tab, for the same reason:
+                 a waitlist row is a different shape of send (a proposal, a state, a step of a
+                 sequence; no game, no price) and reads badly in a table built around fixtures.
+                 Each card shows only its own strategy's rows and relabels the two columns that
+                 mean nothing to the other. -->
+            <div class="src-bar">
+              <div role="tablist" id="q-source" class="src-seg" aria-label="Strategy">
+                <button role="tab" class="on" data-source="ticket_blasts" aria-selected="true" data-desc="Queued game offers."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z"/><path d="M13 5v2M13 11v2M13 17v2"/></svg><span>Ticket Blasts</span><span class="n" id="q-src-n-tix"></span></button>
+                <button role="tab" data-source="event_waitlist" aria-selected="false" data-desc="Queued steps of a waitlist sequence."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4M12 16h4M8 11h.01M8 16h.01"/></svg><span>Event Waitlist</span><span class="n" id="q-src-n-wl"></span></button>
+                <button role="tab" data-source="teammate" aria-selected="false" data-desc="Queued Teammate AI outreach, one sport per row."><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg><span>Teammate</span><span class="n" id="q-src-n-tm"></span></button>
+              </div>
+              <span class="src-note">Queued game offers.</span>
+            </div>
             <!-- Heading removed, count kept beside the search — see the note on Campaigns. -->
             <div class="flex items-center justify-between flex-wrap gap-3">
               <label class="input input-bordered input-sm flex items-center gap-2 bg-base-100">
@@ -1687,20 +1820,19 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                   <option value="rejected">Rejected</option>
                   <option value="archived">Archived</option>
                 </select>
-                <!-- STRATEGY (AI-1075). Same control and same position as the Offers tab's,
-                     because a queue row IS an offer that was taken. -->
-                <div id="q-strategy"></div>
+                <!-- The strategy filter that sat here (AI-1075) is gone: the source cards above
+                     the toolbar are the strategy now. -->
                 <select id="q-segment" class="select select-bordered select-sm" title="Audience segment">
                   <option value="">All segments</option>
                   <option value="ICP">ICP</option>
                   <option value="SCP">SCP</option>
                   <option value="Other">Other</option>
                 </select>
-                <select aria-label="Filter queue by sport" id="q-sport" class="select select-bordered select-sm"><option value="">All sports</option></select>
+                <select aria-label="Filter queue by sport" id="q-sport" class="q-tix select select-bordered select-sm"><option value="">All sports</option></select>
                 <!-- NFL and CFB share the sport "Football" on purpose; league is what separates
                      them. Added with college football (877 games) so the Queue can be read one
                      competition at a time. -->
-                <select id="q-league" class="select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
+                <select id="q-league" class="q-tix select select-bordered select-sm" title="League"><option value="">All leagues</option></select>
                 <select aria-label="Filter queue by state" id="q-state" class="select select-bordered select-sm w-40"><option value="">All states</option></select>
                 <select id="q-channel" class="select select-bordered select-sm" title="Channel">
                   <option value="">All channels</option>
@@ -1790,8 +1922,8 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
                     <th>Blast</th>
                     <!-- Per Josh: between the blast name and the price. -->
                     <th class="col-tight w-[52px]">Actions</th>
-                    <th>Cheapest</th>
-                    <th>Sport</th>
+                    <th id="q-th-price">Cheapest</th>
+                    <th id="q-th-sport">Sport</th>
                     <!-- Market is one metro word ("Chicago") over its state/country code, so it
                          is sized for that and nothing else — it was taking the width of a long
                          sentence to render two short ones. -->
@@ -3899,6 +4031,13 @@ CEO &amp; Co-Founder | Playbook Sports</textarea></div>
     const cfg = window.INBOX_CONFIG || {};
     const sb = (cfg.SUPABASE_URL && !String(cfg.SUPABASE_URL).startsWith('<<')) ? supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
     function esc(s){ return (s??'').toString().replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+    // The one line beside a source switch says what the selected source lists.
+    function srcNote(id){
+      const seg = document.getElementById(id); if(!seg) return;
+      const on = seg.querySelector('button.on'); const note = seg.parentElement && seg.parentElement.querySelector('.src-note');
+      if(on && note) note.textContent = on.dataset.desc || '';
+    }
 
     // ===== READER DRAWER (Replies + Inbox) =====
     //
@@ -10304,12 +10443,477 @@ This removes its school and season dates. Venues in this market are not touched.
       });
       el('cbs-price')?.addEventListener('change', e => { priceF = e.target.value; page = 1; cbsClears(); render(); });
       el('cbs-segment')?.addEventListener('change', e => { segF = e.target.value; page = 1; cbsClears(); render(); });
-      // AI-1075. Mounted after the strategies are loaded, because the control renders one
-      // checkbox per strategy and an empty menu would be indistinguishable from a broken one.
+      // ===== EVENT WAITLIST BOARD (migration 120) =====
+      //
+      // The second generator. Reads waitlist_board(proposal) — one row per US market with reach,
+      // cooldown, sequence stamps and the step due — and writes through the proposal_* RPCs.
+      // Queueing goes through the same queue_enqueue_test the games board uses, then stamps
+      // strategy / proposal_id / proposal_step on the rows and asks /api/queue-draft for copy,
+      // which picks the step's template and fills the proposal's tokens.
+      (() => {
+        const host = el('cbs-waitlist');
+        if(!host) return;
+        let PROPOSALS = [], CUR = null, BOARD = [], wlPicked = new Set(), onlyUntouched = true, wlFilter = '';
+        const STEP_LABEL = { day0: 'Day 0 · Email #1 — the ask', day3: 'Day 3 · SMS #1', day10: 'Day 10 · Email #2 — social proof',
+                             day45: 'Day 45 · Email #4 — re-ask', formal: 'Announce · Email #3 + SMS #2' };
+        const STAGE_LABEL = { not_selected: '', not_asked: 'Not asked yet', following_up: 'Following up', dormant: 'Dormant',
+                              enough: 'Enough hands — confirm a date', formal: 'Date confirmed', formal_sent: 'Announced' };
+        // Which segments and channels each step reaches, straight from the sequence doc: Day 0 to
+        // everyone by email, Day 3 a text to ICP + SCP only, the announcement to everyone on both.
+        const STEP_PLAN = { day0:  { segs: ['ICP','SCP','Other'], email: true,  sms: false },
+                            day3:  { segs: ['ICP','SCP'],         email: false, sms: true  },
+                            day10: { segs: ['ICP','SCP','Other'], email: true,  sms: false },
+                            day45: { segs: ['ICP','SCP','Other'], email: true,  sms: false },
+                            formal:{ segs: ['ICP','SCP','Other'], email: true,  sms: true  } };
+        const num = v => Number(v || 0).toLocaleString();
+        // Only the opening ask waits out the cooldown (migration 123, John 2026-10-15): Day 3 / 10 / 45
+        // and the announcement run on the market's own clock. day0_held is the board's answer; a
+        // board from before 123 has no such column and falls back to the old rule.
+        const isHeld = r => ('day0_held' in r) ? !!r.day0_held : !!r.held_until;
+        const canPick = r => r.in_proposal && r.step_due && !isHeld(r);
+
+        // ── source switch ──
+        function setSource(src){
+          document.querySelectorAll('#view-compose .cbs-games').forEach(n => n.classList.toggle('hidden', src !== 'ticket_blasts'));
+          host.classList.toggle('hidden', src !== 'event_waitlist');
+          el('cbs-teammate')?.classList.toggle('hidden', src !== 'teammate');
+          document.querySelectorAll('#cbs-source [data-source]').forEach(b => {
+            const on = b.dataset.source === src;
+            b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
+          srcNote('cbs-source');
+          try { localStorage.setItem('cbs-source', src); } catch(_){}
+          if(src === 'event_waitlist') loadProposals();
+          if(src === 'teammate') tmLoadSports();
+        }
+        document.querySelectorAll('#cbs-source [data-source]').forEach(b => b.addEventListener('click', () => setSource(b.dataset.source)));
+        // The remembered source is restored at the END of this block, once the Teammate board's
+        // state below exists — restoring it here would call into variables not yet declared.
+
+        // ── proposals ──
+        async function loadProposals(){
+          if(!sb) return;
+          const r = await sb.from('event_proposals').select('*').order('created_at', { ascending: false });
+          if(r.error){ rowsMsg(/event_proposals|does not exist|schema cache/i.test(r.error.message) ? 'Migration 120 has not been applied to this database yet.' : r.error.message, true); return; }
+          PROPOSALS = r.data || [];
+          const sel = el('wl-proposal');
+          sel.innerHTML = PROPOSALS.length
+            ? PROPOSALS.map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.status !== 'proposed' ? ' · ' + esc(p.status) : ''}</option>`).join('')
+            : '<option value="">No proposals yet</option>';
+          CUR = (CUR && PROPOSALS.find(p => p.id === CUR.id)) || PROPOSALS[0] || null;
+          if(CUR) sel.value = CUR.id;
+          paintProposal();
+          loadBoard();
+          loadAlerts();
+        }
+        // Markets that reached their threshold, across every open proposal. Drawn on the board and
+        // counted on the Event Waitlist card, which is visible from the Ticket Blasts side too.
+        async function loadAlerts(){
+          const box = el('wl-alerts'), card = document.querySelector('#cbs-source [data-source="event_waitlist"] .n');
+          const r = sb ? await sb.rpc('waitlist_alerts') : { data: [] };
+          const rows = (!r.error && r.data) || [];
+          if(card) card.textContent = rows.length ? `${rows.length} ready` : '';
+          if(!box) return;
+          box.classList.toggle('hidden', !rows.length);
+          if(!rows.length){ box.innerHTML = ''; return; }
+          box.innerHTML = `<div class="font-bold mb-1">${rows.length} market${rows.length === 1 ? ' has' : 's have'} enough hand-raisers. Confirm a date to send the announcement.</div>`
+            + rows.map(a => `<button class="btn btn-xs btn-ghost underline mr-2" data-wl-jump="${esc(a.proposal_id)}" data-wl-jump-code="${esc(a.code)}">${esc(a.name)} · ${esc(a.proposal_name)} · ${num(a.signups)}/${num(a.threshold)}</button>`).join('');
+        }
+        el('wl-alerts')?.addEventListener('click', e => {
+          const b = e.target.closest('[data-wl-jump]'); if(!b) return;
+          CUR = PROPOSALS.find(p => p.id === b.dataset.wlJump) || CUR;
+          if(CUR) el('wl-proposal').value = CUR.id;
+          wlFilter = b.dataset.wlJumpCode; if(el('wl-search')) el('wl-search').value = wlFilter;
+          paintProposal(); loadBoard();
+        });
+        loadAlerts();
+        function paintProposal(){
+          const s = el('wl-summary'); if(!s) return;
+          if(!CUR){ s.textContent = 'Create a proposal to start shopping it to markets.'; return; }
+          const bits = [CUR.sport, CUR.season, `threshold ${CUR.threshold}`, CUR.sender_name ? `from ${CUR.sender_name}` : 'no sender set',
+                        CUR.waitlist_url ? 'link set' : 'no waitlist link'].filter(Boolean);
+          s.textContent = bits.join(' · ');
+        }
+        el('wl-proposal')?.addEventListener('change', e => { CUR = PROPOSALS.find(p => p.id === e.target.value) || null; wlPicked.clear(); paintProposal(); loadBoard(); });
+        el('wl-new')?.addEventListener('click', () => proposalForm(null));
+        el('wl-edit')?.addEventListener('click', () => { if(CUR) proposalForm(CUR); });
+
+        function rowsMsg(text, err){
+          const tb = el('wl-rows');
+          if(tb) tb.innerHTML = `<tr><td colspan="11" class="text-center py-8 ${err ? 'text-error' : 'text-base-content/50'}">${esc(text)}</td></tr>`;
+        }
+
+        // ── the board ──
+        async function loadBoard(){
+          if(!CUR){ rowsMsg('No proposal selected. Press "+ New proposal".'); el('wl-foot').textContent = ''; return; }
+          rowsMsg('Loading…');
+          // v2 (migration 123) adds the ranking, the three last-contact clocks and day0_held. 120's
+          // board is left in place, so a database without 123 still gets a working board.
+          let r = await sb.rpc('waitlist_board_v2', { p_proposal: CUR.id });
+          if(r.error && /waitlist_board_v2|does not exist|schema cache|PGRST202/i.test(r.error.message + ' ' + (r.error.code || '')))
+            r = await sb.rpc('waitlist_board', { p_proposal: CUR.id });
+          if(r.error){ rowsMsg(r.error.message, true); return; }
+          BOARD = r.data || [];
+          render();
+        }
+        function render(){
+          const tb = el('wl-rows'); if(!tb) return;
+          const f = wlFilter.trim().toLowerCase();
+          const rows = BOARD.filter(r => (!onlyUntouched || r.untouched || r.in_proposal) && (!f || r.name.toLowerCase().includes(f) || r.code.toLowerCase() === f));
+          for(const k of [...wlPicked]) if(!rows.some(r => r.code === k && canPick(r))) wlPicked.delete(k);
+          if(!rows.length){ rowsMsg('No markets match.'); paintBulk(); return; }
+          tb.innerHTML = rows.map(r => {
+            const pickable = canPick(r);
+            const stage = STAGE_LABEL[r.stage] || '';
+            // The cooldown badge shows only where it actually blocks something: the Day 0 ask.
+            // Under it, the two other clocks the ticket asks for — this brand (any Playbook play,
+            // so not Teammate) when it differs, and this strategy.
+            const ago = d => d ? `${Math.max(0, Math.round((Date.now() - new Date(d + 'T12:00:00').getTime()) / 864e5))} d` : null;
+            const subLast = [
+              r.last_blast_playbook && r.last_blast_playbook !== r.last_blast_any ? `Playbook ${ago(r.last_blast_playbook)}` : '',
+              r.days_since_any == null ? '' : (r.last_blast_waitlist ? `waitlist ${ago(r.last_blast_waitlist)}` : 'no waitlist yet'),
+            ].filter(Boolean).join(' · ');
+            const last = (r.days_since_any == null ? '<span class="text-base-content/40">never</span>'
+                       : `${r.days_since_any} d${isHeld(r) ? ` <span class="badge badge-xs bg-[#fbf0dc] text-[#9a5b00] border-0" title="${esc(r.cooldown_days || 25)}-day cooldown, any strategy. It holds the Day 0 ask only.">held to ${esc(r.held_until)}</span>` : ''}`)
+                       + (subLast ? `<div class="text-[10px] text-base-content/50">${esc(subLast)}</div>` : '');
+            const rank = r.rank_score == null ? ''
+                       : `<span class="tabular-nums font-semibold text-[#133b49]">${esc(r.rank_score)}</span>`
+                         + (r.nearest_hosted ? `<div class="text-[10px] text-base-content/50" title="Nearest state we have hosted in">${num(r.miles_to_hosted)} mi to ${esc(r.nearest_hosted)}</div>` : '');
+            const step = r.step_due ? `<span class="font-semibold text-[#133b49]">${esc(STEP_LABEL[r.step_due] || r.step_due)}</span>`
+                       : r.in_proposal ? '<span class="text-base-content/40">nothing due</span>' : '';
+            const hands = r.in_proposal ? `<span class="tabular-nums ${r.threshold && r.signups >= r.threshold ? 'text-[#1f7a4d] font-semibold' : ''}">${num(r.signups)} / ${num(r.threshold)}</span>${r.signups_left ? `<span class="text-[10px] text-base-content/50"> · ${num(r.signups_left)} to go</span>` : ''}
+                 <button class="btn btn-xs btn-ghost" data-wl-signup="${esc(r.code)}" title="Record an organisation that said yes">+1</button>` : '';
+            const act = !r.in_proposal
+              ? `<button class="btn btn-xs btn-outline" data-wl-add="${esc(r.code)}">Add to proposal</button>`
+              : (r.formal_at ? `<span class="text-xs text-base-content/60">${esc(r.event_date || '')} ${esc(r.venue || '')}</span>`
+                : `<button class="btn btn-xs ${r.stage === 'enough' ? 'btn-success text-white' : 'btn-ghost'}" data-wl-confirm="${esc(r.pm_id)}" data-wl-code="${esc(r.code)}">Confirm date</button>`)
+                + (!r.day0_sent_at && !r.formal_at ? ` <button class="btn btn-xs btn-ghost text-base-content/40" data-wl-remove="${esc(r.code)}" title="Take this market off the proposal">&times;</button>` : '');
+            return `<tr class="${r.in_proposal ? '' : 'opacity-70'}">
+              <td>${pickable ? `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-wl-pick="${esc(r.code)}" ${wlPicked.has(r.code) ? 'checked' : ''} aria-label="Select ${esc(r.name)}">` : ''}</td>
+              <td><div class="font-semibold text-[#133b49]">${esc(r.name)} <span class="text-xs text-base-content/40">${esc(r.code)}</span></div>
+                  <div class="text-xs">${r.untouched ? '<span class="badge badge-xs badge-ghost">never hosted</span>' : ''}${r.warm ? ' <span class="badge badge-xs bg-[#e3f3ea] text-[#1f7a4d] border-0">warm</span>' : ''}</div></td>
+              <td class="tabular-nums text-sm">${num(r.icp_emails)} <span class="text-base-content/40">·</span> ${num(r.icp_phones)}</td>
+              <td class="tabular-nums text-sm">${num(r.scp_emails)} <span class="text-base-content/40">·</span> ${num(r.scp_phones)}</td>
+              <td class="tabular-nums text-sm">${num(r.other_emails)} <span class="text-base-content/40">·</span> ${num(r.other_phones)}</td>
+              <td class="text-sm">${rank}</td>
+              <td class="text-sm">${last}</td>
+              <td class="text-sm">${esc(stage)}</td>
+              <td class="text-sm">${step}</td>
+              <td class="text-sm whitespace-nowrap">${hands}</td>
+              <td class="whitespace-nowrap">${act}</td>
+            </tr>`;
+          }).join('');
+          const inP = BOARD.filter(r => r.in_proposal).length, due = BOARD.filter(canPick).length;
+          el('wl-foot').textContent = `${BOARD.length} markets · ${inP} on this proposal · ${due} with a step due`;
+          paintBulk();
+        }
+        function paintBulk(){
+          const bar = el('wl-bulk'); if(!bar) return;
+          bar.classList.toggle('hidden', !wlPicked.size); bar.classList.toggle('flex', !!wlPicked.size);
+          el('wl-bulk-n').textContent = wlPicked.size;
+          const steps = [...new Set([...wlPicked].map(c => (BOARD.find(r => r.code === c) || {}).step_due).filter(Boolean))];
+          el('wl-bulk-note').textContent = steps.map(st => STEP_LABEL[st]).join(' · ');
+          const all = el('wl-all'); if(all){ const n = BOARD.filter(canPick).length; all.checked = n > 0 && wlPicked.size === n; }
+        }
+        el('wl-rows')?.addEventListener('change', e => {
+          const cb = e.target.closest('[data-wl-pick]'); if(!cb) return;
+          if(cb.checked) wlPicked.add(cb.dataset.wlPick); else wlPicked.delete(cb.dataset.wlPick);
+          paintBulk();
+        });
+        el('wl-all')?.addEventListener('change', e => { wlPicked.clear(); if(e.target.checked) BOARD.filter(canPick).forEach(r => wlPicked.add(r.code)); render(); });
+        el('wl-bulk-clear')?.addEventListener('click', () => { wlPicked.clear(); render(); });
+        el('wl-untouched')?.addEventListener('change', e => { onlyUntouched = !!e.target.checked; render(); });
+        let wlT = null;
+        el('wl-search')?.addEventListener('input', e => { wlFilter = e.target.value; clearTimeout(wlT); wlT = setTimeout(render, 150); });
+        el('wl-reload')?.addEventListener('click', loadProposals);
+
+        // ── row actions ──
+        el('wl-rows')?.addEventListener('click', async e => {
+          const add = e.target.closest('[data-wl-add]');
+          const rem = e.target.closest('[data-wl-remove]');
+          const sg  = e.target.closest('[data-wl-signup]');
+          const cf  = e.target.closest('[data-wl-confirm]');
+          if(!CUR || !(add || rem || sg || cf)) return;
+          if(add || rem){
+            const codes = new Set(BOARD.filter(r => r.in_proposal).map(r => r.code));
+            if(add) codes.add(add.dataset.wlAdd); else codes.delete(rem.dataset.wlRemove);
+            const r = await sb.rpc('proposal_set_markets', { p_id: CUR.id, p_codes: [...codes] });
+            if(r.error){ pbToast({ type:'err', title:'Could not update the proposal', lines:[r.error.message] }); return; }
+            loadBoard();
+          } else if(sg){
+            const code = sg.dataset.wlSignup;
+            const v = await wlModal({ title: 'Someone said yes', ok: 'Record it', fields: [
+              ['org', 'Organisation', 'text', ''], ['contact', 'Contact (name, email or phone)', 'text', ''] ] });
+            if(!v) return;
+            const r = await sb.rpc('proposal_signup_add', { p_proposal: CUR.id, p_code: code, p_org: v.org, p_contact: v.contact, p_source: 'manual' });
+            if(r.error){ pbToast({ type:'err', title:'Could not record it', lines:[r.error.message] }); return; }
+            loadBoard(); loadAlerts();
+          } else if(cf){
+            const code = cf.dataset.wlCode;
+            const row = BOARD.find(x => x.code === code) || {};
+            const v = await wlModal({ title: `Confirm a date for ${row.name || code}`, ok: 'Confirm', fields: [
+              ['event_name', 'Event name', 'text', CUR.name], ['event_date', 'Event date', 'date', ''], ['venue', 'Venue', 'text', ''],
+              ['waitlist_price', 'Waitlist price', 'text', ''], ['public_price', 'Public price', 'text', ''], ['deadline', 'Waitlist price holds until', 'date', ''],
+              ['registration_url', 'Registration link', 'url', ''] ],
+              note: 'Nothing is sent here. The announcement (Email #3 + SMS #2) becomes the next step on the board and goes through the Queue like everything else.' });
+            if(!v) return;
+            const r = await sb.rpc('proposal_market_confirm', { p_id: cf.dataset.wlConfirm, p: v });
+            if(r.error){ pbToast({ type:'err', title:'Could not confirm', lines:[r.error.message] }); return; }
+            loadBoard(); loadAlerts();
+          }
+        });
+
+        // ── proposal form ──
+        async function proposalForm(p){
+          const v = await wlModal({ title: p ? 'Edit proposal' : 'New proposed event', ok: p ? 'Save' : 'Create', fields: [
+            ['name', 'Name', 'text', p?.name || ''], ['sport', 'Sport — fills [Sport]', 'text', p?.sport || ''], ['season', 'Season', 'text', p?.season || ''],
+            ['threshold', 'Hand-raisers needed per market', 'number', p?.threshold ?? 20],
+            ['sender_name', 'Sender name — fills [Sender Name]', 'text', p?.sender_name || ''], ['sender_title', 'Sender title', 'text', p?.sender_title || ''],
+            ['waitlist_url', 'Waitlist link — fills [waitlist_link]', 'url', p?.waitlist_url || ''],
+            ['states_count', 'States we run events in — fills [N]', 'number', p?.states_count ?? 30],
+            ['comparable_market', 'Comparable market — Email #2', 'text', p?.comparable_market || ''],
+            ['notes', 'Notes', 'text', p?.notes || ''] ],
+            note: 'The tokens in the Event Waitlist templates are filled from these fields. A blank one leaves its token in the copy, and the drafter refuses to send it until it is filled.' });
+          if(!v) return;
+          const r = p ? await sb.rpc('proposal_update', { p_id: p.id, p: v }) : await sb.rpc('proposal_create', { p: v });
+          if(r.error){ pbToast({ type:'err', title:'Could not save the proposal', lines:[r.error.message] }); return; }
+          CUR = Array.isArray(r.data) ? r.data[0] : r.data;
+          loadProposals();
+        }
+
+        // ── add to queue ──
+        el('wl-bulk-add')?.addEventListener('click', async () => {
+          if(!CUR || !wlPicked.size) return;
+          const picked = BOARD.filter(r => wlPicked.has(r.code) && canPick(r));
+          const when = await wlModal({ title: `Queue ${picked.length} market${picked.length === 1 ? '' : 's'}`, ok: 'Add to queue', fields: [
+            ['day', 'Send on', 'date', nextDayYmd()], ['time', 'At (US Eastern)', 'time', '10:00'] ],
+            note: picked.map(r => `${r.name}: ${STEP_LABEL[r.step_due]}`).join(' · ') + '. Rows arrive pending; Cole confirms each one in the Queue.' });
+          if(!when) return;
+          const [y, m, d] = String(when.day).split('-').map(Number); const [hh, mi] = String(when.time || '10:00').split(':').map(Number);
+          const whenIso = new Date(etInstant(y, m, d, hh, mi)).toISOString();
+          const btn = el('wl-bulk-add'); btn.disabled = true;
+          try {
+            const payload = [];
+            for(const r of picked){
+              const plan = STEP_PLAN[r.step_due]; if(!plan) continue;
+              for(const seg of plan.segs){
+                const em = Number(r[`${seg.toLowerCase()}_emails`] || 0), ph = Number(r[`${seg.toLowerCase()}_phones`] || 0);
+                if((plan.email ? em : 0) + (plan.sms ? ph : 0) === 0) continue;
+                payload.push({ scheduled_for: whenIso, title: `Event Waitlist — ${r.name} · ${seg} — ${STEP_LABEL[r.step_due].split(' · ')[0]}`,
+                  state_code: r.code, state_name: r.name, event_id: null, segment: seg,
+                  email: plan.email, sms: plan.sms,
+                  email_count: plan.email ? em : 0, phone_count: plan.sms ? ph : 0, sms_count: plan.sms ? ph : 0,
+                  _step: r.step_due });
+              }
+            }
+            if(!payload.length){ pbToast({ type:'err', title:'Nothing to queue', lines:['No reachable contacts for the chosen steps.'] }); return; }
+            const ins = await sb.rpc('queue_enqueue_test', { p_rows: payload.map(({ _step, ...row }) => row) });
+            if(ins.error) throw new Error(ins.error.message);
+            const queued = ins.data || [];
+            // The step, strategy and proposal ride a second write, as the senders do on the games
+            // board: queue_enqueue_test lists its columns and would drop them silently.
+            for(const row of queued){
+              const src = payload.find(x => x.state_code === row.state_code && x.segment === row.segment);
+              await sb.from('campaign_queue').update({ strategy: 'event_waitlist', proposal_id: CUR.id, proposal_step: src ? src._step : null }).eq('id', row.id);
+            }
+            let drafted = null;
+            if(queued.length){
+              try {
+                const dr = await fetch('/api/queue-draft', { method: 'POST', headers: await apiHeaders(), body: JSON.stringify({ ids: queued.map(q => q.id) }) });
+                drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+              } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
+            }
+            const errs = (drafted && drafted.errors) || [];
+            pbToast({ type: errs.length ? 'warn' : 'ok', title: `${queued.length} row${queued.length === 1 ? '' : 's'} queued, pending`,
+              lines: [ queued.length < payload.length ? `${payload.length - queued.length} skipped — already queued for that market and day.` : '',
+                       errs.length ? `${errs.length} could not be drafted: ${errs[0].error}` : 'Copy drafted from the step\'s template. Review in the Queue.' ].filter(Boolean) });
+            wlPicked.clear(); loadBoard();
+          } catch(e){
+            pbToast({ type:'err', title:'Could not queue', lines:[(e && e.message) || String(e)] });
+          } finally { btn.disabled = false; }
+        });
+        const nextDayYmd = () => { const d = new Date(Date.now() + 864e5); return d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' }); };
+
+        // ── a small form modal, the same shell as the other dialogs on this tab ──
+        function wlModal({ title, ok, fields, note }){
+          return new Promise(resolve => {
+            const ov = document.createElement('div'); ov.className = 'pb-modal-overlay';
+            ov.innerHTML = `<div class="pb-modal-card" role="dialog" aria-modal="true" style="max-width:34rem">
+              <div class="font-extrabold text-lg text-[#133b49] mb-2">${esc(title)}</div>
+              ${note ? `<div class="text-xs text-base-content/60 mb-3 leading-relaxed">${esc(note)}</div>` : ''}
+              <div class="pbw-panel mb-3 grid gap-2">
+                ${fields.map(([k, label, type, val]) => `<label class="grid gap-1 text-xs text-base-content/60">${esc(label)}
+                  <input name="${esc(k)}" type="${esc(type)}" value="${esc(val ?? '')}" class="input input-bordered input-sm text-sm text-base-content"></label>`).join('')}
+              </div>
+              <div class="flex justify-end gap-2">
+                <button class="btn btn-sm btn-ghost" data-cancel>Cancel</button>
+                <button class="btn btn-sm btn-warning text-white hover:text-white" data-ok>${esc(ok)}</button>
+              </div></div>`;
+            const done = v => { ov.remove(); document.removeEventListener('keydown', onKey); resolve(v); };
+            const onKey = e => { if(e.key === 'Escape') done(null); };
+            ov.querySelector('[data-cancel]').addEventListener('click', () => done(null));
+            ov.querySelector('[data-ok]').addEventListener('click', () => {
+              const out = {}; ov.querySelectorAll('input[name]').forEach(i => { out[i.name] = i.value; });
+              done(out);
+            });
+            ov.addEventListener('click', e => { if(e.target === ov) done(null); });
+            document.addEventListener('keydown', onKey);
+            document.body.appendChild(ov);
+            const first = ov.querySelector('input'); if(first) first.focus();
+          });
+        }
+
+        // ===== TEAMMATE BOARD (migration 122, AI-1129) =====
+        //
+        // The third generator. A Teammate offer is a (market, sport) pair with no event: the ask is
+        // a 15-minute feedback call. teammate_board(sport) gives reach for that sport per segment
+        // and which segments the shared market cooldown is holding. Queueing writes one pending row
+        // per market x segment that is not cooling, stamps strategy = 'teammate' (sport in queue_target_sport),
+        // and asks /api/queue-draft for copy from Cole's templates (Will on email, James on SMS).
+        // Channels follow the rule every strategy uses: ICP and SCP get email + SMS (iMessage is
+        // AI-1101 and not built, so SMS), everyone else gets email only.
+        let TM_SPORTS = [], TM_SPORT = '', TM_BOARD = [], tmPicked = new Set(), tmFilter = '';
+        const TM_PLAN = { ICP: { email: true, sms: true }, SCP: { email: true, sms: true }, Other: { email: true, sms: false } };
+        const sportLabel = s => String(s || '').replace(/\b\w/g, c => c.toUpperCase());
+        const tmCooled = (r, seg) => !!r[`${seg.toLowerCase()}_cooled`];
+        // What a market would actually get if queued now: segments with somebody to reach on the
+        // plan's channels and not cooling.
+        const tmSegs = r => Object.entries(TM_PLAN).filter(([seg, p]) => {
+          const k = seg.toLowerCase();
+          const n = (p.email ? Number(r[`${k}_emails`] || 0) : 0) + (p.sms ? Number(r[`${k}_phones`] || 0) : 0);
+          return n > 0 && !tmCooled(r, seg);
+        }).map(([seg]) => seg);
+        const tmCanPick = r => tmSegs(r).length > 0;
+        const tmMsg = (text, err) => { const tb = el('tm-rows'); if(tb) tb.innerHTML = `<tr><td colspan="7" class="text-center py-8 ${err ? 'text-error' : 'text-base-content/50'}">${esc(text)}</td></tr>`; };
+
+        async function tmLoadSports(){
+          if(!sb) return;
+          if(TM_SPORTS.length){ tmLoadBoard(); return; }
+          const r = await sb.rpc('teammate_sports');
+          if(r.error){ tmMsg(/teammate_sports|does not exist|schema cache/i.test(r.error.message) ? 'Migration 122 has not been applied to this database yet.' : r.error.message, true); return; }
+          TM_SPORTS = r.data || [];
+          let saved = ''; try { saved = localStorage.getItem('tm-sport') || ''; } catch(_){}
+          TM_SPORT = TM_SPORTS.some(s => s.sport === saved) ? saved : ((TM_SPORTS[0] || {}).sport || '');
+          el('tm-sport').innerHTML = TM_SPORTS.map(s => `<option value="${esc(s.sport)}">${esc(sportLabel(s.sport))} · ${num(s.emails)} emails · ${num(s.phones)} phones</option>`).join('');
+          el('tm-sport').value = TM_SPORT;
+          tmLoadBoard();
+        }
+        async function tmLoadBoard(){
+          if(!TM_SPORT){ tmMsg('No sports found in the contact lists.'); return; }
+          tmMsg('Loading…');
+          const r = await sb.rpc('teammate_board', { p_sport: TM_SPORT });
+          if(r.error){ tmMsg(r.error.message, true); return; }
+          TM_BOARD = r.data || []; tmPicked.clear();
+          const s = TM_SPORTS.find(x => x.sport === TM_SPORT);
+          el('tm-summary').textContent = s ? `${num(s.markets)} markets · sends as Will (email) and James (SMS), Cole's templates` : '';
+          tmRender();
+        }
+        function tmRender(){
+          const tb = el('tm-rows'); if(!tb) return;
+          const f = tmFilter.trim().toLowerCase();
+          const rows = TM_BOARD.filter(r => !f || r.name.toLowerCase().includes(f) || r.code.toLowerCase() === f);
+          for(const k of [...tmPicked]) if(!rows.some(r => r.code === k && tmCanPick(r))) tmPicked.delete(k);
+          if(!rows.length){ tmMsg('No markets match.'); tmBulk(); return; }
+          const pair = (e, p) => `${num(e)} <span class="text-base-content/40">·</span> ${num(p)}`;
+          tb.innerHTML = rows.map(r => {
+            const ok = tmCanPick(r);
+            const cooling = ['ICP','SCP','Other'].filter(s => tmCooled(r, s));
+            const last = r.days_since_any == null ? '<span class="text-base-content/40">never</span>'
+              : `${num(r.days_since_any)} d<div class="text-[10px] text-base-content/50">${r.last_blast_teammate ? `Teammate ${esc(r.last_blast_teammate)}` : 'no Teammate yet'}</div>`;
+            return `<tr class="${ok ? '' : 'opacity-60'}">
+              <td>${ok ? `<input type="checkbox" class="checkbox checkbox-xs align-middle" data-tm-pick="${esc(r.code)}" ${tmPicked.has(r.code) ? 'checked' : ''} aria-label="Select ${esc(r.name)}">` : ''}</td>
+              <td><div class="font-semibold text-[#133b49]">${esc(r.name)} <span class="text-xs text-base-content/40">${esc(r.code)}</span></div></td>
+              <td class="tabular-nums text-sm">${pair(r.icp_emails, r.icp_phones)}</td>
+              <td class="tabular-nums text-sm">${pair(r.scp_emails, r.scp_phones)}</td>
+              <td class="tabular-nums text-sm">${num(r.other_emails)}</td>
+              <td class="text-sm">${last}</td>
+              <td class="text-sm">${cooling.length ? `<span class="badge badge-xs bg-[#fbf0dc] text-[#9a5b00] border-0" title="Held by the market cooldown">${esc(cooling.join(', '))}${r.cooled_until ? ` to ${esc(r.cooled_until)}` : ''}</span>` : ''}</td>
+            </tr>`;
+          }).join('');
+          el('tm-foot').textContent = `${TM_BOARD.length} markets with ${sportLabel(TM_SPORT)} contacts · ${TM_BOARD.filter(tmCanPick).length} can be sent to now`;
+          tmBulk();
+        }
+        function tmBulk(){
+          const bar = el('tm-bulk'); if(!bar) return;
+          bar.classList.toggle('hidden', !tmPicked.size); bar.classList.toggle('flex', !!tmPicked.size);
+          el('tm-bulk-n').textContent = tmPicked.size;
+          const rows = TM_BOARD.filter(r => tmPicked.has(r.code));
+          const n = rows.reduce((a, r) => a + tmSegs(r).length, 0);
+          el('tm-bulk-note').textContent = rows.length ? `${n} row${n === 1 ? '' : 's'} — one per segment not cooling. ICP + SCP by email and SMS, everyone else by email.` : '';
+          const all = el('tm-all'); if(all){ const k = TM_BOARD.filter(tmCanPick).length; all.checked = k > 0 && tmPicked.size === k; }
+        }
+        el('tm-sport')?.addEventListener('change', e => { TM_SPORT = e.target.value; try { localStorage.setItem('tm-sport', TM_SPORT); } catch(_){} tmLoadBoard(); });
+        el('tm-rows')?.addEventListener('change', e => {
+          const cb = e.target.closest('[data-tm-pick]'); if(!cb) return;
+          if(cb.checked) tmPicked.add(cb.dataset.tmPick); else tmPicked.delete(cb.dataset.tmPick);
+          tmBulk();
+        });
+        el('tm-all')?.addEventListener('change', e => { tmPicked.clear(); if(e.target.checked) TM_BOARD.filter(tmCanPick).forEach(r => tmPicked.add(r.code)); tmRender(); });
+        el('tm-bulk-clear')?.addEventListener('click', () => { tmPicked.clear(); tmRender(); });
+        let tmT = null;
+        el('tm-search')?.addEventListener('input', e => { tmFilter = e.target.value; clearTimeout(tmT); tmT = setTimeout(tmRender, 150); });
+        el('tm-reload')?.addEventListener('click', () => { TM_SPORTS = []; tmLoadSports(); });
+
+        el('tm-bulk-add')?.addEventListener('click', async () => {
+          if(!TM_SPORT || !tmPicked.size) return;
+          const picked = TM_BOARD.filter(r => tmPicked.has(r.code) && tmCanPick(r));
+          const label = sportLabel(TM_SPORT);
+          const when = await wlModal({ title: `Queue Teammate · ${label} to ${picked.length} market${picked.length === 1 ? '' : 's'}`, ok: 'Add to queue', fields: [
+            ['day', 'Send on', 'date', nextDayYmd()], ['time', 'At (US Eastern)', 'time', '10:00'] ],
+            note: `Cole's Teammate templates with [SPORT] = ${TM_SPORT}. Segments cooling from any blast are left out. Rows arrive pending; Cole confirms each one in the Queue.` });
+          if(!when) return;
+          const [y, m, d] = String(when.day).split('-').map(Number); const [hh, mi] = String(when.time || '10:00').split(':').map(Number);
+          const whenIso = new Date(etInstant(y, m, d, hh, mi)).toISOString();
+          const btn = el('tm-bulk-add'); btn.disabled = true;
+          try {
+            const payload = [];
+            for(const r of picked){
+              for(const seg of tmSegs(r)){
+                const p = TM_PLAN[seg], k = seg.toLowerCase();
+                const em = Number(r[`${k}_emails`] || 0), ph = Number(r[`${k}_phones`] || 0);
+                // A segment with phones but no emails still gets its SMS, and the reverse.
+                payload.push({ scheduled_for: whenIso, title: `Teammate — ${r.name} · ${seg} — ${label}`,
+                  state_code: r.code, state_name: r.name, event_id: null, segment: seg,
+                  email: p.email && em > 0, sms: p.sms && ph > 0,
+                  email_count: p.email ? em : 0, phone_count: p.sms ? ph : 0, sms_count: p.sms ? ph : 0 });
+              }
+            }
+            if(!payload.length){ pbToast({ type:'err', title:'Nothing to queue', lines:['Every selected segment is cooling or has nobody to reach.'] }); return; }
+            const ins = await sb.rpc('queue_enqueue_test', { p_rows: payload });
+            if(ins.error) throw new Error(ins.error.message);
+            const queued = ins.data || [];
+            // strategy rides a second write, as on the waitlist board (queue_enqueue_test lists its
+            // columns and would drop it silently); the sport goes to its own table (migration 122).
+            for(const row of queued){
+              const u = await sb.from('campaign_queue').update({ strategy: 'teammate' }).eq('id', row.id);
+              if(u.error) throw new Error(`queued, but could not mark ${row.id} as Teammate: ${u.error.message}`);
+              const t = await sb.rpc('queue_set_target_sport', { p_id: row.id, p_sport: TM_SPORT });
+              if(t.error) throw new Error(`queued, but could not record the sport on ${row.id}: ${t.error.message}`);
+            }
+            let drafted = null;
+            if(queued.length){
+              try {
+                const dr = await fetch('/api/queue-draft', { method: 'POST', headers: await apiHeaders(), body: JSON.stringify({ ids: queued.map(q => q.id) }) });
+                drafted = dr.ok ? await dr.json() : { error: 'HTTP ' + dr.status };
+              } catch(e){ drafted = { error: (e && e.message) || 'unreachable' }; }
+            }
+            const errs = (drafted && drafted.errors) || [];
+            pbToast({ type: errs.length || (drafted && drafted.error) ? 'warn' : 'ok', title: `${queued.length} Teammate row${queued.length === 1 ? '' : 's'} queued, pending`,
+              lines: [ queued.length < payload.length ? `${payload.length - queued.length} skipped — already queued for that market and day.` : '',
+                       drafted && drafted.error ? `Drafting failed: ${drafted.error}` : '',
+                       errs.length ? `${errs.length} could not be drafted: ${errs[0].error}` : (drafted && !drafted.error ? 'Copy drafted from Cole\'s templates. Review in the Queue under Teammate.' : '') ].filter(Boolean) });
+            tmPicked.clear(); tmLoadBoard();
+          } catch(e){
+            pbToast({ type:'err', title:'Could not queue', lines:[(e && e.message) || String(e)] });
+          } finally { btn.disabled = false; }
+        });
+
+        try { const s = localStorage.getItem('cbs-source'); if(s === 'event_waitlist' || s === 'teammate') setSource(s); } catch(_){}
+      })();
+
+      // The strategy filter is no longer mounted on this board (the source switch replaced it,
+      // migration 120). stratF stays empty, which passesStrategy reads as "every strategy".
       let stratCtl = null;
-      loadStrategies().then(() => { stratCtl = mountStrategyFilter('cbs-strategy', picked => {
-        stratF = picked; page = 1; cbsClears(); render();
-      }); });
       el('cbs-clear')?.addEventListener('click', () => {
         filter = sportF = leagueF = stateF = windowF = dateFromF = dateToF = priceF = segF = '';
         ['cbs-search','cbs-sport','cbs-league','cbs-state','cbs-window','cbs-date-from','cbs-date-to','cbs-price','cbs-segment']
@@ -12284,6 +12888,51 @@ This removes its school and season dates. Venues in this market are not touched.
       let qFilter = '', statusF = '', segF = '', sportF = '', leagueF = '', stateF = '', chanF = '', dateFrom = '', dateTo = '';
       // AI-1075. Reads get_campaign_queue()'s new strategy column (migration 103).
       let qStratF = [], qStratCtl = null;
+      // SOURCE (migration 120). Which strategy's rows this tab shows; the cards above the filters
+      // switch it. WL_META carries what get_campaign_queue() does not: the proposal's name and
+      // the step a waitlist row is, read off the table once per refresh.
+      let qSource = 'ticket_blasts';
+      let WL_META = {};
+      const WL_STEP = { day0: 'Day 0 · Email #1', day3: 'Day 3 · SMS #1', day10: 'Day 10 · Email #2', day45: 'Day 45 · Email #4', formal: 'Announce · Email #3 + SMS #2' };
+      function setQueueSource(src){
+        qSource = src;
+        document.querySelectorAll('#q-source [data-source]').forEach(b => {
+          const on = b.dataset.source === src;
+          b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        srcNote('q-source');
+        const wl = src === 'event_waitlist', tm = src === 'teammate';
+        document.querySelectorAll('#view-queue .q-tix').forEach(n => n.classList.toggle('hidden', wl || tm));
+        const thP = el('q-th-price'), thS = el('q-th-sport');
+        if(thP) thP.textContent = wl ? 'Step' : tm ? 'Ask' : 'Cheapest';
+        if(thS) thS.textContent = wl ? 'Proposal' : 'Sport';
+        try { localStorage.setItem('q-source', src); } catch(_){}
+        page = 1; picked.clear(); render();
+      }
+      // Which source card a row belongs to. Suites / Youth Events rows stay under Ticket Blasts,
+      // as they did before Teammate got its own card (migration 122).
+      const qSrcOf = r => (r.strategy === 'event_waitlist' || r.strategy === 'teammate') ? r.strategy : 'ticket_blasts';
+      // Teammate rows: the sport each was queued for (queue_target_sport, migration 122).
+      let TM_META = {};
+      async function loadTeammateMeta(){
+        TM_META = {};
+        if(!QUEUE.some(r => r.strategy === 'teammate') || !sb) return;
+        const ids = QUEUE.filter(r => r.strategy === 'teammate').map(r => r.id);
+        const q = await sb.from('queue_target_sport').select('queue_id,sport').in('queue_id', ids);
+        ids.forEach(id => { TM_META[id] = null; });
+        ((q && q.data) || []).forEach(x => { TM_META[x.queue_id] = x.sport || null; });
+      }
+      async function loadWaitlistMeta(){
+        WL_META = {};
+        try { await loadTeammateMeta(); } catch(_){ /* the sport cell shows a dash */ }
+        if(!QUEUE.some(r => r.strategy === 'event_waitlist') || !sb) return;
+        const [q, p] = await Promise.all([
+          sb.from('campaign_queue').select('id,proposal_id,proposal_step').eq('strategy', 'event_waitlist'),
+          sb.from('event_proposals').select('id,name'),
+        ]);
+        const names = Object.fromEntries(((p && p.data) || []).map(x => [x.id, x.name]));
+        ((q && q.data) || []).forEach(x => { WL_META[x.id] = { step: x.proposal_step, proposal: names[x.proposal_id] || null }; });
+      }
       // The fatigue filter, and the ONLY queue filter that persists or defaults to anything.
       //
       // WHY THIS ONE IS DIFFERENT. Every other filter answers "what am I looking for right now",
@@ -13109,6 +13758,9 @@ This removes its school and season dates. Venues in this market are not touched.
       // the numbers in the dropdown mean "what I would get if I picked this", rather than a
       // fixed tally that disagrees with the rows on screen.
       function matchesRest(r){
+        // The source cards decide which strategy is on screen; a waitlist row never shows under
+        // Ticket Blasts and vice versa. Rows with no strategy are ticket rows (migration 102).
+        if(qSrcOf(r) !== qSource) return false;
         if(segF    && (r.segment||'') !== segF)   return false;
         if(!passesStrategy(r, qStratF)) return false;
         if(sportF  && (r.sport||'')  !== sportF)  return false;
@@ -13182,6 +13834,14 @@ This removes its school and season dates. Venues in this market are not touched.
         // Ahead of the empty-queue return: an empty queue still has to zero the dropdown, or it
         // keeps advertising counts from the last load.
         paintStatusCounts();
+        {
+          const live = QUEUE.filter(r => !r.archived_at);
+          const wl = live.filter(r => r.strategy === 'event_waitlist').length;
+          const tm = live.filter(r => r.strategy === 'teammate').length;
+          if(el('q-src-n-tix')) el('q-src-n-tix').textContent = live.length - wl - tm;
+          if(el('q-src-n-wl'))  el('q-src-n-wl').textContent  = wl || '';
+          if(el('q-src-n-tm'))  el('q-src-n-tm').textContent  = tm || '';
+        }
         if(!QUEUE.length){ tb.innerHTML='<tr><td colspan="10" class="text-center text-base-content/50 py-10">Queue is empty.</td></tr>'; lastRows = lastPaged = []; paintBulk(); return; }
         const rows = visibleRows();
         // PRUNE TO WHAT THE FILTERS LEAVE. Without this you could tick six rows, change the
@@ -13327,9 +13987,19 @@ This removes its school and season dates. Venues in this market are not touched.
           const priceCell = r.ticket_price!=null
             ? `${window.__priceLink ? window.__priceLink(r) : `<span class="font-semibold text-[#133b49]">$${fmt(r.ticket_price)}</span>`}${window.__staleTag?.(r)||''}${window.__priceManualBadge?.(r)||''}<div class="text-[10px] text-base-content/40">get-in</div>`
             : `<span class="text-base-content/40">—</span>`;
-          const sportCell = r.sport
+          const sportCellTix = r.sport
             ? `<span class="sport-pill">${esc(r.sport)}</span>${r.league?`<div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">${esc(r.league)}</div>`:''}`
             : '<span class="text-base-content/40">—</span>';
+          // A waitlist row has no price and no sport. The two columns carry what it has instead:
+          // which step of the sequence it is, and which proposed event it belongs to.
+          const wlm = r.strategy === 'event_waitlist' ? (WL_META[r.id] || {}) : null;
+          // A Teammate row has no game either: its sport is the one it was queued for.
+          const tmSport = r.strategy === 'teammate' ? (TM_META[r.id] || null) : undefined;
+          const sportCell = wlm
+            ? (wlm.proposal ? `<span class="font-semibold text-[#133b49]">${esc(wlm.proposal)}</span>` : '<span class="text-base-content/40">—</span>')
+            : tmSport !== undefined
+              ? (tmSport ? `<span class="sport-pill">${esc(tmSport)}</span><div class="text-[10px] font-bold uppercase text-base-content/40 mt-0.5">Teammate AI</div>` : '<span class="text-base-content/40">—</span>')
+              : sportCellTix;
           // WHAT THIS COLUMN ACTUALLY HOLDS. state_name is NOT a state on a queued row — the
           // decider writes the market label into it (`state_name: p.market_label`), so it reads
           // "Chicago", "Tampa Bay", "Test Market". state_code IS the state/province ("IL", "ON"),
@@ -13357,7 +14027,8 @@ This removes its school and season dates. Venues in this market are not touched.
             </div></td>
             <td class="max-w-[300px]"><div class="font-bold text-[#133b49] whitespace-nowrap flex items-center gap-1.5"><span class="truncate" title="${esc(blastTitle(r))}">${esc(blastTitle(r))}</span>${qSegBadge(r.segment)}${off?`<span class="stale-warn" title="${off==='cancelled'?'This game has been CANCELLED. The auto-send tick will not fire this blast, and Send now is refused — there is no ticket to sell.':'This game has been POSTPONED. The blast is held until the league publishes a new date, at which point this row picks it up automatically.'}">!</span>`:stale?`<span class="stale-warn" title="This game was played ${daysAgo(r.event_date)} day${daysAgo(r.event_date)===1?'':'s'} ago — the auto-send tick will NOT fire this blast.">!</span>`:''}${blockedRow?`<span class="badge badge-ghost badge-xs align-middle ml-1 font-semibold" title="${BLOCKED_TIP}">can't send</span>`:''}</div><div class="text-xs ${off||stale?'text-[#c94d07] font-semibold':'text-base-content/50'}">${r.event_date?`${esc(shortDate(r.event_date))}${off?` · game ${esc(off)}`:stale?' · game already played':''} · `:''}${esc(chan(r))}${blockedRow?` · <span class="text-base-content/60">blocked in test mode</span>`:''}</div></td>
             <td class="col-tight">${actionsMenu(r, { sent, rejected, archived })}</td>
-            <td>${priceCell}</td>
+            <td>${wlm ? (wlm.step ? `<span class="badge badge-sm bg-[#fdeee4] text-[#9a3d05] border-0 whitespace-nowrap">${esc(WL_STEP[wlm.step] || wlm.step)}</span>` : '<span class="text-base-content/40">—</span>')
+                 : tmSport !== undefined ? '<span class="text-xs text-base-content/60 whitespace-nowrap">15-min call</span>' : priceCell}</td>
             <td>${sportCell}</td>
             <td class="col-tight">${marketCell}</td>
             <td>${blockedRow ? blockedReachCell(r.email, reachOf(r,'email')) : reachCell(r.email, reachOf(r,'email'))}</td>
@@ -15863,9 +16534,10 @@ This removes its school and season dates. Venues in this market are not touched.
       el('q-clear')?.addEventListener('click', clearQueueFilters);
       el('q-status')?.addEventListener('change', e => { statusF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-segment')?.addEventListener('change',e => { segF    = e.target.value; page = 1; syncDateClear(); render(); });
-      loadStrategies().then(() => { qStratCtl = mountStrategyFilter('q-strategy', picked => {
-        qStratF = picked; page = 1; syncDateClear(); render();
-      }); });
+      // The strategy filter is no longer mounted here; the source cards replaced it (migration
+      // 120). qStratF stays empty, which passesStrategy reads as "every strategy".
+      document.querySelectorAll('#q-source [data-source]').forEach(b => b.addEventListener('click', () => setQueueSource(b.dataset.source)));
+      try { const s = localStorage.getItem('q-source'); if(s === 'event_waitlist' || s === 'teammate') setQueueSource(s); } catch(_){}
       el('q-sport')?.addEventListener('change',  e => { sportF  = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-league')?.addEventListener('change', e => { leagueF = e.target.value; page = 1; syncDateClear(); render(); });
       el('q-state')?.addEventListener('change',  e => { stateF  = e.target.value; page = 1; syncDateClear(); render(); });
@@ -15984,6 +16656,7 @@ This removes its school and season dates. Venues in this market are not touched.
         if(error){ LOADED = true; el('q-rows').innerHTML=`<tr><td colspan="10" class="text-center text-error py-8">${esc(error.message)}</td></tr>`; return; }
         QUEUE = data || [];
         LOADED = true;
+        await loadWaitlistMeta();
         // Make the stored sender match the one the row is shown with — for a retired value
         // (the old SalesMessage placeholder, the moved Josh CakeMail sender) and equally for
         // NO value at all.
