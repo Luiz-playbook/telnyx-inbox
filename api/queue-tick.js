@@ -426,10 +426,34 @@ export default async function handler(req, res) {
       }
     }
 
+    // What get_campaign_queue() does not carry for the two plays without a game: the waitlist
+    // step (migration 120) and the Teammate sport (migration 122). One GET for the due rows of
+    // either. A failed read leaves both maps empty, which is the safe side: a waitlist follow-up
+    // is then held by the cooldown like any blast, and a Teammate row refuses to send (below)
+    // rather than going to the whole market.
+    const stepOf = new Map(), sportOf = new Map();
+    {
+      const meta = due.filter(r => r.strategy === 'event_waitlist' || r.strategy === 'teammate');
+      if (meta.length) {
+        try {
+          const ids = meta.map(r => `"${r.id}"`).join(',');
+          const mr = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=id,proposal_step,target_sport&id=in.(${ids})`, { headers: sh });
+          for (const x of (mr.ok ? await mr.json() : [])) {
+            if (x.proposal_step) stepOf.set(x.id, x.proposal_step);
+            if (x.target_sport) sportOf.set(x.id, x.target_sport);
+          }
+        } catch (_) { /* see above */ }
+      }
+    }
+    // FOLLOW-UPS DO NOT WAIT OUT THE COOLDOWN (John, 2026-10-15; migration 123). Day 3 and Day 10
+    // land inside the cooldown that Day 0 itself started, by design. Only the opening ask is held.
+    const WAITLIST_FOLLOWUP = new Set(['day3', 'day10', 'day45', 'formal']);
+    const cooldownExempt = r => r.strategy === 'event_waitlist' && WAITLIST_FOLLOWUP.has(stepOf.get(r.id));
+
     const results = [], held = [], errors = [];
     for (const r of due) {
       const mkt = (r.state_code || '').toUpperCase();
-      const cooling = isCooled(mkt, r.segment || null);
+      const cooling = !cooldownExempt(r) && isCooled(mkt, r.segment || null);
       const draftHold = heldByDraft(draftHoldList, r);
       // The cron respects the cooldown absolutely; a named row proceeds but says it did.
       if (cooling && !onlyId) { held.push({ id: r.id, title: r.title, market: mkt, segment: r.segment || null, reason: 'cooldown' }); continue; }
@@ -476,9 +500,45 @@ export default async function handler(req, res) {
       // p_segment null = the whole market, every segment — which is exactly what a row with no
       // segment means, and what every row queued before migration 050 is.
       const seg = r.segment || null;
+      // TEAMMATE (migration 122): the market's contacts who play the row's sport, through the
+      // _sport twins of the two resolvers (same allowlist, same suppression). No sport, no send:
+      // the market-wide list would pitch "[SPORT] organizations" to everyone in the state.
+      const tmSport = r.strategy === 'teammate' ? sportOf.get(r.id) : null;
+      if (r.strategy === 'teammate' && !tmSport) {
+        errors.push({ id: r.id, title: r.title, reason: 'teammate row has no target_sport — nothing resolved, nothing sent' });
+        continue;
+      }
+      const [fnPhones, fnEmails, extra] = tmSport
+        ? ['market_phones_sport', 'market_emails_sport', { p_sport: tmSport }]
+        : ['market_phones', 'market_emails', {}];
       // rpcAll, not rpc: see the note on the helper. A single call returned at most 1,000.
-      if (r.sms && r.state_code)   { const d = await rpcAll('market_phones', { p_code: r.state_code, p_segment: seg }); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
-      if (r.email && r.state_code) { const d = await rpcAll('market_emails', { p_code: r.state_code, p_segment: seg }); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
+      if (r.sms && r.state_code)   { const d = await rpcAll(fnPhones, { p_code: r.state_code, p_segment: seg, ...extra }); phones = [...new Set((d||[]).map(x => normPhone(x.phone)).filter(validPhone))]; }
+      if (r.email && r.state_code) { const d = await rpcAll(fnEmails, { p_code: r.state_code, p_segment: seg, ...extra }); emails = [...new Set((d||[]).map(x => (x.email||'').trim().toLowerCase()).filter(validEmail))]; }
+
+      let replySkipNote = null;
+      // REPLIES STOP THE RE-ASKS (AI-1131, the reply part; migration 123). A Day 3 / 10 / 45
+      // waitlist step skips anyone who has replied since that market's Day 0, or is already a
+      // recorded hand-raiser. waitlist_repliers() returns nothing for any other row. A failed
+      // read is reported and the row is NOT sent: re-asking someone who said yes is the exact
+      // thing this exists to stop, and the row is retryable on the next tick.
+      if (r.strategy === 'event_waitlist' && ['day3', 'day10', 'day45'].includes(stepOf.get(r.id))) {
+        let rep;
+        try {
+          const rr = await rpc('waitlist_repliers', { p_queue_id: r.id });
+          rep = rr.ok ? await rr.json() : null;
+        } catch (_) { rep = null; }
+        if (!Array.isArray(rep)) {
+          errors.push({ id: r.id, title: r.title, reason: 'could not read who has replied — follow-up not sent, will retry' });
+          continue;
+        }
+        const skipE = new Set(rep.map(x => (x.email || '').trim().toLowerCase()).filter(Boolean));
+        const skipP = new Set(rep.map(x => normPhone(x.phone)).filter(Boolean));
+        const before = emails.length + phones.length;
+        emails = emails.filter(e => !skipE.has(e));
+        phones = phones.filter(p => !skipP.has(p));
+        const dropped = before - emails.length - phones.length;
+        if (dropped) replySkipNote = `${dropped} recipient${dropped === 1 ? '' : 's'} skipped — already replied or raised a hand`;
+      }
 
       // sent = channels that actually delivered; failed = channels that did not. The two were
       // one list, so "CakeMail failed: …" counted as a send: the row was marked sent, the
@@ -495,6 +555,7 @@ export default async function handler(req, res) {
       // degrades where replies land; it does not stop a single message going out, so putting it
       // in `failed` would report a clean blast as broken.
       const notes = [];
+      if (replySkipNote) notes.push(replySkipNote);
       // AI-976: recipients to write to HubSpot once this row's sends are done. Collected
       // rather than logged inline so the CRM write never sits between resolving an audience
       // and putting the messages on the wire.

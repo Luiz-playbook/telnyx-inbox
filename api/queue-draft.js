@@ -280,6 +280,18 @@ export default async function handler(req, res) {
       }
     }
 
+    // TEAMMATE (migration 122). The row has no game, so [SPORT] cannot come from one: the sport
+    // the offer was built for rides on the row as target_sport, read off the table the same way.
+    const teamSport = new Map();
+    {
+      const tm = queue.filter(r => r.strategy === 'teammate');
+      if (tm.length) {
+        const ids = tm.map(r => `"${r.id}"`).join(',');
+        const tr = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=id,target_sport&id=in.(${ids})`, { headers: sh });
+        for (const x of (tr.ok ? await tr.json() : [])) if (x.target_sport) teamSport.set(x.id, x.target_sport);
+      }
+    }
+
     // THE ROW'S STRATEGY CHOOSES THE LIBRARY (2026-10-09). This used to match play='Ticketblast'
     // only, so a Suites row got the ticket pitch and the Suite templates could never be
     // selected by anything. Now:
@@ -323,6 +335,12 @@ export default async function handler(req, res) {
         continue;
       }
       const strategy = String(r.strategy || 'ticket_blasts');
+      // A Teammate row with no sport would fill [SPORT] with the generic "sports" and pitch every
+      // organisation in the market the same thing; refuse it so a person picks one.
+      if (strategy === 'teammate') {
+        if (!teamSport.has(r.id)) { errors.push({ id: r.id, title: r.title, error: 'this Teammate row has no sport — queue it again from the Teammate board' }); continue; }
+        r.sport = teamSport.get(r.id);
+      }
       const variant = forcedVariant || pickVariant(r, blasted.has(String(r.state_code || '').toUpperCase()));
       const wctx = waitCtx.get(r.id) || null;
       if (wctx) wctx.segment = r.segment || null;
