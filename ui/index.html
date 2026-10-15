@@ -10469,7 +10469,11 @@ This removes its school and season dates. Venues in this market are not touched.
         async function loadBoard(){
           if(!CUR){ rowsMsg('No proposal selected. Press "+ New proposal".'); el('wl-foot').textContent = ''; return; }
           rowsMsg('Loading…');
-          const r = await sb.rpc('waitlist_board', { p_proposal: CUR.id });
+          // v2 (migration 123) adds the ranking, the three last-contact clocks and day0_held. 120's
+          // board is left in place, so a database without 123 still gets a working board.
+          let r = await sb.rpc('waitlist_board_v2', { p_proposal: CUR.id });
+          if(r.error && /waitlist_board_v2|does not exist|schema cache|PGRST202/i.test(r.error.message + ' ' + (r.error.code || '')))
+            r = await sb.rpc('waitlist_board', { p_proposal: CUR.id });
           if(r.error){ rowsMsg(r.error.message, true); return; }
           BOARD = r.data || [];
           render();
@@ -10686,7 +10690,7 @@ This removes its school and season dates. Venues in this market are not touched.
         // The third generator. A Teammate offer is a (market, sport) pair with no event: the ask is
         // a 15-minute feedback call. teammate_board(sport) gives reach for that sport per segment
         // and which segments the shared market cooldown is holding. Queueing writes one pending row
-        // per market x segment that is not cooling, stamps strategy = 'teammate' and target_sport,
+        // per market x segment that is not cooling, stamps strategy = 'teammate' (sport in queue_target_sport),
         // and asks /api/queue-draft for copy from Cole's templates (Will on email, James on SMS).
         // Channels follow the rule every strategy uses: ICP and SCP get email + SMS (iMessage is
         // AI-1101 and not built, so SMS), everyone else gets email only.
@@ -10800,11 +10804,13 @@ This removes its school and season dates. Venues in this market are not touched.
             const ins = await sb.rpc('queue_enqueue_test', { p_rows: payload });
             if(ins.error) throw new Error(ins.error.message);
             const queued = ins.data || [];
-            // strategy and target_sport ride a second write, as on the waitlist board:
-            // queue_enqueue_test lists its columns and would drop them silently.
+            // strategy rides a second write, as on the waitlist board (queue_enqueue_test lists its
+            // columns and would drop it silently); the sport goes to its own table (migration 122).
             for(const row of queued){
-              const u = await sb.from('campaign_queue').update({ strategy: 'teammate', target_sport: TM_SPORT }).eq('id', row.id);
+              const u = await sb.from('campaign_queue').update({ strategy: 'teammate' }).eq('id', row.id);
               if(u.error) throw new Error(`queued, but could not mark ${row.id} as Teammate: ${u.error.message}`);
+              const t = await sb.rpc('queue_set_target_sport', { p_id: row.id, p_sport: TM_SPORT });
+              if(t.error) throw new Error(`queued, but could not record the sport on ${row.id}: ${t.error.message}`);
             }
             let drafted = null;
             if(queued.length){
@@ -12828,13 +12834,15 @@ This removes its school and season dates. Venues in this market are not touched.
       // Which source card a row belongs to. Suites / Youth Events rows stay under Ticket Blasts,
       // as they did before Teammate got its own card (migration 122).
       const qSrcOf = r => (r.strategy === 'event_waitlist' || r.strategy === 'teammate') ? r.strategy : 'ticket_blasts';
-      // Teammate rows: the sport each was queued for (target_sport, not on get_campaign_queue).
+      // Teammate rows: the sport each was queued for (queue_target_sport, migration 122).
       let TM_META = {};
       async function loadTeammateMeta(){
         TM_META = {};
         if(!QUEUE.some(r => r.strategy === 'teammate') || !sb) return;
-        const q = await sb.from('campaign_queue').select('id,target_sport').eq('strategy', 'teammate');
-        ((q && q.data) || []).forEach(x => { TM_META[x.id] = x.target_sport || null; });
+        const ids = QUEUE.filter(r => r.strategy === 'teammate').map(r => r.id);
+        const q = await sb.from('queue_target_sport').select('queue_id,sport').in('queue_id', ids);
+        ids.forEach(id => { TM_META[id] = null; });
+        ((q && q.data) || []).forEach(x => { TM_META[x.queue_id] = x.sport || null; });
       }
       async function loadWaitlistMeta(){
         WL_META = {};

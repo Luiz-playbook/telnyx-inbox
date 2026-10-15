@@ -427,8 +427,8 @@ export default async function handler(req, res) {
     }
 
     // What get_campaign_queue() does not carry for the two plays without a game: the waitlist
-    // step (migration 120) and the Teammate sport (migration 122). One GET for the due rows of
-    // either. A failed read leaves both maps empty, which is the safe side: a waitlist follow-up
+    // step (migration 120) and the Teammate sport (migration 122, queue_target_sport). One GET
+    // each, for the due rows that need it. A failed read leaves both maps empty, which is the safe side: a waitlist follow-up
     // is then held by the cooldown like any blast, and a Teammate row refuses to send (below)
     // rather than going to the whole market.
     const stepOf = new Map(), sportOf = new Map();
@@ -437,11 +437,12 @@ export default async function handler(req, res) {
       if (meta.length) {
         try {
           const ids = meta.map(r => `"${r.id}"`).join(',');
-          const mr = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=id,proposal_step,target_sport&id=in.(${ids})`, { headers: sh });
-          for (const x of (mr.ok ? await mr.json() : [])) {
-            if (x.proposal_step) stepOf.set(x.id, x.proposal_step);
-            if (x.target_sport) sportOf.set(x.id, x.target_sport);
-          }
+          const [mr, sr] = await Promise.all([
+            fetch(`${supaUrl}/rest/v1/campaign_queue?select=id,proposal_step&id=in.(${ids})`, { headers: sh }),
+            fetch(`${supaUrl}/rest/v1/queue_target_sport?select=queue_id,sport&queue_id=in.(${ids})`, { headers: sh }),
+          ]);
+          for (const x of (mr.ok ? await mr.json() : [])) if (x.proposal_step) stepOf.set(x.id, x.proposal_step);
+          for (const x of (sr.ok ? await sr.json() : [])) if (x.sport) sportOf.set(x.queue_id, x.sport);
         } catch (_) { /* see above */ }
       }
     }
@@ -505,7 +506,7 @@ export default async function handler(req, res) {
       // the market-wide list would pitch "[SPORT] organizations" to everyone in the state.
       const tmSport = r.strategy === 'teammate' ? sportOf.get(r.id) : null;
       if (r.strategy === 'teammate' && !tmSport) {
-        errors.push({ id: r.id, title: r.title, reason: 'teammate row has no target_sport — nothing resolved, nothing sent' });
+        errors.push({ id: r.id, title: r.title, reason: 'teammate row has no sport (queue_target_sport) — nothing resolved, nothing sent' });
         continue;
       }
       const [fnPhones, fnEmails, extra] = tmSport

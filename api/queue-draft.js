@@ -281,14 +281,14 @@ export default async function handler(req, res) {
     }
 
     // TEAMMATE (migration 122). The row has no game, so [SPORT] cannot come from one: the sport
-    // the offer was built for rides on the row as target_sport, read off the table the same way.
+    // the offer was built for lives in queue_target_sport, one row per queued Teammate row.
     const teamSport = new Map();
     {
       const tm = queue.filter(r => r.strategy === 'teammate');
       if (tm.length) {
         const ids = tm.map(r => `"${r.id}"`).join(',');
-        const tr = await fetch(`${supaUrl}/rest/v1/campaign_queue?select=id,target_sport&id=in.(${ids})`, { headers: sh });
-        for (const x of (tr.ok ? await tr.json() : [])) if (x.target_sport) teamSport.set(x.id, x.target_sport);
+        const tr = await fetch(`${supaUrl}/rest/v1/queue_target_sport?select=queue_id,sport&queue_id=in.(${ids})`, { headers: sh });
+        for (const x of (tr.ok ? await tr.json() : [])) if (x.sport) teamSport.set(x.queue_id, x.sport);
       }
     }
 
@@ -305,6 +305,11 @@ export default async function handler(req, res) {
       if (strategy === 'event_waitlist' && ctx && ctx.step && WAITLIST_STEP[ctx.step]) {
         const f = WAITLIST_STEP[ctx.step][channel];
         return f ? (bySlug[f(ctx.segment)] || null) : null;
+      }
+      // Teammate: Cole's two rows, found by play. Migration 122 does not re-tag them (it only
+      // adds), so their strategy tag still says ticket_blasts; the play name is what's stable.
+      if (strategy === 'teammate') {
+        return templates.find(t => (t.strategy === 'teammate' || t.play === 'Teammate AI') && t.channel === channel) || null;
       }
       if (strategy === 'ticket_blasts') {
         return templates.find(t => t.play === 'Ticketblast' && t.variant === variant && t.channel === channel) ||

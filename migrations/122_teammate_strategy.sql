@@ -4,7 +4,8 @@
 -- call, worded for one sport ("AI tools for [SPORT] organizations"). So a Teammate offer is a
 -- (market, sport) pair, and the people it reaches are that market's contacts who play that sport.
 -- Until now the two Teammate templates (migration 096) were tagged ticket_blasts and could never
--- be picked for anything; they become the 'teammate' strategy's library here.
+-- be picked for anything. They are NOT re-tagged here (this migration only adds): the drafter
+-- finds them by play = 'Teammate AI' for a Teammate row, wherever their strategy tag points.
 --
 -- SENDER. Cole's templates as written (John, 2026-10-15: "use Cole's for now") — Will on email,
 -- James on SMS — through the same sending accounts as every other blast. A Teammate domain and
@@ -17,18 +18,32 @@
 --
 -- Rollback: 122_teammate_strategy_rollback.sql.
 
--- ── 1. The strategy, and its templates ──────────────────────────────────────────────────────
+-- ── 1. The strategy ──────────────────────────────────────────────────────────────────────
 insert into public.offer_strategies (code, label, offer_type, active, sort_order)
 values ('teammate', 'Teammate', 'Teammate AI', true, 40)
-on conflict (code) do update set active = true, label = excluded.label, offer_type = excluded.offer_type;
-
-update public.message_templates set strategy = 'teammate' where slug in ('teammate-email', 'teammate-sms');
+on conflict (code) do nothing;
 
 -- ── 2. The sport a queued row is for ────────────────────────────────────────────────────────
 -- A ticket row's sport comes from its game (events_master, via get_campaign_queue). A Teammate
--- row has no game, so the sport rides on the row. Read straight off the table by the drafter and
--- the tick, like proposal_id / proposal_step (migration 120) — get_campaign_queue is not widened.
-alter table public.campaign_queue add column if not exists target_sport text;
+-- row has no game, so its sport lives here, one row per queued Teammate row. A table of its own
+-- rather than a column on campaign_queue: this migration only ADDS, and touches no existing
+-- table. Read by the drafter and the tick; written through queue_set_target_sport().
+create table if not exists public.queue_target_sport (
+  queue_id    uuid primary key references public.campaign_queue(id) on delete cascade,
+  sport       text not null,
+  created_at  timestamptz not null default now()
+);
+alter table public.queue_target_sport enable row level security;
+drop policy if exists queue_target_sport_anon_read on public.queue_target_sport;
+drop policy if exists queue_target_sport_authenticated_read on public.queue_target_sport;
+create policy queue_target_sport_anon_read on public.queue_target_sport for select to anon using (true);
+create policy queue_target_sport_authenticated_read on public.queue_target_sport for select to authenticated using (true);
+
+create or replace function public.queue_set_target_sport(p_id uuid, p_sport text)
+returns void language sql security definer set search_path = public as $$
+  insert into public.queue_target_sport (queue_id, sport) values (p_id, btrim(p_sport))
+  on conflict (queue_id) do update set sport = excluded.sport;
+$$;
 
 -- ── 3. One spelling per sport ───────────────────────────────────────────────────────────────
 -- market_contacts.primary_sport is free text from several scrapers: "ice_hockey", "ice hockey",
@@ -148,6 +163,7 @@ language sql stable security definer set search_path = public as $$
   order by coalesce(r.icp_emails,0) + coalesce(r.icp_phones,0) + coalesce(r.scp_emails,0) + coalesce(r.scp_phones,0) desc, g.name;
 $$;
 
+grant execute on function public.queue_set_target_sport(uuid, text)               to anon, authenticated, service_role;
 grant execute on function public.sport_key(text)                               to anon, authenticated, service_role;
 grant execute on function public.market_emails_sport(text, text, text)          to anon, authenticated, service_role;
 grant execute on function public.market_phones_sport(text, text, text)          to anon, authenticated, service_role;

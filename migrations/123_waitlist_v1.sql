@@ -26,6 +26,10 @@
 --    Coverage is what we capture: email_replies and Telnyx inbound. Replies that land only in
 --    the bulk sender or Salesmsg are not in these tables and are not seen here.
 --
+-- ONLY ADDS. No existing table, row or function is changed: the coordinates are a new table, and
+-- the new board is waitlist_board_v2 beside 120's waitlist_board, which stays exactly as it is.
+-- The UI reads v2 and falls back to the original when v2 is not there.
+--
 -- Rollback: 123_waitlist_v1_rollback.sql.
 
 -- ── 1. Settings ────────────────────────────────────────────────────────────────────────────
@@ -49,12 +53,20 @@ create policy waitlist_settings_authenticated_read on public.waitlist_settings f
 
 -- ── 2. Where each state is ─────────────────────────────────────────────────────────────────
 -- Approximate centre of each state + DC. Good to tens of miles, which is all a ranking needs.
-alter table public.waitlist_markets
-  add column if not exists lat numeric,
-  add column if not exists lng numeric;
+-- Its own table, not columns on waitlist_markets (this migration only adds).
+create table if not exists public.waitlist_market_geo (
+  code  text primary key references public.geo_region(code),
+  lat   numeric not null,
+  lng   numeric not null
+);
+alter table public.waitlist_market_geo enable row level security;
+drop policy if exists waitlist_market_geo_anon_read on public.waitlist_market_geo;
+drop policy if exists waitlist_market_geo_authenticated_read on public.waitlist_market_geo;
+create policy waitlist_market_geo_anon_read on public.waitlist_market_geo for select to anon using (true);
+create policy waitlist_market_geo_authenticated_read on public.waitlist_market_geo for select to authenticated using (true);
 
-update public.waitlist_markets w set lat = v.lat, lng = v.lng
-from (values
+insert into public.waitlist_market_geo (code, lat, lng)
+select v.code, v.lat, v.lng from (values
   ('AL',32.806671,-86.791130),('AK',61.370716,-152.404419),('AZ',33.729759,-111.431221),('AR',34.969704,-92.373123),
   ('CA',36.116203,-119.681564),('CO',39.059811,-105.311104),('CT',41.597782,-72.755371),('DE',39.318523,-75.507141),
   ('DC',38.897438,-77.026817),('FL',27.766279,-81.686783),('GA',33.040619,-83.643074),('HI',21.094318,-157.498337),
@@ -69,7 +81,8 @@ from (values
   ('UT',40.150032,-111.862434),('VT',44.045876,-72.710686),('VA',37.769337,-78.169968),('WA',47.400902,-121.490494),
   ('WV',38.491226,-80.954453),('WI',44.268543,-89.616508),('WY',42.755966,-107.302490)
 ) as v(code, lat, lng)
-where w.code = v.code;
+where exists (select 1 from public.geo_region g where g.code = v.code)
+on conflict (code) do nothing;
 
 -- Great-circle miles. Plain SQL so it needs no extension.
 create or replace function public.miles_between(lat1 numeric, lng1 numeric, lat2 numeric, lng2 numeric)
@@ -80,10 +93,9 @@ returns numeric language sql immutable as $$
 $$;
 
 -- ── 3. The board ───────────────────────────────────────────────────────────────────────────
--- Same columns as 120, in the same order, with the new ones appended. Dropped first because the
--- return type changes (Postgres will not CREATE OR REPLACE across that).
-drop function if exists public.waitlist_board(uuid);
-create function public.waitlist_board(p_proposal uuid default null)
+-- Same columns as 120's waitlist_board, in the same order, with the new ones appended. A new
+-- function, not a replacement: 120's stays untouched for anything still calling it.
+create or replace function public.waitlist_board_v2(p_proposal uuid default null)
 returns table (
   code text, name text, untouched boolean, warm boolean, note text,
   icp_emails bigint, icp_phones bigint, scp_emails bigint, scp_phones bigint, other_emails bigint, other_phones bigint,
@@ -124,12 +136,14 @@ language sql stable security definer set search_path = public as $$
   near as (
     select w.code, n.code as nearest, n.miles
     from public.waitlist_markets w
+    join public.waitlist_market_geo wg on wg.code = w.code
     left join lateral (
-      select h.code, public.miles_between(w.lat, w.lng, h.lat, h.lng) as miles
+      select h.code, public.miles_between(wg.lat, wg.lng, hg.lat, hg.lng) as miles
       from public.waitlist_markets h
-      where not h.untouched and h.code <> w.code and h.lat is not null
+      join public.waitlist_market_geo hg on hg.code = h.code
+      where not h.untouched and h.code <> w.code
       order by 2 limit 1
-    ) n on w.lat is not null
+    ) n on true
   ),
   base as (
     select w.code, g.name, w.untouched, w.warm, w.note,
@@ -246,6 +260,6 @@ language sql stable security definer set search_path = public as $$
 $$;
 
 grant execute on function public.miles_between(numeric, numeric, numeric, numeric) to anon, authenticated, service_role;
-grant execute on function public.waitlist_board(uuid)      to anon, authenticated, service_role;
+grant execute on function public.waitlist_board_v2(uuid)   to anon, authenticated, service_role;
 grant execute on function public.waitlist_alerts()         to anon, authenticated, service_role;
 grant execute on function public.waitlist_repliers(uuid)   to anon, authenticated, service_role;
