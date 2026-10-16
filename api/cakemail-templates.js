@@ -297,7 +297,7 @@ export default async function handler(req, res) {
   // ?queue_id=<uuid> — THE DESIGN THIS ROW WILL ACTUALLY SEND, for the preview in the Queue.
   //
   // Deliberately the row's STORED email_html and not a fresh render of the template. They are
-  // not the same thing and the difference is the whole point of migration 120: the row holds a
+  // not the same thing and the difference is the whole point of migration 120a: the row holds a
   // copy taken at the moment it was attached, with [GAME]/[DATE]/[SPORT] already filled for THIS
   // blast. Re-rendering the template here would show a preview with empty tokens, and would show
   // any edit made in CakeMail since — i.e. it would show something other than what is going to
@@ -417,7 +417,7 @@ export default async function handler(req, res) {
 }
 
 // One writer for both attach and detach, so the three columns can never be set apart from each
-// other. queue_set_email_html is service_role only (migration 120).
+// other. queue_set_email_html is service_role only (migration 120a).
 async function setHtml(supaUrl, h, id, html, templateId, name) {
   const r = await fetch(`${supaUrl}/rest/v1/rpc/queue_set_email_html`, {
     method: 'POST',

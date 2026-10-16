@@ -448,7 +448,7 @@ export default async function handler(req, res) {
     }
 
     // What get_campaign_queue() does not carry for the two plays without a game: the waitlist
-    // step (migration 120) and the Teammate sport (migration 122, queue_target_sport). One GET
+    // step (migration 120b) and the Teammate sport (migration 122, queue_target_sport). One GET
     // each, for the due rows that need it. A failed read leaves both maps empty, which is the safe side: a waitlist follow-up
     // is then held by the cooldown like any blast, and a Teammate row refuses to send (below)
     // rather than going to the whole market.
@@ -772,13 +772,13 @@ export default async function handler(req, res) {
         }
       }
       if (r.email && emails.length) {
-        // A CakeMail DESIGN wins over the plain-text body when one is attached (migration 120).
+        // A CakeMail DESIGN wins over the plain-text body when one is attached (migration 120a).
         //
         // email_html is already finished HTML — rendered from a CakeMail template by
         // api/cakemail-templates.js with [GAME]/[DATE]/[SPORT] filled at the moment it was
         // attached — so it is sent VERBATIM. Running it through nl2br would escape every tag
         // and deliver the markup as visible text, which is exactly the thing that made pasting
-        // a design into email_copy impossible before 120.
+        // a design into email_copy impossible before 120a.
         //
         // email_copy is NOT cleared when a design is attached and is still what the Queue shows
         // and what the row reads as. It stops being what goes out, which is why the Queue puts
@@ -912,7 +912,7 @@ export default async function handler(req, res) {
       }
 
       await rpc('queue_mark_sent', { p_id: r.id, p_recipients: summary });
-      // EVENT WAITLIST (migration 120). A waitlist row carries which step of the sequence it
+      // EVENT WAITLIST (migration 120b). A waitlist row carries which step of the sequence it
       // is; the stamp on proposal_markets is what makes the NEXT step appear on the board.
       // Best effort and after mark_sent: a missed stamp shows as "Day 0 still due" and is
       // fixable by hand; a missed mark_sent would send the row again.
@@ -955,7 +955,7 @@ export default async function handler(req, res) {
           p_channel: emails.length ? 'Email' : 'SMS', p_queue_id: r.id,
           // Null for a whole-market row, which cools every segment (migration 049).
           p_segment: r.segment || null,
-          // Which PLAY cooled the market (migration 120). The waitlist board reads "last blast,
+          // Which PLAY cooled the market (migration 120b). The waitlist board reads "last blast,
           // any strategy" for its 25-day rule and "last waitlist blast" for its own.
           p_strategy: r.strategy || 'ticket_blasts',
         });

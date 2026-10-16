@@ -1,4 +1,4 @@
--- Rollback for 120.
+-- Rollback for 120a.
 --
 -- Puts get_campaign_queue() back to its 103 signature and drops the writer. THE COLUMNS ARE
 -- LEFT ON THE TABLE on purpose: dropping them would destroy the attached design on every row

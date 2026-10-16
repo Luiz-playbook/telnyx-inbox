@@ -1,13 +1,13 @@
 -- 121: attaching or detaching a design un-confirms the blast.
 --
--- THE GAP. 120 let a design be attached to any row that was not already sent. `confirmed` means
+-- THE GAP. 120a let a design be attached to any row that was not already sent. `confirmed` means
 -- the hourly api/queue-tick cron will send it with no further human step — so attaching a design
 -- to a confirmed blast swapped what goes out, and it could go out within the hour, approved on
 -- the strength of a text body that is no longer what anybody receives.
 --
--- That is the same hazard 120's own header claims to guard against when it explains why the HTML
+-- That is the same hazard 120a's own header claims to guard against when it explains why the HTML
 -- is COPIED rather than re-rendered at send time: what a person approved must be what is sent.
--- 120 closed that for CakeMail-side edits and left it open for our own.
+-- 120a closed that for CakeMail-side edits and left it open for our own.
 --
 -- WHY IN THIS FUNCTION AND NOT A SECOND CALL FROM THE ENDPOINT. The cron runs hourly and the
 -- window matters. Two statements — write the html, then un-confirm — leave a moment in which the
@@ -43,6 +43,6 @@ as $function$
 $function$;
 
 -- Restated: CREATE OR REPLACE keeps the existing ACL, but stating it here means this file can be
--- run on its own without depending on 120 having granted it.
+-- run on its own without depending on 120a having granted it.
 revoke execute on function public.queue_set_email_html(uuid, text, bigint, text) from public, anon, authenticated;
 grant  execute on function public.queue_set_email_html(uuid, text, bigint, text) to service_role;

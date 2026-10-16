@@ -1,4 +1,4 @@
--- 120: the Event Waitlist board — proposed events, the markets they are shopped to, the people
+-- 120b: the Event Waitlist board — proposed events, the markets they are shopped to, the people
 --      who raised a hand, and the strategy on the blast log that every play's cooldown reads.
 --
 -- WHAT THIS IS (John, 2026-10-13). A strategy is a way of GENERATING the Offers tab. Ticket
@@ -24,7 +24,7 @@
 -- (the lesson of migration 107 — both roles, or signed-in users see nothing), and each write is
 -- a named function that does one thing.
 --
--- Rollback: 120_event_proposals_rollback.sql.
+-- Rollback: 120b_event_proposals_rollback.sql.
 
 -- ── 1. Strategy on the blast log ───────────────────────────────────────────────────────────
 -- market_blast_log is the table the cooldown reads (migration 049) and the one the tick writes.

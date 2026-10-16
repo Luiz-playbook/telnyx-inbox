@@ -1,4 +1,4 @@
--- 120: let a queued blast send a CakeMail DESIGN instead of its plain-text body.
+-- 120a: let a queued blast send a CakeMail DESIGN instead of its plain-text body.
 --
 -- WHAT WAS MISSING. api/queue-tick.js builds the email as `nl2br(r.email_copy)` — the body box
 -- escaped and line-broken. That is the only shape a blast could ever take, so the designed

@@ -36,7 +36,7 @@ import { openaiTarget, DEFAULT_MODEL } from '../lib/llm.js';
 import { fillTokens as fillGameTokens, gameLabel, prettyDate } from '../lib/tokens.js';
 
 // The shared fill handles [GAME]/[DATE]/[SPORT]. This wraps it with the EVENT WAITLIST tokens
-// (migration 120): the sequence doc writes them in Title Case with spaces, and they resolve from
+// (migration 120b): the sequence doc writes them in Title Case with spaces, and they resolve from
 // the PROPOSAL and the proposal's row for this market — not from a game, because there is none.
 // Only the ones we can answer are filled; the rest stay in the text so the LEFTOVER guard below
 // refuses the row and a person finishes it.
@@ -244,7 +244,7 @@ export default async function handler(req, res) {
     const templates = allTemplates.filter(t => !t.is_placeholder);
     const bySlug = Object.fromEntries(allTemplates.map(t => [t.slug, t]));
 
-    // EVENT WAITLIST (migration 120): which template each step of the sequence uses. Day 0 has
+    // EVENT WAITLIST (migration 120b): which template each step of the sequence uses. Day 0 has
     // an ICP and an SCP/non-ICP wording, chosen by the row's segment.
     const WAITLIST_STEP = {
       day0:   { email: seg => (seg === 'ICP' ? 'waitlist-email-icp' : 'waitlist-email-scp'), sms: null },

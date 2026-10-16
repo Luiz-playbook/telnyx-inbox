@@ -1,3 +1,5 @@
+-- APPLIED BY HAND to production. Kept as the record; do not run again.
+--
 -- RUN THIS BY HAND in the Supabase SQL editor, after migration 100.
 --
 -- Two statements that could not be issued from the migration tooling used here: a DELETE and a

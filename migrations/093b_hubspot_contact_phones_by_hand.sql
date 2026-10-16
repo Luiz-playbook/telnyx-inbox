@@ -1,3 +1,5 @@
+-- APPLIED BY HAND to production. Kept as the record; do not run again.
+--
 -- RUN THIS BY HAND in the Supabase SQL editor. Both statements below were blocked by the
 -- agent tooling's guard on destructive SQL (DROP / DELETE), which is working as intended — they
 -- are listed here rather than left undone so nothing is lost.

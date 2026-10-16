@@ -410,7 +410,7 @@ export default async function handler(req, res) {
     // design from CakeMail immediately before sending, so a locally edited row that still
     // pointed at a template would have its edit silently replaced by the template's version at
     // the worst possible moment. Without the link, the tick sends the stored HTML verbatim —
-    // which is exactly what "only for this send" means. Migration 120's queue_set_email_html
+    // which is exactly what "only for this send" means. Migration 120a's queue_set_email_html
     // already clears the id and name whenever a null template id is written, so this needs no
     // schema change.
     // ---------------------------------------------------------------------------------------

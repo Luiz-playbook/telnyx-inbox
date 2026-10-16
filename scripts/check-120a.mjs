@@ -1,6 +1,6 @@
-// Post-apply check for migration 120, over PostgREST. No database connector needed.
+// Post-apply check for migration 120a, over PostgREST. No database connector needed.
 //
-//   node scripts/check-120.mjs
+//   node scripts/check-120a.mjs
 //
 // WHY THIS EXISTS SEPARATELY FROM THE .sql VERIFY. The SQL file checks the catalog from inside
 // the database. This checks the same facts from OUTSIDE, through the exact two keys the app
@@ -78,5 +78,5 @@ const anon = await rpc('queue_set_email_html', ANON, { p_id: '00000000-0000-0000
 say(!anon.ok, 'queue_set_email_html NOT callable by ANON key', `HTTP ${anon.status}`);
 if (anon.ok) console.log('        ^ anon can write campaign HTML. Revoke it before using the picker.');
 
-console.log(failures ? `\n${failures} check(s) failed.` : '\nAll checks passed — 120 is applied correctly.');
+console.log(failures ? `\n${failures} check(s) failed.` : '\nAll checks passed — 120a is applied correctly.');
 process.exit(failures ? 1 : 0);

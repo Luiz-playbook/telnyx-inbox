@@ -1,4 +1,4 @@
--- Verification for 120. Read-only — run it after applying, or inside a BEGIN/ROLLBACK
+-- Verification for 120a. Read-only — run it after applying, or inside a BEGIN/ROLLBACK
 -- rehearsal just before the ROLLBACK.
 --
 -- WHAT IT IS CHECKING FOR, in order of how much it would hurt to get wrong:
@@ -7,7 +7,7 @@
 --      anon key reads the whole Queue tab through this function — so a missed grant is an empty
 --      Queue, not an error message. This is the failure mode worth running a check for at all.
 --   2. The three new columns are returned, and LAST. PostgREST maps these by position; a column
---      inserted in the middle shifts every one after it. See the 058 note in 120 itself.
+--      inserted in the middle shifts every one after it. See the 058 note in 120a itself.
 --   3. queue_set_email_html exists and is NOT executable by anon. It writes live campaign HTML
 --      and is only ever called with the service key from api/cakemail-templates.js.
 --   4. Nothing already in the queue was disturbed.

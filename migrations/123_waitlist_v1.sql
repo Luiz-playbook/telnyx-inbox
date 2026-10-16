@@ -2,7 +2,7 @@
 --      that do not wait out the cooldown, the threshold alert, and replies that stop the re-asks.
 --
 -- 1. SETTINGS, NOT CONSTANTS. The ticket: "make the open calls config values, not hardcoded".
---    120 wrote 25 into waitlist_board(). The cooldown and the ranking weights now live in one
+--    120b wrote 25 into waitlist_board(). The cooldown and the ranking weights now live in one
 --    row of waitlist_settings and are changed with an UPDATE, no deploy.
 --
 -- 2. FOLLOW-UPS ARE EXEMPT FROM THE COOLDOWN (John, 2026-10-15). Day 3 and Day 10 land inside
@@ -27,7 +27,7 @@
 --    the bulk sender or Salesmsg are not in these tables and are not seen here.
 --
 -- ONLY ADDS. No existing table, row or function is changed: the coordinates are a new table, and
--- the new board is waitlist_board_v2 beside 120's waitlist_board, which stays exactly as it is.
+-- the new board is waitlist_board_v2 beside 120b's waitlist_board, which stays exactly as it is.
 -- The UI reads v2 and falls back to the original when v2 is not there.
 --
 -- Rollback: 123_waitlist_v1_rollback.sql.
@@ -93,7 +93,7 @@ returns numeric language sql immutable as $$
 $$;
 
 -- ── 3. The board ───────────────────────────────────────────────────────────────────────────
--- Same columns as 120's waitlist_board, in the same order, with the new ones appended. A new
+-- Same columns as 120b's waitlist_board, in the same order, with the new ones appended. A new
 -- function, not a replacement: 120's stays untouched for anything still calling it.
 create or replace function public.waitlist_board_v2(p_proposal uuid default null)
 returns table (

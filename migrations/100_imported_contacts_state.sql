@@ -127,4 +127,4 @@ grant execute on function ticketblaster.import_contacts(jsonb, text, text, text)
 -- NOT DONE HERE: contact_directory still reads `null::text as state` for uploaded rows (091/093),
 -- so an uploaded contact's state will not appear in the Contacts tab or its state filter until
 -- the matview is rebuilt to select it. That needs a DROP, which cannot be issued from the
--- migration tooling used here — the statement is in migrations/093b_RUN_BY_HAND.sql.
+-- migration tooling used here — the statement is in migrations/093b_hubspot_contact_phones_by_hand.sql.

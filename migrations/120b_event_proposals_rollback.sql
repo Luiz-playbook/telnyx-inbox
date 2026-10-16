@@ -1,4 +1,4 @@
--- 120 ROLLBACK: remove the Event Waitlist board and put the blast-log function back.
+-- 120b ROLLBACK: remove the Event Waitlist board and put the blast-log function back.
 -- Proposals, their markets and signups are DELETED — export first if any matter.
 
 drop function if exists public.waitlist_board(uuid);
